@@ -2,3 +2,6 @@ build
 *.egg-info
 venv
 __pycache__
+.cache
+.local
+.bash_history

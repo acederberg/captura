@@ -1,0 +1,10 @@
+# NOTE: Caching of dependencies does not happen here, this project assumes that
+#       developers will use a venv which will be mounted.
+
+FROM python:3.11
+
+RUN useradd -d /home/documents documents
+USER documents
+WORKDIR /app
+
+ENTRYPOINT ["bash"]

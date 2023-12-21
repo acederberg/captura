@@ -1,0 +1,29 @@
+---
+version: '3.9'
+services:
+  server:
+    build:
+      context: '.'
+      dockerfile: './dockerfile'
+    ports: 
+      - target: 8080
+        published: 8080
+    networks:
+      documents: {}
+    tty: true
+    volumes:
+      - '..:/app'
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: 1
+      MYSQL_DATABASE: documents
+      MYSQL_USER: documents
+      MYSQL_PASSWORD: $$MYSQL_PASSWORD
+    networks:
+      documents: {}
+networks:
+  documents:
+    driver: bridge
+
+

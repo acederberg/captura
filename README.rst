@@ -1,3 +1,28 @@
+Running in Docker
+===============================================================================
+
+A docker compose project is included so that it is easy to get a database up
+and running. It does not cache dependencies since your local work is mounted,
+which should include a python virtual environment. The steps are as follows:
+
+.. code:: python
+
+   # Spin up venv on your machine and install the project
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install --editable .
+
+   # Start the docker compose project.
+   docker compose --file=docker/docker-compose.yaml up --detach
+   docker compose --file=docker/docker-compose.yaml exec bash
+
+   # Commands inside docker
+   source .venv/bin/activate
+   app version
+
+
+
+
 Database Schema
 ===============================================================================
 
