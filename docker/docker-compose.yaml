@@ -19,7 +19,7 @@ services:
       MYSQL_RANDOM_ROOT_PASSWORD: 1
       MYSQL_DATABASE: documents
       MYSQL_USER: documents
-      MYSQL_PASSWORD: $$MYSQL_PASSWORD
+      MYSQL_PASSWORD: abcd1234
     networks:
       documents: {}
 networks:

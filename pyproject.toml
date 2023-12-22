@@ -37,7 +37,11 @@ dependencies = [
   "pydantic-settings>=2",
   "sqlalchemy>=2",
   "yaml-settings-pydantic>=2",
+  "PyMySQL",
+  "PyMySQL[rsa]",
+  "typer",
 ]
+
 requires-python = ">=3.7" # because https://github.com/pydantic/pydantic/blob/main/pyproject.toml
 
 

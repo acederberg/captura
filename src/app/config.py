@@ -22,14 +22,21 @@ Instead do
         return config.m
 """
 from functools import cache
+from os import environ
 from typing import Annotated
 
 from fastapi import Depends
 from pydantic import BaseModel, Field, computed_field
 from sqlalchemy.engine import URL, Engine, create_engine
-from yaml_settings_pydantic import BaseYamlSettings, YamlFileConfigDict
+from yaml_settings_pydantic import (
+    BaseYamlSettings,
+    YamlFileConfigDict,
+    YamlSettingsConfigDict,
+)
 
 from app.util import Path
+
+PREFIX = "DOCUMENTS_SERVER_"
 
 
 class MySqlHostConfig(BaseModel):
@@ -39,18 +46,24 @@ class MySqlHostConfig(BaseModel):
     keyword arguments to ``sqlalchemy.engine.URL.create``.
 
     :attr driver: The driver to use.
-    :attr host: The database hostname or IP address.
-    :attr port: The port on which the database exists.
+    :attr host: The database hostname or IP address. This defaults to the
+        hostname assigned to the ``db`` container by the docker compose
+        project.
+    :attr port: The port on which the database exists. Defaults to ``3306``,
+        the default MySQL port.
     :attr username: The login username for which connections will be
-        established.
+        established. This defaults to the username defined in the docker
+        compose project.
     :attr password: Password corresponding to :attr:`username`.
+    :attr database: The hosts database to use.
     """
 
-    driver: Annotated[str, Field("mysql+mysql-connector")]
-    host: Annotated[str, Field("localhost")]
+    drivername: Annotated[str, Field("mysql+pymysql")]
+    host: Annotated[str, Field("db")]
     port: Annotated[int, Field(3306)]
     username: Annotated[str, Field("documents")]
-    password: str
+    password: Annotated[str, Field("abcd1234")]
+    database: Annotated[str, Field("documents")]
 
 
 class MySqlConfig(BaseModel):
@@ -58,8 +71,15 @@ class MySqlConfig(BaseModel):
 
 
 class Config(BaseYamlSettings):
-    model_config = YamlFileConfigDict(yaml_files=Path.base("config.yaml"))
-
+    model_config = YamlSettingsConfigDict(
+        yaml_files=Path.base(
+            "config.test.yaml"
+            if environ.get(f"{PREFIX}_TEST") == "1"
+            else "config.yaml"
+        ),
+        yaml_reload=False,
+        yaml_required=False,
+    )
     mysql: MySqlConfig
 
     def engine(self) -> Engine:

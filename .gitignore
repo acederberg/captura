@@ -5,3 +5,5 @@ __pycache__
 .cache
 .local
 .bash_history
+config.yaml
+config.test.yaml
