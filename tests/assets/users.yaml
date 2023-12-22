@@ -1,0 +1,12 @@
+- id: 1
+  name: you're mom
+  description: The joke is that it is mispelled.
+  url_image: null
+  url: null
+
+- id: 2
+  name: acederberg
+  description: maintainer of this project
+  url: github.com/acederberg
+  url_image: https://avatars.githubusercontent.com/u/77076023?v=4
+

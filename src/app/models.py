@@ -13,10 +13,10 @@ LENGTH_CONTENT: int = 2**15
 
 class Base(DeclarativeBase):
     _created_timestamp: Mapped[int] = mapped_column(
-        default=(now := lambda: datetime.timestamp(datetime.now())),
+        default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
     _created_by_user_id: Mapped[int]
-    _updated_timestamp: Mapped[int] = mapped_column(default=now)
+    _updated_timestamp: Mapped[int] = mapped_column(default=_now)
     _updated_by_user_id: Mapped[int]
 
 

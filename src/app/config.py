@@ -21,9 +21,10 @@ Instead do
     def is_local() -> bool:
         return config.m
 """
+import logging
 from functools import cache
 from os import environ
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends
 from pydantic import BaseModel, Field, computed_field
@@ -37,6 +38,7 @@ from yaml_settings_pydantic import (
 from app.util import Path
 
 PREFIX = "DOCUMENTS_SERVER_"
+PATH_CONFIG = environ.get(PREFIX + "CONFIG_PATH") or Path.base("config.yaml")
 
 
 class MySqlHostConfig(BaseModel):
@@ -70,15 +72,15 @@ class MySqlConfig(BaseModel):
     host: MySqlHostConfig
 
 
+class AppConfig(BaseModel):
+    # log_level: Literal["DEBUG", "INFO", "WARNING", "CRITICAL"]
+    port: int = 8080
+
+
 class Config(BaseYamlSettings):
     model_config = YamlSettingsConfigDict(
-        yaml_files=Path.base(
-            "config.test.yaml"
-            if environ.get(f"{PREFIX}_TEST") == "1"
-            else "config.yaml"
-        ),
+        yaml_files=PATH_CONFIG,
         yaml_reload=False,
-        yaml_required=False,
     )
     mysql: MySqlConfig
 
