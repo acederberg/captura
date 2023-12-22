@@ -7,3 +7,4 @@ __pycache__
 .bash_history
 config.yaml
 config.test.yaml
+.venv

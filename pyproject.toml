@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
-name = "artcles-api"
+name = "articles-api"
 version = "0.0.0"
 description = "An api to server markdown and reStructured text as json or rendered HTML."
 readme = "README.rst"
@@ -54,7 +54,8 @@ dev = [
 	"black",
 	"flake8",
 	"mypy",
-	"isort"
+	"isort",
+  "jedi-language-server"
 ]
 test = [
 	"pytest",
