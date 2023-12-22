@@ -3,7 +3,12 @@
 
 FROM python:3.11
 
-RUN useradd -d /home/documents documents
+RUN useradd -d /home/documents documents \
+  && mkdir /home/documents \
+  && chown documents:documents /home/documents
+
+# `~/.bashrc` does not exist before this.
+COPY --chown=documents:documents --chmod=+x ./docker-entrypoint.sh /home/documents/.bashrc
 USER documents
 WORKDIR /app
 
