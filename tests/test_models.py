@@ -12,6 +12,7 @@ from app.models import (
     DocumentHistory,
     User,
 )
+from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -61,34 +62,61 @@ class BaseModelTest(metaclass=ModelTestMeta):
     dummies_file: ClassVar[str]
     dummies: ClassVar[List[Dict[str, Any]]]
 
-    @pytest.fixture(scope="class", autouse=True)
-    def load(self, sessionmaker: sessionmaker[Session]):
-        logger.debug("Adding dummies from `%s.dummies_file` to database.")
+    # NOTE: Session soped fixtures should occur in the order in which they are
+    #       defined.
+    @pytest.fixture(scope="session", autouse=True)
+    def load(self, sessionmaker: sessionmaker[Session]) -> None:
         with sessionmaker() as session:
-            session.add_all(list(self.M(**item) for item in self.dummies))
+            query = select(func.count()).select_from(self.M)
+            count = session.execute(query).scalar()
+            if not count:
+                preload = getattr(self, "preload", lambda item: item)
+
+                logger.debug(
+                    "Adding dummies from `%s.dummies_file` to database.",
+                    self.__class__.__name__,
+                )
+                session.add_all(list(preload(self.M(**item)) for item in self.dummies))
+                session.commit()
+                return
+
+            logger.debug(
+                "Dummies already exist for `%s`.",
+                self.__class__.__name__,
+            )
 
 
 # NOTE: Test suites must be defined in appropraite order to ensure that
 #       integrity constraints allow data to be inserted successfully.
-class TestUser:
+class TestUser(BaseModelTest):
     M = User
+
+    def test_whatever(self, sessionmaker: sessionmaker[Session]):
+        ...
 
 
 class TestCollection(BaseModelTest):
     M = Collection
 
-    def test_user_optional(self, sessionmaker: sessionmaker[Session]):
-        assert print(id(sessionmaker))
-        ...
+    # def test_user_optional(self, sessionmaker: sessionmaker[Session]):
+    #     assert print(id(sessionmaker))
+    #     ...
+    #
+    # def test_relationships(self, sessionmaker: sessionmaker[Session]):
+    #     assert print(id(sessionmaker))
+    #     ...
 
-    def test_relationships(self, sessionmaker: sessionmaker[Session]):
-        assert print(id(sessionmaker))
-        ...
 
-
-class TestDocument:
+class TestDocument(BaseModelTest):
     M = Document
 
+    def preload(self, item: Document) -> Document:
+        item.content = bytes(item.content, "utf-8")
+        return item
 
-class TestDocumentHistory:
+    def test_whatever(self, sessionmaker: sessionmaker[Session]):
+        ...
+
+
+class TestDocumentHistory(BaseModelTest):
     M = DocumentHistory

@@ -81,6 +81,8 @@ class Config(BaseYamlSettings):
     model_config = YamlSettingsConfigDict(
         yaml_files=PATH_CONFIG,
         yaml_reload=False,
+        env_prefix=PREFIX,
+        env_nested_delimiter="__",
     )
     mysql: MySqlConfig
 

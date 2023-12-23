@@ -4,11 +4,20 @@ from os import path
 # =========================================================================== #
 # LOGGING STUFF
 
-LOGGING_CONFIG = logging.basicConfig(level=logging.DEBUG)
-
 
 def get_logger(name: str) -> logging.Logger:
     ll = logging.getLogger(name)
+
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    ll.addHandler(handler)
+
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+
+    ll.setLevel(logging.DEBUG)
     return ll
 
 

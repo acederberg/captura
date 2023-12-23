@@ -1,6 +1,6 @@
 import pytest
 from app import util
-from app.config import Config
+from app.config import PREFIX, Config
 from app.models import Base
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -31,9 +31,16 @@ class PytestConfig(Config):
     :attr tests: Test specific configuration.
     """
 
-    model_config = YamlSettingsConfigDict(yaml_files=PATH_CONFIG_PYTEST)
+    model_config = YamlSettingsConfigDict(
+        yaml_files=PATH_CONFIG_PYTEST,
+        env_prefix=PREFIX,
+        env_nested_delimiter="__",
+    )
 
     tests: PytestSubConfig
+
+
+print(PytestConfig())
 
 
 # NOTE: Session scoping works like fastapi dependency caching, so these will
