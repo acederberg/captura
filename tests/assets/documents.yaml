@@ -1,5 +1,6 @@
 ---
 - name: Lorm ipsum
+  id: 1
   description: Lorem ipsum 1
   content_fmt: md
   content: |
@@ -14,6 +15,7 @@
     est laborum.
 
 - name: Lorm ipsum 2
+  id: 2
   description: Lorem ipsum 2
   content_fmt: rst
   content: |
@@ -24,6 +26,7 @@
 
   
 - name: Lorm ipsum 3
+  id: 3
   description: Lorem ipsum 3
   content_fmt: md
   content: |
@@ -32,6 +35,7 @@
     Porta lorem mollis aliquam ut porttitor leo a diam. At in tellus integer feugiat scelerisque varius morbi enim. Duis ultricies lacus sed turpis tincidunt id aliquet risus. Aliquam purus sit amet luctus venenatis lectus. Quis auctor elit sed vulputate. Sociis natoque penatibus et magnis dis parturient montes nascetur ridiculus. Natoque penatibus et magnis dis parturient. Aliquet eget sit amet tellus cras adipiscing enim eu. Vel eros donec ac odio tempor orci. Sed turpis tincidunt id aliquet. Integer malesuada nunc vel risus. Purus non enim praesent elementum facilisis leo. Sed faucibus turpis in eu mi bibendum neque egestas congue. Lacus laoreet non curabitur gravida arcu ac. Venenatis urna cursus eget nunc. Turpis egestas integer eget aliquet. Pretium fusce id velit ut tortor pretium viverra suspendisse. Dictumst quisque sagittis purus sit amet volutpat consequat. Adipiscing elit pellentesque habitant morbi tristique senectus et netus. Arcu felis bibendum ut tristique et egestas quis.
   
 - name: Lorm ipsum 4
+  id: 4
   description: Lorem ipsum 4
   content_fmt: md
   content: |
@@ -41,6 +45,7 @@
   
 
 - name: Lorem Ipsum 5
+  id: 5
   description: Lorem ipsum 5
   content_fmt: rst
   content: |
@@ -52,6 +57,7 @@
 
 
 - name: Lorem Ipsum 6
+  id: 6
   description: Lorem ipsum 6
   content_fmt: md
   content: |

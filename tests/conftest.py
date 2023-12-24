@@ -65,17 +65,19 @@ def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_cleanup(engine: Engine, config: PytestConfig):
-    logger.debug("`setup_cleanup` fixture called. Checking tables...")
+    logger.debug("`setup_cleanup` fixture called.")
     metadata = Base.metadata
+    exists: bool
     with engine.begin() as connection:
         result = list(connection.execute(text("SHOW TABLES;")).scalars())
         exists = len(result) > 0
 
-    if config.tests.recreate_tables or not exists:
-        logger.debug("Tables must be recreated or already exist.")
+    if config.tests.recreate_tables and exists:
+        logger.debug("Recreating tables.")
+        metadata.drop_all(engine)
+        metadata.create_all(engine)
+    elif not exists:
+        logger.debug("Creating tables.")
         metadata.create_all(engine)
 
     yield
-
-    if config.tests.recreate_tables:
-        metadata.drop_all(engine)

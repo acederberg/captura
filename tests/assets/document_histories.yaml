@@ -1,7 +1,8 @@
 
 - id_document: 6
   id: 1
-  content: |
+  id_user: 1
+  content_previous: |
 
     Rotton Possum
     ============================
@@ -17,148 +18,158 @@
     Id faucibus nisl tincidunt eget nullam.
     Nisi lacus sed viverra tellus.
 
-- id_document: 6
-  id: 2
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-    Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
-    Nulla pellentesque dignissim enim sit amet venenatis.
-    Gravida neque convallis a cras semper auctor.
-    Id faucibus nisl tincidunt eget nullam.
-    Nisi lacus sed viverra tellus.
-    Turpis egestas sed tempus urna et.
-
-- id_document: 6
-  id: 3
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-    Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
-    Nulla pellentesque dignissim enim sit amet venenatis.
-    Gravida neque convallis a cras semper auctor.
-    Id faucibus nisl tincidunt eget nullam.
-    Nisi lacus sed viverra tellus.
-
-- id_document: 6
-  id: 4
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-    Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
-    Nulla pellentesque dignissim enim sit amet venenatis.
-    Gravida neque convallis a cras semper auctor.
-    Id faucibus nisl tincidunt eget nullam.
-
-- id_document: 6
-  id: 5
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-    Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
-    Nulla pellentesque dignissim enim sit amet venenatis.
-    Gravida neque convallis a cras semper auctor.
-
-- id_document: 6
-  id: 6
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-    Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
-    Nulla pellentesque dignissim enim sit amet venenatis.
-
-- id_document: 6
-  id: 7
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-    Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
-
-- id_document: 6
-  id: 8
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-    Nibh ipsum consequat nisl vel pretium.
-
-- id_document: 6
-  id: 9
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-    Arcu risus quis varius quam quisque id diam vel quam.
-
-- id_document: 6
-  id: 10
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-    In ornare quam viverra orci sagittis eu volutpat odio.
-
-- id_document: 6
-  id: 11
-  content: |
-
-    Rotton Possum
-    ============================
-
-    Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
-    Quis vel eros donec ac. 
-
+# - id_document: 6
+#   id_user: 1
+#   id: 2
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#     Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
+#     Nulla pellentesque dignissim enim sit amet venenatis.
+#     Gravida neque convallis a cras semper auctor.
+#     Id faucibus nisl tincidunt eget nullam.
+#     Nisi lacus sed viverra tellus.
+#     Turpis egestas sed tempus urna et.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 3
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#     Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
+#     Nulla pellentesque dignissim enim sit amet venenatis.
+#     Gravida neque convallis a cras semper auctor.
+#     Id faucibus nisl tincidunt eget nullam.
+#     Nisi lacus sed viverra tellus.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 4
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#     Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
+#     Nulla pellentesque dignissim enim sit amet venenatis.
+#     Gravida neque convallis a cras semper auctor.
+#     Id faucibus nisl tincidunt eget nullam.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 5
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#     Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
+#     Nulla pellentesque dignissim enim sit amet venenatis.
+#     Gravida neque convallis a cras semper auctor.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 6
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#     Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
+#     Nulla pellentesque dignissim enim sit amet venenatis.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 7
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#     Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 8
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#     Nibh ipsum consequat nisl vel pretium.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 9
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#     Arcu risus quis varius quam quisque id diam vel quam.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 10
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#     In ornare quam viverra orci sagittis eu volutpat odio.
+#
+# - id_document: 6
+#   id_user: 1
+#   id: 11
+#   content_previous: |
+#
+#     Rotton Possum
+#     ============================
+#
+#     Odio aenean sed adipiscing diam donec adipiscing tristique risus. 
+#     Quis vel eros donec ac. 
+#
