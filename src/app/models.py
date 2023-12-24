@@ -33,6 +33,32 @@ class MixinsSecondary(MixinsPrimary):
     )
 
 
+class AssocCollectionDocument(Base, MixinsPrimary):
+    __tablename__ = "_assocs_collections_documents"
+
+    id_document: Mapped[int] = mapped_column(
+        ForeignKey("documents.id"),
+        primary_key=True,
+    )
+    id_collection: Mapped[int] = mapped_column(
+        ForeignKey("collections.id"),
+        primary_key=True,
+    )
+
+
+class AssocUserDocument(Base, MixinsPrimary):
+    __tablename__ = "_assocs_user_documents"
+
+    id_user: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        primary_key=True,
+    )
+    id_document: Mapped[int] = mapped_column(
+        ForeignKey("documents.id"),
+        primary_key=True,
+    )
+
+
 class User(Base, MixinsPrimary):
     __tablename__ = "users"
 
@@ -62,6 +88,12 @@ class User(Base, MixinsPrimary):
         primaryjoin="User.id==DocumentHistory.id_user",
     )
 
+    documents: Mapped[Dict[str, "Document"]] = relationship(
+        collection_class=attribute_keyed_dict("name"),
+        secondary=AssocUserDocument.__table__,
+        back_populates="users",
+    )
+
 
 class Collection(Base, MixinsSecondary):
     __tablename__ = "collections"
@@ -81,6 +113,12 @@ class Collection(Base, MixinsSecondary):
         # cascade="all, delete-orphan",
     )
 
+    documents: Mapped[Dict[str, "Document"]] = relationship(
+        collection_class=attribute_keyed_dict("name"),
+        secondary=AssocCollectionDocument.__table__,
+        back_populates="collections",
+    )
+
 
 class Document(Base, MixinsSecondary):
     __tablename__ = "documents"
@@ -91,30 +129,20 @@ class Document(Base, MixinsSecondary):
     content: Mapped[str] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
     content_fmt: Mapped[str] = mapped_column(String(8))
 
-
-class AssocCollectionDocument(Base, MixinsSecondary):
-    __tablename__ = "_assocs_collections_documents"
-
-    id_user: Mapped[int] = mapped_column(
-        ForeignKey("users.id"),
-        primary_key=True,
+    edits: Mapped[List["DocumentHistory"]] = relationship(
+        cascade="all, delete",
+        back_populates="document",
+        primaryjoin="Document.id==DocumentHistory.id_document",
     )
-    id_collection: Mapped[int] = mapped_column(
-        ForeignKey("collections.id"),
-        primary_key=True,
+    users: Mapped[Dict[str, User]] = relationship(
+        collection_class=attribute_keyed_dict("name"),
+        secondary=AssocUserDocument.__table__,
+        back_populates="documents",
     )
-
-
-class AssocUserDocument(Base, MixinsSecondary):
-    __tablename__ = "_assocs_user_documents"
-
-    id_user: Mapped[int] = mapped_column(
-        ForeignKey("users.id"),
-        primary_key=True,
-    )
-    id_document: Mapped[int] = mapped_column(
-        ForeignKey("documents.id"),
-        primary_key=True,
+    collections: Mapped[Dict[str, Collection]] = relationship(
+        collection_class=attribute_keyed_dict("name"),
+        secondary=AssocCollectionDocument.__table__,
+        back_populates="documents",
     )
 
 
@@ -128,6 +156,11 @@ class DocumentHistory(Base, MixinsSecondary):
 
     user: Mapped[User] = relationship(
         primaryjoin="User.id==DocumentHistory.id_user",
+        back_populates="edits",
+    )
+
+    document: Mapped[Document] = relationship(
+        primaryjoin="Document.id==DocumentHistory.id_document",
         back_populates="edits",
     )
 
