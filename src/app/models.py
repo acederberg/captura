@@ -92,6 +92,7 @@ class User(Base, MixinsPrimary):
         collection_class=attribute_keyed_dict("name"),
         secondary=AssocUserDocument.__table__,
         back_populates="users",
+        # primaryjoin="User.id==AssocUserDocument.id_user, AssocUserDocument.id_document=Document.id, "
     )
 
 

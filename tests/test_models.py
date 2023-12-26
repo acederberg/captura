@@ -14,6 +14,7 @@ from app.models import (
 )
 from sqlalchemy import delete, func, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 logger = util.get_logger(__name__)
@@ -205,6 +206,68 @@ class TestUser(BaseModelTest):
             ).scalar()
             assert count is not None
             assert count > 0, f"{collections = }"  # type: ignore
+
+    def test_documents_relationship(
+        self,
+        sessionmaker: sessionmaker[Session],
+    ):
+        with sessionmaker() as session:
+            # Initially there should be no documents for the user.
+            # Clear out directly through the association table.
+            logger.debug("Clearing existing associations for user 1.")
+            assocs: List[AssocUserDocument] = list(
+                session.execute(
+                    select(AssocUserDocument).where(AssocUserDocument.id_user == 1)
+                ).scalars()
+            )
+            for assoc in assocs:
+                session.delete(assoc)
+            session.commit()
+
+            # Verify that the user has no associations.
+            logger.debug("Verifying that associations were cleared.")
+            user: User | None = session.execute(
+                select(User).where(User.id == 1)
+            ).scalar()
+            assert user is not None
+            assert not user.documents, "Expected no documents for users."
+
+            # Reassign these documents using the orm
+            logger.debug("Reassigning documents to user 1.")
+            documents: List[Document] = list(
+                session.execute(
+                    q_docs := select(Document).where(Document.id.between(1, 3))
+                ).scalars()
+            )
+            assert len(documents), "Expected to find some documents."
+            user.documents = {dd.name: dd for dd in documents}
+            session.commit()
+
+        # New session just to be safe
+        with sessionmaker() as session:
+            logger.debug("Verifying that documents were reassigned.")
+            user = session.execute(select(User).where(User.id == 1)).scalar()
+            session.refresh(user)
+            assert user is not None
+            assert user.documents, "Expected documents to be assigned to user."
+
+            logger.debug("Deleting user 1.")
+            session.delete(user)
+            session.commit()
+
+            # NOTE: Deletion cannot cascade as it would require adding the
+            #       access level to the join condition.
+            logger.debug("Checking that documents were not deleted.")
+            documents = list(session.execute(q_docs).scalars())
+            assert documents
+
+            make_transient(user)
+            for collection in user.collections.values():
+                make_transient(collection)
+            for edit in user.edits:
+                make_transient(edit)
+            session.add(user)
+            session.commit()
 
 
 class TestCollection(BaseModelTest):
