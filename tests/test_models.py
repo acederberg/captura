@@ -79,37 +79,12 @@ class BaseModelTest(metaclass=ModelTestMeta):
         session.commit()
 
     @classmethod
-    def load(cls, session: Session) -> None:
+    def load(cls, session: Session, start: int = 0, stop: int | None = None) -> None:
         logger.debug("Adding %s dummies from `%s`.", cls.M, cls.dummies_file)
         session.add_all(
-            list(print(m := cls.M(**item)) or cls.preload(m) for item in cls.dummies)
+            list(cls.preload(cls.M(**item)) for item in cls.dummies[start:stop])
         )
         session.commit()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def load_tables(sessionmaker: sessionmaker[Session]):
-    logger.info("Reloading tables (fixture `load_tables`).")
-    with sessionmaker() as session:
-        for table in Base.metadata.sorted_tables:
-            cls = ModelTestMeta.__children__.get(table.name)
-            if cls is None:
-                logger.debug("No dummies for `%s`.", table.name)
-                continue
-            cls.clean(session)
-            cls.load(session)
-
-
-@pytest.fixture(scope="function")
-def user(sessionmaker: sessionmaker[Session], id: int = 1) -> User | None:
-    """Because this is frustrating to do all the time."""
-
-    logger.debug("Calling `user` fixture.")
-    with sessionmaker() as session:
-        # Get user
-        user = session.execute(select(User).where(User.id == id)).scalar()
-        assert user is not None
-        return user
 
 
 # NOTE: Test suites must be defined in appropraite order to ensure that
@@ -117,13 +92,61 @@ def user(sessionmaker: sessionmaker[Session], id: int = 1) -> User | None:
 class TestUser(BaseModelTest):
     M = User
 
-    def test_collections_relationship(
-        self, user: User, sessionmaker: sessionmaker[Session]
-    ):
-        M: Type[User]
-        m, M = user, self.M  # type: ignore
-        assert isinstance(m, M)
+    @classmethod
+    def create_user(cls, session: Session, id: int = 1) -> None:
+        """Recreate the user with id :param:`id` and regenerate any associated
+        objects for which deletion cascading should apply.
 
+
+        Documents should not cascade deletion except for documents that user
+        is the sole owner of, as stated in **section B.4.a.1**, but the plan
+        is to enforce this at the API level. The same applies for the
+        :attr:`DocumentHistory` objects associated with the document. This
+        implies that only the :class:`Collection` objects associated with the
+        user must be regenerated along with the user.
+
+        :param session:
+        :param id:
+        """
+        logger.debug("Adding user with id `%s`.", id)
+        raw = next((m for m in cls.dummies if m["id"] == 1), None)
+        if raw is None:
+            raise ValueError(f"Could not find user with id `{id}`.")
+        session.add(cls.M(**raw))
+        session.commit()
+
+    @classmethod
+    def get_user(cls, session: Session, id: int = 1) -> User:
+        """Get the :class:`User` with ``User.id`` equal to :param:`id` in the
+        provided :param:`session`.
+
+        :param session: database session.
+        :param id: `User.id` to match against.
+        :raises AssertionError: When the user with the specified :param:`id`
+            does not exist.
+        :returns: The user.
+        """
+        user = session.execute(select(User).where(User.id == id)).scalar()
+        assert user is not None, f"Expected user with id `{id}`."
+        return user
+
+    def make_transient(self, session: Session, user: User):
+        """Make the user object and its mapped objects transient.
+
+        This is useful for reinstantiating :class:`User` objects and their
+        child objects after deletion with `session.delete`.
+
+        :param session:
+        :param user:
+        :returns: None
+        """
+        make_transient(user)
+        for collection in user.collections.values():
+            make_transient(collection)
+        for edit in user.edits:
+            make_transient(edit)
+
+    def test_collections_relationship(self, sessionmaker: sessionmaker[Session]):
         logger.debug("Initializing collections.")
         with sessionmaker() as session:
             q_collections = select(Collection)
@@ -152,13 +175,13 @@ class TestUser(BaseModelTest):
             ), "Collections should not have an owner at this point."
 
             # Check that user corresponds correctly.
-            m = session.execute(select(M).where(M.id == 1)).scalar()
-            assert m is not None, "User with id `1` should exist."
-            assert not len(m.collections), "User should have no collections."
+            user = self.get_user(session)
+            assert user is not None, "User with id `1` should exist."
+            assert not len(user.collections), "User should have no collections."
 
             # Assign collections
             logger.debug("Assigning collections to user with id `1`.")
-            m.collections = {cc.name: cc for cc in collections}
+            user.collections = {cc.name: cc for cc in collections}
             session.commit()
 
         logger.debug("Verifying reassignment.")
@@ -177,7 +200,11 @@ class TestUser(BaseModelTest):
 
         logger.debug("Verifiying deletion cascading.")
         with sessionmaker() as session:
-            session.delete(m)
+            # NOTE: It is important to get a new user for this session. Things
+            #       become strange when this is not done, for instance
+            #       ``user.edits`` has null key values after deletion.
+            user = self.get_user(session)
+            session.delete(user)
             session.commit()
 
             count = session.execute(
@@ -185,15 +212,14 @@ class TestUser(BaseModelTest):
             ).scalar()
             assert count == 0
 
-            # Make transient is necessary as the objects
-            logger.debug("Regenerating.")
-            make_transient(m)
-            for collection in m.collections.values():
-                make_transient(collection)
-            for edit in m.edits:
-                make_transient(edit)
-            session.add(m)
+            # NOTE: Do not try to regenerate ownership at the end of these
+            #       tests. Most of the tests start by nullifying ownership
+            #       anyway. Must regenerate all test collections.
+            logger.debug("Regenerating user.")
+            self.create_user(session, 1)  # changes are commited
             session.commit()
+
+            TestCollection.load(session)
 
         logger.debug("Verifying regeneration.")
         with sessionmaker() as session:
@@ -212,9 +238,13 @@ class TestUser(BaseModelTest):
         sessionmaker: sessionmaker[Session],
     ):
         with sessionmaker() as session:
-            # Initially there should be no documents for the user.
-            # Clear out directly through the association table.
-            logger.debug("Clearing existing associations for user 1.")
+            # NOTE: Initially there should be no documents for the user. Clear
+            #       documents for this user out directly through the
+            #       association table.
+            logger.debug(
+                "Clearing existing associations for user sby modifying the "
+                "association table directly."
+            )
             assocs: List[AssocUserDocument] = list(
                 session.execute(
                     select(AssocUserDocument).where(AssocUserDocument.id_user == 1)
@@ -224,16 +254,14 @@ class TestUser(BaseModelTest):
                 session.delete(assoc)
             session.commit()
 
-            # Verify that the user has no associations.
+            # NOTE: Verify that the user has no associations after deleting
+            #       from the association table.
             logger.debug("Verifying that associations were cleared.")
-            user: User | None = session.execute(
-                select(User).where(User.id == 1)
-            ).scalar()
-            assert user is not None
+            user: User = self.get_user(session)
             assert not user.documents, "Expected no documents for users."
 
-            # Reassign these documents using the orm
-            logger.debug("Reassigning documents to user 1.")
+            # NOTE: Reassign these documents using the orm.
+            logger.debug("Reassigning documents to user 1 using the ORM.")
             documents: List[Document] = list(
                 session.execute(
                     q_docs := select(Document).where(Document.id.between(1, 3))
@@ -246,39 +274,159 @@ class TestUser(BaseModelTest):
         # New session just to be safe
         with sessionmaker() as session:
             logger.debug("Verifying that documents were reassigned.")
-            user = session.execute(select(User).where(User.id == 1)).scalar()
-            session.refresh(user)
-            assert user is not None
+            user = self.get_user(session)
             assert user.documents, "Expected documents to be assigned to user."
 
+            # NOTE: Deletion cannot cascade as it would require adding the
+            #       access level to the join condition. Deletions of this sort
+            #       require additional database operations (verifying that
+            #       the deleted user is the sole owner) and therefore the logic
+            #       will be placed in API endpoints.
+            #
+            # NOTE: Required for **section B.4.a.1** for the above reasons.
+            #
             logger.debug("Deleting user 1.")
             session.delete(user)
             session.commit()
 
-            # NOTE: Deletion cannot cascade as it would require adding the
-            #       access level to the join condition.
             logger.debug("Checking that documents were not deleted.")
             documents = list(session.execute(q_docs).scalars())
             assert documents
 
-            make_transient(user)
-            for collection in user.collections.values():
-                make_transient(collection)
-            for edit in user.edits:
-                make_transient(edit)
-            session.add(user)
+            self.create_user(session)
+            TestCollection.load(session, stop=len(user.collections))
+
+    def test_edits_relationship(self, sessionmaker: sessionmaker[Session]):
+        with sessionmaker() as session:
+            # NOTE: Initialize edits by nullifying the :class:`DocumentHistory`
+            #       objects' `user_id` field. Verify that this is consistent
+            #       with the user object.
+            logger.debug("Initializing edits (no ownership).")
+            edits: List[DocumentHistory] = list(
+                session.execute(
+                    select(DocumentHistory).where(DocumentHistory.id_user == 1)
+                ).scalars()
+            )
+            for edit in edits:
+                edit.id_user = None
+            session.add_all(edits)
             session.commit()
+
+            user = self.get_user(session)
+            assert not user.edits, "Expected no edits."
+
+            # NOTE: Assign edits and commit.
+            edits = list(
+                session.execute(
+                    q_edits := select(DocumentHistory).where(
+                        DocumentHistory.id.between(1, 5)
+                    )
+                ).scalars()
+            )
+            assert len(edits), "Expected edits."
+            user.edits = edits
+            session.commit()
+
+        # New session for good measure
+        with sessionmaker() as session:
+            # NOTE: Verify that the selected edits were asssigned. The user
+            #       should be deleted, but id on the edits should havd id_user
+            #       nullified.
+            #
+            # NOTE: See **section B.4.a.1**. The logic required to determine
+            #       if a user is a sole owner of a document will happen inside
+            #       of api endpoints instead of at the level the ORM. Therefore
+            #       deletion should not be cascaded.
+            #
+            user = self.get_user(session)
+            assert len(user.edits) == len(edits)
+            session.delete(user)
+            session.commit()
+
+            edits = list(session.execute(q_edits).scalars())
+            assert len(edits), "Edits should still exist."
+
+            self.create_user(session)
+            TestCollection.load(session, stop=len(user.collections))
 
 
 class TestCollection(BaseModelTest):
     M = Collection
 
+    def get_collection(self, session, id=1) -> Collection:
+        m = session.execute(select(Collection).where(Collection.id == id)).scalar()
+        if m is None:
+            raise AssertionError("Expected collection with id=`{id}`.")
+        return m
+
     # def test_user_optional(self, sessionmaker: sessionmaker[Session]):
     #     assert print(id(sessionmaker))
     #     ...
 
-    def test_relationships(self, sessionmaker: sessionmaker[Session]):
-        ...
+    def test_user_relationship(self, sessionmaker: sessionmaker[Session]):
+        with sessionmaker() as session:
+            collection = self.get_collection(session)
+            user_initial = collection.user
+            user_final = TestUser.get_user(
+                session,
+                1 + (collection.user.id % 2),
+            )
+            user_initial_id, user_final_id = user_initial.id, user_final.id
+            assert user_final_id != user_initial_id
+
+            collection.user = user_final
+            session.commit()
+
+        with sessionmaker() as session:
+            collection = self.get_collection(session)
+            user_initial = TestUser.get_user(session, user_initial_id)
+            user_final = TestUser.get_user(session, user_final_id)
+            assert collection.name not in user_initial.collections
+            assert collection.name in user_final.collections
+            assert collection.id_user == user_final.id
+
+            collection.user = user_initial
+            session.add(collection)
+            session.commit()
+
+    def test_documents_relationship(self, sessionmaker: sessionmaker[Session]):
+        with sessionmaker() as session:
+            logger.debug("Manually deassigning documents from collection 1.")
+            assocs = list(
+                session.execute(
+                    select(AssocCollectionDocument).where(
+                        AssocCollectionDocument.id_collection == 1
+                    )
+                ).scalars()
+            )
+            for assoc in assocs:
+                assoc.id_collection = None
+            session.add_all(assocs)
+            session.commit()
+
+            logger.debug("Verifying that collection 1 has no documents.")
+            collection = self.get_collection(session)
+            assert not collection.documents, "Expected no documents in collection `1`."
+
+            documents = list(
+                session.execute(
+                    q_docs := select(Document).where(Document.id.between(1, 4))
+                ).scalars()
+            )
+            collection.documents = {dd.name: dd for dd in documents}
+            session.commit()
+
+        with sessionmaker() as session:
+            collection = self.get_collection(session)
+            assert collection.documents
+
+            session.delete(collection)
+            session.commit()
+
+        with sessionmaker() as session:
+            # Test deletion, etc
+            docs = list(session.execute(q_docs).scalars())
+            assert docs
 
 
 class TestDocument(BaseModelTest):

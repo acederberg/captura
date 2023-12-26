@@ -9,8 +9,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
+from tests.test_models import ModelTestMeta
+
 PATH_CONFIG_PYTEST = util.Path.base("config.test.yaml")
 logger = util.get_logger(__name__)
+
+# =========================================================================== #
+# Test configuration and configuration fixture
 
 
 class PytestSubConfig(BaseModel):
@@ -20,6 +25,7 @@ class PytestSubConfig(BaseModel):
         the tables do not exist, they will be created.
     """
 
+    emit_sql: bool = False
     recreate_tables: bool = False
 
 
@@ -40,9 +46,6 @@ class PytestConfig(Config):
     tests: PytestSubConfig
 
 
-print(PytestConfig())
-
-
 # NOTE: Session scoping works like fastapi dependency caching, so these will
 #       only ever be called once in a test session.
 @pytest.fixture(scope="session")
@@ -51,16 +54,37 @@ def config() -> PytestConfig:
     return PytestConfig()  # type: ignore
 
 
+# =========================================================================== #
+# Database fixtures
+
+
 @pytest.fixture(scope="session")
-def engine(config: Config) -> Engine:
+def engine(config: PytestConfig) -> Engine:
     logger.debug("`engine` fixture called.")
-    return config.engine()
+    return config.engine(echo=config.tests.emit_sql)
 
 
 @pytest.fixture(scope="session")
 def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
     logger.debug("`sessionmaker` fixture called.")
     return _sessionmaker(engine)
+
+
+# --------------------------------------------------------------------------- #
+# Loading fixtures
+
+
+@pytest.fixture(scope="session", autouse=True)
+def load_tables(sessionmaker: _sessionmaker[Session], setup_cleanup):
+    logger.info("Reloading tables (fixture `load_tables`).")
+    with sessionmaker() as session:
+        for table in Base.metadata.sorted_tables:
+            cls = ModelTestMeta.__children__.get(table.name)
+            if cls is None:
+                logger.debug("No dummies for `%s`.", table.name)
+                continue
+            cls.clean(session)
+            cls.load(session)
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -86,6 +86,6 @@ class Config(BaseYamlSettings):
     )
     mysql: MySqlConfig
 
-    def engine(self) -> Engine:
+    def engine(self, **kwargs) -> Engine:
         url = URL.create(**self.mysql.host.model_dump())
-        return create_engine(url)
+        return create_engine(url, **kwargs)

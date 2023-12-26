@@ -108,13 +108,14 @@ B. Specifications
 
 4. Deletion:
    a. When a user is soft deleted (hidden),
-      1. The ``Document`` objects owned by the user will also be soft deleted.
-         The edits to these documents will be soft deleted.
+      1. The ``Document`` objects will also be soft deleted when the user is
+         the SOLE OWNER. The edits to these documents will be hard deleted.
       2. Edits to documents not owned by the user will be preserved and
          continue to use the username to display the edits.
 
-      when a user is hard deleted, the ``DocumentHistory`` entries associated
-      with it should not be deleted.
+      To reiterate, when a user is hard deleted, the ``DocumentHistory``
+      entries associated with it should not be deleted except for articles for
+      which the user is the sole owner.
    b. ``Collection`` objects should not cascade soft deletion to the associated
       ``Document`` objects.
       1. In the case that document has all of its ``Collection`` objects

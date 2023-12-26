@@ -83,7 +83,7 @@ class User(Base, MixinsPrimary):
     )
 
     edits: Mapped[List["DocumentHistory"]] = relationship(
-        cascade="all, delete",
+        # cascade="all, delete",
         back_populates="user",
         primaryjoin="User.id==DocumentHistory.id_user",
     )
@@ -151,7 +151,7 @@ class DocumentHistory(Base, MixinsSecondary):
     __tablename__ = "document_histories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     id_document: Mapped[int] = mapped_column(ForeignKey("documents.id"))
     content_previous: Mapped[int] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
 
