@@ -437,8 +437,83 @@ class TestDocument(BaseModelTest):
         item.content = bytes(item.content, "utf-8")
         return item
 
-    # def test_whatever(self, sessionmaker: sessionmaker[Session]):
-    #     ...
+    def get_document(self, session: Session, id: int = 1) -> Document:
+        m = session.execute(select(Document).where(Document.id == id)).scalar()
+        if m is None:
+            raise ValueError(f"Could not find document with id `{id}`.")
+        return m
+
+    def test_collection_relation(self, sessionmaker: sessionmaker[Session]):
+        """Redundant."""
+        with sessionmaker() as session:
+            logger.debug("Manually nullifying collections for document `1`.")
+            assocs = list(
+                session.execute(
+                    select(AssocCollectionDocument).where(
+                        AssocCollectionDocument.id_document == 1
+                    )
+                ).scalars()
+            )
+            for assoc in assocs:
+                session.delete(assoc)
+            session.commit()
+
+            logger.debug("Verifying that document `1` has no collections.")
+            document = self.get_document(session)
+            assert (
+                not document.collections
+            ), "Expected document `1` to have no collections."
+
+            logger.debug("Assigning collections for document `1`.")
+            collections: List[Collection] = list(
+                session.execute(
+                    q_collections := select(Collection).where(
+                        Collection.id.between(1, 5)
+                    )
+                ).scalars(),
+            )
+            assert (
+                n_collections := len(collections)
+            ) > 0, "Expected to find collections."
+            document.collections = {cc.name: cc for cc in collections}
+            session.commit()
+
+        with sessionmaker() as session:
+            document = self.get_document(session)
+            assert len(document.collections) == n_collections
+
+            # NOTE: Deleting the collection should not delete the document. See
+            #       **section B.4.b**.
+            session.delete(document)
+            session.commit()
+
+            collections = list(session.execute(q_collections).scalars())
+            assert len(collections) == n_collections, (
+                f"Expected `{n_collections}` results from execution of "
+                "`q_collections`."
+            )
+
+            make_transient(document)
+            session.add(document)
+            session.commit()
+
+    def test_edits_relationship(self, sessionmaker: sessionmaker[Session]):
+        with sessionmaker() as session:
+            document = self.get_document(session, 6)
+            assert len(document.edits) > 1, "Expected edits for document 6."
+
+        with sessionmaker() as session:
+            edit_ids: List[int] = list(edit.id for edit in document.edits)
+
+            session.delete(document)
+            session.commit()
+
+            edit_ids_final = list(
+                session.execute(
+                    select(DocumentHistory.id).where(DocumentHistory.id.in_(edit_ids))
+                ).scalars()
+            )
+            assert not edit_ids_final, "Expected edits for document `6` to be deleted."
 
 
 class TestDocumentHistory(BaseModelTest):
