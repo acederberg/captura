@@ -82,10 +82,10 @@ class User(Base, MixinsPrimary):
         primaryjoin="User.id==Collection.id_user",
     )
 
-    edits: Mapped[List["DocumentHistory"]] = relationship(
+    edits: Mapped[List["Edit"]] = relationship(
         # cascade="all, delete",
         back_populates="user",
-        primaryjoin="User.id==DocumentHistory.id_user",
+        primaryjoin="User.id==Edit.id_user",
     )
 
     documents: Mapped[Dict[str, "Document"]] = relationship(
@@ -130,10 +130,10 @@ class Document(Base, MixinsSecondary):
     content: Mapped[str] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
     content_fmt: Mapped[str] = mapped_column(String(8))
 
-    edits: Mapped[List["DocumentHistory"]] = relationship(
+    edits: Mapped[List["Edit"]] = relationship(
         cascade="all, delete",
         back_populates="document",
-        primaryjoin="Document.id==DocumentHistory.id_document",
+        primaryjoin="Document.id==Edit.id_document",
     )
     users: Mapped[Dict[str, User]] = relationship(
         collection_class=attribute_keyed_dict("name"),
@@ -147,8 +147,8 @@ class Document(Base, MixinsSecondary):
     )
 
 
-class DocumentHistory(Base, MixinsSecondary):
-    __tablename__ = "document_histories"
+class Edit(Base, MixinsSecondary):
+    __tablename__ = "edits"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -156,12 +156,12 @@ class DocumentHistory(Base, MixinsSecondary):
     content_previous: Mapped[int] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
 
     user: Mapped[User] = relationship(
-        primaryjoin="User.id==DocumentHistory.id_user",
+        primaryjoin="User.id==Edit.id_user",
         back_populates="edits",
     )
 
     document: Mapped[Document] = relationship(
-        primaryjoin="Document.id==DocumentHistory.id_document",
+        primaryjoin="Document.id==Edit.id_document",
         back_populates="edits",
     )
 
@@ -173,5 +173,5 @@ __all__ = (
     "AssocCollectionDocument",
     "AssocUserDocument",
     "Document",
-    "DocumentHistory",
+    "Edit",
 )

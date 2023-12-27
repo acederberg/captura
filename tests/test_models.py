@@ -9,7 +9,7 @@ from app.models import (
     Base,
     Collection,
     Document,
-    DocumentHistory,
+    Edit,
     User,
 )
 from sqlalchemy import delete, func, select
@@ -101,7 +101,7 @@ class TestUser(BaseModelTest):
         Documents should not cascade deletion except for documents that user
         is the sole owner of, as stated in **section B.4.a.1**, but the plan
         is to enforce this at the API level. The same applies for the
-        :attr:`DocumentHistory` objects associated with the document. This
+        :attr:`Edit` objects associated with the document. This
         implies that only the :class:`Collection` objects associated with the
         user must be regenerated along with the user.
 
@@ -298,13 +298,13 @@ class TestUser(BaseModelTest):
 
     def test_edits_relationship(self, sessionmaker: sessionmaker[Session]):
         with sessionmaker() as session:
-            # NOTE: Initialize edits by nullifying the :class:`DocumentHistory`
+            # NOTE: Initialize edits by nullifying the :class:`Edit`
             #       objects' `user_id` field. Verify that this is consistent
             #       with the user object.
             logger.debug("Initializing edits (no ownership).")
-            edits: List[DocumentHistory] = list(
+            edits: List[Edit] = list(
                 session.execute(
-                    select(DocumentHistory).where(DocumentHistory.id_user == 1)
+                    select(Edit).where(Edit.id_user == 1)
                 ).scalars()
             )
             for edit in edits:
@@ -318,8 +318,8 @@ class TestUser(BaseModelTest):
             # NOTE: Assign edits and commit.
             edits = list(
                 session.execute(
-                    q_edits := select(DocumentHistory).where(
-                        DocumentHistory.id.between(1, 5)
+                    q_edits := select(Edit).where(
+                        Edit.id.between(1, 5)
                     )
                 ).scalars()
             )
@@ -508,19 +508,19 @@ class TestDocument(BaseModelTest):
             session.delete(document)
             session.commit()
 
-            q = select(DocumentHistory.id)
-            q = q.where(DocumentHistory.id.in_(edit_ids))
+            q = select(Edit.id)
+            q = q.where(Edit.id.in_(edit_ids))
             edit_ids_final = list(session.execute(q).scalars())
             assert not edit_ids_final, "Expected no edits for document `6`."
 
 
 # NOTE: Other sides of relationships tested. Not going to bother testing as a
 #       result.
-class TestDocumentHistory(BaseModelTest):
-    M = DocumentHistory
+class TestEdit(BaseModelTest):
+    M = Edit
 
     @classmethod
-    def preload(cls, item: DocumentHistory) -> DocumentHistory:
+    def preload(cls, item: Edit) -> Edit:
         item.content_previous = bytes(
             item.content_previous,
             "utf-8",
