@@ -18,7 +18,7 @@ Instead do
 
     from app import depends
 
-    def is_local() -> bool:
+    def is_local(config: Annotated[Config, Depends(Config)]) -> bool:
         return config.m
 """
 import logging

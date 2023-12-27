@@ -508,18 +508,21 @@ class TestDocument(BaseModelTest):
             session.delete(document)
             session.commit()
 
-            edit_ids_final = list(
-                session.execute(
-                    select(DocumentHistory.id).where(DocumentHistory.id.in_(edit_ids))
-                ).scalars()
-            )
-            assert not edit_ids_final, "Expected edits for document `6` to be deleted."
+            q = select(DocumentHistory.id)
+            q = q.where(DocumentHistory.id.in_(edit_ids))
+            edit_ids_final = list(session.execute(q).scalars())
+            assert not edit_ids_final, "Expected no edits for document `6`."
 
 
+# NOTE: Other sides of relationships tested. Not going to bother testing as a
+#       result.
 class TestDocumentHistory(BaseModelTest):
     M = DocumentHistory
 
     @classmethod
-    def preload(cls, item: Document) -> Document:
-        item.content_previous = bytes(item.content_previous, "utf-8")
+    def preload(cls, item: DocumentHistory) -> DocumentHistory:
+        item.content_previous = bytes(
+            item.content_previous,
+            "utf-8",
+        )  # type: ignore
         return item
