@@ -37,7 +37,7 @@ from yaml_settings_pydantic import (
 
 from app.util import Path
 
-PREFIX = "DOCUMENTS_SERVER_"
+PREFIX = "ARTICLES_"
 PATH_CONFIG = environ.get(PREFIX + "CONFIG_PATH") or Path.base("config.yaml")
 
 
@@ -72,6 +72,28 @@ class MySqlConfig(BaseModel):
     host: MySqlHostConfig
 
 
+class Auth0ApiConfig(BaseModel):
+    audience: str
+
+
+class Auth0AppConfig(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+class Auth0Config(BaseModel):
+    """
+
+    :param issuer: FDQN for the auth0 tenant which will issue the tokens. This
+        should not contain the scheme (e.g. ``https://``) or any terminating
+        ``/``.
+    """
+
+    issuer: str
+    api: Auth0ApiConfig
+    app: Auth0AppConfig
+
+
 class AppConfig(BaseModel):
     # log_level: Literal["DEBUG", "INFO", "WARNING", "CRITICAL"]
     port: int = 8080
@@ -85,6 +107,7 @@ class Config(BaseYamlSettings):
         env_nested_delimiter="__",
     )
     mysql: MySqlConfig
+    auth0: Auth0Config
 
     def engine(self, **kwargs) -> Engine:
         url = URL.create(**self.mysql.host.model_dump())
