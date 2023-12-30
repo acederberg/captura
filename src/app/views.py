@@ -8,9 +8,17 @@ from typing import Annotated, Any, ClassVar, Dict, List, Literal, Type
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 
 from app import util
-from app.depends import DependsFilter, DependsSessionMaker
+from app.depends import (
+    DependsAuth,
+    DependsConfig,
+    DependsFilter,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUUID,
+)
 from app.models import Collection, Edit, User
 from app.schemas import (
     CollectionSchema,
@@ -199,16 +207,23 @@ class UserView(BaseView):
         post_document_access="/{uuid}/grant",
     )
 
+    # ----------------------------------------------------------------------- #
+    # READ endpoints.
+
     @classmethod
     def get_user(
         cls,
         makesession: DependsSessionMaker,
-        uuid: str,
+        token: DependsToken,
+        uuid: DependsUUID,
     ) -> UserSchema:
         """Get user metadata.
 
         For instance, this should be used to make a profile page.
         """
+
+        if uuid is None:
+            uuid = token["uuid"]
         with makesession() as session:
             result: None | User = session.execute(
                 select(User).where(User.uuid == uuid)
@@ -217,17 +232,23 @@ class UserView(BaseView):
                 raise HTTPException(404)
             return result  # type: ignore
 
+    # NOTE: The token depends is included since API billing will depend on
+    #       users having a valid token. Later I would like to make it such that
+    #       it will also accept requests without tokens from particular
+    #       origins, for instance a site where articles may be publicly viewed.
     @classmethod
     def get_users(
         cls,
         makesession: DependsSessionMaker,
+        token: DependsToken,
         filter: DependsFilter,
-        collaborators: bool = False,
+        # collaborators: bool = False,
     ) -> List[UserSchema]:
         """Get user collaborators or just list some users.
 
         Once authentication is integrated, getting collaborators will be
-        possible.
+        possible. Collaborators will only be possible when the caller has an
+        account, otherwise some random users should be returned.
         """
         with makesession() as session:
             result: List[User] = list(
@@ -235,14 +256,16 @@ class UserView(BaseView):
             )
             if not len(result):
                 raise HTTPException(204)
-            return result
+            return result  # type: ignore
 
-    # NOTE: Add a ``message`` field to :class:`Edit`.
+    # NOTE: This should not be decorated but should be used in the individual
+    #       getters with clearer (not a union) type hints (the ``child``
+    #       parameter will not appear in actual endpoints.).
     @classmethod
-    def get_user_child(
+    def select_user_child(
         cls,
         child: Literal["collections", "edits", "documents"],
-        makesession: DependsSessionMaker,
+        makesession: sessionmaker[Session],
         uuid: str,
     ) -> (
         List[CollectionSchema] | List[EditMetadataSchema] | List[DocumentMetadataSchema]
@@ -266,6 +289,9 @@ class UserView(BaseView):
 
             return children
 
+    # ----------------------------------------------------------------------- #
+    # CRUD without R
+
     @classmethod
     def patch_user(cls):
         """Update a user."""
@@ -283,6 +309,9 @@ class UserView(BaseView):
     ):
         """This should be the endpoint that should be used by the login flow."""
         ...
+
+    # ----------------------------------------------------------------------- #
+    # Sharing.
 
     @classmethod
     def post_document_access(
@@ -302,12 +331,37 @@ class UserView(BaseView):
         ...
 
 
-class Auth0View(BaseView):
-    """This is where auth0 will host routes to handle login and getting
-    tokens.
-    """
+class AuthView(BaseView):
+    """This is where routes to handle login and getting tokens will be."""
 
-    ...
+    view_routes = {"post_token": "/token", "get_login": "/login"}
+
+    @classmethod
+    def post_token(
+        cls, config: DependsConfig, auth: DependsAuth, payload: Dict[str, Any]
+    ) -> str:
+        """Use this to create a new token.
+
+        This endpoint only works when authentication is in pytest mode, and
+        will not use auth0 mode. NEVER run this application in production while
+        using tokens in endpoint mode, it will allow undesired access to user
+        information (because anybody could imitate any user by minting a token
+        with that particular users UUID.
+        """
+        if config.auth0.use:
+            raise HTTPException(
+                409,
+                detail="Token minting is not available in auth0 mode.",
+            )
+        return auth.encode(payload)
+
+    @classmethod
+    def get_login(cls, config: DependsConfig):
+        if not config.auth0.use:
+            raise HTTPException(
+                409,
+                detail="Login is not available in pytest mode.",
+            )
 
 
 class AppView(BaseView):
@@ -317,7 +371,7 @@ class AppView(BaseView):
         "/users": UserView,
         "/collections": CollectionView,
         "/documents": DocumentView,
-        "/auth": Auth0View,
+        "/auth": AuthView,
     }
 
     @classmethod

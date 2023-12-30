@@ -92,8 +92,9 @@ def auth(config: DependsConfig) -> Auth:
     :returns: The authentication handler defined in :module:`.auth` for
         ``auth0`` specified by :param:``.
     """
+
     logger.debug("Dependency `auth` called.")
-    return Auth.forAuth0(config) if config.auth0.use else Auth.forPyTest(config)
+    return (Auth.forAuth0 if config.auth0.use else Auth.forPyTest)(config)
 
 
 DependsAuth: TypeAlias = Annotated[Auth, Depends(auth)]
@@ -114,7 +115,7 @@ def token(
         :const:`PATTERN_BEARER`.
     """
     try:
-        return auth.decode(config, authorization)
+        return auth.decode(authorization)
     except jwt.DecodeError:
         _msg = "Failed to decode bearer token."
     except jwt.InvalidAudienceError:
@@ -127,7 +128,19 @@ def token(
     raise HTTPException(401, detail="Invalid Token: " + _msg)
 
 
-DependsToken: TypeAlias = Annotated[Dict[str, str], token]
+DependsToken: TypeAlias = Annotated[Dict[str, str], Depends(token)]
+
+
+def uuid(token: DependsToken, uuid: str | None = None) -> str:
+    """Get the user UUID either from the token or get the uuid from query
+    parameters.
+
+    Be careful when using this on endpoints that specific to one user.
+    """
+    return uuid if uuid is not None else token["uuid"]
+
+
+DependsUUID: TypeAlias = Annotated[str, Depends(uuid)]
 
 
 # NOTE: Caching should make it such that this function is not invoked multiple
