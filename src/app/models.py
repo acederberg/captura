@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 from typing import Dict, List
 
@@ -10,6 +11,7 @@ LENGTH_NAME: int = 64
 LENGTH_TITLE: int = 128
 LENGTH_DESCRIPTION: int = 256
 LENGTH_URL: int = 256
+LENGTH_MESSAGE: int = 1024
 LENGTH_CONTENT: int = 2**15
 
 
@@ -18,18 +20,27 @@ class Base(DeclarativeBase):
 
 
 class MixinsPrimary:
+    uuid: Mapped[str] = mapped_column(
+        String(16), default=lambda: secrets.token_urlsafe(8), index=True
+    )
+
     _created_timestamp: Mapped[int] = mapped_column(
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
     _updated_timestamp: Mapped[int] = mapped_column(default=_now)
+    _deleted_timestamp: Mapped[int] = mapped_column(nullable=True)
 
 
 class MixinsSecondary(MixinsPrimary):
-    _created_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+    _deleted_by: Mapped[str] = mapped_column(
+        ForeignKey("users.uuid"),
+        nullable=True,
     )
-    _updated_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), nullable=True
+    _created_by_user_uuid: Mapped[str] = mapped_column(
+        ForeignKey("users.uuid"), nullable=True
+    )
+    _updated_by_user_uuid: Mapped[str] = mapped_column(
+        ForeignKey("users.uuid"), nullable=True
     )
 
 
@@ -153,7 +164,8 @@ class Edit(Base, MixinsSecondary):
     id: Mapped[int] = mapped_column(primary_key=True)
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     id_document: Mapped[int] = mapped_column(ForeignKey("documents.id"))
-    content_previous: Mapped[int] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
+    content: Mapped[int] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
+    message: Mapped[str] = mapped_column(String(LENGTH_MESSAGE), nullable=True)
 
     user: Mapped[User] = relationship(
         primaryjoin="User.id==Edit.id_user",

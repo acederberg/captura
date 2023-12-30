@@ -3,13 +3,23 @@
 This includes a metaclass so that undecorated functions may be tested.
 """
 import logging
-from typing import Any, ClassVar, Dict, Literal, Type
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Type
 
-from fastapi import APIRouter, FastAPI
-from typing_extensions import Self
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.routing import APIRoute
+from sqlalchemy import select
 
 from app import util
-from app.models import Collection, Document, User
+from app.depends import DependsFilter, DependsSessionMaker
+from app.models import Collection, Edit, User
+from app.schemas import (
+    CollectionSchema,
+    DocumentMetadataSchema,
+    DocumentSchema,
+    EditMetadataSchema,
+    EditSchema,
+    UserSchema,
+)
 
 logger = util.get_logger(__name__)
 
@@ -38,6 +48,27 @@ class ViewMeta(type):
     It will build a router under `view`.
     """
 
+    @classmethod
+    def add_route(cls, T, name_fn: str, route: APIRoute):
+        name = T.__name__
+        if "_" not in name_fn:
+            logger.debug(
+                "Ignoring `%s -> %s` of `%s.view_routes`.", name_fn, route, name
+            )
+            return
+
+        logger.debug("Adding `%s` to `%s` router at `%s`.", name_fn, name, route)
+        http_meth, _ = name_fn.split("_", 1)
+        match http_meth:
+            case "get" | "post" | "delete" | "patch" | "put":
+                fn = getattr(T, name_fn, None)
+                if fn is None:
+                    msg = f"No such method `{name_fn}` of `{name}`."
+                    raise ValueError(msg)
+                getattr(T.view_router, http_meth)(route)(fn)  # type: ignore
+            case _:
+                logger.debug("Skipping `%s.%s`.", name, name_fn)
+
     def __new__(cls, name, bases, namespace):
         T = super().__new__(cls, name, bases, namespace)
         logger.debug("Validating `%s` router.", name)
@@ -63,28 +94,13 @@ class ViewMeta(type):
         if name != "BaseView":
             # Create router.
             logger.debug("Creating router for `%s`.", name)
-            router = (
+            T.view_router = (  # type: ignore
                 T.view_router  # type: ignore
                 if hasattr(T, "view_router")
                 else APIRouter(**T.view_router_args)  # type: ignore
             )
             for name_fn, route in T.view_routes.items():  # type: ignore
-                if "_" not in name_fn:
-                    continue
-
-                logger.debug(
-                    "Adding `%s` to `%s` router at `%s`.", name_fn, name, route
-                )
-                http_meth, _ = name_fn.split("_", 1)
-                match http_meth:
-                    case "get" | "post" | "delete" | "patch" | "put":
-                        fn = getattr(T, name_fn, None)
-                        if fn is None:
-                            msg = f"No such method `{name_fn}` of `{name}`."
-                            raise ValueError(msg)
-                        getattr(router, http_meth)(route)(fn)
-                    case _:
-                        logger.debug("Skipping `%s.%s`.", name, name_fn)
+                cls.add_route(T, name_fn, route)
 
             for child_prefix, child in T.view_children.items():  # type: ignore
                 logger.debug(
@@ -92,8 +108,10 @@ class ViewMeta(type):
                     child_prefix,
                     name,
                 )
-                router.include_router(child.view_router, prefix=child_prefix)
-            T.view_router = router  # type: ignore
+                T.view_router.include_router(  # type: ignore
+                    child.view_router,
+                    prefix=child_prefix,
+                )
 
         return T
 
@@ -172,25 +190,63 @@ class UserView(BaseView):
     """
 
     view_routes = dict(
-        get_user="/",
-        patch_user="/",
-        delete_user="/",
+        get_users="",
+        get_user="{uuid}",
+        patch_user="{}",
+        delete_user="",
         post_user="/register",
-        get_user_child="/{child}/",
-        post_document_access="/grant",
+        get_user_child="/{child}",
+        post_document_access="/{uuid}/grant",
     )
 
     @classmethod
-    def get_user(cls, filter_params):
+    def get_user(
+        cls,
+        makesession: DependsSessionMaker,
+        uuid: str,
+    ) -> UserSchema:
         """Get user metadata.
 
         For instance, this should be used to make a profile page.
         """
-        ...
+        with makesession() as session:
+            result: None | User = session.execute(
+                select(User).where(User.uuid == uuid)
+            ).scalar()
+            if result is None:
+                raise HTTPException(404)
+            return result  # type: ignore
+
+    @classmethod
+    def get_users(
+        cls,
+        makesession: DependsSessionMaker,
+        filter: DependsFilter,
+        collaborators: bool = False,
+    ) -> List[UserSchema]:
+        """Get user collaborators or just list some users.
+
+        Once authentication is integrated, getting collaborators will be
+        possible.
+        """
+        with makesession() as session:
+            result: List[User] = list(
+                session.execute(select(User).limit(filter.limit)).scalars()
+            )
+            if not len(result):
+                raise HTTPException(204)
+            return result
 
     # NOTE: Add a ``message`` field to :class:`Edit`.
     @classmethod
-    def get_user_child(cls, child: Literal["collections", "edits"], filter_params):
+    def get_user_child(
+        cls,
+        child: Literal["collections", "edits", "documents"],
+        makesession: DependsSessionMaker,
+        uuid: str,
+    ) -> (
+        List[CollectionSchema] | List[EditMetadataSchema] | List[DocumentMetadataSchema]
+    ):
         """Get user ``collections`` and ``edits`` data without content.
 
         :param child: Child to get metadata for. Must be one of ``collections``
@@ -199,7 +255,16 @@ class UserView(BaseView):
             to display.
         """
 
-        ...
+        with makesession() as session:
+            result: None | User = session.execute(
+                select(User).where(User.uuid == uuid)
+            ).scalar()
+            children: List[Collection] | List[Edit] | None
+            children = getattr(result, child, None)
+            if children is None:
+                raise HTTPException(418, detail="This is awkward.")
+
+            return children
 
     @classmethod
     def patch_user(cls):
@@ -246,7 +311,8 @@ class Auth0View(BaseView):
 
 
 class AppView(BaseView):
-    view_routes = {"/": "index"}
+    view_router = FastAPI()  # type: ignore
+    view_routes = {"get_index": "/"}
     view_children = {
         "/users": UserView,
         "/collections": CollectionView,
@@ -255,10 +321,5 @@ class AppView(BaseView):
     }
 
     @classmethod
-    def index(cls):
-        return "It works!"
-
-
-# AppView.view_router.include_router(UserView.view_router, prefix="/users")
-print(len(UserView.view_router.routes))
-print(len(APIRouter().routes))
+    def get_index(cls, uuid: int, makesession: DependsSessionMaker) -> None:
+        ...

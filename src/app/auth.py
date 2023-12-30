@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import secrets
 from typing import Any, Dict
 
@@ -10,6 +11,12 @@ from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicK
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.config import Config
+
+# Do not touch this! This pattern will have to run against many requests.
+PATTERN_BEARER: re.Pattern = re.compile(
+    "^Bearer (?P<token>(?P<header>[\\w-]+).(?P<payload>[\\w-]+).(?P<signature>[\\w-]+))$",
+    flags=re.I,
+)
 
 
 class Auth:
@@ -67,14 +74,13 @@ class Auth:
         split = raw.split(".")
         if not len(split) == 3:
             raise ValueError("Malformed JWT: Not enough segments.")
-        print(split[0])
         payload = base64.b64decode(str(split[0]) + "==")
         payload = json.loads(payload)
         kid = payload["kid"]  # type: ignore
         return jwt.decode(
             raw,
             self.public_keys[kid],
-            algorithms="RS256",
+            algorithms="RS256",  # type: ignore
             audience=config.auth0.api.audience,
             issuer=config.auth0.issuer,
         )

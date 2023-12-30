@@ -521,8 +521,8 @@ class TestEdit(BaseModelTest):
 
     @classmethod
     def preload(cls, item: Edit) -> Edit:
-        item.content_previous = bytes(
-            item.content_previous,
+        item.content = bytes(
+            item.content,
             "utf-8",
         )  # type: ignore
         return item
