@@ -29,6 +29,7 @@ from app.models import User
 logger = util.get_logger(__name__)
 
 
+@cache
 def config() -> Config:
     """The configuration dependency function.
 
@@ -43,9 +44,10 @@ def config() -> Config:
     return Config()  # type: ignore
 
 
-DependsConfig: TypeAlias = Annotated[Config, Depends(config)]
+DependsConfig: TypeAlias = Annotated[Config, Depends(config, use_cache=False)]
 
 
+@cache
 def engine(config: DependsConfig) -> Engine:
     """The engine dependency function.
 
@@ -64,9 +66,10 @@ def engine(config: DependsConfig) -> Engine:
     return config.engine()
 
 
-DependsEngine: TypeAlias = Annotated[Engine, Depends(engine)]
+DependsEngine: TypeAlias = Annotated[Engine, Depends(engine, use_cache=False)]
 
 
+@cache
 def session_maker(engine: DependsEngine) -> sessionmaker[Session]:
     """
     :param engine: An ``sqlalchemy.engine``, probably from :func:`engine`.
@@ -77,7 +80,7 @@ def session_maker(engine: DependsEngine) -> sessionmaker[Session]:
 
 
 DependsSessionMaker: TypeAlias = Annotated[
-    sessionmaker[Session], Depends(session_maker)
+    sessionmaker[Session], Depends(session_maker, use_cache=False)
 ]
 
 
@@ -86,7 +89,9 @@ DependsSessionMaker: TypeAlias = Annotated[
 
 
 @cache
-def auth(config: DependsConfig) -> Auth:
+def auth(
+    config: DependsConfig,
+) -> Auth:
     """
     :param: Application configuration. Specifies ``auth0`` configuration.
     :returns: The authentication handler defined in :module:`.auth` for
@@ -97,12 +102,11 @@ def auth(config: DependsConfig) -> Auth:
     return (Auth.forAuth0 if config.auth0.use else Auth.forPyTest)(config)
 
 
-DependsAuth: TypeAlias = Annotated[Auth, Depends(auth)]
+DependsAuth: TypeAlias = Annotated[Auth, Depends(auth, use_cache=False)]
 
 
 @cache
 def token(
-    config: DependsConfig,
     auth: DependsAuth,
     authorization: Annotated[str, Header()],
 ) -> Dict[str, str]:
@@ -124,6 +128,8 @@ def token(
         _msg = "Invalid bearer token issuer."
     except jwt.InvalidTokenError:
         _msg = "Invalid bearer token."
+    except ValueError as err:
+        _msg = err.args[0]
 
     raise HTTPException(401, detail="Invalid Token: " + _msg)
 

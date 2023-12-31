@@ -41,7 +41,17 @@ PREFIX = "ARTICLES_"
 PATH_CONFIG = environ.get(PREFIX + "CONFIG_PATH") or Path.base("config.yaml")
 
 
-class MySqlHostConfig(BaseModel):
+class BaseHashable(BaseModel):
+    """Hashable model.
+
+    This enables caching of the configuration dependency.
+    """
+
+    def __hash__(self):
+        return hash((type(self),) + tuple(self.__dict__.values()))
+
+
+class MySqlHostConfig(BaseHashable):
     """Configuration for specifying they mysql connection.
 
     This should include SSL once it is necessary. All field names should be
@@ -68,20 +78,20 @@ class MySqlHostConfig(BaseModel):
     database: Annotated[str, Field("documents")]
 
 
-class MySqlConfig(BaseModel):
+class MySqlConfig(BaseHashable):
     host: MySqlHostConfig
 
 
-class Auth0ApiConfig(BaseModel):
+class Auth0ApiConfig(BaseHashable):
     audience: str
 
 
-class Auth0AppConfig(BaseModel):
+class Auth0AppConfig(BaseHashable):
     client_id: str
     client_secret: str
 
 
-class Auth0Config(BaseModel):
+class Auth0Config(BaseHashable):
     """
 
     :attr issuer: FDQN for the auth0 tenant which will issue the tokens. This
@@ -99,12 +109,12 @@ class Auth0Config(BaseModel):
     app: Auth0AppConfig
 
 
-class AppConfig(BaseModel):
+class AppConfig(BaseHashable):
     # log_level: Literal["DEBUG", "INFO", "WARNING", "CRITICAL"]
     port: int = 8080
 
 
-class Config(BaseYamlSettings):
+class Config(BaseHashable, BaseYamlSettings):
     model_config = YamlSettingsConfigDict(
         yaml_files=PATH_CONFIG,
         yaml_reload=False,

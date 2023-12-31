@@ -59,12 +59,32 @@ class BaseSchema(BaseModel):
     created_by_user_uuid: UUID
 
 
+# =========================================================================== #
+# User schemas
+
+
+class UserUpdateSchema(BaseModel):
+    name: Name | None = None
+    description: Description | None = None
+    url_image: Url = None
+    url: Url = None
+
+
 class UserSchema(BaseModel):
-    uuid: UUID
+    uuid: UUID = None
     name: Name
     description: Description
-    url_image: Url
-    url: Url
+    url_image: Url = None
+    url: Url = None
+
+
+# =========================================================================== #
+
+
+class CollectionMetadataSchema(BaseModel):
+    uuid: UUID
+    # name: Name # excluded bc metadata is labeled by name
+    description: Description
 
 
 class CollectionSchema(BaseModel):
@@ -75,11 +95,12 @@ class CollectionSchema(BaseModel):
 
 class DocumentMetadataSchema(BaseModel):
     uuid: UUID
-    name: Name
+    # name: Name
     description: Description
 
 
 class DocumentSchema(DocumentMetadataSchema):
+    name: Name
     content: Content
     content_fmt: Format
 

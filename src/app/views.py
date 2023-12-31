@@ -5,7 +5,7 @@ This includes a metaclass so that undecorated functions may be tested.
 import logging
 from typing import Annotated, Any, ClassVar, Dict, List, Literal, Type
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -19,14 +19,17 @@ from app.depends import (
     DependsToken,
     DependsUUID,
 )
-from app.models import Collection, Edit, User
+from app.models import Collection, Document, Edit, User
 from app.schemas import (
+    UUID,
+    CollectionMetadataSchema,
     CollectionSchema,
     DocumentMetadataSchema,
     DocumentSchema,
     EditMetadataSchema,
     EditSchema,
     UserSchema,
+    UserUpdateSchema,
 )
 
 logger = util.get_logger(__name__)
@@ -199,11 +202,13 @@ class UserView(BaseView):
 
     view_routes = dict(
         get_users="",
-        get_user="{uuid}",
-        patch_user="{}",
-        delete_user="",
-        post_user="/register",
-        get_user_child="/{child}",
+        get_user="/{uuid}",
+        patch_user="/{uuid}",
+        delete_user="/{uuid}",
+        post_user="",
+        get_user_documents="/{uuid}/documents",
+        get_user_edits="/{uuid}/edits",
+        get_user_collections="/{uuid}/collections",
         post_document_access="/{uuid}/grant",
     )
 
@@ -229,7 +234,7 @@ class UserView(BaseView):
                 select(User).where(User.uuid == uuid)
             ).scalar()
             if result is None:
-                raise HTTPException(404)
+                raise HTTPException(204)
             return result  # type: ignore
 
     # NOTE: The token depends is included since API billing will depend on
@@ -240,8 +245,8 @@ class UserView(BaseView):
     def get_users(
         cls,
         makesession: DependsSessionMaker,
-        token: DependsToken,
         filter: DependsFilter,
+        token: DependsToken,
         # collaborators: bool = False,
     ) -> List[UserSchema]:
         """Get user collaborators or just list some users.
@@ -267,9 +272,7 @@ class UserView(BaseView):
         child: Literal["collections", "edits", "documents"],
         makesession: sessionmaker[Session],
         uuid: str,
-    ) -> (
-        List[CollectionSchema] | List[EditMetadataSchema] | List[DocumentMetadataSchema]
-    ):
+    ) -> Any:
         """Get user ``collections`` and ``edits`` data without content.
 
         :param child: Child to get metadata for. Must be one of ``collections``
@@ -282,33 +285,104 @@ class UserView(BaseView):
             result: None | User = session.execute(
                 select(User).where(User.uuid == uuid)
             ).scalar()
-            children: List[Collection] | List[Edit] | None
+            children: List[Collection] | List[Edit] | List[Document] | None
             children = getattr(result, child, None)
+            print(child, result)
             if children is None:
                 raise HTTPException(418, detail="This is awkward.")
 
-            return children
+            return children  # type: ignore
+
+    @classmethod
+    def get_user_documents(
+        cls, makesession: DependsSessionMaker, uuid: str
+    ) -> Dict[str, DocumentMetadataSchema]:
+        return cls.select_user_child(
+            "documents",
+            makesession,
+            uuid,
+        )
+
+    @classmethod
+    def get_user_collections(
+        cls, makesession: DependsSessionMaker, uuid: str
+    ) -> Dict[str, CollectionMetadataSchema]:
+        return cls.select_user_child(
+            "collections",
+            makesession,
+            uuid,
+        )
+
+    @classmethod
+    def get_user_edits(
+        cls, makesession: DependsSessionMaker, uuid: str
+    ) -> List[EditMetadataSchema]:
+        return cls.select_user_child(
+            "edits",
+            makesession,
+            uuid,
+        )
 
     # ----------------------------------------------------------------------- #
     # CRUD without R
 
     @classmethod
-    def patch_user(cls):
-        """Update a user."""
-        ...
-
-    @classmethod
-    def delete_user(cls):
-        """Remove a user and their unshared documents and edits."""
-        ...
-
-    @classmethod
-    def post_user(
+    def patch_user(
         cls,
-        # user: UserCreateRequest,
+        makesession: DependsSessionMaker,
+        token: DependsToken,
+        uuid: UUID,
+        updates: UserUpdateSchema = Depends(),
     ):
-        """This should be the endpoint that should be used by the login flow."""
-        ...
+        """Update a user.
+
+        Only the user themself should be able to update this.
+        """
+        if not uuid == token["uuid"]:
+            raise HTTPException(403, detail="Users can only modify their own account.")
+
+        with makesession() as session:
+            user: User | None = session.execute(
+                select(User).where(User.uuid == uuid)
+            ).scalar()
+            if user is None:
+                raise HTTPException(418, detail="User not found.")
+            for key, value in updates.model_dump().items():
+                if value is None:
+                    continue
+                setattr(user, key, value)
+            session.add(user)
+            session.commit()
+
+    @classmethod
+    def delete_user(cls, makesession: DependsSessionMaker, uuid: UUID) -> UUID:
+        """Remove a user and their unshared documents and edits.
+
+        Only the user themself or an admin should be able to call this
+        endpoint.
+        """
+        with makesession() as session:
+            _ = select(User).where(User.uuid == uuid)
+            user: User | None = session.execute(_).scalar()
+            if user is None:
+                raise HTTPException(418, detail="User not found.")
+            session.delete(user)
+            session.commit()
+
+            return user.uuid
+
+    @classmethod
+    def post_user(cls, makesession: DependsSessionMaker, user: UserSchema) -> UUID:
+        """Create a user.
+
+        User can create collections and documents later during the registration
+        flow.
+        """
+
+        with makesession() as session:
+            session.add(user := User(**user.model_dump()))
+            session.commit()
+            return user.uuid
 
     # ----------------------------------------------------------------------- #
     # Sharing.

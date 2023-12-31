@@ -19,6 +19,7 @@ PATTERN_BEARER: re.Pattern = re.compile(
     "^Bearer (?P<token>(?P<header>[\\w_-]+).(?P<payload>[\\w_-]+).(?P<signature>[\\w_-]+))$",
     flags=re.I,
 )
+PYTEST_KID = "00000000"
 
 
 class Auth:
@@ -71,13 +72,12 @@ class Auth:
     def forPyTest(cls, config):
         # https://gist.github.com/gabrielfalcao/de82a468e62e73805c59af620904c124
         logger.debug("Generating test authorization.")
-        kid = secrets.token_hex(4)
         private_key = rsa.generate_private_key(
             public_exponent=65537, key_size=4096, backend=default_backend()
         )
         public_key = private_key.public_key()
 
-        return cls(config, {kid: public_key}, private_key)  # type: ignore
+        return cls(config, {PYTEST_KID: public_key}, private_key)  # type: ignore
 
     def decode(self, raw: str) -> Dict[str, Any]:
         """Get the key id from the JWT header and verify signature, audience,
