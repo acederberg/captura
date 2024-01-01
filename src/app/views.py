@@ -3,11 +3,12 @@
 This includes a metaclass so that undecorated functions may be tested.
 """
 import logging
-from typing import Annotated, Any, ClassVar, Dict, List, Literal, Type
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Type, TypeAlias
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
+from fastapi.params import Param
 from fastapi.routing import APIRoute
-from sqlalchemy import select
+from sqlalchemy import func, label, literal_column, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import util
@@ -19,7 +20,14 @@ from app.depends import (
     DependsToken,
     DependsUUID,
 )
-from app.models import Collection, Document, Edit, User
+from app.models import (
+    AssocCollectionDocument,
+    AssocUserDocument,
+    Collection,
+    Document,
+    Edit,
+    User,
+)
 from app.schemas import (
     UUID,
     CollectionMetadataSchema,
@@ -33,6 +41,12 @@ from app.schemas import (
 )
 
 logger = util.get_logger(__name__)
+QueryUUIDCollection: TypeAlias = Annotated[
+    List[str], Query(min_length=4, max_length=16)
+]
+QueryUUIDOwner: TypeAlias = Annotated[List[str], Query(min_length=4, max_length=16)]
+QueryUUIDDocument: TypeAlias = Annotated[List[str], Query(min_length=4, max_length=16)]
+PathUUID: TypeAlias = Annotated[str, Path()]
 
 # =========================================================================== #
 # Base Views.
@@ -131,26 +145,120 @@ class BaseView(ViewMixins, metaclass=ViewMeta):
     ...
 
 
+# =========================================================================== #
+# Views
+
+
 class DocumentView(BaseView):
     view_routes = dict(
-        get_document="/",
-        post_document="/",
-        put_document="/",
-        delete_document="/",
+        get_document="/{uuid}",
+        get_documents="",
+        post_document="",
+        put_document="",
+        delete_document="",
         get_document_edits="/edits",
     )
 
     @classmethod
-    def get_document(cls, filter_params):
+    def get_document(
+        cls, makesession: DependsSessionMaker, uuid: PathUUID
+    ) -> DocumentSchema:
+        with makesession() as session:
+            document: Document | None = session.execute(
+                select(Document).where(Document.uuid == uuid)
+            ).scalar()
+            if document is None:
+                raise HTTPException(204)
+            return document  # type: ignore
+
+    @classmethod
+    def get_documents(
+        cls,
+        token: DependsToken,
+        makesession: DependsSessionMaker,
+        filter: DependsFilter,
+    ) -> Dict[str, DocumentMetadataSchema]:
+        with makesession() as session:
+            results = {
+                item.name: item
+                for item in session.execute(
+                    select(Document).limit(filter.limit)
+                ).scalars()
+            }
+            return results  # type: ignore
+
+    @classmethod
+    def get_document_edits(
+        cls,
+        token: DependsToken,
+        makesession: DependsSessionMaker,
+        uuid: PathUUID,
+    ):
         ...
 
     @classmethod
-    def get_document_edits(cls, filter_params):
-        ...
+    def post_document(
+        cls,
+        token: DependsToken,
+        makesession: DependsSessionMaker,
+        documents: List[DocumentSchema],
+        uuid_collection: QueryUUIDCollection = list(),
+        uuid_owner: QueryUUIDOwner = list(),
+    ):
+        uuid = token["uuid"]
+        with makesession() as session:
+            # Add the documents
+            logger.debug("Adding new documents for user `%s`.", uuid)
+            session.add_all(
+                document_objs := list(
+                    Document(**document.model_dump()) for document in documents
+                )
+            )
+            session.commit()
+            for document_obj in document_objs:
+                session.refresh(document_obj)
 
-    @classmethod
-    def post_document(cls, filter_params):
-        ...
+            # Add user ownership for documents.
+            logger.debug("Defining ownership of new documents.")
+            user_uuids = [uuid, *uuid_owner]
+            users: List[User] = list(
+                session.execute(select(User).where(User.uuid.in_(user_uuids))).scalars()
+            )
+            assocs_owners = list(
+                AssocUserDocument(
+                    user_id=user,
+                    document_id=document,
+                    level="owner",
+                )
+                for document in documents
+                for user in users
+            )
+            session.add_all(assocs_owners)
+            session.commit()
+
+            # Find the collection if necessary
+            logger.debug("Adding document to collections `%s`.", uuid_collection)
+            collections: List[Collection] = list(
+                session.execute(
+                    select(Collection).where(Collection.uuid.in_(uuid_collection))
+                ).scalars()
+            )
+            assocs_collections = list(
+                AssocCollectionDocument(
+                    id_document=document.id,
+                    id_collection=collection.id,
+                )
+                for document in document_objs
+                for collection in collections
+            )
+            session.add_all(assocs_collections)
+            session.commit()
+
+            return dict(
+                documents={dd.uuid: dd.name for dd in document_objs},
+                assoc_collections=list(aa.uuid for aa in assocs_collections),
+                assoc_document_owners=user_uuids,
+            )
 
     @classmethod
     def put_document(cls, filter_params):
@@ -220,7 +328,7 @@ class UserView(BaseView):
         cls,
         makesession: DependsSessionMaker,
         token: DependsToken,
-        uuid: DependsUUID,
+        uuid: PathUUID,
     ) -> UserSchema:
         """Get user metadata.
 
@@ -271,7 +379,7 @@ class UserView(BaseView):
         cls,
         child: Literal["collections", "edits", "documents"],
         makesession: sessionmaker[Session],
-        uuid: str,
+        uuid: PathUUID,
     ) -> Any:
         """Get user ``collections`` and ``edits`` data without content.
 
@@ -295,7 +403,7 @@ class UserView(BaseView):
 
     @classmethod
     def get_user_documents(
-        cls, makesession: DependsSessionMaker, uuid: str
+        cls, makesession: DependsSessionMaker, uuid: PathUUID
     ) -> Dict[str, DocumentMetadataSchema]:
         return cls.select_user_child(
             "documents",
@@ -305,7 +413,7 @@ class UserView(BaseView):
 
     @classmethod
     def get_user_collections(
-        cls, makesession: DependsSessionMaker, uuid: str
+        cls, makesession: DependsSessionMaker, uuid: PathUUID
     ) -> Dict[str, CollectionMetadataSchema]:
         return cls.select_user_child(
             "collections",
@@ -315,7 +423,7 @@ class UserView(BaseView):
 
     @classmethod
     def get_user_edits(
-        cls, makesession: DependsSessionMaker, uuid: str
+        cls, makesession: DependsSessionMaker, uuid: PathUUID
     ) -> List[EditMetadataSchema]:
         return cls.select_user_child(
             "edits",
@@ -331,7 +439,7 @@ class UserView(BaseView):
         cls,
         makesession: DependsSessionMaker,
         token: DependsToken,
-        uuid: UUID,
+        uuid: PathUUID,
         updates: UserUpdateSchema = Depends(),
     ):
         """Update a user.
@@ -355,7 +463,7 @@ class UserView(BaseView):
             session.commit()
 
     @classmethod
-    def delete_user(cls, makesession: DependsSessionMaker, uuid: UUID) -> UUID:
+    def delete_user(cls, makesession: DependsSessionMaker, uuid: PathUUID) -> UUID:
         """Remove a user and their unshared documents and edits.
 
         Only the user themself or an admin should be able to call this
@@ -366,6 +474,23 @@ class UserView(BaseView):
             user: User | None = session.execute(_).scalar()
             if user is None:
                 raise HTTPException(418, detail="User not found.")
+
+            # Get all assocs where the user is the exclusive owner.
+            # q_assocs = select(AssocUserDocument).where(
+            #             AssocUserDocument.id_user == user.id,
+            #             AssocUserDocument.level == "owner",
+            #         )
+
+            # TODO: These queries should be factored out so they can be tested.
+            # q_counts = select( literal_column("id_document")).select_from(
+            #     select(AssocUserDocument.id_document, label("n_owners", func.count()))
+            #     .select_from(q_assocs.group_by(AssocUserDocument.id_document))
+            # ) .where( literal_column("n_owners") == 1 )
+
+            # exclusive_documents : List[Document] = list(session.execute(
+            #     select(Document).where(Document.id)
+            # ).scalars())
+
             session.delete(user)
             session.commit()
 
@@ -380,9 +505,9 @@ class UserView(BaseView):
         """
 
         with makesession() as session:
-            session.add(user := User(**user.model_dump()))
+            session.add(user_obj := User(**user.model_dump()))
             session.commit()
-            return user.uuid
+            return user_obj.uuid
 
     # ----------------------------------------------------------------------- #
     # Sharing.
@@ -390,9 +515,9 @@ class UserView(BaseView):
     @classmethod
     def post_document_access(
         cls,
-        # user: User = Depends(user_from_auth),
-        # grant_to_uuid_user: int = 1,
-        # grant_level: Literal["read", "write", "owner"],
+        uuid: PathUUID,
+        grant_level: Literal["read", "write", "owner"],
+        uuid_document: QueryUUIDDocument,
     ) -> None:
         ...
 

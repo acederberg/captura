@@ -13,7 +13,7 @@ From a mathmatical standpoint, this is 'good enough' because UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,8 +40,8 @@ Description = Annotated[
     Field(min_length=1, max_length=LENGTH_DESCRIPTION),
 ]
 Url = Annotated[str | None, Field(min_length=8, max_length=LENGTH_URL)]
-Content = Annotated[str, Field(max_length=LENGTH_CONTENT)]
-Format = Annotated[str, Field(min_length=64, max_length=LENGTH_CONTENT)]
+Content = Annotated[bytes, Field(max_length=LENGTH_CONTENT)]
+Format = Annotated[Literal["md", "rst", "tEx"], Field(default="md")]
 Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
 
 
@@ -82,31 +82,30 @@ class UserSchema(BaseModel):
 
 
 class CollectionMetadataSchema(BaseModel):
-    uuid: UUID
-    # name: Name # excluded bc metadata is labeled by name
+    uuid: UUID = None
+    # name: Name # excluded bc metadata is labeled by name.
     description: Description
 
 
 class CollectionSchema(BaseModel):
-    uuid: UUID
     name: Name
     description: Description
 
 
 class DocumentMetadataSchema(BaseModel):
-    uuid: UUID
-    # name: Name
+    uuid: UUID = None
+    # name: Name # excluded bc metadata is labeld by name.
     description: Description
+    format: Format
 
 
 class DocumentSchema(DocumentMetadataSchema):
     name: Name
     content: Content
-    content_fmt: Format
 
 
 class EditMetadataSchema(BaseModel):
-    uuid: UUID
+    uuid: UUID = None
 
 
 class EditSchema(BaseModel):

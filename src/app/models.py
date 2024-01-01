@@ -1,8 +1,9 @@
+import enum
 import secrets
 from datetime import datetime
 from typing import Dict, List
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import DeclarativeBase, Mapped, backref, mapped_column, relationship
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
@@ -13,6 +14,7 @@ LENGTH_DESCRIPTION: int = 256
 LENGTH_URL: int = 256
 LENGTH_MESSAGE: int = 1024
 LENGTH_CONTENT: int = 2**15
+LENGTH_FORMAT: int = 8
 
 
 class Base(DeclarativeBase):
@@ -57,6 +59,12 @@ class AssocCollectionDocument(Base, MixinsPrimary):
     )
 
 
+class Level(enum.Enum):
+    view = 0
+    modify = 10
+    own = 20
+
+
 class AssocUserDocument(Base, MixinsPrimary):
     __tablename__ = "_assocs_user_documents"
 
@@ -68,6 +76,7 @@ class AssocUserDocument(Base, MixinsPrimary):
         ForeignKey("documents.id"),
         primary_key=True,
     )
+    level: Mapped[Level] = mapped_column(Enum(Level))
 
 
 class User(Base, MixinsPrimary):
@@ -139,7 +148,7 @@ class Document(Base, MixinsSecondary):
     name: Mapped[str] = mapped_column(String(LENGTH_NAME))
     description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
     content: Mapped[str] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
-    content_fmt: Mapped[str] = mapped_column(String(8))
+    format: Mapped[str] = mapped_column(String(LENGTH_FORMAT))
 
     edits: Mapped[List["Edit"]] = relationship(
         cascade="all, delete",

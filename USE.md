@@ -118,3 +118,73 @@ and deleted like
     curl "$SERVER_IP:8080/users/ChinybYLuCQ" \
         -H "Authorization: Bearer $TOKEN" \
         -X DELETE
+
+
+Getting Data Scoped by Document
+===============================================================================
+
+It is easy to get some assortment of documents:
+
+.. code:: sh
+
+     curl "$SERVER_IP:8080/documents" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: Application/JSON" \
+        -X GET
+
+.. code:: STDOUT
+    [
+        "Lorm ipsum": {
+            "uuid": "FoHvACIPKPI",
+            "description": "Lorem ipsum 1",
+            "format": "md"
+        },
+        "Lorm ipsum 2": {
+            "uuid": "-LpZ34GlZOw",
+            "description": "Lorem ipsum 2",
+            "format": "rst"
+        }
+    ]
+
+
+add a new document:
+
+.. code:: sh
+
+    curl "$SERVER_IP:8080/documents" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: Application/JSON" \
+        -X POST \
+        --data '[
+            {
+                "name": "Goofy Goober",
+                "description": "Right next to weenie hut juniors and super weenie hut juniors.",
+                "content": "# Goofy Goober",
+                "content_type": "md"
+            },
+            {
+                "name": "Salty Spitoon",
+                "description": "How tough are you?",
+                "content": "Do you have a bottle of ketchup?",
+                "content_type": "md"
+            }
+        ]'
+
+.. code:: STDOUT
+
+    {
+        "documents": {
+            "GFvSweiu6oQ": "Goofy Goober",
+            "fV34tFObGLQ": "Salty Spitoon"
+        },
+        "assoc_collections": [],
+        "assoc_document_owners": [
+            "1meGbogsgf4"
+        ]
+    }
+
+update a document:
+
+.. code:: sh
+
+..code:: STDOUT

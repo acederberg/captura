@@ -2,7 +2,7 @@
 - name: Lorm ipsum
   id: 1
   description: Lorem ipsum 1
-  content_fmt: md
+  format: md
   content: |
     \# Lorem ipsum
 
@@ -17,7 +17,7 @@
 - name: Lorm ipsum 2
   id: 2
   description: Lorem ipsum 2
-  content_fmt: rst
+  format: rst
   content: |
     Lorem ipsum
     =====================
@@ -28,7 +28,7 @@
 - name: Lorm ipsum 3
   id: 3
   description: Lorem ipsum 3
-  content_fmt: md
+  format: md
   content: |
     \# Lorem ipsum
 
@@ -37,7 +37,7 @@
 - name: Lorm ipsum 4
   id: 4
   description: Lorem ipsum 4
-  content_fmt: md
+  format: md
   content: |
     \# Lorem ipsum
 
@@ -47,7 +47,7 @@
 - name: Lorem Ipsum 5
   id: 5
   description: Lorem ipsum 5
-  content_fmt: rst
+  format: rst
   content: |
 
     Louram Epsum 
@@ -59,7 +59,7 @@
 - name: Lorem Ipsum 6
   id: 6
   description: Lorem ipsum 6
-  content_fmt: md
+  format: md
   content: |
 
     Rotton Possum
