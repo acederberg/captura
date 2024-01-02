@@ -576,6 +576,8 @@ class UserView(BaseView):
             #       associations. The find associations for that document and
             #       user where the user has correct permissions.
 
+            bad = {document.name for document in documents.values() if document}
+
             q_docids = select(Document.id).where(Document.uuid.in_(uuid_document))
             q_assocs = select(Document.uuid, AssocUserDocument).where(
                 AssocUserDocument.id_document.in_(q_docids),

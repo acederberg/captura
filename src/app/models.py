@@ -1,13 +1,24 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import Dict, List, Set
+from typing import Annotated, Dict, List, Set
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import Enum, ForeignKey, String, select
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import (DeclarativeBase, Mapped, backref, mapped_column,
-                            relationship)
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    backref,
+    column_property,
+    mapped_column,
+    object_session,
+    relationship,
+)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
+
+# =========================================================================== #
+# CONSTANTS, ETC.
 
 LENGTH_NAME: int = 64
 LENGTH_TITLE: int = 128
@@ -18,34 +29,69 @@ LENGTH_CONTENT: int = 2**15
 LENGTH_FORMAT: int = 8
 
 
+class Level(enum.Enum):
+    view = 0
+    modify = 10
+    own = 20
+
+
+class EventKind(str, enum.Enum):
+    create = "create"
+    update = "update"
+    delete = "delete"
+    grant = "grant"
+
+
+class ObjectKind(str, enum.Enum):
+    user = "users"
+    document = "documents"
+    collection = "collections"
+    edit = "edits"
+    assoc_user_document = "_assocs_user_documents"
+    assoc_user_collection = "_assocs_user_collections"
+
+
+MappedColumnUUID = Annotated[
+    str,
+    mapped_column(String(16), default=lambda: secrets.token_urlsafe(8), index=True),
+]
+# =========================================================================== #
+# Models and Mixins
+
+
 class Base(DeclarativeBase):
     ...
 
 
 class MixinsPrimary:
-    uuid: Mapped[str] = mapped_column(
-        String(16), default=lambda: secrets.token_urlsafe(8), index=True
-    )
+    """Creation and deletion data will go into the table associated with
+    :class:`Event`.
+    """
 
-    _created_timestamp: Mapped[int] = mapped_column(
+    uuid: Mapped[MappedColumnUUID]
+    public: Mapped[bool] = mapped_column(default=True)
+    deleted: Mapped[bool] = mapped_column(default=False)
+
+
+# =========================================================================== #
+# Mapped
+
+
+class Event(Base):
+    # NOTE: Would it make more sence to record updates, creations, and
+    #       deletions inside of an events table instead? It would be easy to
+    #       track the objects by their UUID
+
+    __tablename__ = "events"
+
+    timestamp: Mapped[int] = mapped_column(
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
-    _updated_timestamp: Mapped[int] = mapped_column(default=_now)
-    _deleted_timestamp: Mapped[int] = mapped_column(nullable=True)
-    _deleted: Mapped[bool] = mapped_column(default=False)
-
-
-class MixinsSecondary(MixinsPrimary):
-    _deleted_by_user_uuid: Mapped[str] = mapped_column(
-        ForeignKey("users.uuid"),
-        nullable=True,
-    )
-    _created_by_user_uuid: Mapped[str] = mapped_column(
-        ForeignKey("users.uuid"), nullable=True
-    )
-    _updated_by_user_uuid: Mapped[str] = mapped_column(
-        ForeignKey("users.uuid"), nullable=True
-    )
+    uuid_event: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
+    uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
+    uuid_obj: Mapped[MappedColumnUUID]
+    kind: Mapped[EventKind] = mapped_column(Enum(EventKind))
+    kind_obj: Mapped[ObjectKind] = mapped_column(Enum(ObjectKind))
 
 
 class AssocCollectionDocument(Base, MixinsPrimary):
@@ -59,12 +105,6 @@ class AssocCollectionDocument(Base, MixinsPrimary):
         ForeignKey("collections.id"),
         primary_key=True,
     )
-
-
-class Level(enum.Enum):
-    view = 0
-    modify = 10
-    own = 20
 
 
 class AssocUserDocument(Base, MixinsPrimary):
@@ -114,25 +154,46 @@ class User(Base, MixinsPrimary):
         collection_class=attribute_keyed_dict("name"),
         secondary=AssocUserDocument.__table__,
         back_populates="users",
-        # primaryjoin="User.id==AssocUserDocument.id_user, AssocUserDocument.id_document=Document.id, "
+        primaryjoin="User.id==AssocUserDocument.id_user",
+        secondaryjoin="AssocUserDocument.id_document==Document.id",
     )
 
-    def documents_by_level(self, level: Level, document_uuids: Set[str]) -> Dict:
+    def document_uuids(
+        self,
+        level: Level,
+    ) -> Set[str]:
+        """Get the UUIDs of the documents to which this user is granted
+        permissions explicitly through :class:`AssocUserDocument` entries at
+        :param:`level`.
 
-        for document in self.documents.values():
-            
-        return 
-        # return {
-        #     document_name: document 
-        #     for document_name, document in self.documents.items()
-        #     if document.uuid not in document_uuids or (
-        #         document.uuid in document_uuids
-        #         and document.
-        #     )
-        # }
+        This is mostly used to verify ownership of documents, thus a set is
+        returned so that checking membership is fast.
+
+        In particular this is needed for
+
+        .. code:: HTTP
+
+            PATCH /users/{self.uuid}/grant?level={level.name}&uuid_document=...
+
+        where it must be verified that a granter has sufficient permissions
+        (**own**) to assign the grantee access.
+
+        :param level: The level to match against.
+        :returns: A set of document object UUIDs.
+        """
+        session = object_session(self)
+        if session is None:
+            raise ValueError("Session is required.")
+
+        document_ids = select(AssocUserDocument.id_document).where(
+            AssocUserDocument.id_user == self.id,
+            AssocUserDocument.level == level,
+        )
+        document_uuids = select(Document.uuid).where(Document.id.in_(document_ids))
+        return set(session.execute(document_uuids).scalars())
 
 
-class Collection(Base, MixinsSecondary):
+class Collection(Base, MixinsPrimary):
     __tablename__ = "collections"
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -157,7 +218,7 @@ class Collection(Base, MixinsSecondary):
     )
 
 
-class Document(Base, MixinsSecondary):
+class Document(Base, MixinsPrimary):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -175,6 +236,8 @@ class Document(Base, MixinsSecondary):
         collection_class=attribute_keyed_dict("name"),
         secondary=AssocUserDocument.__table__,
         back_populates="documents",
+        secondaryjoin="User.id==AssocUserDocument.id_user",
+        primaryjoin="AssocUserDocument.id_document==Document.id",
     )
     collections: Mapped[Dict[str, Collection]] = relationship(
         collection_class=attribute_keyed_dict("name"),
@@ -183,7 +246,7 @@ class Document(Base, MixinsSecondary):
     )
 
 
-class Edit(Base, MixinsSecondary):
+class Edit(Base, MixinsPrimary):
     __tablename__ = "edits"
 
     id: Mapped[int] = mapped_column(primary_key=True)

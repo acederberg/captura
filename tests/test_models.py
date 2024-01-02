@@ -10,6 +10,7 @@ from app.models import (
     Collection,
     Document,
     Edit,
+    Level,
     User,
 )
 from sqlalchemy import delete, func, select
@@ -344,6 +345,56 @@ class TestUser(BaseModelTest):
 
             self.create_user(session)
             TestCollection.load(session, stop=len(user.collections))
+
+    def test_document_uuids(self, sessionmaker: sessionmaker[Session]):
+        with sessionmaker() as session:
+            # Nullify current ownership using associations directly.
+            logger.debug("Nullifying existing documents for user `1`.")
+            user = self.get_user(session)
+            assocs: List[AssocUserDocument] = list(
+                session.execute(
+                    select(AssocUserDocument).where(
+                        AssocUserDocument.id_user == user.id
+                    )
+                ).scalars()
+            )
+            for assoc in assocs:
+                session.delete(assoc)
+            session.commit()
+
+            # Get some documents and assign them to the user at varying levels.
+            logger.debug("Creating predictable associations.")
+            assocs = [
+                AssocUserDocument(
+                    id_user=user.id,
+                    id_document=id_document,
+                    level=Level._value2member_map_[(id_document % 3) * 10],
+                )
+                for id_document in range(1, 7)
+            ]
+            session.add_all(assocs)
+            session.commit()
+            session.refresh(user)
+
+            logger.debug("Verifying associations with output of `document_uuids`.")
+            results = {level.name: user.document_uuids(level) for level in Level}
+            for level_name, uuids in results.items():
+                assert len(uuids) == 2  # Due to the defn of assocs
+                document_ids = list(
+                    session.execute(
+                        select(AssocUserDocument.id_document).where(
+                            AssocUserDocument.id_user == user.id,
+                            AssocUserDocument.level == Level[level_name],
+                        )
+                    ).scalars()
+                )
+                assert len(document_ids) == 2
+                document_uuids = set(
+                    session.execute(
+                        select(Document.uuid).where(Document.id.in_(document_ids))
+                    ).scalars()
+                )
+                assert document_uuids == uuids
 
 
 class TestCollection(BaseModelTest):
