@@ -1,11 +1,12 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import DeclarativeBase, Mapped, backref, mapped_column, relationship
+from sqlalchemy.orm import (DeclarativeBase, Mapped, backref, mapped_column,
+                            relationship)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 
 LENGTH_NAME: int = 64
@@ -31,10 +32,11 @@ class MixinsPrimary:
     )
     _updated_timestamp: Mapped[int] = mapped_column(default=_now)
     _deleted_timestamp: Mapped[int] = mapped_column(nullable=True)
+    _deleted: Mapped[bool] = mapped_column(default=False)
 
 
 class MixinsSecondary(MixinsPrimary):
-    _deleted_by: Mapped[str] = mapped_column(
+    _deleted_by_user_uuid: Mapped[str] = mapped_column(
         ForeignKey("users.uuid"),
         nullable=True,
     )
@@ -114,6 +116,20 @@ class User(Base, MixinsPrimary):
         back_populates="users",
         # primaryjoin="User.id==AssocUserDocument.id_user, AssocUserDocument.id_document=Document.id, "
     )
+
+    def documents_by_level(self, level: Level, document_uuids: Set[str]) -> Dict:
+
+        for document in self.documents.values():
+            
+        return 
+        # return {
+        #     document_name: document 
+        #     for document_name, document in self.documents.items()
+        #     if document.uuid not in document_uuids or (
+        #         document.uuid in document_uuids
+        #         and document.
+        #     )
+        # }
 
 
 class Collection(Base, MixinsSecondary):

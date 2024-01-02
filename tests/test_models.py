@@ -303,9 +303,7 @@ class TestUser(BaseModelTest):
             #       with the user object.
             logger.debug("Initializing edits (no ownership).")
             edits: List[Edit] = list(
-                session.execute(
-                    select(Edit).where(Edit.id_user == 1)
-                ).scalars()
+                session.execute(select(Edit).where(Edit.id_user == 1)).scalars()
             )
             for edit in edits:
                 edit.id_user = None
@@ -318,9 +316,7 @@ class TestUser(BaseModelTest):
             # NOTE: Assign edits and commit.
             edits = list(
                 session.execute(
-                    q_edits := select(Edit).where(
-                        Edit.id.between(1, 5)
-                    )
+                    q_edits := select(Edit).where(Edit.id.between(1, 5))
                 ).scalars()
             )
             assert len(edits), "Expected edits."
@@ -526,3 +522,7 @@ class TestEdit(BaseModelTest):
             "utf-8",
         )  # type: ignore
         return item
+
+
+class TestAssocUserDocument(BaseModelTest):
+    M = AssocUserDocument

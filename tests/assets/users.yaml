@@ -1,10 +1,12 @@
 - id: 1
+  uuid: !!str 99999999
   name: you're mom
   description: The joke is that it is mispelled.
   url_image: null
   url: null
 
-- id: 2
+- uuid: !!str 00000000
+  id: 2
   name: acederberg
   description: maintainer of this project
   url: github.com/acederberg

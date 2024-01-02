@@ -32,6 +32,7 @@ classifiers = [
     'Topic :: Internet',
 ]
 dependencies = [
+  "uvicorn",
   "fastapi",
 	"pydantic>=2",
   "pydantic-settings>=2",

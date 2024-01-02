@@ -2,12 +2,14 @@ import base64
 import json
 import re
 import secrets
+from os import path
 from typing import Any, Dict
 
 import jwt
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicKey
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app import util
@@ -20,6 +22,8 @@ PATTERN_BEARER: re.Pattern = re.compile(
     flags=re.I,
 )
 PYTEST_KID = "00000000"
+PATH_PYTEST_PUBLIC_KEY: str = util.Path.docker("pytest-public.pem")
+PATH_PYTEST_PRIVATE_KEY: str = util.Path.docker("pytest-private.pem")
 
 
 class Auth:
@@ -71,12 +75,41 @@ class Auth:
     @classmethod
     def forPyTest(cls, config):
         # https://gist.github.com/gabrielfalcao/de82a468e62e73805c59af620904c124
-        logger.debug("Generating test authorization.")
-        private_key = rsa.generate_private_key(
-            public_exponent=65537, key_size=4096, backend=default_backend()
-        )
-        public_key = private_key.public_key()
+        if not path.exists(PATH_PYTEST_PRIVATE_KEY) or not path.exists(
+            PATH_PYTEST_PUBLIC_KEY
+        ):
+            logger.debug("Generating test authorization.")
+            private_key = rsa.generate_private_key(
+                public_exponent=65537, key_size=4096, backend=default_backend()
+            )
+            public_key = private_key.public_key()
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+            public_pem = public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            with open(PATH_PYTEST_PUBLIC_KEY, "wb") as public_io, open(
+                PATH_PYTEST_PRIVATE_KEY, "wb"
+            ) as private_io:
+                public_io.write(public_pem)
+                private_io.write(private_pem)
 
+        logger.debug("Loading pytest keypair.")
+        with open(PATH_PYTEST_PUBLIC_KEY, "rb") as public_io, open(
+            PATH_PYTEST_PRIVATE_KEY, "rb"
+        ) as private_io:
+            public_key = serialization.load_pem_public_key(
+                public_io.read(), backend=default_backend()
+            )
+            private_key = serialization.load_pem_private_key(
+                private_io.read(), password=None, backend=default_backend()
+            )
+
+        logger.debug("Done loading!")
         return cls(config, {PYTEST_KID: public_key}, private_key)  # type: ignore
 
     def decode(self, raw: str) -> Dict[str, Any]:

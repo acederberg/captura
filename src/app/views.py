@@ -7,6 +7,7 @@ from typing import Annotated, Any, ClassVar, Dict, List, Literal, Type, TypeAlia
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.params import Param
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from sqlalchemy import func, label, literal_column, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -15,9 +16,12 @@ from app import util
 from app.depends import (
     DependsAuth,
     DependsConfig,
+    DependsCreatedInfo,
+    DependsDeletedInfo,
     DependsFilter,
     DependsSessionMaker,
     DependsToken,
+    DependsUpdatedInfo,
     DependsUUID,
 )
 from app.models import (
@@ -26,6 +30,7 @@ from app.models import (
     Collection,
     Document,
     Edit,
+    Level,
     User,
 )
 from app.schemas import (
@@ -44,8 +49,9 @@ logger = util.get_logger(__name__)
 QueryUUIDCollection: TypeAlias = Annotated[
     List[str], Query(min_length=4, max_length=16)
 ]
-QueryUUIDOwner: TypeAlias = Annotated[List[str], Query(min_length=4, max_length=16)]
-QueryUUIDDocument: TypeAlias = Annotated[List[str], Query(min_length=4, max_length=16)]
+QueryUUIDOwner: TypeAlias = Annotated[List[str], Query(min_length=1)]
+QueryUUIDDocument: TypeAlias = Annotated[List[str], Query(min_length=1)]
+QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
 PathUUID: TypeAlias = Annotated[str, Path()]
 
 # =========================================================================== #
@@ -196,12 +202,15 @@ class DocumentView(BaseView):
     ):
         ...
 
+    # TODO: When integration tests are written, all CUD endpoints should
+    #       test that the private CUD fields are approprietly set.
     @classmethod
     def post_document(
         cls,
         token: DependsToken,
+        created_info: DependsCreatedInfo,
         makesession: DependsSessionMaker,
-        documents: List[DocumentSchema],
+        documents_raw: List[DocumentSchema],
         uuid_collection: QueryUUIDCollection = list(),
         uuid_owner: QueryUUIDOwner = list(),
     ):
@@ -209,14 +218,16 @@ class DocumentView(BaseView):
         with makesession() as session:
             # Add the documents
             logger.debug("Adding new documents for user `%s`.", uuid)
-            session.add_all(
-                document_objs := list(
-                    Document(**document.model_dump()) for document in documents
+            Document._updated_by_user_uuid
+            documents = {
+                document.name: Document(
+                    **document.model_dump(),
+                    **created_info,
                 )
-            )
+                for document in documents_raw
+            }
+            session.add_all(documents.values())
             session.commit()
-            for document_obj in document_objs:
-                session.refresh(document_obj)
 
             # Add user ownership for documents.
             logger.debug("Defining ownership of new documents.")
@@ -224,19 +235,23 @@ class DocumentView(BaseView):
             users: List[User] = list(
                 session.execute(select(User).where(User.uuid.in_(user_uuids))).scalars()
             )
+
+            # NOTE: This must be done directly creating associations because of
+            #       the ``_created_by_uuid_user`` and ``_updated_by_uuid_user``
+            #       fields.
             assocs_owners = list(
                 AssocUserDocument(
                     user_id=user,
                     document_id=document,
                     level="owner",
+                    **created_info,
                 )
-                for document in documents
+                for document in documents.values()
                 for user in users
             )
             session.add_all(assocs_owners)
             session.commit()
 
-            # Find the collection if necessary
             logger.debug("Adding document to collections `%s`.", uuid_collection)
             collections: List[Collection] = list(
                 session.execute(
@@ -245,17 +260,16 @@ class DocumentView(BaseView):
             )
             assocs_collections = list(
                 AssocCollectionDocument(
-                    id_document=document.id,
-                    id_collection=collection.id,
+                    id_document=document.id, id_collection=collection.id, **created_info
                 )
-                for document in document_objs
+                for document in documents
                 for collection in collections
             )
             session.add_all(assocs_collections)
             session.commit()
 
             return dict(
-                documents={dd.uuid: dd.name for dd in document_objs},
+                documents={dd.uuid: dd.name for dd in documents},
                 assoc_collections=list(aa.uuid for aa in assocs_collections),
                 assoc_document_owners=user_uuids,
             )
@@ -317,7 +331,7 @@ class UserView(BaseView):
         get_user_documents="/{uuid}/documents",
         get_user_edits="/{uuid}/edits",
         get_user_collections="/{uuid}/collections",
-        post_document_access="/{uuid}/grant",
+        patch_document_access="/{uuid}/grant",
     )
 
     # ----------------------------------------------------------------------- #
@@ -390,14 +404,15 @@ class UserView(BaseView):
         """
 
         with makesession() as session:
-            result: None | User = session.execute(
+            user: None | User = session.execute(
                 select(User).where(User.uuid == uuid)
             ).scalar()
-            children: List[Collection] | List[Edit] | List[Document] | None
-            children = getattr(result, child, None)
-            print(child, result)
-            if children is None:
-                raise HTTPException(418, detail="This is awkward.")
+            if user is None:
+                raise HTTPException(404)
+            children: List[Collection] | List[Edit] | List[Document]
+            children = getattr(user, child)
+            if not len(children):
+                JSONResponse([], 204)
 
             return children  # type: ignore
 
@@ -438,6 +453,7 @@ class UserView(BaseView):
     def patch_user(
         cls,
         makesession: DependsSessionMaker,
+        updated_info: DependsUpdatedInfo,
         token: DependsToken,
         uuid: PathUUID,
         updates: UserUpdateSchema = Depends(),
@@ -455,7 +471,11 @@ class UserView(BaseView):
             ).scalar()
             if user is None:
                 raise HTTPException(418, detail="User not found.")
-            for key, value in updates.model_dump().items():
+
+            # NOTE: Don't forget to include the metadata.
+            updates_dict = updates.model_dump()
+            updates_dict.update(updated_info)
+            for key, value in updates_dict.items():
                 if value is None:
                     continue
                 setattr(user, key, value)
@@ -463,7 +483,12 @@ class UserView(BaseView):
             session.commit()
 
     @classmethod
-    def delete_user(cls, makesession: DependsSessionMaker, uuid: PathUUID) -> UUID:
+    def delete_user(
+        cls,
+        makesession: DependsSessionMaker,
+        deleted_info: DependsDeletedInfo,
+        uuid: PathUUID,
+    ) -> UUID:
         """Remove a user and their unshared documents and edits.
 
         Only the user themself or an admin should be able to call this
@@ -513,13 +538,62 @@ class UserView(BaseView):
     # Sharing.
 
     @classmethod
-    def post_document_access(
+    def patch_document_access(
         cls,
+        makesession: DependsSessionMaker,
+        token: DependsToken,
+        created_info: DependsCreatedInfo,
         uuid: PathUUID,
-        grant_level: Literal["read", "write", "owner"],
+        level: QueryLevel,
         uuid_document: QueryUUIDDocument,
     ) -> None:
-        ...
+        """
+
+        :param uuid: Target uuid. The user to grant permissions to.
+        :param level: Level to grant. One of "view", "modify", or
+            "owner".
+        :param uuid_document: The uuids of the documents to grant these
+            permissions on.
+        """
+
+        uuid_granter = token["uuid"]
+        with makesession() as session:
+            # Get granter.
+            user_granter: None | User = session.execute(
+                select(User).where(User.uuid == uuid_granter)
+            ).scalar()
+            if user_granter is None:
+                raise HTTPException(418)
+
+            # Get grantee.
+            user_grantee: User | None = session.execute(
+                select(User).where(User.uuid == uuid)
+            ).scalar()
+            if user_grantee is None:
+                raise HTTPException(404)
+
+            # NOTE: Verify granter pemissions. Find document ids to find
+            #       associations. The find associations for that document and
+            #       user where the user has correct permissions.
+
+            q_docids = select(Document.id).where(Document.uuid.in_(uuid_document))
+            q_assocs = select(Document.uuid, AssocUserDocument).where(
+                AssocUserDocument.id_document.in_(q_docids),
+                AssocUserDocument.id_user == AssocUserDocument.level != Level.own,
+            )
+            # assocs = list(session.execute(q_assocs).scalars())
+            # if len(assocs):
+            #     raise HTTPException(
+            #         403,
+            #         detail={
+            #             "msg": "Insufficient ownership to grant permissions.",
+            #             "uuids": bad,
+            #         },
+            #     )
+
+            user_grantee.assocs = assocs
+
+            # Create entries for the grantee.
 
     @classmethod
     def post_collection_assignment(
@@ -547,6 +621,7 @@ class AuthView(BaseView):
         information (because anybody could imitate any user by minting a token
         with that particular users UUID.
         """
+        logger.warning("Minting token...")
         if config.auth0.use:
             raise HTTPException(
                 409,

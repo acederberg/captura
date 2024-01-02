@@ -1,0 +1,39 @@
+- id_user: 1
+  id_document: 1
+  level: own
+- id_user: 1
+  id_document: 2
+  level: own
+- id_user: 1
+  id_document: 3
+  level: own
+- id_user: 1
+  id_document: 4
+  level: own
+- id_user: 1
+  id_document: 5
+  level: own
+- id_user: 1
+  id_document: 6
+  level: own
+- id_user: 2
+  id_document: 1
+  level: modify
+- id_user: 2
+  id_document: 2
+  level: modify
+- id_user: 2
+  id_document: 3
+  level: modify
+- id_user: 2
+  id_document: 4
+  level: modify
+- id_user: 2
+  id_document: 5
+  level: own
+- id_user: 2
+  id_document: 6
+  level: view
+
+
+

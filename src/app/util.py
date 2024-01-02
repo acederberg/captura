@@ -25,6 +25,7 @@ def get_logger(name: str) -> logging.Logger:
 # PATH STUFF
 
 PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
+PATH_DOCKER: str = path.join(PATH_BASE, "docker")
 PATH_TESTS: str = path.join(PATH_BASE, "tests")
 PATH_TESTS_ASSETS: str = path.join(PATH_TESTS, "assets")
 
@@ -41,3 +42,7 @@ class Path:
     @classmethod
     def test_assets(cls, v: str) -> str:
         return path.join(PATH_TESTS_ASSETS, v)
+
+    @classmethod
+    def docker(cls, v: str) -> str:
+        return path.join(PATH_DOCKER, v)

@@ -9,3 +9,4 @@ config.yaml
 config.test.yaml
 .venv
 temp
+*.pem

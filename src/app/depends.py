@@ -6,8 +6,9 @@ instance `auth` or `config`, except in the case that it is dependency used to
 trap and transform api parameters. No exports (things in ``__all__``) should
 be wrapped in ``Depends``.
 """
+from datetime import datetime
 from functools import cache
-from typing import Annotated, Callable, Dict, TypeAlias
+from typing import Annotated, Any, Callable, Dict, TypeAlias
 
 import jwt
 from fastapi import Depends, Header, HTTPException
@@ -201,3 +202,27 @@ class Filter(BaseModel):
 
 
 DependsFilter: TypeAlias = Annotated[Filter, Depends()]
+
+
+def deleted_info(token: DependsToken) -> Dict[str, Any]:
+    return dict(
+        _deleted_by_user_uuid=token["uuid"],
+        _deleted_timestamp=datetime.timestamp(datetime.now()),
+        _deleted=True,
+    )
+
+
+def updated_info(token: DependsToken) -> Dict[str, str]:
+    return dict(_created_by_user_uuid=token["uuid"])
+
+
+def created_info(token: DependsToken) -> Dict[str, str]:
+    return dict(
+        _created_by_user_uuid=token["uuid"],
+        _updated_by_user_uuid=token["uuid"],
+    )
+
+
+DependsDeletedInfo = Annotated[Dict[str, Any], Depends(deleted_info)]
+DependsCreatedInfo = Annotated[Dict[str, str], Depends(created_info)]
+DependsUpdatedInfo = Annotated[Dict[str, str], Depends(updated_info)]
