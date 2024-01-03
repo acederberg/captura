@@ -87,11 +87,14 @@ class Event(Base):
     timestamp: Mapped[int] = mapped_column(
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
-    uuid_event: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
+
+    uuid_parent: Mapped[str] = mapped_column(ForeignKey("events.uuid"))
+    uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
     uuid_obj: Mapped[MappedColumnUUID]
     kind: Mapped[EventKind] = mapped_column(Enum(EventKind))
     kind_obj: Mapped[ObjectKind] = mapped_column(Enum(ObjectKind))
+    detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
 
 class AssocCollectionDocument(Base, MixinsPrimary):
@@ -101,6 +104,7 @@ class AssocCollectionDocument(Base, MixinsPrimary):
         ForeignKey("documents.id"),
         primary_key=True,
     )
+
     id_collection: Mapped[int] = mapped_column(
         ForeignKey("collections.id"),
         primary_key=True,
@@ -159,8 +163,7 @@ class User(Base, MixinsPrimary):
     )
 
     def document_uuids(
-        self,
-        level: Level,
+        self, level: Level, verify_uuids: Set[str] | None = None
     ) -> Set[str]:
         """Get the UUIDs of the documents to which this user is granted
         permissions explicitly through :class:`AssocUserDocument` entries at
@@ -179,18 +182,41 @@ class User(Base, MixinsPrimary):
         (**own**) to assign the grantee access.
 
         :param level: The level to match against.
-        :returns: A set of document object UUIDs.
+        :param verify: Document UUIDs to verify level of. This makes the
+            results returned smaller. Object UUIDs are and ``INDEX`` so
+            searching is not too expensive and generally this set will be
+            smaller (there will be restrictions implemented using
+            ``fastapi.Query`` for untrusted inputs).
+        :returns: A set of document object UUIDs at :param:`level` when
+            :param:`verify_uuids` is ``None``. Otherwise look for documents with
+            uuids in the provided set of uuids that are below the specified level
+            and return them.
         """
         session = object_session(self)
         if session is None:
             raise ValueError("Session is required.")
 
-        document_ids = select(AssocUserDocument.id_document).where(
-            AssocUserDocument.id_user == self.id,
-            AssocUserDocument.level == level,
+        q_document_ids = select(AssocUserDocument.id_document)
+
+        # NOTE: If ``verify_uuids`` is ``None``, then just compare the level
+        #       given to any association. This is like a level set of sorts (
+        #       where the mapping is from a document to its level). If it is
+        #       not ``None``, look for document ids that are not of a high
+        #       enough level.
+        conds = (
+            (AssocUserDocument.level == level,)
+            if verify_uuids is None
+            else (
+                AssocUserDocument.id_document.in_(
+                    select(Document.id).where(Document.uuid.in_(verify_uuids))
+                ),
+            )
         )
-        document_uuids = select(Document.uuid).where(Document.id.in_(document_ids))
-        return set(session.execute(document_uuids).scalars())
+        q_document_ids = q_document_ids.where(
+            AssocUserDocument.id_user == self.id, *conds
+        )
+        q_document_uuids = select(Document.uuid).where(Document.id.in_(q_document_ids))
+        return set(session.execute(q_document_uuids).scalars())
 
 
 class Collection(Base, MixinsPrimary):
@@ -244,6 +270,20 @@ class Document(Base, MixinsPrimary):
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
     )
+
+    def get_user_levels(self, verify_uuids: Set[str]) -> Dict[str, Level]:
+        q = (
+            select(AssocUserDocument.level, User.uuid)
+            .join(User)
+            .where(
+                User.uuid.in_(verify_uuids),
+                AssocUserDocument.id_document == self.id,
+            )
+        )
+        session = object_session(self)
+        if session is None:
+            raise ValueError("Object missing session.")
+        return {row.uuid: row.level for row in session.execute(q)}
 
 
 class Edit(Base, MixinsPrimary):

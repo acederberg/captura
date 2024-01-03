@@ -490,6 +490,48 @@ class TestDocument(BaseModelTest):
             raise ValueError(f"Could not find document with id `{id}`.")
         return m
 
+    def test_get_user_levels(self, sessionmaker: sessionmaker[Session]):
+        with sessionmaker() as session:
+            # Get user and nullify existing associations.
+            document = self.get_document(session)
+            assert document is not None
+            session.execute(
+                delete(AssocUserDocument).where(
+                    AssocUserDocument.id_document == document.id
+                )
+            )
+            session.commit()
+            session.refresh(document)
+            assert not document.users, "Document should have no users at this point."
+
+            # Get users and create associations
+            users: List[User] = list(
+                session.execute(select(User).where(User.id.between(1, 10))).scalars()
+            )
+            assert len(users)
+
+            assocs = [
+                AssocUserDocument(
+                    id_user=user.id,
+                    id_document=document.id,
+                    level=Level._value2member_map_[(user.id % 3) * 10],
+                )
+                for user in users
+            ]
+            session.add_all(assocs)
+            session.commit()
+            session.refresh(document)
+
+            # Verify levels with expectations.
+            user_map = {user.uuid: user for user in users}
+            user_levels = document.get_user_levels(set(user_map.keys()))
+            assert len(user_levels)
+
+            for user_uuid, user_level in user_levels.items():
+                user = user_map[user_uuid]
+                expected_level = Level._value2member_map_[(user.id % 3) * 10]
+                assert expected_level == user_level
+
     def test_collection_relation(self, sessionmaker: sessionmaker[Session]):
         """Redundant."""
         with sessionmaker() as session:

@@ -202,27 +202,3 @@ class Filter(BaseModel):
 
 
 DependsFilter: TypeAlias = Annotated[Filter, Depends()]
-
-
-def deleted_info(token: DependsToken) -> Dict[str, Any]:
-    return dict(
-        _deleted_by_user_uuid=token["uuid"],
-        _deleted_timestamp=datetime.timestamp(datetime.now()),
-        _deleted=True,
-    )
-
-
-def updated_info(token: DependsToken) -> Dict[str, str]:
-    return dict(_created_by_user_uuid=token["uuid"])
-
-
-def created_info(token: DependsToken) -> Dict[str, str]:
-    return dict(
-        _created_by_user_uuid=token["uuid"],
-        _updated_by_user_uuid=token["uuid"],
-    )
-
-
-DependsDeletedInfo = Annotated[Dict[str, Any], Depends(deleted_info)]
-DependsCreatedInfo = Annotated[Dict[str, str], Depends(created_info)]
-DependsUpdatedInfo = Annotated[Dict[str, str], Depends(updated_info)]
