@@ -335,18 +335,50 @@ class GrantView(BaseView):
         """Revoke access to the specified user on the specified document."""
 
         # NOTE: Permissions should be hard deleted unlike first class rows.
+        uuid_revoker = token["uuid"]
         with makesession() as session:
-            q_assoc = select(AssocUserDocument).where(
-                AssocUserDocument.id_user
-                == select(User.id).where(User.uuid == uuid_user),
-                AssocUserDocument.id_document
-                == select(Document.id).where(Document.uuid == uuid_document),
-            )
-            assoc = session.execute(q_assoc).scalar()
+            user_revoker = session.execute(
+                select(User).where(User.uuid == uuid_revoker)
+            ).scalar()
+            if user_revoker is None:
+                detail = dict(detail="No such user.", uuid=uuid_revoker)
+                raise HTTPException(404, detail=detail)
+            elif bad := user_revoker.document_uuids(Level.own, {uuid_document}):
+                print(bad)
+                print(user_revoker.uuid)
+                print(user_revoker.documents)
+                detail = dict(
+                    msg="User does not own document",
+                    uuid_document=uuid_document,
+                    uuid_user=uuid_revoker,
+                )
+                raise HTTPException(403, detail=detail)
+
+            user_revokee = session.execute(
+                select(User).where(User.uuid == uuid_user)
+            ).scalar()
+            if user_revokee is None:
+                detail = dict(msg="No such user", uuid=uuid_user)
+                raise HTTPException(404, detail=detail)
+            elif user_revokee.document_uuids(Level.own, verify_uuids={uuid_document}):
+                detail = dict(
+                    msg="Owner cannot reject another owners permission.",
+                    uuid_user_revoker=uuid_revoker,
+                    uuid_user_revokee=uuid_user,
+                )
+                raise HTTPException(403, detail=detail)
+
+            assoc = session.execute(
+                select(AssocUserDocument).where(
+                    AssocUserDocument.id_document.in_(
+                        select(Document.id).where(Document.uuid == uuid_document)
+                    ),
+                    AssocUserDocument.id_user == user_revokee.id,
+                )
+            ).scalar()
+
             if assoc is None:
-                _ = "User had no permissions for the specified document"
-                _ = dict(msg=msg, uuid_document=uuid_document, uuid_user=uuid_user)
-                raise HTTPException(404, detail=_)
+                raise HTTPException(400, detail="Grant does not exist.")
 
             session.delete(assoc)
 
@@ -378,8 +410,9 @@ class GrantView(BaseView):
         with makesession() as session:
             assoc = session.execute(
                 select(AssocUserDocument).where(
-                    AssocUserDocument.id_user == select(User.id),
-                    User.uuid == token["uuid"],
+                    AssocUserDocument.id_user.in_(
+                        select(User.id).where(User.uuid == token["uuid"])
+                    )
                 )
             ).scalar()
 
@@ -407,6 +440,8 @@ class GrantView(BaseView):
         This could be useful somewhere in the UI. For instance, for owners
         granting permissions.
         """
+
+        # TODO: When uuid_user is empty, return all permissions on document.
         uuid = token["uuid"]
         with makesession() as session:
             user = session.execute(select(User).where(User.uuid == uuid)).scalar()
@@ -772,6 +807,7 @@ class AppView(BaseView):
     view_router = FastAPI()  # type: ignore
     view_routes = {"get_index": "/"}
     view_children = {
+        "/grants": GrantView,
         "/users": UserView,
         "/collections": CollectionView,
         "/documents": DocumentView,

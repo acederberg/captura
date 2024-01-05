@@ -88,7 +88,7 @@ class Event(Base):
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
 
-    uuid_parent: Mapped[str] = mapped_column(ForeignKey("events.uuid"))
+    uuid_parent: Mapped[str] = mapped_column(ForeignKey("events.uuid"), nullable=True)
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
     uuid_obj: Mapped[MappedColumnUUID]
@@ -210,6 +210,7 @@ class User(Base, MixinsPrimary):
                 AssocUserDocument.id_document.in_(
                     select(Document.id).where(Document.uuid.in_(verify_uuids))
                 ),
+                AssocUserDocument.level < level,
             )
         )
         q_document_ids = q_document_ids.where(
