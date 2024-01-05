@@ -96,6 +96,13 @@ class Event(Base):
     kind_obj: Mapped[ObjectKind] = mapped_column(Enum(ObjectKind))
     detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
+    children: Mapped[List["Event"]] = relationship("Event", back_populates="parent")
+    parent: Mapped["Event"] = relationship(
+        cascade="all, delete",
+        foreign_keys=[uuid_parent],
+    )
+    user: Mapped["User"] = relationship()
+
 
 class AssocCollectionDocument(Base, MixinsPrimary):
     __tablename__ = "_assocs_collections_documents"
@@ -161,6 +168,8 @@ class User(Base, MixinsPrimary):
         primaryjoin="User.id==AssocUserDocument.id_user",
         secondaryjoin="AssocUserDocument.id_document==Document.id",
     )
+
+    events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
     def document_uuids(
         self, level: Level, verify_uuids: Set[str] | None = None

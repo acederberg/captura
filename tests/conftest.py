@@ -1,7 +1,13 @@
+from typing import Any, AsyncGenerator
+
+import httpx
 import pytest
+import pytest_asyncio
 from app import util
 from app.config import PREFIX, Config
 from app.models import Base
+from app.views import AppView
+from client.config import Config as ClientConfig
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -12,6 +18,7 @@ from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 from tests.test_models import ModelTestMeta
 
 PATH_CONFIG_PYTEST = util.Path.base("config.test.yaml")
+PATH_CLIENT_CONFIG_PYTEST = util.Path.base("client-config.test.yaml")
 logger = util.get_logger(__name__)
 
 # =========================================================================== #
@@ -54,6 +61,21 @@ def config() -> PytestConfig:
     return PytestConfig()  # type: ignore
 
 
+class PytestClientConfig(ClientConfig):
+    model_config = YamlSettingsConfigDict(
+        yaml_files={PATH_CLIENT_CONFIG_PYTEST: YamlFileConfigDict(required=False)}
+    )
+    token: str | None = None
+
+
+@pytest.fixture(scope="session")
+def client_config() -> PytestClientConfig:
+    logger.debug(
+        "`client_config` fixture called. Loading from `%s`.", PATH_CLIENT_CONFIG_PYTEST
+    )
+    return PytestClientConfig()
+
+
 # =========================================================================== #
 # Database fixtures
 
@@ -74,7 +96,7 @@ def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
 # Loading fixtures
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def load_tables(sessionmaker: _sessionmaker[Session], setup_cleanup):
     logger.info("Reloading tables (fixture `load_tables`).")
     with sessionmaker() as session:
@@ -87,7 +109,7 @@ def load_tables(sessionmaker: _sessionmaker[Session], setup_cleanup):
             cls.load(session)
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def setup_cleanup(engine: Engine, config: PytestConfig):
     logger.debug("`setup_cleanup` fixture called.")
     metadata = Base.metadata
@@ -105,3 +127,18 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
         metadata.create_all(engine)
 
     yield
+
+
+# --------------------------------------------------------------------------- #
+# Application fixtures.
+
+
+@pytest_asyncio.fixture(scope="session")
+async def async_client(
+    config: Config,
+) -> AsyncGenerator[httpx.AsyncClient, Any]:
+    client: httpx.AsyncClient
+    async with httpx.AsyncClient(
+        app=AppView.view_router, base_url="localhost:8080"
+    ) as client:
+        yield client

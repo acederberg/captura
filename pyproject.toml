@@ -63,6 +63,7 @@ dev = [
 ]
 test = [
 	"pytest",
+  "pytest-asyncio",
 ]
 
 

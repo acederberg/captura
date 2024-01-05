@@ -87,6 +87,10 @@ class BaseModelTest(metaclass=ModelTestMeta):
         )
         session.commit()
 
+    @pytest.fixture(scope="session", autouse=True)
+    def invoke_loader(self, load_tables, setup_cleanup):
+        ...
+
 
 # NOTE: Test suites must be defined in appropraite order to ensure that
 #       integrity constraints allow data to be inserted successfully.
