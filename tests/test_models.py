@@ -10,6 +10,7 @@ from app.models import (
     Collection,
     Document,
     Edit,
+    Event,
     Level,
     User,
 )
@@ -623,3 +624,7 @@ class TestEdit(BaseModelTest):
 
 class TestAssocUserDocument(BaseModelTest):
     M = AssocUserDocument
+
+
+class TestEvent(BaseModelTest):
+    M = Event

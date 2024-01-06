@@ -4,6 +4,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from app import util
+from app.auth import Auth
 from app.config import PREFIX, Config
 from app.models import Base
 from app.views import AppView
@@ -63,7 +64,12 @@ def config() -> PytestConfig:
 
 class PytestClientConfig(ClientConfig):
     model_config = YamlSettingsConfigDict(
-        yaml_files={PATH_CLIENT_CONFIG_PYTEST: YamlFileConfigDict(required=False)}
+        yaml_files={
+            PATH_CLIENT_CONFIG_PYTEST: YamlFileConfigDict(
+                required=False,
+                subpath=None,
+            )
+        }
     )
     token: str | None = None
 
@@ -133,12 +139,25 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
 # Application fixtures.
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def async_client(
-    config: Config,
+    client_config: ClientConfig,
 ) -> AsyncGenerator[httpx.AsyncClient, Any]:
     client: httpx.AsyncClient
+
+    app = None
+    if not client_config.remote:
+        app = AppView.view_router
+    else:
+        logger.warning("Using remote host for testing. Not recommended in CI!")
+
     async with httpx.AsyncClient(
-        app=AppView.view_router, base_url="localhost:8080"
+        app=app,
+        base_url=client_config.host or "localhost:8080",
     ) as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def auth(config: Config) -> Auth:
+    return Auth.forPyTest(config)

@@ -96,11 +96,12 @@ class Event(Base):
     kind_obj: Mapped[ObjectKind] = mapped_column(Enum(ObjectKind))
     detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
-    children: Mapped[List["Event"]] = relationship("Event", back_populates="parent")
-    parent: Mapped["Event"] = relationship(
-        cascade="all, delete",
-        foreign_keys=[uuid_parent],
-    )
+    children: Mapped[List["Event"]] = relationship("Event")
+    # parent: Mapped["Event"] = relationship(
+    #     cascade="all, delete",
+    #     foreign_keys=[uuid_parent],
+    #     post_update=False,
+    # )
     user: Mapped["User"] = relationship()
 
 

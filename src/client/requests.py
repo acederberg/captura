@@ -8,7 +8,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Concatenate,
     Coroutine,
     List,
     Optional,
@@ -47,13 +46,14 @@ FlagName = Annotated[Optional[str], typer.Option("--name")]
 FlagDescription = Annotated[Optional[str], typer.Option("--description")]
 FlagUrl = Annotated[Optional[str], typer.Option("--url")]
 FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
+FlagPublic = Annotated[Optional[bool], typer.Option("--public")]
 ArgUserChild: TypeAlias = Annotated[UserChildEnum, typer.Argument()]
 ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument()]
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
 
 
 V = ParamSpec("V")
-AsyncRequestCallable = Callable[Concatenate[V], httpx.Response]
+AsyncRequestCallable = Callable[V, Coroutine[httpx.Response, Any, Any]]
 RequestCallable = Callable[V, httpx.Response]
 
 
@@ -69,22 +69,31 @@ def handle_response(response: httpx.Response) -> None:
 class BaseRequests:
     """ """
 
+    token: str | None
     config: Config
     client: httpx.AsyncClient
     commands: ClassVar[Tuple[str, ...]]
 
-    def __init__(self, config: Config, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        config: Config,
+        client: httpx.AsyncClient | None = None,
+        token: str | None = None,
+    ):
         # self.typer = typer.Typer()
+        self.token = token
         self.config = config
         if client is not None:
             self.client = client
 
     @property
-    def headers(self, token: str | None = None):
-        return dict(
-            authorization=f"bearer {token or self.config.token}",
+    def headers(self):
+        h = dict(
             content_type="application/json",
         )
+        if self.token:
+            h.update(authorization=f"bearer {self.token}")
+        return h
 
     def typer(self) -> typer.Typer:
         t = typer.Typer()
@@ -104,8 +113,18 @@ class BaseRequests:
             *args: V.args,
             **kwargs: V.kwargs,
         ) -> httpx.Response:
-            async with httpx.AsyncClient(base_url=self.config.host) as client:
+            app = None
+            if not self.config.remote:
+                typer.echo("[green]Using app instance in client.")
+                from app.views import AppView
+
+                app = AppView.view_router
+            async with httpx.AsyncClient(
+                app=app,
+                base_url=self.config.host,
+            ) as client:
                 self.client = client
+                self.token = self.config.defaults.token
                 response = await fn(*args, **kwargs)
                 handle_response(response)
                 return response
@@ -136,10 +155,8 @@ class UserRequests(BaseRequests):
         url = f"/users/{uuid_user}/{child.value}"
         return await self.client.get(url, headers=self.headers)
 
-    async def read(self, uuid_user: FlagUUIDUsers):
-        return await self.client.get(
-            "/users", params=dict(uuid_user=uuid_user), headers=self.headers
-        )
+    async def read(self, uuid_user: ArgUUIDUser):
+        return await self.client.get(f"/users/{uuid_user}", headers=self.headers)
 
     async def patch(
         self,
@@ -148,23 +165,36 @@ class UserRequests(BaseRequests):
         description: FlagDescription = None,
         url: FlagUrl = None,
         url_image: FlagUrlImage = None,
+        public: FlagPublic = None,
     ) -> httpx.Response:
+        params = dict(
+            name=name,
+            description=description,
+            url=url,
+            url_image=url_image,
+            public=public,
+        )
+        params = {k: v for k, v in params.items() if v is not None}
         return await self.client.patch(
             f"/users/{uuid_user}",
-            params=dict(
-                name=name,
-                description=description,
-                url=url,
-                url_image=url_image,
-            ),
+            params=params,
             headers=self.headers,
         )
 
     async def create(
         self,
+    ) -> httpx.Response:
+        return await self.client.post(f"/users", params=dict(), headers=self.headers)
+
+    async def delete(
+        self,
         uuid_user: FlagUUIDUser,
     ) -> httpx.Response:
-        ...
+        return await self.client.delete(
+            f"/users/{uuid_user}",
+            params=dict(uuid_user=uuid_user),
+            headers=self.headers,
+        )
 
 
 class GrantRequests(BaseRequests):

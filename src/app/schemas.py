@@ -64,6 +64,7 @@ class BaseSchema(BaseModel):
 
 
 class UserUpdateSchema(BaseModel):
+    public: bool | None = None
     name: Name | None = None
     description: Description | None = None
     url_image: Url = None

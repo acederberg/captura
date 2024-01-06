@@ -7,6 +7,7 @@ from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 class DefaultsConfig(BaseModel):
     uuid_user: Annotated[str, Field(default="00000000")]
+    token: str | None = None
 
 
 class Config(BaseYamlSettings):
@@ -14,6 +15,11 @@ class Config(BaseYamlSettings):
         yaml_files=util.Path.base("client-config.yaml")
     )
 
-    defaults: Annotated[DefaultsConfig, Field(default_factory=DefaultsConfig)]
+    defaults: Annotated[
+        DefaultsConfig,
+        Field(default_factory=lambda: DefaultsConfig()),  # type: ignore
+    ]
+
+    # when host is None, use `app` instance.
     host: str = "http://localhost:8080"
-    token: str
+    remote: bool = False

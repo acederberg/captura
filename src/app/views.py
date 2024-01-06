@@ -589,7 +589,7 @@ class UserView(BaseView):
             uuid = token["uuid"]
         with makesession() as session:
             result: None | User = session.execute(
-                select(User).where(User.uuid == uuid)
+                select(User).where(User.uuid == uuid, User.public)
             ).scalar()
             if result is None:
                 raise HTTPException(204)
@@ -710,10 +710,27 @@ class UserView(BaseView):
             # NOTE: Don't forget to include the metadata.
             updates_dict = updates.model_dump()
             # updates_dict.update(updated_info)
+            event = Event(
+                uuid_user=uuid,
+                uuid_obj=uuid,
+                kind=EventKind.update,
+                kind_obj="user",
+                detail="Updated user.",
+            )
             for key, value in updates_dict.items():
                 if value is None:
                     continue
                 setattr(user, key, value)
+                event.children.append(
+                    Event(
+                        uuid_user=uuid,
+                        uuid_obj=uuid,
+                        kind=EventKind.update,
+                        kind_obj=ObjectKind.user,
+                        detail=f"Updated user.{key}.",
+                    )
+                )
+            session.add(event)
             session.add(user)
             session.commit()
 
