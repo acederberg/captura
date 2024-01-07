@@ -119,6 +119,8 @@ class EditSchema(BaseModel):
 class EventSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    api_origin: str
+    api_version: str
     uuid_parent: UUID
     uuid: UUID
     uuid_obj: UUID
@@ -131,5 +133,11 @@ class EventSchema(BaseModel):
 
 
 class PostUserSchema(UserSchema):
-    collections: List[CollectionSchema] | None
-    documents: List[DocumentSchema] | None
+    collections: Annotated[
+        List[CollectionSchema],
+        Field(default=list()),
+    ]
+    documents: Annotated[
+        List[DocumentSchema],
+        Field(default=list()),
+    ]

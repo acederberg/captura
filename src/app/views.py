@@ -234,14 +234,20 @@ class DocumentView(BaseView):
             logger.debug("Defining ownership of new documents.")
             user_uuids = [uuid, *uuid_owner]
             users: List[User] = list(
-                session.execute(select(User).where(User.uuid.in_(user_uuids))).scalars()
+                session.execute(
+                    select(User).where(User.uuid.in_(user_uuids)),
+                ).scalars()
             )
 
             # NOTE: This must be done directly creating associations because of
             #       the ``_created_by_uuid_user`` and ``_updated_by_uuid_user``
             #       fields.
             assocs_owners = list(
-                AssocUserDocument(user_id=user, document_id=document, level="owner")
+                AssocUserDocument(
+                    user_id=user,
+                    document_id=document,
+                    level="owner",
+                )
                 for document in documents.values()
                 for user in users
             )
@@ -251,7 +257,9 @@ class DocumentView(BaseView):
             logger.debug("Adding document to collections `%s`.", uuid_collection)
             collections: List[Collection] = list(
                 session.execute(
-                    select(Collection).where(Collection.uuid.in_(uuid_collection))
+                    select(Collection).where(
+                        Collection.uuid.in_(uuid_collection),
+                    )
                 ).scalars()
             )
             assocs_collections = list(
@@ -347,9 +355,6 @@ class GrantView(BaseView):
                 detail = dict(detail="No such user.", uuid=uuid_revoker)
                 raise HTTPException(404, detail=detail)
             elif bad := user_revoker.get_document_uuids(Level.own, {uuid_document}):
-                print(bad)
-                print(user_revoker.uuid)
-                print(user_revoker.documents)
                 detail = dict(
                     msg="User does not own document",
                     uuid_document=uuid_document,
@@ -547,7 +552,7 @@ class GrantView(BaseView):
                 session.refresh(assoc)
                 session.add(
                     Event(
-                        uuid_event_parent=event.uuid,
+                        uuid_parent=event.uuid,
                         uuid_user=grantee.id,
                         uuid_obj=assoc.uuid,
                         kind=event.kind,
@@ -813,25 +818,25 @@ class UserView(BaseView):
             session.add(
                 user := User(**data.model_dump(exclude={"collections", "documents"}))
             )
+            session.commit()
+            session.refresh(user)
+
             events_common = dict(
                 uuid_user=user.uuid,
                 api_origin=api_origin,
                 kind=EventKind.create,
             )
-            session.commit()
-            session.refresh(user)
             session.add(
                 event := Event(
                     **events_common,
                     uuid_obj=user.uuid,
-                    kind=EventKind.create,
                     kind_obj=ObjectKind.user,
                     detail="User created.",
                 )
             )
             session.commit()
 
-            if data.collections is not None:
+            if data.collections:
                 session.add_all(
                     collections := [
                         Collection(**cc.model_dump(), id_user=user.id)
@@ -843,7 +848,7 @@ class UserView(BaseView):
                     [
                         Event(
                             **events_common,
-                            uuid_event_parent=event.uuid,
+                            uuid_parent=event.uuid,
                             uuid_obj=cc.uuid,
                             kind_obj=ObjectKind.collection,
                             detail="Collection created.",
@@ -852,16 +857,18 @@ class UserView(BaseView):
                     ]
                 )
                 session.commit()
-            if data.documents is not None:
+            if data.documents:
                 session.add_all(
                     documents := [Document(**dd.model_dump()) for dd in data.documents]
                 )
                 session.commit()
+                user.documents = {dd.name: dd for dd in documents}
+                session.add(user)
                 session.add_all(
                     [
                         Event(
                             **events_common,
-                            uuid_event_parent=event.uuid,
+                            uuid_parent=event.uuid,
                             uuid_obj=dd.uuid,
                             kind_obj=ObjectKind.document,
                             detail="Document created.",
@@ -872,7 +879,10 @@ class UserView(BaseView):
                 session.commit()
 
             session.refresh(event)
-            return EventSchema.model_validate(event)
+            return JSONResponse(  # type: ignore
+                EventSchema.model_validate(event).model_dump(),
+                status_code=201,
+            )
 
 
 class AuthView(BaseView):

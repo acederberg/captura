@@ -19,6 +19,7 @@ from typing import (
 import httpx
 import rich
 import typer
+import yaml
 from app.models import Level
 from app.schemas import UserUpdateSchema
 
@@ -183,11 +184,19 @@ class UserRequests(BaseRequests):
 
     async def create(
         self,
+        filepath: str,
     ) -> httpx.Response:
-        return await self.client.post(f"/users", params=dict(), headers=self.headers)
+        with open(filepath, "r") as file:
+            content = yaml.safe_load(file)
+
+        return await self.client.post(
+            "/users",
+            json=content,
+            headers=self.headers,
+        )
 
     async def delete(
-        self, uuid_user: FlagUUIDUser, restore: bool = False
+        self, uuid_user: ArgUUIDUser, restore: bool = False
     ) -> httpx.Response:
         return await self.client.delete(
             f"/users/{uuid_user}",

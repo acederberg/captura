@@ -7,10 +7,12 @@ from typing import Any, AsyncGenerator, Tuple, Type
 import httpx
 import pytest
 import pytest_asyncio
+import yaml
+from app import __version__, util
 from app.__main__ import main
 from app.auth import Auth
 from app.models import EventKind, ObjectKind, User
-from app.schemas import EventSchema
+from app.schemas import EventSchema, UserSchema
 from app.views import AppView
 from client.config import DefaultsConfig
 from client.requests import BaseRequests, UserChildEnum, UserRequests
@@ -19,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .conftest import PytestClientConfig
 
+CURRENT_APP_VERSION = __version__
 DEFAULT_UUID: str = "00000000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
 
@@ -239,3 +242,65 @@ class TestUserViews(BaseTestViews):
         assert (
             res.json()["detail"] == "Users can only delete/restore their own account."
         )
+
+    @pytest.mark.asyncio
+    async def test_create(self, client: UserRequests, auth: Auth):
+        def check_common(event: EventSchema):
+            assert event.uuid_user is not None
+            if not client.config.remote:
+                assert event.api_version == CURRENT_APP_VERSION
+            assert event.api_origin == "POST /users"
+            assert event.kind == EventKind.create
+
+        p = util.Path.test_assets("test-user-create.yaml")
+        res = await client.create(p)
+        if err := check_status(res, 201):
+            raise err
+
+        # NOTE: The expected number of results changes when the document is
+        #       changed. Per the note in the document, do not change it without
+        #       testing it first.
+        event = EventSchema.model_validate_json(res.content)
+        check_common(event)
+        assert event.detail == "User created."
+        assert event.kind_obj == ObjectKind.user
+
+        n_collections, n_documents = 0, 0
+        for ee in event.children:
+            check_common(event)
+            if ee.kind_obj == ObjectKind.collection:
+                assert ee.detail == "Collection created."
+                n_collections += 1
+            elif ee.kind_obj == ObjectKind.document:
+                assert ee.detail == "Document created."
+                n_documents += 1
+            else:
+                raise AssertionError(
+                    f"Expected no events of `kind_obj={event.kind_obj}`."
+                )
+
+        # Verify counts
+        if n_collections != 4:
+            raise AssertionError("Expected to find four collections.")
+        elif n_documents != 3:
+            raise AssertionError("Expected to find three documents.")
+
+        uuid: str = event.uuid_user  # type: ignore
+        res = await asyncio.gather(
+            client.read(uuid),
+            client.read_child(UserChildEnum.documents, uuid),
+            client.read_child(UserChildEnum.collections, uuid),
+        )
+        if err := next((check_status(rr, 200) for rr in res), None):
+            raise err
+
+        res_user, res_docs, res_collections = res
+        user = UserSchema.model_validate_json(res_user.content)
+        assert user.name == "test create"
+        assert user.description == "test user for test create."
+        assert user.url_image == "http://github.com/acederberg"
+        assert user.uuid == uuid
+
+        documents, collections = res_docs.json(), res_collections.json()
+        assert len(documents) == 3
+        assert len(collections) == 4

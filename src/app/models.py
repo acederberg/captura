@@ -101,11 +101,7 @@ class Event(Base):
     children: Mapped[List["Event"]] = relationship("Event")
     api_origin: Mapped[str] = mapped_column(String(64))
     api_version: Mapped[str] = mapped_column(String(16), default=__version__)
-    # parent: Mapped["Event"] = relationship(
-    #     cascade="all, delete",
-    #     foreign_keys=[uuid_parent],
-    #     post_update=False,
-    # )
+
     user: Mapped["User"] = relationship()
 
 
@@ -140,7 +136,10 @@ class AssocUserDocument(Base, MixinsPrimary):
 class User(Base, MixinsPrimary):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
     name: Mapped[str] = mapped_column(String(LENGTH_NAME), unique=True)
     description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
     url_image: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
@@ -263,8 +262,8 @@ class Collection(Base, MixinsPrimary):
     __tablename__ = "collections"
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(LENGTH_NAME), primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(LENGTH_NAME), unique=True)
     description: Mapped[str] = mapped_column(
         String(LENGTH_DESCRIPTION),
         nullable=True,
@@ -287,7 +286,7 @@ class Collection(Base, MixinsPrimary):
 class Document(Base, MixinsPrimary):
     __tablename__ = "documents"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(LENGTH_NAME))
     description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
     content: Mapped[str] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
@@ -329,7 +328,7 @@ class Document(Base, MixinsPrimary):
 class Edit(Base, MixinsPrimary):
     __tablename__ = "edits"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     id_document: Mapped[int] = mapped_column(ForeignKey("documents.id"))
     content: Mapped[int] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
