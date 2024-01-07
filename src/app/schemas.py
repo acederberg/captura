@@ -13,7 +13,7 @@ From a mathmatical standpoint, this is 'good enough' because UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
-from typing import Annotated, Literal
+from typing import Annotated, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +23,8 @@ from app.models import (
     LENGTH_MESSAGE,
     LENGTH_NAME,
     LENGTH_URL,
+    EventKind,
+    ObjectKind,
 )
 
 UUID = Annotated[
@@ -112,3 +114,22 @@ class EditMetadataSchema(BaseModel):
 class EditSchema(BaseModel):
     content: Content
     message: Message
+
+
+class EventSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid_parent: UUID
+    uuid: UUID
+    uuid_obj: UUID
+    uuid_user: UUID
+    kind: EventKind
+    kind_obj: ObjectKind
+    timestamp: UnixTimestamp
+    detail: str
+    children: Annotated["List[EventSchema]", Field(default=list())]
+
+
+class PostUserSchema(UserSchema):
+    collections: List[CollectionSchema] | None
+    documents: List[DocumentSchema] | None

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.params import Param
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from pydantic import BaseModel
 from sqlalchemy import func, label, literal_column, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -41,6 +42,8 @@ from app.schemas import (
     DocumentSchema,
     EditMetadataSchema,
     EditSchema,
+    EventSchema,
+    PostUserSchema,
     UserSchema,
     UserUpdateSchema,
 )
@@ -331,7 +334,7 @@ class GrantView(BaseView):
         token: DependsToken,
         uuid_user: PathUUIDUser,
         uuid_document: PathUUIDDocument,
-    ):
+    ) -> EventSchema:
         """Revoke access to the specified user on the specified document."""
 
         # NOTE: Permissions should be hard deleted unlike first class rows.
@@ -343,7 +346,7 @@ class GrantView(BaseView):
             if user_revoker is None:
                 detail = dict(detail="No such user.", uuid=uuid_revoker)
                 raise HTTPException(404, detail=detail)
-            elif bad := user_revoker.document_uuids(Level.own, {uuid_document}):
+            elif bad := user_revoker.get_document_uuids(Level.own, {uuid_document}):
                 print(bad)
                 print(user_revoker.uuid)
                 print(user_revoker.documents)
@@ -360,7 +363,9 @@ class GrantView(BaseView):
             if user_revokee is None:
                 detail = dict(msg="No such user", uuid=uuid_user)
                 raise HTTPException(404, detail=detail)
-            elif user_revokee.document_uuids(Level.own, verify_uuids={uuid_document}):
+            elif user_revokee.get_document_uuids(
+                Level.own, verify_uuids={uuid_document}
+            ):
                 detail = dict(
                     msg="Owner cannot reject another owners permission.",
                     uuid_user_revoker=uuid_revoker,
@@ -391,6 +396,8 @@ class GrantView(BaseView):
             )
             session.add(event)
             session.commit()
+
+            return event  # type: ignore
 
     @classmethod
     def get_user_document_access(
@@ -692,7 +699,7 @@ class UserView(BaseView):
         token: DependsToken,
         uuid: PathUUIDUser,
         updates: UserUpdateSchema = Depends(),
-    ):
+    ) -> EventSchema:
         """Update a user.
 
         Only the user themself should be able to update this.
@@ -709,81 +716,163 @@ class UserView(BaseView):
 
             # NOTE: Don't forget to include the metadata.
             updates_dict = updates.model_dump()
-            # updates_dict.update(updated_info)
-            event = Event(
+            event_common = dict(
                 uuid_user=uuid,
                 uuid_obj=uuid,
                 kind=EventKind.update,
-                kind_obj="user",
-                detail="Updated user.",
+                kind_obj=ObjectKind.user,
+                api_origin="PATCH /users/<uuid>",
             )
+            event = Event(**event_common, detail="Updated user.")
             for key, value in updates_dict.items():
                 if value is None:
                     continue
                 setattr(user, key, value)
                 event.children.append(
-                    Event(
-                        uuid_user=uuid,
-                        uuid_obj=uuid,
-                        kind=EventKind.update,
-                        kind_obj=ObjectKind.user,
-                        detail=f"Updated user.{key}.",
-                    )
+                    Event(**event_common, detail=f"Updated user {key}.")
                 )
             session.add(event)
             session.add(user)
             session.commit()
+            session.refresh(event)
+
+            return EventSchema.model_validate(event)  # type: ignore
 
     @classmethod
     def delete_user(
         cls,
         makesession: DependsSessionMaker,
+        token: DependsToken,
         uuid: PathUUIDUser,
-    ) -> UUID:
+        restore: bool = False,
+    ) -> EventSchema:
         """Remove a user and their unshared documents and edits.
 
         Only the user themself or an admin should be able to call this
         endpoint.
         """
+        if not uuid == token["uuid"]:
+            raise HTTPException(
+                403, detail="Users can only delete/restore their own account."
+            )
+        api_origin = "DELETE /users/<uuid>"
+        msg = "deleted" if not restore else "restored"
         with makesession() as session:
             _ = select(User).where(User.uuid == uuid)
             user: User | None = session.execute(_).scalar()
             if user is None:
                 raise HTTPException(418, detail="User not found.")
 
-            # Get all assocs where the user is the exclusive owner.
-            # q_assocs = select(AssocUserDocument).where(
-            #             AssocUserDocument.id_user == user.id,
-            #             AssocUserDocument.level == "owner",
-            #         )
+            event = Event(
+                uuid_user=uuid,
+                uuid_obj=uuid,
+                kind=EventKind.delete,
+                kind_obj=ObjectKind.user,
+                detail=f"User {msg}.",
+                api_origin=api_origin,
+            )
 
-            # TODO: These queries should be factored out so they can be tested.
-            # q_counts = select( literal_column("id_document")).select_from(
-            #     select(AssocUserDocument.id_document, label("n_owners", func.count()))
-            #     .select_from(q_assocs.group_by(AssocUserDocument.id_document))
-            # ) .where( literal_column("n_owners") == 1 )
+            # Get exclusive_documents.
+            exclusive_documents = user.get_exclusive_documents()
+            for dd in exclusive_documents:
+                event.children.append(
+                    Event(
+                        uuid_user=uuid,
+                        uuid_obj=dd.uuid,
+                        kind_obj=ObjectKind.document,
+                        kind=EventKind.delete,
+                        detail=f"Document {msg}.",
+                        api_origin=api_origin,
+                    )
+                )
+                session.add(event)
 
-            # exclusive_documents : List[Document] = list(session.execute(
-            #     select(Document).where(Document.id)
-            # ).scalars())
+                dd.deleted = not restore
+                session.add(dd)
 
-            session.delete(user)
+            user.deleted = not restore
+            session.add(user)
+            session.add(event)
             session.commit()
 
-            return user.uuid
+            return EventSchema.model_validate(event)  # type: ignore
 
     @classmethod
-    def post_user(cls, makesession: DependsSessionMaker, user: UserSchema) -> UUID:
+    def post_user(
+        cls,
+        makesession: DependsSessionMaker,
+        data: PostUserSchema,
+    ) -> EventSchema:
         """Create a user.
 
-        User can create collections and documents later during the registration
-        flow.
+        For now sharing of collections or documents can be done through
+        calling `POST /grant/users/<uuid>/documents/<uuid_document>` endpoints.
         """
-
+        api_origin = "POST /users"
         with makesession() as session:
-            session.add(user_obj := User(**user.model_dump()))
+            session.add(
+                user := User(**data.model_dump(exclude={"collections", "documents"}))
+            )
+            events_common = dict(
+                uuid_user=user.uuid,
+                api_origin=api_origin,
+                kind=EventKind.create,
+            )
             session.commit()
-            return user_obj.uuid
+            session.refresh(user)
+            session.add(
+                event := Event(
+                    **events_common,
+                    uuid_obj=user.uuid,
+                    kind=EventKind.create,
+                    kind_obj=ObjectKind.user,
+                    detail="User created.",
+                )
+            )
+            session.commit()
+
+            if data.collections is not None:
+                session.add_all(
+                    collections := [
+                        Collection(**cc.model_dump(), id_user=user.id)
+                        for cc in data.collections
+                    ]
+                )
+                session.commit()
+                session.add_all(
+                    [
+                        Event(
+                            **events_common,
+                            uuid_event_parent=event.uuid,
+                            uuid_obj=cc.uuid,
+                            kind_obj=ObjectKind.collection,
+                            detail="Collection created.",
+                        )
+                        for cc in collections
+                    ]
+                )
+                session.commit()
+            if data.documents is not None:
+                session.add_all(
+                    documents := [Document(**dd.model_dump()) for dd in data.documents]
+                )
+                session.commit()
+                session.add_all(
+                    [
+                        Event(
+                            **events_common,
+                            uuid_event_parent=event.uuid,
+                            uuid_obj=dd.uuid,
+                            kind_obj=ObjectKind.document,
+                            detail="Document created.",
+                        )
+                        for dd in documents
+                    ]
+                )
+                session.commit()
+
+            session.refresh(event)
+            return EventSchema.model_validate(event)
 
 
 class AuthView(BaseView):

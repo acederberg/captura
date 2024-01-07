@@ -1,9 +1,9 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import Annotated, Dict, List, Set
+from typing import Annotated, Any, Dict, List, Set
 
-from sqlalchemy import Enum, ForeignKey, String, select
+from sqlalchemy import Enum, ForeignKey, String, func, literal_column, select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
@@ -16,6 +16,8 @@ from sqlalchemy.orm import (
     relationship,
 )
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
+
+from app import __version__
 
 # =========================================================================== #
 # CONSTANTS, ETC.
@@ -97,6 +99,8 @@ class Event(Base):
     detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
     children: Mapped[List["Event"]] = relationship("Event")
+    api_origin: Mapped[str] = mapped_column(String(64))
+    api_version: Mapped[str] = mapped_column(String(16), default=__version__)
     # parent: Mapped["Event"] = relationship(
     #     cascade="all, delete",
     #     foreign_keys=[uuid_parent],
@@ -172,7 +176,32 @@ class User(Base, MixinsPrimary):
 
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
-    def document_uuids(
+    def get_exclusive_documents(self) -> List["Document"]:
+        session = object_session(self)
+        if session is None:
+            raise ValueError("Ohject missing session")
+        q: Any
+        q = select(Document.id).where(
+            Document.id == AssocUserDocument.id_document,
+            AssocUserDocument.level == Level.own,
+            AssocUserDocument.id_user == self.id,
+        )
+        q = select(AssocUserDocument.id_document.label("id_document")).where(
+            AssocUserDocument.id_document.in_(q),
+            AssocUserDocument.level == Level.own,
+        )
+        literally = literal_column("id_document")
+        q = (
+            select(literally, func.count(literally).label("owner_count"))
+            .select_from(q)
+            .group_by(literally)
+        )
+        q = select(literally).select_from(q).where(literal_column("owner_count") == 1)
+        q = select(Document).where(Document.id.in_(q))
+
+        return list(session.execute(q).scalars())
+
+    def get_document_uuids(
         self, level: Level, verify_uuids: Set[str] | None = None
     ) -> Set[str]:
         """Get the UUIDs of the documents to which this user is granted

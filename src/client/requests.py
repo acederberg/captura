@@ -149,7 +149,7 @@ class DocumentRequests(BaseRequests):
 
 
 class UserRequests(BaseRequests):
-    commands = ("read", "read_child", "patch")
+    commands = ("read", "read_child", "update", "create", "delete")
 
     async def read_child(self, child: ArgUserChild, uuid_user: ArgUUIDUser):
         url = f"/users/{uuid_user}/{child.value}"
@@ -158,7 +158,7 @@ class UserRequests(BaseRequests):
     async def read(self, uuid_user: ArgUUIDUser):
         return await self.client.get(f"/users/{uuid_user}", headers=self.headers)
 
-    async def patch(
+    async def update(
         self,
         uuid_user: FlagUUIDUser,
         name: FlagName = None,
@@ -187,12 +187,11 @@ class UserRequests(BaseRequests):
         return await self.client.post(f"/users", params=dict(), headers=self.headers)
 
     async def delete(
-        self,
-        uuid_user: FlagUUIDUser,
+        self, uuid_user: FlagUUIDUser, restore: bool = False
     ) -> httpx.Response:
         return await self.client.delete(
             f"/users/{uuid_user}",
-            params=dict(uuid_user=uuid_user),
+            params=dict(uuid_user=uuid_user, restore=restore),
             headers=self.headers,
         )
 
