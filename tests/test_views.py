@@ -13,10 +13,17 @@ from app.__main__ import main
 from app.auth import Auth
 from app.models import AssocUserDocument, Document, EventKind, Level, ObjectKind, User
 from app.schemas import EventSchema, GrantSchema, UserSchema
-from app.views import AppView, GrantView
+from app.views import AppView, GrantView, document_if_exists, user_if_exists
 from client.config import DefaultsConfig
-from client.requests import BaseRequests, GrantRequests, UserChildEnum, UserRequests
-from sqlalchemy import select, update
+from client.requests import (
+    BaseRequests,
+    GrantRequests,
+    UserChildEnum,
+    UserLevelEnum,
+    UserRequests,
+)
+from fastapi import HTTPException
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from .conftest import PytestClientConfig
@@ -350,7 +357,7 @@ class TestGrantView(BaseTestViews):
         res = await client.read_user("99999999")
         if err := check_status(res, 403):
             raise err
-        assert res.json == dict(msg="Users can only read their own grants.")
+        assert res.json()["detail"] == dict(msg="Users can only read their own grants.")
 
     @pytest.mark.asyncio
     async def test_read_grants_document(
@@ -397,7 +404,7 @@ class TestGrantView(BaseTestViews):
                 raise err
 
             result = res.json()["detail"]
-            assert result["msg"] == "Insufficient grants to view document grants."
+            assert result["msg"] == "User must have grant of level `own`."
 
             session.delete(assoc)
             session.commit()
@@ -407,7 +414,7 @@ class TestGrantView(BaseTestViews):
                 raise err
 
             result = res.json()["detail"]
-            assert result["msg"] == "No permissions for document."
+            assert result["msg"] == "No grant for document."
 
             make_transient(assoc)
             assoc.level = Level.own
@@ -415,9 +422,196 @@ class TestGrantView(BaseTestViews):
             session.commit()
 
     @pytest.mark.asyncio
-    async def test_delete_grant(self, client: GrantRequests):
-        ...
+    async def test_post_grant(
+        self, client: GrantRequests, sessionmaker: sessionmaker[Session]
+    ):
+        def check_common(event):
+            assert event.api_origin == "POST /grants/documents/<uuid>"
+            assert event.uuid_user == DEFAULT_UUID, "Should be token user."
+            assert event.detail == "Grants created."
+            assert event.kind == EventKind.grant
+
+        # Manually remove existing grants.
+        with sessionmaker() as session:
+            try:
+                user = user_if_exists(session, "99999999")
+                document = document_if_exists(session, DEFAULT_UUID_DOCS)
+            except HTTPException:
+                raise AssertionError("Could not find expected user/document.")
+            session.execute(
+                delete(AssocUserDocument).where(
+                    AssocUserDocument.id_document == document.id,
+                    AssocUserDocument.id_user == user.id,
+                )
+            )
+            session.commit()
+
+        # Expects one grant because DEFAULT_UUID should own this doc.
+        # Read grants with api.
+        res = await client.read_document(DEFAULT_UUID_DOCS)
+        if err := check_status(res, 200):
+            raise err
+        grants = list(GrantSchema.model_validate(item) for item in res.json())
+        assert len(grants) == 1, "Expected one grant."
+        initial_grant = grants[0]
+        assert initial_grant.uuid_user == DEFAULT_UUID
+
+        # Recreate grants
+        res = await client.create(
+            DEFAULT_UUID_DOCS,
+            ["99999999"],
+            level=UserLevelEnum.own,  # type: ignore
+        )
+        if err := check_status(res, 201):
+            raise err
+
+        # Check layer one
+        event = EventSchema.model_validate_json(res.content)
+        check_common(event)
+        assert event.uuid_obj == DEFAULT_UUID_DOCS
+        assert event.kind_obj == ObjectKind.document
+
+        # Check layer two
+        assert len(event.children) == 1
+        event_user, *_ = event.children
+        check_common(event_user)
+
+        assert event_user.uuid_obj == "99999999"
+        assert event_user.kind_obj == ObjectKind.user
+
+        # Check layer three
+        assert len(event_user.children) == 1
+        event_assoc, *_ = event_user.children
+        check_common(event_assoc)
+
+        uuid_assoc = event_assoc.uuid_obj
+        assert event_assoc.kind_obj == ObjectKind.assoc_user_document
+        assert not len(event_assoc.children)
+
+        # Read again
+        res = await client.read_document(DEFAULT_UUID_DOCS)
+        if err := check_status(res, 200):
+            raise err
+
+        grants = list(GrantSchema.model_validate(item) for item in res.json())
+        assert (n := len(grants)) == 2, f"Expected two grants, got `{n}`."
+
+        # POST to test indempotence.
+        res = await client.create(DEFAULT_UUID_DOCS, ["99999999"])
+        if err := check_status(res, 201):
+            raise err
+
+        event = EventSchema.model_validate_json(res.content)
+        check_common(event)
+        assert event.uuid_obj == DEFAULT_UUID_DOCS
+        assert event.kind_obj == ObjectKind.document
+
+        # There should be no child events as no grant should have been created.
 
     @pytest.mark.asyncio
-    async def test_post_grant(self, client: GrantRequests):
-        ...
+    async def test_cannot_grant_unowned(
+        self, client: GrantRequests, sessionmaker: sessionmaker[Session]
+    ):
+        """Make sure that a user cannot `POST /grants/documents/<uuid>` unless
+        they actually own that particular document."""
+
+    @pytest.mark.asyncio
+    async def test_cannot_revoke_other_owner(self, client: GrantRequests):
+        """Make sure that a document owner cannot
+        `DELETE /grants/documents/<uuid>` another owner of the document."""
+
+    @pytest.mark.asyncio
+    async def test_cannot_read_unowned(self, client: GrantRequests):
+        """Verify that a user cannot `GET /grants/documents/<uuid>` unless they
+        actuall own that document."""
+
+    @pytest.mark.asyncio
+    async def test_delete_grant(
+        self,
+        client: GrantRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        def check_common(event):
+            assert event.api_origin == "DELETE /grants/documents/<uuid>"
+            assert event.uuid_user == DEFAULT_UUID, "Should be token user."
+            assert event.kind == EventKind.grant
+
+        p = await client.read_document(DEFAULT_UUID_DOCS)
+        if err := check_status(p, 200):
+            raise err
+
+        grants = list(GrantSchema.model_validate(gg) for gg in p.json())
+        assert (n_grants_init := len(grants)), "Expected grants."
+
+        # Get initial grant to compare against event.
+        initial_grant = next((gg for gg in grants if gg.uuid_user == "99999999"), None)
+        assert (
+            initial_grant is not None
+        ), "There should be a grant on `aaa-aaa-aaa` for `99999999`."
+
+        res = await client.delete(DEFAULT_UUID_DOCS, ["99999999"])
+        if err := check_status(res):
+            raise err
+
+        # Check layer one
+        event = EventSchema.model_validate_json(res.content)
+        check_common(event)
+        assert event.uuid_obj == DEFAULT_UUID_DOCS
+        assert event.kind_obj == ObjectKind.document
+        assert event.detail == "Grants revoked."
+
+        # Check layer two
+        assert len(event.children) == 1
+        event_user, *_ = event.children
+        check_common(event_user)
+
+        assert event_user.uuid_obj == "99999999"
+        assert event_user.kind_obj == ObjectKind.user
+        assert event_user.detail == f"Grant `{initial_grant.level}` revoked."
+
+        # Check layer three
+        assert len(event_user.children) == 1
+        event_assoc, *_ = event_user.children
+        check_common(event_assoc)
+
+        assert event_assoc.uuid_obj == initial_grant.uuid
+        assert event_assoc.kind_obj == ObjectKind.assoc_user_document
+        assert event_assoc.detail == f"Grant `{initial_grant.level}` revoked."
+        assert not len(event_assoc.children)
+
+        # Verify with database
+        with sessionmaker() as session:
+            document = session.execute(
+                select(Document).where(Document.uuid == DEFAULT_UUID_DOCS)
+            ).scalar()
+            assert document is not None
+            user = session.execute(select(User).where(User.uuid == "99999999")).scalar()
+            assert user is not None
+
+            assoc = session.execute(
+                select(AssocUserDocument).where(
+                    AssocUserDocument.id_document == document.id,
+                    AssocUserDocument.id_user == user.id,
+                )
+            ).scalar()
+            assert assoc is None
+
+        # Read grants again.
+        res = await client.read_document(DEFAULT_UUID_DOCS, [DEFAULT_UUID])
+        if err := check_status(res, 200):
+            raise err
+
+        grants = [GrantSchema.model_validate(item) for item in res.json()]
+        assert len(grants) == n_grants_init - 1, "Expected one less grant."
+        grant_final = next((gg for gg in grants if gg.uuid_user == "99999999"), None)
+        assert (
+            grant_final is None
+        ), "Expected no grants for `99999999` on `aaa-aaa-aaa`."
+
+        res = await client.create(
+            DEFAULT_UUID_DOCS,
+            [DEFAULT_UUID],
+            level=UserLevelEnum.own,  # type: ignore
+        )
+        if err := check_status(res, 201):
+            raise err

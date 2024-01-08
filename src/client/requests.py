@@ -235,7 +235,7 @@ class GrantRequests(BaseRequests):
         uuid_user: FlagUUIDUsersOptional = None,
     ) -> httpx.Response:
         params: Dict[str, Any] = dict()
-        if uuid_document is not None:
+        if uuid_user:
             params.update(uuid_user=uuid_user)
         return await self.client.get(
             f"/grants/documents/{uuid_document}",
@@ -254,7 +254,7 @@ class GrantRequests(BaseRequests):
             json=[
                 dict(
                     uuid_user=uu,
-                    level=10,
+                    level=level.name,
                 )
                 for uu in uuid_user
             ],

@@ -15,7 +15,7 @@ foreign keys it is not necessary to specify multiple values).
 """
 from typing import Annotated, List, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from app.models import (
     LENGTH_CONTENT,
@@ -141,12 +141,18 @@ class PostUserSchema(UserSchema):
 class GrantPostSchema(BaseModel):
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
+    model_config = ConfigDict(use_enum_values=False)
     uuid_user: UUID
-    level: Annotated[Level, Field(allow_enum_population_by_name=True)]
+    level: Annotated[Level, Field()]
 
-    @field_serializer("level")
-    def serialize_level(self, ll: Level, _info):
-        return ll.name
+    @field_validator("level", mode="before")
+    def validate_level(cls, v) -> None | Level:
+        if isinstance(v, int):
+            return Level._value2member_map_.get(v)
+        elif isinstance(v, str):
+            return Level[v]
+        else:
+            return v
 
 
 class GrantSchema(GrantPostSchema):

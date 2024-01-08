@@ -67,8 +67,9 @@ QueryUUIDCollection: TypeAlias = Annotated[
 ]
 QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDDocument: TypeAlias = Annotated[Set[str], Query(min_length=1)]
-QueryOptionalUUIDDocument: TypeAlias = Annotated[Optional[Set[str]], Query()]
+QueryUUIDDocumentOptional: TypeAlias = Annotated[Optional[Set[str]], Query()]
 QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=0)]
+QueryUUIDUserOptional: TypeAlias = Annotated[None | Set[str], Query(min_length=0)]
 QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
 PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDDocument: TypeAlias = Annotated[str, Path()]
@@ -115,14 +116,15 @@ def user_is_owner(
     detail = dict(uuid_user=user.uuid, uuid_document=document.uuid)
     if not (n := len(assocs)):
         detail.update(
-            msg="No grants for document.",
+            msg="No grant for document.",
         )
         raise HTTPException(403, detail=detail)
     elif n != 1:
-        detail.update(msg="The should only be one grant.")
+        # Server is a teapot because this is unlikely to ever happen.
+        detail.update(msg="There should only be one grant.")
         raise HTTPException(418, detail=detail)
     elif assocs[0].value < Level.own.value:
-        detail.update(msg=f"User must have grant of level {level.name}.")
+        detail.update(msg=f"User must have grant of level `{level.name}`.")
         raise HTTPException(403, detail=detail)
 
 
@@ -411,32 +413,16 @@ class GrantView(BaseView):
     ) -> EventSchema:
         """Revoke access to the specified users on the specified document."""
 
-        print(0)
         # NOTE: Permissions should be hard deleted unlike first class rows.
         #       It is also important to note that the
         uuid_revoker = token["uuid"]
         with makesession() as session:
             # Make sure that the revoker owns the specified document.
-            print(1)
             logger.debug("Verifying document ownership.")
             user_revoker = user_if_exists(session, uuid_revoker, 403)
             document: Document = document_if_exists(session, uuid_document)
-            assoc: AssocUserDocument | None = session.execute(
-                select(AssocUserDocument).where(
-                    AssocUserDocument.id_document == document.id,
-                    AssocUserDocument.id_user == user_revoker.id,
-                    AssocUserDocument.level == Level.own,
-                )
-            ).scalar()
-            if assoc is None:
-                detail = dict(
-                    msg="User must own document to revoke permissions.",
-                    uuid_user=uuid_revoker,
-                    uuid_document=uuid_document,
-                )
-                raise HTTPException(403, detail)
+            user_is_owner(session, user_revoker, document)
 
-            print(2)
             # NOTE: Since users cannot reject the ownership of other users an
             #       additional safegaurd on the level is added below.
             logger.debug("Verifying revokee permissions.")
@@ -458,7 +444,6 @@ class GrantView(BaseView):
                 .join(User)
                 .where(*q_conds)
             )
-            print(3)
             uuid_owners: List[str] = list(
                 session.execute(
                     select(literal_column("uuid_user"))
@@ -475,10 +460,9 @@ class GrantView(BaseView):
                 )
                 raise HTTPException(403, detail=detail)
 
-            print(4)
             assocs = list(session.execute(q_assocs))
             common = dict(
-                api_origin="DELETE /grants/users/<uuid>",
+                api_origin="DELETE /grants/documents/<uuid>",
                 uuid_user=uuid_revoker,
                 kind=EventKind.grant,
             )
@@ -497,7 +481,7 @@ class GrantView(BaseView):
                     **common,
                     kind_obj=ObjectKind.user,
                     uuid_obj=assoc.uuid_user,
-                    detail=f"Grant `{assoc.level}` revoked .",
+                    detail=f"Grant `{assoc.level}` revoked.",
                     children=[
                         Event(
                             **common,
@@ -522,7 +506,7 @@ class GrantView(BaseView):
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid_user: PathUUIDUser,
-        uuid_document: QueryOptionalUUIDDocument = None,
+        uuid_document: QueryUUIDDocumentOptional = None,
     ) -> List[GrantSchema]:
         """Check that a user has access to the specified document.
 
@@ -579,7 +563,7 @@ class GrantView(BaseView):
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid_document: PathUUIDDocument,
-        uuid_user: QueryUUIDUser,
+        uuid_user: QueryUUIDUserOptional = None,
     ) -> List[GrantSchema]:
         """List document grants.
 
@@ -680,11 +664,12 @@ class GrantView(BaseView):
                     .select_from(User)
                     .join(AssocUserDocument)
                     .where(
-                        AssocUserDocument.id_document,
+                        AssocUserDocument.id_document == document.id,
                         AssocUserDocument.id_user.in_(ids_uuids.values()),
                     )
                 ).scalars()
             )
+            print(uuids_existing)
 
             logger.debug("Creating associations for grants.")
             assocs = {
@@ -705,7 +690,7 @@ class GrantView(BaseView):
             common = dict(
                 kind=EventKind.grant,
                 uuid_user=granter.uuid,
-                detail="Grant created.",
+                detail="Grants created.",
                 api_origin="POST /grants/documents/<uuid>",
                 api_version=__version__,
             )
@@ -714,8 +699,7 @@ class GrantView(BaseView):
                 uuid_obj=uuid_document,
                 kind_obj=ObjectKind.document,
                 children=[
-                    session.refresh(assoc)  # type: ignore
-                    or Event(
+                    Event(
                         **common,
                         uuid_obj=uuid_user,
                         kind_obj=ObjectKind.user,
@@ -730,6 +714,8 @@ class GrantView(BaseView):
                     for uuid_user, assoc in assocs.items()
                 ],
             )
+            print(event.children)
+            session.add(event)
             session.commit()
 
             return JSONResponse(
