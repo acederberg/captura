@@ -24,6 +24,7 @@ from app.models import (
     LENGTH_NAME,
     LENGTH_URL,
     EventKind,
+    Level,
     ObjectKind,
 )
 
@@ -133,11 +134,12 @@ class EventSchema(BaseModel):
 
 
 class PostUserSchema(UserSchema):
-    collections: Annotated[
-        List[CollectionSchema],
-        Field(default=list()),
-    ]
-    documents: Annotated[
-        List[DocumentSchema],
-        Field(default=list()),
-    ]
+    collections: Annotated[List[CollectionSchema], Field(default=list())]
+    documents: Annotated[List[DocumentSchema], Field(default=list())]
+
+
+class GrantSchema(BaseModel):
+    uuid: UUID
+    uuid_user: UUID
+    uuid_document: UUID
+    level: Level

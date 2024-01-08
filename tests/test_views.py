@@ -13,9 +13,9 @@ from app.__main__ import main
 from app.auth import Auth
 from app.models import EventKind, ObjectKind, User
 from app.schemas import EventSchema, UserSchema
-from app.views import AppView
+from app.views import AppView, GrantView
 from client.config import DefaultsConfig
-from client.requests import BaseRequests, UserChildEnum, UserRequests
+from client.requests import BaseRequests, GrantRequests, UserChildEnum, UserRequests
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -244,7 +244,7 @@ class TestUserViews(BaseTestViews):
         )
 
     @pytest.mark.asyncio
-    async def test_create(self, client: UserRequests, auth: Auth):
+    async def test_create(self, client: UserRequests):
         def check_common(event: EventSchema):
             assert event.uuid_user is not None
             if not client.config.remote:
@@ -304,3 +304,23 @@ class TestUserViews(BaseTestViews):
         documents, collections = res_docs.json(), res_collections.json()
         assert len(documents) == 3
         assert len(collections) == 4
+
+
+class TestGrantView(BaseTestViews):
+    T = GrantRequests
+
+    @pytest.mark.asyncio
+    async def test_read_grants_document(self, client: GrantRequests):
+        ...
+
+    @pytest.mark.asyncio
+    async def test_read_grants_user(self, client: GrantRequests):
+        ...
+
+    @pytest.mark.asyncio
+    async def test_delete_grant(self, client: GrantRequests):
+        ...
+
+    @pytest.mark.asyncio
+    async def test_post_grant(self, client: GrantRequests):
+        ...

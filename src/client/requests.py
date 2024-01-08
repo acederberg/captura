@@ -9,6 +9,7 @@ from typing import (
     Callable,
     ClassVar,
     Coroutine,
+    Dict,
     List,
     Optional,
     ParamSpec,
@@ -40,6 +41,9 @@ class UserLevelEnum(str, enum.Enum):
 
 FlagUUIDDocument: TypeAlias = Annotated[str, typer.Option("--uuid-document")]
 FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document")]
+FlagOptionalUUIDDocuments: TypeAlias = Annotated[
+    Optional[List[str]], typer.Option("--uuid-document")
+]
 FlagUUIDUser: TypeAlias = Annotated[str, typer.Option("--uuid-user")]
 FlagUUIDUsers: TypeAlias = Annotated[List[str], typer.Option("--uuid-user")]
 FlagLevel: TypeAlias = Annotated[UserLevelEnum, typer.Option("--level")]
@@ -206,21 +210,23 @@ class UserRequests(BaseRequests):
 
 
 class GrantRequests(BaseRequests):
-    commands = ("has", "read", "create", "delete")
+    commands = ("read_document", "read_user", "create", "delete")
 
-    async def has(
+    async def read_user(
         self,
         uuid_user: ArgUUIDUser,
-        uuid_document: ArgUUIDDocument,
-        level: FlagLevel,
+        uuid_document: FlagOptionalUUIDDocuments = None,
     ) -> httpx.Response:
+        params: Dict[str, Any] = dict()
+        if uuid_document is not None:
+            params.update(uuid_document=uuid_document)
         return await self.client.get(
-            f"/grants/users/{uuid_user}/documents/{uuid_document}",
-            params=dict(level=level.name),
+            f"/grants/users/{uuid_user}",
+            params=params,
             headers=self.headers,
         )
 
-    async def read(
+    async def read_document(
         self,
         uuid_document: ArgUUIDDocument,
         uuid_users: FlagUUIDUsers,

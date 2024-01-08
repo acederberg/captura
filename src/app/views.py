@@ -1,9 +1,19 @@
 """Api routers and functions. 
-
 This includes a metaclass so that undecorated functions may be tested.
 """
 import logging
-from typing import Annotated, Any, ClassVar, Dict, List, Literal, Set, Type, TypeAlias
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Type,
+    TypeAlias,
+)
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.params import Param
@@ -43,6 +53,7 @@ from app.schemas import (
     EditMetadataSchema,
     EditSchema,
     EventSchema,
+    GrantSchema,
     PostUserSchema,
     UserSchema,
     UserUpdateSchema,
@@ -54,10 +65,36 @@ QueryUUIDCollection: TypeAlias = Annotated[
 ]
 QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDDocument: TypeAlias = Annotated[Set[str], Query(min_length=1)]
+QueryOptionalUUIDDocument: TypeAlias = Annotated[Optional[Set[str]], Query()]
 QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=0)]
 QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
 PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDDocument: TypeAlias = Annotated[str, Path()]
+
+
+# =========================================================================== #
+def user_if_exists(session: Session, uuid: str, status=404) -> User:
+    # Verify that the token holder exists
+    user = session.execute(select(User).where(User.uuid == uuid)).scalar()
+    if user is None:
+        detail = dict(
+            uuid_user=uuid,
+            msg="User does not exist.",
+        )
+        raise HTTPException(status, detail=detail)
+    return user
+
+
+def document_if_exists(session: Session, uuid: str, status=404) -> Document:
+    document = session.execute(select(Document).where(Document.uuid == uuid)).scalar()
+    if document is None:
+        detail = dict(
+            uuid_document=uuid,
+            msg="Document does not exist.",
+        )
+        raise HTTPException(404, detail=detail)
+    return document
+
 
 # =========================================================================== #
 # Base Views.
@@ -325,23 +362,22 @@ class GrantView(BaseView):
     # NOTE: Updates should not be supported. It makes more sense to just delete
     #       the permissions and create new ones.
     view_routes = dict(
-        post_user_document_access="/users/{uuid_user}",
-        get_document_user_access="/documents/{uuid_document}",
-        get_user_document_access="/users/{uuid_user}/documents/{uuid_document}",
-        delete_document_access="/users/{uuid_user}/documents/{uuid_document}",
-        # update_document_access="/{uuid}",
+        post_grants="/documents/{uuid_documents}",
+        get_grants_document="/documents/{uuid_document}",
+        get_grants_user="/users/{uuid_user}",
+        delete_grants="/users/{uuid_user}",
     )
 
     # ----------------------------------------------------------------------- #
     # Sharing.
 
     @classmethod
-    def delete_document_access(
+    def delete_grants(
         cls,
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid_user: PathUUIDUser,
-        uuid_document: PathUUIDDocument,
+        uuid_document: QueryUUIDDocument,
     ) -> EventSchema:
         """Revoke access to the specified user on the specified document."""
 
@@ -405,77 +441,129 @@ class GrantView(BaseView):
             return event  # type: ignore
 
     @classmethod
-    def get_user_document_access(
+    def get_grants_user(
         cls,
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid_user: PathUUIDUser,
-        uuid_document: PathUUIDDocument,
-        level: QueryLevel,
-    ) -> bool:
+        uuid_document: QueryOptionalUUIDDocument = None,
+    ) -> List[GrantSchema]:
         """Check that a user has access to the specified document.
 
         This function will likely be called in document CUD. But can be used
         to retrieve truthiness of an access level.
         """
 
+        # NOTE: Attempting to make roughly the following query:
+        #
+        #       .. code::
+        #
+        #          SELECT users.uuid,
+        #                 documents.uuid,
+        #                 _assocs_user_documents.level
+        #          FROM users
+        #          JOIN _assocs_user_documents
+        #               ON _assocs_user_documents.id_user=users.id
+        #          JOIN documents
+        #               ON _assocs_user_documents.id_document = documents.id;
         with makesession() as session:
-            assoc = session.execute(
-                select(AssocUserDocument).where(
-                    AssocUserDocument.id_user.in_(
-                        select(User.id).where(User.uuid == token["uuid"])
-                    )
+            user = user_if_exists(session, token["uuid"])
+            q = (
+                select(
+                    User.uuid.label("uuid_user"),
+                    Document.uuid.label("uuid_document"),
+                    AssocUserDocument.uuid.label("uuid"),
+                    AssocUserDocument.level.label("level"),
                 )
-            ).scalar()
+                .select_from(User)
+                .join(AssocUserDocument)
+                .join(Document)
+                .where(User.uuid == user.uuid)
+            )
+            if uuid_document:
+                q = q.where(Document.uuid.in_(uuid_document))
+            assoc = session.execute(q)
 
-            if assoc is None:
-                raise HTTPException(
-                    404,
-                    detail=dict(
-                        msg="Permission does not exist.",
-                        uuid_user=uuid_user,
-                        uuid_document=uuid_document,
-                    ),
+            return [
+                GrantSchema(
+                    level=aa.level,
+                    uuid=aa.uuid,
+                    uuid_user=aa.uuid_user,
+                    uuid_document=aa.uuid_document,
                 )
-            return assoc.level.value >= Level[level].value
+                for aa in assoc
+            ]
 
     @classmethod
-    def get_document_user_access(
+    def get_grants_document(
         cls,
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid_document: PathUUIDDocument,
         uuid_user: QueryUUIDUser,
-    ) -> Dict[str, Level]:
+    ) -> List[GrantSchema]:
         """List document grants.
 
         This could be useful somewhere in the UI. For instance, for owners
         granting permissions.
         """
 
-        # TODO: When uuid_user is empty, return all permissions on document.
-        uuid = token["uuid"]
         with makesession() as session:
-            user = session.execute(select(User).where(User.uuid == uuid)).scalar()
-            if user is None:
-                raise HTTPException(418)
+            # Verify that user has access
+            user = user_if_exists(session, token["uuid"], 403)
+            document = document_if_exists(session, uuid_document)
+            assocs: List[Level] = list(
+                session.execute(
+                    select(AssocUserDocument.level).where(
+                        AssocUserDocument.id_user == user.id,
+                        AssocUserDocument.id_document == document.id,
+                    )
+                ).scalars()
+            )
+            detail = dict(uuid_user=user.uuid, uuid_document=document.uuid)
+            if not (n := len(assocs)):
+                detail.update(
+                    msg="No permissions for document.",
+                )
+                raise HTTPException(403, detail=detail)
+            elif n != 1:
+                detail.update(msg="The should only be one permission.")
+                raise HTTPException(418, detail=detail)
+            elif assocs[0].value < Level.own.value:
+                detail.update(msg="Insufficient grants to view document grants.")
+                raise HTTPException(403, detail=detail)
 
-            document = session.execute(
-                select(Document).where(Document.uuid == uuid_document)
-            ).scalar()
-            if document is None:
-                raise HTTPException(404)
+            # Finally get permissions.
+            q = (
+                select(
+                    AssocUserDocument.uuid.label("uuid"),
+                    AssocUserDocument.level.label("level"),
+                    User.uuid.label("uuid_user"),
+                    Document.uuid.label("uuid_document"),
+                )
+                .select_from(User)
+                .join(AssocUserDocument)
+                .join(Document)
+                .where(
+                    AssocUserDocument.id_document == document.id,
+                )
+            )
+            if uuid_user is not None:
+                q = q.where(User.uuid.in_(uuid_user))
 
-            user_levels = document.get_user_levels(uuid_user)
-            if user.uuid not in user_levels or user_levels[user.uuid] != Level.own:
-                _ = "Insufficient permission to view document permissions."
-                _ = dict(msg=_, uuid_user=uuid, uuid_document=document.uuid)
-                raise HTTPException(403, _)
-
-            return user_levels
+            results = session.execute(q)
+            return [
+                GrantSchema(
+                    level=aa.level,
+                    uuid=aa.uuid,
+                    uuid_user=aa.uuid_user,
+                    uuid_document=aa.uuid_document,
+                )
+                for aa in results
+            ]
 
     @classmethod
-    def post_user_document_access(
+    def post_grants(
         cls,
         makesession: DependsSessionMaker,
         token: DependsToken,

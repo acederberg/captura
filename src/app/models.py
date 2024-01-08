@@ -310,19 +310,32 @@ class Document(Base, MixinsPrimary):
         back_populates="documents",
     )
 
-    def get_user_levels(self, verify_uuids: Set[str]) -> Dict[str, Level]:
-        q = (
-            select(AssocUserDocument.level, User.uuid)
-            .join(User)
-            .where(
-                User.uuid.in_(verify_uuids),
-                AssocUserDocument.id_document == self.id,
-            )
-        )
-        session = object_session(self)
-        if session is None:
-            raise ValueError("Object missing session.")
-        return {row.uuid: row.level for row in session.execute(q)}
+    # NOTE: Moved to GrantView
+    # def get_user_levels(
+    #     self,
+    #     verify_uuids: None | Set[str] = None,
+    # ) -> Any:
+    #     q = (
+    #         select(
+    #             AssocUserDocument.uuid.label("uuid"),
+    #             AssocUserDocument.level.label("level"),
+    #             User.uuid.label("uuid_user"),
+    #             Document.uuid.label("uuid_document"),
+    #         )
+    #         .select_from(User)
+    #         .join(AssocUserDocument)
+    #         .join(Document)
+    #         .where(
+    #             AssocUserDocument.id_document == self.id,
+    #         )
+    #     )
+    #     if verify_uuids is not None:
+    #         q = q.where(User.uuid.in_(verify_uuids))
+    #
+    #     session = object_session(self)
+    #     if session is None:
+    #         raise ValueError("Object missing session.")
+    #     return session.execute(q)
 
 
 class Edit(Base, MixinsPrimary):
