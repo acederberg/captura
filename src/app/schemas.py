@@ -15,7 +15,7 @@ foreign keys it is not necessary to specify multiple values).
 """
 from typing import Annotated, List, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.models import (
     LENGTH_CONTENT,
@@ -138,8 +138,17 @@ class PostUserSchema(UserSchema):
     documents: Annotated[List[DocumentSchema], Field(default=list())]
 
 
-class GrantSchema(BaseModel):
-    uuid: UUID
+class GrantPostSchema(BaseModel):
+    # NOTE: `uuid_document` is not included here because this is only used in
+    #       `POST /grants/users/<uuid>`.
     uuid_user: UUID
+    level: Annotated[Level, Field(allow_enum_population_by_name=True)]
+
+    @field_serializer("level")
+    def serialize_level(self, ll: Level, _info):
+        return ll.name
+
+
+class GrantSchema(GrantPostSchema):
+    uuid: UUID
     uuid_document: UUID
-    level: Level

@@ -245,21 +245,29 @@ class GrantRequests(BaseRequests):
 
     async def create(
         self,
-        uuid_user: FlagUUIDUser,
-        uuid_documents: FlagUUIDDocuments,
-        level: FlagLevel,
+        uuid_document: ArgUUIDDocument,
+        uuid_user: FlagUUIDUsers,
+        level: FlagLevel = UserLevelEnum.view,
     ) -> httpx.Response:
         return await self.client.post(
-            f"/grants/users/{uuid_user}",
-            params=dict(uuid_document=uuid_documents, level=level.name),
+            f"/grants/documents/{uuid_document}",
+            json=[
+                dict(
+                    uuid_user=uu,
+                    level=10,
+                )
+                for uu in uuid_user
+            ],
+            headers=self.headers,
         )
 
     async def delete(
         self,
-        uuid_user: ArgUUIDUser,
         uuid_document: ArgUUIDDocument,
+        uuid_user: FlagUUIDUsers,
     ) -> httpx.Response:
         return await self.client.delete(
-            f"/grants/users/{uuid_user}/documents/{uuid_document}",
+            f"/grants/documents/{uuid_document}",
             headers=self.headers,
+            params=dict(uuid_user=uuid_user),
         )
