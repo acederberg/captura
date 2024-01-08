@@ -11,17 +11,18 @@ import yaml
 from app import __version__, util
 from app.__main__ import main
 from app.auth import Auth
-from app.models import EventKind, ObjectKind, User
-from app.schemas import EventSchema, UserSchema
+from app.models import AssocUserDocument, Document, EventKind, Level, ObjectKind, User
+from app.schemas import EventSchema, GrantSchema, UserSchema
 from app.views import AppView, GrantView
 from client.config import DefaultsConfig
 from client.requests import BaseRequests, GrantRequests, UserChildEnum, UserRequests
 from sqlalchemy import select, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from .conftest import PytestClientConfig
 
 CURRENT_APP_VERSION = __version__
+DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
 DEFAULT_UUID: str = "00000000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
 
@@ -64,7 +65,7 @@ def check_status(
         f"response included the following detail: {res_json}."
     )
     if auth := req.headers.get("authorization"):
-        msg += f"Authorization: {auth}"
+        msg += f"\nAuthorization: {auth}"
 
     return AssertionError(msg)
 
@@ -310,12 +311,108 @@ class TestGrantView(BaseTestViews):
     T = GrantRequests
 
     @pytest.mark.asyncio
-    async def test_read_grants_document(self, client: GrantRequests):
-        ...
+    async def test_read_grants_user(
+        self,
+        client: GrantRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        """Test functionality of `GET /users/grants`."""
+        res = await client.read_user("00000000")
+        if err := check_status(res, 200):
+            raise err
+
+        raw = res.json()
+        assert isinstance(raw, list)
+
+        grants = list(GrantSchema.model_validate(item) for item in raw)
+        assert (n := len(grants)) > 0, "Expected grants."
+
+        # Grants should specify only one user.
+        uuids, uuids_users = zip(*((gg.uuid, gg.uuid_user) for gg in grants))
+        assert set(uuids_users) == {"00000000"}
+
+        # Number of grants should equal the number of entries the owner has in
+        # this table.
+        with sessionmaker() as session:
+            results = list(
+                session.execute(
+                    select(AssocUserDocument).where(AssocUserDocument.uuid.in_(uuids))
+                ).scalars()
+            )
+            assert len(results) == n
 
     @pytest.mark.asyncio
-    async def test_read_grants_user(self, client: GrantRequests):
-        ...
+    async def test_read_grants_user_only_user(self, client: GrantRequests):
+        """Test that a user can only read their own grants.
+
+        In the future, admins will be able to read grants of arbitrary users.
+        """
+        res = await client.read_user("99999999")
+        if err := check_status(res, 403):
+            raise err
+        assert res.json == dict(msg="Users can only read their own grants.")
+
+    @pytest.mark.asyncio
+    async def test_read_grants_document(
+        self,
+        client: GrantRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        # user_client = UserRequests(client=client.client, config=client.config)
+        # res = await user_client.read_child(UserChildEnum.documents, DEFAULT_UUID)
+        # if err := check_status(res, 200):
+        #     raise err
+        #
+        # document_ids = list(item["uuid"] for item in res.json().values())
+        # assert len(document_ids), "Expected documents for user."
+
+        res = await client.read_document(DEFAULT_UUID_DOCS)
+        if err := check_status(res, 200):
+            raise err
+
+        with sessionmaker() as session:
+            user = session.execute(
+                select(User).where(User.uuid == DEFAULT_UUID)
+            ).scalar()
+            assert user is not None
+            assoc = session.execute(
+                select(AssocUserDocument).where(
+                    AssocUserDocument.id_user == user.id,
+                    AssocUserDocument.id_document.in_(
+                        select(Document.id).where(
+                            Document.uuid == DEFAULT_UUID_DOCS,
+                        )
+                    ),
+                )
+            ).scalar()
+            assert assoc is not None
+            assert assoc.level == Level.own
+
+            assoc.level = Level.view
+            session.add(assoc)
+            session.commit()
+
+            res = await client.read_document(DEFAULT_UUID_DOCS)
+            if err := check_status(res, 403):
+                raise err
+
+            result = res.json()["detail"]
+            assert result["msg"] == "Insufficient grants to view document grants."
+
+            session.delete(assoc)
+            session.commit()
+
+            res = await client.read_document(DEFAULT_UUID_DOCS)
+            if err := check_status(res, 403):
+                raise err
+
+            result = res.json()["detail"]
+            assert result["msg"] == "No permissions for document."
+
+            make_transient(assoc)
+            assoc.level = Level.own
+            session.add(assoc)
+            session.commit()
 
     @pytest.mark.asyncio
     async def test_delete_grant(self, client: GrantRequests):

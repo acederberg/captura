@@ -41,11 +41,14 @@ class UserLevelEnum(str, enum.Enum):
 
 FlagUUIDDocument: TypeAlias = Annotated[str, typer.Option("--uuid-document")]
 FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document")]
-FlagOptionalUUIDDocuments: TypeAlias = Annotated[
+FlagUUIDDocumentsOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-document")
 ]
 FlagUUIDUser: TypeAlias = Annotated[str, typer.Option("--uuid-user")]
 FlagUUIDUsers: TypeAlias = Annotated[List[str], typer.Option("--uuid-user")]
+FlagUUIDUsersOptional: TypeAlias = Annotated[
+    Optional[List[str]], typer.Option("--uuid-user")
+]
 FlagLevel: TypeAlias = Annotated[UserLevelEnum, typer.Option("--level")]
 FlagName = Annotated[Optional[str], typer.Option("--name")]
 FlagDescription = Annotated[Optional[str], typer.Option("--description")]
@@ -215,7 +218,7 @@ class GrantRequests(BaseRequests):
     async def read_user(
         self,
         uuid_user: ArgUUIDUser,
-        uuid_document: FlagOptionalUUIDDocuments = None,
+        uuid_document: FlagUUIDDocumentsOptional = None,
     ) -> httpx.Response:
         params: Dict[str, Any] = dict()
         if uuid_document is not None:
@@ -229,11 +232,14 @@ class GrantRequests(BaseRequests):
     async def read_document(
         self,
         uuid_document: ArgUUIDDocument,
-        uuid_users: FlagUUIDUsers,
+        uuid_user: FlagUUIDUsersOptional = None,
     ) -> httpx.Response:
+        params: Dict[str, Any] = dict()
+        if uuid_document is not None:
+            params.update(uuid_user=uuid_user)
         return await self.client.get(
             f"/grants/documents/{uuid_document}",
-            params=dict(uuid_user=uuid_users),
+            params=params,
             headers=self.headers,
         )
 

@@ -43,8 +43,9 @@
 
     Sed risus ultricies tristique nulla aliquet enim tortor at. Hendrerit gravida rutrum quisque non tellus orci ac auctor augue. Non quam lacus suspendisse faucibus interdum posuere lorem. Massa sapien faucibus et molestie ac feugiat sed lectus vestibulum. Ut aliquam purus sit amet. In fermentum posuere urna nec tincidunt praesent semper feugiat. Egestas integer eget aliquet nibh praesent tristique magna. Convallis a cras semper auctor. Etiam sit amet nisl purus in mollis nunc sed id. A condimentum vitae sapien pellentesque habitant morbi tristique. Odio ut enim blandit volutpat maecenas volutpat blandit aliquam etiam. Eros in cursus turpis massa tincidunt. A iaculis at erat pellentesque adipiscing commodo elit at. Et tortor consequat id porta nibh venenatis cras. Vitae turpis massa sed elementum tempus egestas sed sed. Aenean vel elit scelerisque mauris pellentesque pulvinar pellentesque habitant. Massa placerat duis ultricies lacus sed. Massa enim nec dui nunc. Urna nunc id cursus metus aliquam eleifend mi in. Nec ullamcorper sit amet risus nullam eget felis eget nunc.
   
-
+# NOTE: This document is important in tests and should be owned by user with uuid 00000000
 - name: Lorem Ipsum 5
+  uuid: aaa-aaa-aaa
   id: 5
   description: Lorem ipsum 5
   format: rst

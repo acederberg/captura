@@ -468,6 +468,9 @@ class GrantView(BaseView):
         #               ON _assocs_user_documents.id_document = documents.id;
         with makesession() as session:
             user = user_if_exists(session, token["uuid"])
+            if user.uuid != uuid_user:
+                detail = dict(msg="Users can only read their own grants.")
+                raise HTTPException(403, detail=detail)
             q = (
                 select(
                     User.uuid.label("uuid_user"),
@@ -478,7 +481,7 @@ class GrantView(BaseView):
                 .select_from(User)
                 .join(AssocUserDocument)
                 .join(Document)
-                .where(User.uuid == user.uuid)
+                .where(User.uuid == uuid_user)
             )
             if uuid_document:
                 q = q.where(Document.uuid.in_(uuid_document))
