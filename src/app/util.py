@@ -27,14 +27,6 @@ def get_logger(name: str) -> logging.Logger:
 # =========================================================================== #
 # PATH STUFF
 
-PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
-PATH_CONFIG: str = path.join(PATH_BASE, "configs")
-PATH_DOCKER: str = path.join(PATH_BASE, "docker")
-PATH_TESTS: str = path.join(PATH_BASE, "tests")
-PATH_TESTS_ASSETS: str = environ.get(ENV_PREFIX + "CONFIG_PATH") or path.join(
-    PATH_TESTS, "assets"
-)
-
 
 class Path:
     @classmethod
@@ -57,6 +49,16 @@ class Path:
     def config(cls, v: str) -> str:
         return path.join(PATH_CONFIG, v)
 
+
+PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
+PATH_APP: str = path.join(PATH_BASE, "src/app")
+PATH_CLIENT: str = path.join(PATH_BASE, "src/client")
+PATH_CONFIG: str = path.join(PATH_BASE, "configs")
+PATH_DOCKER: str = path.join(PATH_BASE, "docker")
+PATH_TESTS: str = path.join(PATH_BASE, "tests")
+PATH_TESTS_ASSETS: str = environ.get(ENV_PREFIX + "CONFIG_PATH") or path.join(
+    PATH_TESTS, "assets"
+)
 
 PATH_CONFIG_APP = Path.config("app.yaml")
 PATH_CONFIG_CLIENT = Path.config("client.yaml")
