@@ -53,9 +53,22 @@ class ObjectKind(str, enum.Enum):
     assoc_user_collection = "_assocs_user_collections"
 
 
+# NOTE: Indexing is important as it is how the front end will get most data.
+#       This is done to keep relationships opaque (by keeping the primary keys
+#       out of the users views) and to avoid having to specify multiple primary
+#       keys for some resources (e.g. `AssocUserDocument`. See
+#
+#       .. code::
+#
+#           https://dev.mysql.com/doc/refman/8.0/en/mysql-indexes.html
+#
 MappedColumnUUID = Annotated[
     str,
-    mapped_column(String(16), default=lambda: secrets.token_urlsafe(8), index=True),
+    mapped_column(
+        String(16),
+        default=lambda: secrets.token_urlsafe(8),
+        index=True,
+    ),
 ]
 # =========================================================================== #
 # Models and Mixins
@@ -90,8 +103,12 @@ class Event(Base):
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
 
-    uuid_parent: Mapped[str] = mapped_column(ForeignKey("events.uuid"), nullable=True)
+    # id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
+    uuid_parent: Mapped[str] = mapped_column(
+        ForeignKey("events.uuid"),
+        nullable=True,
+    )
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
     uuid_obj: Mapped[MappedColumnUUID]
     kind: Mapped[EventKind] = mapped_column(Enum(EventKind))

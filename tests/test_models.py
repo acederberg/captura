@@ -14,7 +14,7 @@ from app.models import (
     Level,
     User,
 )
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, make_transient, sessionmaker
@@ -76,8 +76,7 @@ class BaseModelTest(metaclass=ModelTestMeta):
     @classmethod
     def clean(cls, session: Session) -> None:
         logger.debug("Cleaning %s.", cls.M.__tablename__)
-        for item in session.execute(select(cls.M)).scalars():
-            session.delete(item)
+        session.execute(delete(cls.M))
         session.commit()
 
     @classmethod
@@ -626,5 +625,16 @@ class TestAssocUserDocument(BaseModelTest):
     M = AssocUserDocument
 
 
+class TestAssocCollectionDocument(BaseModelTest):
+    M = AssocCollectionDocument
+
+
 class TestEvent(BaseModelTest):
+    @classmethod
+    def clean(cls, session: Session) -> None:
+        logger.debug("Cleaning %s.", cls.M.__tablename__)
+        session.execute(update(cls.M).values(uuid_parent=None))
+        session.execute(delete(cls.M))
+        session.commit()
+
     M = Event
