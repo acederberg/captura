@@ -35,10 +35,7 @@ from yaml_settings_pydantic import (
     YamlSettingsConfigDict,
 )
 
-from app.util import Path
-
-PREFIX = "ARTICLES_"
-PATH_CONFIG = environ.get(PREFIX + "CONFIG_PATH") or Path.base("config.yaml")
+from app import util
 
 
 class BaseHashable(BaseModel):
@@ -116,9 +113,9 @@ class AppConfig(BaseHashable):
 
 class Config(BaseHashable, BaseYamlSettings):
     model_config = YamlSettingsConfigDict(
-        yaml_files=PATH_CONFIG,
+        yaml_files=util.PATH_CONFIG_APP,
         yaml_reload=False,
-        env_prefix=PREFIX,
+        env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",
     )
     mysql: MySqlConfig

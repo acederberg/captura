@@ -5,7 +5,7 @@ import pytest
 import pytest_asyncio
 from app import util
 from app.auth import Auth
-from app.config import PREFIX, Config
+from app.config import Config
 from app.models import Base
 from app.views import AppView
 from client.config import Config as ClientConfig
@@ -18,8 +18,6 @@ from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
 from tests.test_models import ModelTestMeta
 
-PATH_CONFIG_PYTEST = util.Path.base("config.test.yaml")
-PATH_CLIENT_CONFIG_PYTEST = util.Path.base("client-config.test.yaml")
 logger = util.get_logger(__name__)
 
 # =========================================================================== #
@@ -46,8 +44,8 @@ class PytestConfig(Config):
     """
 
     model_config = YamlSettingsConfigDict(
-        yaml_files=PATH_CONFIG_PYTEST,
-        env_prefix=PREFIX,
+        yaml_files=util.PATH_CONFIG_TEST_APP,
+        env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",
     )
 
@@ -58,14 +56,17 @@ class PytestConfig(Config):
 #       only ever be called once in a test session.
 @pytest.fixture(scope="session")
 def config() -> PytestConfig:
-    logger.debug("`config` fixture called. Loading `%s`.", PATH_CONFIG_PYTEST)
+    logger.debug(
+        "`config` fixture called. Loading `%s`.",
+        util.PATH_CONFIG_TEST_APP,
+    )
     return PytestConfig()  # type: ignore
 
 
 class PytestClientConfig(ClientConfig):
     model_config = YamlSettingsConfigDict(
         yaml_files={
-            PATH_CLIENT_CONFIG_PYTEST: YamlFileConfigDict(
+            util.PATH_CONFIG_TEST_CLIENT: YamlFileConfigDict(
                 required=False,
                 subpath=None,
             )
@@ -77,7 +78,8 @@ class PytestClientConfig(ClientConfig):
 @pytest.fixture(scope="session")
 def client_config() -> PytestClientConfig:
     logger.debug(
-        "`client_config` fixture called. Loading from `%s`.", PATH_CLIENT_CONFIG_PYTEST
+        "`client_config` fixture called. Loading from `%s`.",
+        util.PATH_CONFIG_TEST_CLIENT,
     )
     return PytestClientConfig()
 

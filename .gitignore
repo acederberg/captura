@@ -12,3 +12,4 @@ temp
 *.pem
 client-config.yaml
 client-config.test.yaml
+configs

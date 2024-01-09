@@ -6,7 +6,7 @@ from os import path
 from typing import Any, Dict
 
 import jwt
-import requests
+import httpx
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicKey
 from cryptography.hazmat.primitives import serialization
@@ -55,7 +55,7 @@ class Auth:
     def forAuth0(cls, config):
         logger.debug("Getting Auth0 JWKS.")
         issuer = config.auth0.issuer
-        result = requests.get(f"https://{issuer}/.well-known/jwks.json")
+        result = httpx.get(f"https://{issuer}/.well-known/jwks.json")
         if result.status_code != 200:
             raise ValueError(f"Failed to fetch JWKS from issuer `{issuer}`.")
 
