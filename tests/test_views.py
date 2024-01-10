@@ -13,7 +13,7 @@ from app.__main__ import main
 from app.auth import Auth
 from app.models import AssocUserDocument, Document, EventKind, Level, ObjectKind, User
 from app.schemas import EventSchema, GrantSchema, UserSchema
-from app.views import AppView, GrantView, document_if_exists, user_if_exists
+from app.views import AppView, GrantView
 from client.config import DefaultsConfig
 from client.requests import (
     BaseRequests,
@@ -62,7 +62,12 @@ def check_status(
         return None
 
     req_json = (req := response.request).read().decode()
-    res_json = json.dumps(response.json(), indent=2)
+    try:
+        raw = response.json()
+    except json.JSONDecodeError:
+        raw = None
+
+    res_json = json.dumps(raw, indent=2) if raw is not None else raw
 
     msg = f"`{req.method} {req.url}` "
     if req_json:
@@ -89,13 +94,13 @@ class TestUserViews(BaseTestViews):
         )
         if err := check_status(good, 200):
             raise err
-        elif err := check_status(bad, 204):
+        elif err := check_status(bad, 404):
             raise err
 
         assert isinstance(result := good.json(), dict)
         assert result["uuid"] == DEFAULT_UUID
 
-        assert bad.status_code == 204
+        assert bad.status_code == 404
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("client", [{}], indirect=["client"])
@@ -323,7 +328,7 @@ class TestGrantView(BaseTestViews):
         client: GrantRequests,
         sessionmaker: sessionmaker[Session],
     ):
-        """Test functionality of `GET /users/grants`."""
+        """Test functionality of `GET /grants/user/<uuid>`."""
         res = await client.read_user("00000000")
         if err := check_status(res, 200):
             raise err
@@ -336,6 +341,7 @@ class TestGrantView(BaseTestViews):
 
         # Grants should specify only one user.
         uuids, uuids_users = zip(*((gg.uuid, gg.uuid_user) for gg in grants))
+        print(uuids, uuids_users)
         assert set(uuids_users) == {"00000000"}
 
         # Number of grants should equal the number of entries the owner has in
@@ -428,14 +434,14 @@ class TestGrantView(BaseTestViews):
         def check_common(event):
             assert event.api_origin == "POST /grants/documents/<uuid>"
             assert event.uuid_user == DEFAULT_UUID, "Should be token user."
-            assert event.detail == "Grants created."
+            assert event.detail == "Grants issued."
             assert event.kind == EventKind.grant
 
         # Manually remove existing grants.
         with sessionmaker() as session:
             try:
-                user = user_if_exists(session, "99999999")
-                document = document_if_exists(session, DEFAULT_UUID_DOCS)
+                user = User.if_exists(session, "99999999")
+                document = Document.if_exists(session, DEFAULT_UUID_DOCS)
             except HTTPException:
                 raise AssertionError("Could not find expected user/document.")
             session.execute(

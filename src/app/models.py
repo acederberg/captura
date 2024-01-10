@@ -1,9 +1,23 @@
 import enum
+from logging import warn
+from fastapi import HTTPException
 import secrets
+from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Set
+from typing import Annotated, Any, Dict, List, Self, Set, Tuple
 
-from sqlalchemy import Enum, ForeignKey, String, func, literal_column, select
+from sqlalchemy import (
+    BinaryExpression,
+    ColumnElement,
+    Enum,
+    ForeignKey,
+    Select,
+    String,
+    and_,
+    func,
+    literal_column,
+    select,
+)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
@@ -75,7 +89,11 @@ MappedColumnUUID = Annotated[
 
 
 class Base(DeclarativeBase):
-    ...
+    def get_session(self) -> Session:
+        session = object_session(self)
+        if session is None:
+            raise HTTPException(418)
+        return session
 
 
 class MixinsPrimary:
@@ -86,6 +104,22 @@ class MixinsPrimary:
     uuid: Mapped[MappedColumnUUID]
     public: Mapped[bool] = mapped_column(default=True)
     deleted: Mapped[bool] = mapped_column(default=False)
+
+    # NOTE: Only `classmethod`s should need session due to `object_session`.
+    @classmethod
+    def if_exists(
+        cls, session: Session, uuid: str, status: int = 404, msg=None
+    ) -> Self:
+        m = session.execute(select(cls).where(cls.uuid == uuid)).scalar()
+        if m is None:
+            detail = dict(
+                msg=msg
+                if msg is not None
+                else f"{cls} with uuid `{uuid}` does not exist."
+            )
+            detail["uuid"] = uuid
+            raise HTTPException(status, detail=detail)
+        return m
 
 
 # =========================================================================== #
@@ -192,87 +226,149 @@ class User(Base, MixinsPrimary):
 
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
-    def get_exclusive_documents(self) -> List["Document"]:
-        session = object_session(self)
-        if session is None:
-            raise ValueError("Ohject missing session")
-        q: Any
-        q = select(Document.id).where(
-            Document.id == AssocUserDocument.id_document,
-            AssocUserDocument.level == Level.own,
-            AssocUserDocument.id_user == self.id,
-        )
-        q = select(AssocUserDocument.id_document.label("id_document")).where(
-            AssocUserDocument.id_document.in_(q),
-            AssocUserDocument.level == Level.own,
-        )
-        literally = literal_column("id_document")
-        q = (
-            select(literally, func.count(literally).label("owner_count"))
-            .select_from(q)
-            .group_by(literally)
-        )
-        q = select(literally).select_from(q).where(literal_column("owner_count") == 1)
-        q = select(Document).where(Document.id.in_(q))
+    # ----------------------------------------------------------------------- #
+    # Queries
 
-        return list(session.execute(q).scalars())
-
-    def get_document_uuids(
-        self, level: Level, verify_uuids: Set[str] | None = None
-    ) -> Set[str]:
-        """Get the UUIDs of the documents to which this user is granted
-        permissions explicitly through :class:`AssocUserDocument` entries at
-        :param:`level`.
-
-        This is mostly used to verify ownership of documents, thus a set is
-        returned so that checking membership is fast.
-
-        In particular this is needed for
-
-        .. code:: HTTP
-
-            PATCH /users/{self.uuid}/grant?level={level.name}&uuid_document=...
-
-        where it must be verified that a granter has sufficient permissions
-        (**own**) to assign the grantee access.
-
-        :param level: The level to match against.
-        :param verify: Document UUIDs to verify level of. This makes the
-            results returned smaller. Object UUIDs are and ``INDEX`` so
-            searching is not too expensive and generally this set will be
-            smaller (there will be restrictions implemented using
-            ``fastapi.Query`` for untrusted inputs).
-        :returns: A set of document object UUIDs at :param:`level` when
-            :param:`verify_uuids` is ``None``. Otherwise look for documents with
-            uuids in the provided set of uuids that are below the specified level
-            and return them.
-        """
-        session = object_session(self)
-        if session is None:
-            raise ValueError("Session is required.")
-
-        q_document_ids = select(AssocUserDocument.id_document)
-
-        # NOTE: If ``verify_uuids`` is ``None``, then just compare the level
-        #       given to any association. This is like a level set of sorts (
-        #       where the mapping is from a document to its level). If it is
-        #       not ``None``, look for document ids that are not of a high
-        #       enough level.
-        conds = (
-            (AssocUserDocument.level == level,)
-            if verify_uuids is None
-            else (
+    def q_conds_grants(
+        self,
+        document_uuids: None | Set[str] = None,
+        level: Level | None = None,
+    ) -> ColumnElement[bool]:
+        cond = AssocUserDocument.id_user == self.id
+        print(1, cond)
+        if document_uuids is not None:
+            cond = and_(
+                cond,
                 AssocUserDocument.id_document.in_(
-                    select(Document.id).where(Document.uuid.in_(verify_uuids))
+                    select(Document.id).where(Document.uuid.in_(document_uuids))
                 ),
-                AssocUserDocument.level < level,
             )
+        if level is not None:
+            cond = and_(cond, AssocUserDocument.level >= level)
+
+        print(2, cond)
+        return cond
+
+    def q_select_grants(
+        self,
+        document_uuids: None | Set[str] = None,
+        level: Level | None = None,
+    ) -> Select:
+        # NOTE: Attempting to make roughly the following query:
+        #
+        #       .. code::
+        #
+        #          SELECT users.uuid,
+        #                 documents.uuid,
+        #                 _assocs_user_documents.level
+        #          FROM users
+        #          JOIN _assocs_user_documents
+        #               ON _assocs_user_documents.id_user=users.id
+        #          JOIN documents
+        #               ON _assocs_user_documents.id_document = documents.id;
+        q = (
+            select(
+                User.uuid.label("uuid_user"),
+                Document.uuid.label("uuid_document"),
+                AssocUserDocument.uuid.label("uuid"),
+                AssocUserDocument.level.label("level"),
+            )
+            .select_from(User)
+            .join(AssocUserDocument)
+            .join(Document)
         )
-        q_document_ids = q_document_ids.where(
-            AssocUserDocument.id_user == self.id, *conds
+        print(document_uuids, level)
+        print(q)
+        q = q.where(self.q_conds_grants(document_uuids, level))
+        print(q)
+        return q
+
+    def q_select_documents(
+        self, document_uuids: Set[str] | None = None, level: Level | None = None
+    ) -> Select:
+        """Dual to :meth:`q_select_user_uuids`."""
+
+        return (
+            select(Document)
+            .join(AssocUserDocument)
+            .where(self.q_conds_grants(document_uuids, level))
         )
-        q_document_uuids = select(Document.uuid).where(Document.id.in_(q_document_ids))
-        return set(session.execute(q_document_uuids).scalars())
+
+    def q_select_documents_exclusive(self, document_uuids: Set[str] | None = None):
+        # q = select(Document.id).where(
+        #     Document.id == AssocUserDocument.id_document,
+        #     AssocUserDocument.level == Level.own,
+        #     AssocUserDocument.id_user == self.id,
+        # )
+        # q = select(AssocUserDocument.id_document.label("id_document")).where(
+        #     self.q_conds_grants(document_uuids, level)
+        # )
+
+        level = Level.own
+        q = self.q_select_documents(document_uuids, level)
+
+        # literally = literal_column("id_document")
+        # q = (
+        #     select(literally, func.count(literally).label("owner_count"))
+        #     .select_from(q)
+        #     .group_by(literally)
+        # )
+        q = (
+            select(Document.id, func.count(Document.id).label("owner_count"))
+            .select_from(q)
+            .group_by(Document.id)
+        )
+
+        q = select(Document.id).select_from(q).where(literal_column("owner_count") == 1)
+        q = select(Document).where(Document.id.in_(q))
+        return q
+        #
+        # return list(session.execute(q).scalars())
+
+    # ----------------------------------------------------------------------- #
+    # Chainables for endpoints.
+
+    # NOTE: Chainable methods should be prefixed with `check_`.
+    def check_can_access_collection(self, collection: "Collection") -> Self:
+        if not collection.public and collection.user.uuid != self.uuid:
+            raise HTTPException(
+                403,
+                detail=dict(
+                    msg="User cannot access this collection.",
+                    uuid_user=self.uuid,
+                    uuid_collection=collection.uuid,
+                ),
+            )
+        return self
+
+    def check_can_access_document(self, document: "Document", level: Level) -> Self:
+        session = self.get_session()
+        assocs: List[Level] = list(
+            session.execute(
+                select(AssocUserDocument.level).where(
+                    AssocUserDocument.id_user == self.id,
+                    AssocUserDocument.id_document == document.id,
+                )
+            ).scalars()
+        )
+        detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
+        if not (n := len(assocs)):
+            detail.update(
+                msg="No grant for document.",
+            )
+            raise HTTPException(403, detail=detail)
+        elif n != 1:
+            # Server is a teapot because this is unlikely to ever happen.
+            detail.update(msg="There should only be one grant.")
+            raise HTTPException(418, detail=detail)
+        elif assocs[0].value < Level.own.value:
+            detail.update(msg=f"User must have grant of level `{level.name}`.")
+            raise HTTPException(403, detail=detail)
+
+        return self
+
+    def check_sole_owner_document(self, document: "Document") -> Self:
+        ...
 
 
 class Collection(Base, MixinsPrimary):
@@ -326,6 +422,63 @@ class Document(Base, MixinsPrimary):
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
     )
+
+    # ----------------------------------------------------------------------- #
+    # Queries
+
+    def q_conds_grants(
+        self, user_uuids: Set[str] | None = None, level: Level | None = None
+    ) -> ColumnElement[bool]:
+        exp = AssocUserDocument.id_document == self.id
+        if user_uuids is not None:
+            exp = and_(
+                exp,
+                AssocUserDocument.id_user.in_(
+                    select(User.id).where(User.uuid.in_(user_uuids))
+                ),
+            )
+        if level is not None:
+            exp = and_(exp, AssocUserDocument.level >= level)
+        return exp
+
+    def q_select_grants(
+        self, user_uuids: Set[str] | None = None, level: Level | None = None
+    ) -> Select:
+        """Query to find grants (AssocUserDocument) for this document.
+
+        To find grants for a user, see the same named method on :class:`User`.
+
+        :param user_uuids: The uuids of the users to select for.
+        :param level: The minimal level to select joined entries from.
+        """
+        return (
+            select(
+                AssocUserDocument.uuid.label("uuid"),
+                AssocUserDocument.level.label("level"),
+                Document.uuid.label("uuid_document"),
+                User.uuid.label("uuid_user"),
+            )
+            .select_from(Document)
+            .join(AssocUserDocument)
+            .join(User)
+            .where(self.q_conds_grants(user_uuids=user_uuids, level=level))
+        )
+
+    def q_select_users(
+        self,
+        user_uuids: Set[str] | None = None,
+        level: Level | None = None,
+    ) -> Select:
+        """Select user uuids for this document.
+
+        For parameter descriptions, see :meth:`q_select_grants`.
+        """
+        q = (
+            select(User)
+            .join(AssocUserDocument)
+            .where(self.q_conds_grants(user_uuids=user_uuids, level=level))
+        )
+        return q
 
 
 class Edit(Base, MixinsPrimary):
