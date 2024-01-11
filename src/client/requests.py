@@ -21,22 +21,17 @@ import httpx
 import rich
 import typer
 import yaml
-from app.models import Level
+from app.models import (
+    ChildrenDocument,
+    Level,
+    ChildrenCollection,
+    ChildrenUser,
+    LevelStr,
+    KindObject,
+)
 from app.schemas import UserUpdateSchema
 
 from client.config import Config
-
-
-class UserChildEnum(str, enum.Enum):
-    collections = "collections"
-    documents = "documents"
-    edits = "edits"
-
-
-class UserLevelEnum(str, enum.Enum):
-    view = "view"
-    modify = "modify"
-    own = "own"
 
 
 FlagUUIDDocument: TypeAlias = Annotated[str, typer.Option("--uuid-document")]
@@ -49,15 +44,23 @@ FlagUUIDUsers: TypeAlias = Annotated[List[str], typer.Option("--uuid-user")]
 FlagUUIDUsersOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-user")
 ]
-FlagLevel: TypeAlias = Annotated[UserLevelEnum, typer.Option("--level")]
+FlagLevel: TypeAlias = Annotated[LevelStr, typer.Option("--level")]
 FlagName = Annotated[Optional[str], typer.Option("--name")]
 FlagDescription = Annotated[Optional[str], typer.Option("--description")]
 FlagUrl = Annotated[Optional[str], typer.Option("--url")]
 FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
 FlagPublic = Annotated[Optional[bool], typer.Option("--public")]
-ArgUserChild: TypeAlias = Annotated[UserChildEnum, typer.Argument()]
+
+
 ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument()]
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
+ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
+
+FlagChildrenUser: TypeAlias = Annotated[Optional[ChildrenUser], typer.Option("--child")]
+FlagChildrenCollection: TypeAlias = Annotated[
+    ChildrenCollection, typer.Option("--child")
+]
+FlagChildrenDocument: TypeAlias = Annotated[ChildrenDocument, typer.Option("--child")]
 
 
 V = ParamSpec("V")
@@ -156,15 +159,30 @@ class DocumentRequests(BaseRequests):
         )
 
 
+class CollectionReqests(BaseRequests):
+    async def read(
+        self, uuid_collection: ArgUUIDCollection, child: FlagChildrenCollection
+    ) -> str:
+        ...
+
+
 class UserRequests(BaseRequests):
     commands = ("read", "read_child", "update", "create", "delete")
 
-    async def read_child(self, child: ArgUserChild, uuid_user: ArgUUIDUser):
-        url = f"/users/{uuid_user}/{child.value}"
-        return await self.client.get(url, headers=self.headers)
+    async def read(
+        self,
+        uuid_user: ArgUUIDUser,
+        child: FlagChildrenUser = None,
+    ):
+        url_parts = ["users", uuid_user]
+        if child is not None:
+            url_parts.append(child)
 
-    async def read(self, uuid_user: ArgUUIDUser):
-        return await self.client.get(f"/users/{uuid_user}", headers=self.headers)
+        url = "/".join(url_parts)
+        return await self.client.get(
+            url,
+            headers=self.headers,
+        )
 
     async def update(
         self,
@@ -247,7 +265,7 @@ class GrantRequests(BaseRequests):
         self,
         uuid_document: ArgUUIDDocument,
         uuid_user: FlagUUIDUsers,
-        level: FlagLevel = UserLevelEnum.view,
+        level: FlagLevel = LevelStr.view,
     ) -> httpx.Response:
         return await self.client.post(
             f"/grants/documents/{uuid_document}",

@@ -34,7 +34,11 @@ from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from app import __version__
 
 # =========================================================================== #
-# CONSTANTS, ETC.
+# CONSTANTS, ENUMS, ETC.
+#
+# NOTE: These enums will be used throughout the program and a should be used
+#       to create the types needed by fastapi and typer.
+#
 
 LENGTH_NAME: int = 64
 LENGTH_TITLE: int = 128
@@ -51,20 +55,41 @@ class Level(enum.Enum):
     own = 20
 
 
-class EventKind(str, enum.Enum):
+class LevelStr(str, enum.Enum):
+    view = "view"
+    modify = "modify"
+    own = "own"
+
+
+class KindEvent(str, enum.Enum):
     create = "create"
     update = "update"
     delete = "delete"
     grant = "grant"
 
 
-class ObjectKind(str, enum.Enum):
+class KindObject(str, enum.Enum):
     user = "users"
     document = "documents"
     collection = "collections"
     edit = "edits"
     assoc_user_document = "_assocs_user_documents"
     assoc_user_collection = "_assocs_user_collections"
+
+
+class ChildrenUser(str, enum.Enum):
+    collections = "collections"
+    documents = "documents"
+    edits = "edits"
+
+
+class ChildrenCollection(str, enum.Enum):
+    documents = "documents"
+    edits = "edits"
+
+
+class ChildrenDocument(str, enum.Enum):
+    edits = "edits"
 
 
 # NOTE: Indexing is important as it is how the front end will get most data.
@@ -121,6 +146,10 @@ class MixinsPrimary:
             raise HTTPException(status, detail=detail)
         return m
 
+    @classmethod
+    def q_select_ids(cls, uuids: Set[str]) -> Select:
+        return select(cls.id).where(cls.uuid.in_(uuids))
+
 
 # =========================================================================== #
 # Mapped
@@ -145,8 +174,8 @@ class Event(Base):
     )
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
     uuid_obj: Mapped[MappedColumnUUID]
-    kind: Mapped[EventKind] = mapped_column(Enum(EventKind))
-    kind_obj: Mapped[ObjectKind] = mapped_column(Enum(ObjectKind))
+    kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))
+    kind_obj: Mapped[KindObject] = mapped_column(Enum(KindObject))
     detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
     children: Mapped[List["Event"]] = relationship("Event")
@@ -156,9 +185,10 @@ class Event(Base):
     user: Mapped["User"] = relationship()
 
 
-class AssocCollectionDocument(Base, MixinsPrimary):
+class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"
 
+    uuid: Mapped[MappedColumnUUID]
     id_document: Mapped[int] = mapped_column(
         ForeignKey("documents.id"),
         primary_key=True,
@@ -170,9 +200,10 @@ class AssocCollectionDocument(Base, MixinsPrimary):
     )
 
 
-class AssocUserDocument(Base, MixinsPrimary):
+class AssocUserDocument(Base):
     __tablename__ = "_assocs_user_documents"
 
+    uuid: Mapped[MappedColumnUUID]
     id_user: Mapped[int] = mapped_column(
         ForeignKey("users.id"),
         primary_key=True,
@@ -235,7 +266,6 @@ class User(Base, MixinsPrimary):
         level: Level | None = None,
     ) -> ColumnElement[bool]:
         cond = AssocUserDocument.id_user == self.id
-        print(1, cond)
         if document_uuids is not None:
             cond = and_(
                 cond,
@@ -246,7 +276,6 @@ class User(Base, MixinsPrimary):
         if level is not None:
             cond = and_(cond, AssocUserDocument.level >= level)
 
-        print(2, cond)
         return cond
 
     def q_select_grants(
@@ -277,10 +306,7 @@ class User(Base, MixinsPrimary):
             .join(AssocUserDocument)
             .join(Document)
         )
-        print(document_uuids, level)
-        print(q)
         q = q.where(self.q_conds_grants(document_uuids, level))
-        print(q)
         return q
 
     def q_select_documents(
@@ -330,7 +356,7 @@ class User(Base, MixinsPrimary):
 
     # NOTE: Chainable methods should be prefixed with `check_`.
     def check_can_access_collection(self, collection: "Collection") -> Self:
-        if not collection.public and collection.user.uuid != self.uuid:
+        if not collection.public and collection.id_user != self.id:
             raise HTTPException(
                 403,
                 detail=dict(
@@ -394,6 +420,43 @@ class Collection(Base, MixinsPrimary):
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
     )
+
+    def q_conds_assignment(
+        self, document_uuids: Set[str] | None = None
+    ) -> ColumnElement[bool]:
+        # NOTE: To add the conditions for document select (like level) use
+        #       `q_conds_assoc`.
+        cond = AssocCollectionDocument.id_collection == self.id
+        if document_uuids is not None:
+            document_ids = Document.q_select_ids(document_uuids)
+            cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
+
+        return cond
+
+    def q_select_assignment(self, document_uuids: Set[str] | None = None) -> Select:
+        q = (
+            select(
+                AssocCollectionDocument.uuid.label("uuid"),
+                Document.uuid.label("uuid_document"),
+                Collection.uuid.label("uuid_collection"),
+            )
+            .select_from(Document)
+            .join(AssocCollectionDocument)
+            .join(Collection)
+        )
+        q = q.where(self.q_conds_assignment(document_uuids))
+        return q
+
+    def q_select_documents(
+        self,
+        document_uuids: Set[str] | None = None,
+    ) -> Select:
+        q = (
+            select(Document)
+            .join(AssocCollectionDocument)
+            .where(self.q_conds_assignment(document_uuids))
+        )
+        return q
 
 
 class Document(Base, MixinsPrimary):

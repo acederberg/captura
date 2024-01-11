@@ -13,7 +13,7 @@ From a mathmatical standpoint, this is 'good enough' because UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
-from typing import Annotated, List, Literal
+from typing import Annotated, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
@@ -23,9 +23,9 @@ from app.models import (
     LENGTH_MESSAGE,
     LENGTH_NAME,
     LENGTH_URL,
-    EventKind,
+    KindEvent,
     Level,
-    ObjectKind,
+    KindObject,
 )
 
 UUID = Annotated[
@@ -85,26 +85,40 @@ class UserSchema(BaseModel):
 # =========================================================================== #
 
 
-class CollectionMetadataSchema(BaseModel):
-    uuid: UUID = None
-    # name: Name # excluded bc metadata is labeled by name.
-    description: Description
-
-
-class CollectionSchema(BaseModel):
+class CollectionBaseSchema(BaseModel):
     name: Name
     description: Description
 
 
+class CollectionPostSchema(CollectionBaseSchema):
+    ...
+
+
+class CollectionPatchSchema(BaseModel):
+    name: Name | None = None
+    description: Description | None = None
+    public: Optional[bool] = None
+    uuid_user: UUID = None
+
+
+class CollectionMetadataSchema(CollectionBaseSchema):
+    uuid: UUID = None
+    uuid_user: UUID = None
+
+
+class CollectionSchema(CollectionBaseSchema):
+    ...
+
+
 class DocumentMetadataSchema(BaseModel):
     uuid: UUID = None
-    # name: Name # excluded bc metadata is labeld by name.
+    name: Name  # excluded bc metadata is labeld by name.
     description: Description
     format: Format
 
 
 class DocumentSchema(DocumentMetadataSchema):
-    name: Name
+    # name: Name
     content: Content
 
 
@@ -126,8 +140,8 @@ class EventSchema(BaseModel):
     uuid: UUID
     uuid_obj: UUID
     uuid_user: UUID
-    kind: EventKind
-    kind_obj: ObjectKind
+    kind: KindEvent
+    kind_obj: KindObject
     timestamp: UnixTimestamp
     detail: str
     children: Annotated["List[EventSchema]", Field(default=list())]
@@ -158,3 +172,12 @@ class GrantPostSchema(BaseModel):
 class GrantSchema(GrantPostSchema):
     uuid: UUID
     uuid_document: UUID
+
+
+class AssignmentPostSchema(BaseModel):
+    uuid_document: UUID
+    uuid_collection: UUID
+
+
+class AssignmentSchema(AssignmentPostSchema):
+    uuid: UUID

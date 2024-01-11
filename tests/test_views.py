@@ -11,15 +11,15 @@ import yaml
 from app import __version__, util
 from app.__main__ import main
 from app.auth import Auth
-from app.models import AssocUserDocument, Document, EventKind, Level, ObjectKind, User
+from app.models import AssocUserDocument, Document, KindEvent, Level, KindObject, User
 from app.schemas import EventSchema, GrantSchema, UserSchema
 from app.views import AppView, GrantView
 from client.config import DefaultsConfig
 from client.requests import (
     BaseRequests,
     GrantRequests,
-    UserChildEnum,
-    UserLevelEnum,
+    ChildrenUser,
+    Level,
     UserRequests,
 )
 from fastapi import HTTPException
@@ -158,8 +158,8 @@ class TestUserViews(BaseTestViews):
         async def get_all(status) -> Tuple[httpx.Response, ...]:
             res = await asyncio.gather(
                 client.read(DEFAULT_UUID),
-                client.read_child(UserChildEnum.collections, DEFAULT_UUID),
-                client.read_child(UserChildEnum.documents, DEFAULT_UUID),
+                client.read(DEFAULT_UUID, ChildrenUser.collections),
+                client.read(DEFAULT_UUID, ChildrenUser.documents),
             )
             if err := next((check_status(rr, status) for rr in res), None):
                 raise err
@@ -170,16 +170,16 @@ class TestUserViews(BaseTestViews):
             event = EventSchema.model_validate_json(response.content)
             restore_str = "restore" if restore else "delete"
             assert event.detail == f"User {restore_str}d."
-            assert event.kind == EventKind.delete
+            assert event.kind == KindEvent.delete
             assert event.uuid_parent is None
             assert isinstance(event.children, list)
 
             for child in event.children:
-                assert child.kind == EventKind.delete
+                assert child.kind == KindEvent.delete
                 assert child.uuid_parent == event.uuid
-                if child.kind_obj == ObjectKind.document:
+                if child.kind_obj == KindObject.document:
                     assert child.detail == f"Document {restore_str}d."
-                elif child.kind_obj == ObjectKind.collection:
+                elif child.kind_obj == KindObject.collection:
                     assert child.detail == f"Collection {restore_str}d."
                 else:
                     raise AssertionError(f"Unexpected event with `{child.kind_obj=}`.")
@@ -263,7 +263,7 @@ class TestUserViews(BaseTestViews):
             if not client.config.remote:
                 assert event.api_version == CURRENT_APP_VERSION
             assert event.api_origin == "POST /users"
-            assert event.kind == EventKind.create
+            assert event.kind == KindEvent.create
 
         p = util.Path.test_assets("test-user-create.yaml")
         res = await client.create(p)
@@ -276,15 +276,15 @@ class TestUserViews(BaseTestViews):
         event = EventSchema.model_validate_json(res.content)
         check_common(event)
         assert event.detail == "User created."
-        assert event.kind_obj == ObjectKind.user
+        assert event.kind_obj == KindObject.user
 
         n_collections, n_documents = 0, 0
         for ee in event.children:
             check_common(event)
-            if ee.kind_obj == ObjectKind.collection:
+            if ee.kind_obj == KindObject.collection:
                 assert ee.detail == "Collection created."
                 n_collections += 1
-            elif ee.kind_obj == ObjectKind.document:
+            elif ee.kind_obj == KindObject.document:
                 assert ee.detail == "Document created."
                 n_documents += 1
             else:
@@ -301,8 +301,8 @@ class TestUserViews(BaseTestViews):
         uuid: str = event.uuid_user  # type: ignore
         res = await asyncio.gather(
             client.read(uuid),
-            client.read_child(UserChildEnum.documents, uuid),
-            client.read_child(UserChildEnum.collections, uuid),
+            client.read(uuid, ChildrenUser.documents),
+            client.read(uuid, ChildrenUser.collections),
         )
         if err := next((check_status(rr, 200) for rr in res), None):
             raise err
@@ -371,14 +371,6 @@ class TestGrantView(BaseTestViews):
         client: GrantRequests,
         sessionmaker: sessionmaker[Session],
     ):
-        # user_client = UserRequests(client=client.client, config=client.config)
-        # res = await user_client.read_child(UserChildEnum.documents, DEFAULT_UUID)
-        # if err := check_status(res, 200):
-        #     raise err
-        #
-        # document_ids = list(item["uuid"] for item in res.json().values())
-        # assert len(document_ids), "Expected documents for user."
-
         res = await client.read_document(DEFAULT_UUID_DOCS)
         if err := check_status(res, 200):
             raise err
@@ -435,7 +427,7 @@ class TestGrantView(BaseTestViews):
             assert event.api_origin == "POST /grants/documents/<uuid>"
             assert event.uuid_user == DEFAULT_UUID, "Should be token user."
             assert event.detail == "Grants issued."
-            assert event.kind == EventKind.grant
+            assert event.kind == KindEvent.grant
 
         # Manually remove existing grants.
         with sessionmaker() as session:
@@ -466,7 +458,7 @@ class TestGrantView(BaseTestViews):
         res = await client.create(
             DEFAULT_UUID_DOCS,
             ["99999999"],
-            level=UserLevelEnum.own,  # type: ignore
+            level=Level.own,  # type: ignore
         )
         if err := check_status(res, 201):
             raise err
@@ -475,7 +467,7 @@ class TestGrantView(BaseTestViews):
         event = EventSchema.model_validate_json(res.content)
         check_common(event)
         assert event.uuid_obj == DEFAULT_UUID_DOCS
-        assert event.kind_obj == ObjectKind.document
+        assert event.kind_obj == KindObject.document
 
         # Check layer two
         assert len(event.children) == 1
@@ -483,7 +475,7 @@ class TestGrantView(BaseTestViews):
         check_common(event_user)
 
         assert event_user.uuid_obj == "99999999"
-        assert event_user.kind_obj == ObjectKind.user
+        assert event_user.kind_obj == KindObject.user
 
         # Check layer three
         assert len(event_user.children) == 1
@@ -491,7 +483,7 @@ class TestGrantView(BaseTestViews):
         check_common(event_assoc)
 
         uuid_assoc = event_assoc.uuid_obj
-        assert event_assoc.kind_obj == ObjectKind.assoc_user_document
+        assert event_assoc.kind_obj == KindObject.assoc_user_document
         assert not len(event_assoc.children)
 
         # Read again
@@ -510,7 +502,7 @@ class TestGrantView(BaseTestViews):
         event = EventSchema.model_validate_json(res.content)
         check_common(event)
         assert event.uuid_obj == DEFAULT_UUID_DOCS
-        assert event.kind_obj == ObjectKind.document
+        assert event.kind_obj == KindObject.document
 
         # There should be no child events as no grant should have been created.
 
@@ -540,7 +532,7 @@ class TestGrantView(BaseTestViews):
         def check_common(event):
             assert event.api_origin == "DELETE /grants/documents/<uuid>"
             assert event.uuid_user == DEFAULT_UUID, "Should be token user."
-            assert event.kind == EventKind.grant
+            assert event.kind == KindEvent.grant
 
         p = await client.read_document(DEFAULT_UUID_DOCS)
         if err := check_status(p, 200):
@@ -563,7 +555,7 @@ class TestGrantView(BaseTestViews):
         event = EventSchema.model_validate_json(res.content)
         check_common(event)
         assert event.uuid_obj == DEFAULT_UUID_DOCS
-        assert event.kind_obj == ObjectKind.document
+        assert event.kind_obj == KindObject.document
         assert event.detail == "Grants revoked."
 
         # Check layer two
@@ -572,7 +564,7 @@ class TestGrantView(BaseTestViews):
         check_common(event_user)
 
         assert event_user.uuid_obj == "99999999"
-        assert event_user.kind_obj == ObjectKind.user
+        assert event_user.kind_obj == KindObject.user
         assert event_user.detail == f"Grant `{initial_grant.level}` revoked."
 
         # Check layer three
@@ -581,7 +573,7 @@ class TestGrantView(BaseTestViews):
         check_common(event_assoc)
 
         assert event_assoc.uuid_obj == initial_grant.uuid
-        assert event_assoc.kind_obj == ObjectKind.assoc_user_document
+        assert event_assoc.kind_obj == KindObject.assoc_user_document
         assert event_assoc.detail == f"Grant `{initial_grant.level}` revoked."
         assert not len(event_assoc.children)
 
@@ -617,7 +609,7 @@ class TestGrantView(BaseTestViews):
         res = await client.create(
             DEFAULT_UUID_DOCS,
             [DEFAULT_UUID],
-            level=UserLevelEnum.own,  # type: ignore
+            level=Level.own,  # type: ignore
         )
         if err := check_status(res, 201):
             raise err
