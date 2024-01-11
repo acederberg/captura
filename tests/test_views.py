@@ -167,6 +167,8 @@ class TestUserViews(BaseTestViews):
 
         async def delete(restore=False):
             response = await client.delete(DEFAULT_UUID, restore=restore)
+            if err := check_status(response, 200):
+                raise err
             event = EventSchema.model_validate_json(response.content)
             restore_str = "restore" if restore else "delete"
             assert event.detail == f"User {restore_str}d."
@@ -341,7 +343,6 @@ class TestGrantView(BaseTestViews):
 
         # Grants should specify only one user.
         uuids, uuids_users = zip(*((gg.uuid, gg.uuid_user) for gg in grants))
-        print(uuids, uuids_users)
         assert set(uuids_users) == {"00000000"}
 
         # Number of grants should equal the number of entries the owner has in
@@ -483,7 +484,7 @@ class TestGrantView(BaseTestViews):
         check_common(event_assoc)
 
         uuid_assoc = event_assoc.uuid_obj
-        assert event_assoc.kind_obj == KindObject.assoc_user_document
+        assert event_assoc.kind_obj == KindObject.grant
         assert not len(event_assoc.children)
 
         # Read again
@@ -573,7 +574,7 @@ class TestGrantView(BaseTestViews):
         check_common(event_assoc)
 
         assert event_assoc.uuid_obj == initial_grant.uuid
-        assert event_assoc.kind_obj == KindObject.assoc_user_document
+        assert event_assoc.kind_obj == KindObject.grant
         assert event_assoc.detail == f"Grant `{initial_grant.level}` revoked."
         assert not len(event_assoc.children)
 

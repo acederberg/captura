@@ -68,13 +68,15 @@ class KindEvent(str, enum.Enum):
     grant = "grant"
 
 
+# This maps table names to their corresponding API names.
 class KindObject(str, enum.Enum):
     user = "users"
     document = "documents"
     collection = "collections"
     edit = "edits"
-    assoc_user_document = "_assocs_user_documents"
-    assoc_user_collection = "_assocs_user_collections"
+    event = "events"
+    assignment = "_assocs_collections_documents"
+    grant = "_assocs_users_documents"
 
 
 class ChildrenUser(str, enum.Enum):
@@ -109,6 +111,7 @@ MappedColumnUUID = Annotated[
         index=True,
     ),
 ]
+MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 # =========================================================================== #
 # Models and Mixins
 
@@ -188,6 +191,9 @@ class Event(Base):
 class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"
 
+    # NOTE: Since this object supports soft deletion (for the deletion grace
+    #       period that will later be implemented) deleted is included.
+    deleted: Mapped[MappedColumnDeleted]
     uuid: Mapped[MappedColumnUUID]
     id_document: Mapped[int] = mapped_column(
         ForeignKey("documents.id"),
@@ -201,7 +207,7 @@ class AssocCollectionDocument(Base):
 
 
 class AssocUserDocument(Base):
-    __tablename__ = "_assocs_user_documents"
+    __tablename__ = "_assocs_users_documents"
 
     uuid: Mapped[MappedColumnUUID]
     id_user: Mapped[int] = mapped_column(
@@ -235,10 +241,10 @@ class User(Base, MixinsPrimary):
     # NOTE: This should correspond to `user`. Is all of the collection objects
     #       labeled by their names.
     collections: Mapped[Dict[str, "Collection"]] = relationship(
-        collection_class=attribute_keyed_dict("name"),
+        collection_class=attribute_keyed_dict("uuid"),
         cascade="all, delete",
         back_populates="user",
-        primaryjoin="User.id==Collection.id_user",
+        primaryjoin="and_(User.id==Collection.id_user, Collection.deleted == False)",
     )
 
     edits: Mapped[List["Edit"]] = relationship(
@@ -248,10 +254,10 @@ class User(Base, MixinsPrimary):
     )
 
     documents: Mapped[Dict[str, "Document"]] = relationship(
-        collection_class=attribute_keyed_dict("name"),
+        collection_class=attribute_keyed_dict("uuid"),
         secondary=AssocUserDocument.__table__,
         back_populates="users",
-        primaryjoin="User.id==AssocUserDocument.id_user",
+        primaryjoin="and_(User.id==AssocUserDocument.id_user, Document.deleted == False)",
         secondaryjoin="AssocUserDocument.id_document==Document.id",
     )
 
@@ -415,10 +421,14 @@ class Collection(Base, MixinsPrimary):
         # cascade="all, delete-orphan",
     )
 
+    # NOTE: Deletion is included here since this used to read collection
+    #       documents.
     documents: Mapped[Dict[str, "Document"]] = relationship(
         collection_class=attribute_keyed_dict("name"),
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
+        primaryjoin="and_(Collection.id==AssocCollectionDocument.id_collection, AssocCollectionDocument.deleted == False)",
+        secondaryjoin="and_(Document.deleted == False, Document.id==AssocCollectionDocument.id_document)",
     )
 
     def q_conds_assignment(

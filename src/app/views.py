@@ -21,7 +21,7 @@ from fastapi.params import Param
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from sqlalchemy import delete, func, label, literal_column, select
+from sqlalchemy import delete, func, label, literal_column, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import __version__, util
@@ -49,6 +49,7 @@ from app.schemas import (
     UUID,
     CollectionMetadataSchema,
     CollectionPatchSchema,
+    CollectionPostSchema,
     CollectionSchema,
     DocumentMetadataSchema,
     DocumentSchema,
@@ -314,8 +315,8 @@ class CollectionView(BaseView):
         get_collection="/{uuid}",
         get_collection_documents="/{uuid}/documents",
         delete_collection="/{uuid}",
-        update_collection="/{uuid}",
-        post_collection="/{uuid}",
+        patch_collection="/{uuid}",
+        post_collection="",
     )
 
     @classmethod
@@ -324,7 +325,7 @@ class CollectionView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid: PathUUIDCollection,
-    ):
+    ) -> CollectionSchema:
         with sessionmaker() as session:
             collection = Collection.if_exists(session, uuid)
             user = User.if_exists(session, token["uuid"])
@@ -337,7 +338,7 @@ class CollectionView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid: PathUUIDCollection,
-        uuid_document: QueryUUIDDocumentOptional,
+        uuid_document: QueryUUIDDocumentOptional = None,
     ) -> List[DocumentMetadataSchema]:
         """Return UUIDS for the documents."""
 
@@ -374,14 +375,41 @@ class CollectionView(BaseView):
                 )
             collection.deleted = True
             session.add(collection)
+
+            # NOTE: Soft deletion of collections will require that this
+            #       association table has a 'deleted' column.
+            assoc_uuids: List[str] = list(
+                session.execute(
+                    select(AssocCollectionDocument.uuid).where(
+                        Collection.id == AssocCollectionDocument.id_collection
+                    )
+                ).scalars()
+            )
+            session.execute(
+                update(AssocCollectionDocument)
+                .where(Collection.id == AssocCollectionDocument.id_collection)
+                .values(deleted=True)
+            )
+            events_common = dict(
+                uuid_user=user.uuid,
+                kind=KindEvent.delete,
+                api_origin="DELETE /collections/<uuid>",
+            )
             session.add(
                 event := Event(
-                    uuid_user=user.uuid,
+                    **events_common,
                     uuid_obj=collection.uuid,
-                    kind=KindEvent.delete,
                     kind_obj=KindObject.collection,
-                    api_origin="DELETE /collections/<uuid>",
                     detail="Collection deleted.",
+                    children=[
+                        Event(
+                            **events_common,
+                            kind_obj=KindObject.assignment,
+                            uuid_obj=assoc_uuid,
+                            detail="Association deleted.",
+                        )
+                        for assoc_uuid in assoc_uuids
+                    ],
                 )
             )
             session.commit()
@@ -389,7 +417,7 @@ class CollectionView(BaseView):
             return EventSchema.model_validate(event)
 
     @classmethod
-    def update_collection(
+    def patch_collection(
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
@@ -414,6 +442,7 @@ class CollectionView(BaseView):
                 uuid_user=user.uuid,
                 kind=KindEvent.update,
                 api_origin="PATCH /collections/<uuid>",
+                api_version=__version__,
             )
 
             event = Event(
@@ -424,7 +453,7 @@ class CollectionView(BaseView):
             )
 
             updates_dict = updates.model_dump()
-            uuid_user_target = updates.pop("uuid_user")
+            uuid_user_target = updates_dict.pop("uuid_user")
             if uuid_user_target is not None:
                 target_user = User.if_exists(
                     session,
@@ -451,14 +480,77 @@ class CollectionView(BaseView):
                     continue
                 setattr(collection, key, value)
                 event.children.append(
-                    Event(**event_common, detail=f"Updated collection {key}.")
+                    Event(
+                        **event_common,
+                        detail=f"Updated collection {key}.",
+                        kind_obj=KindObject.collection,
+                    )
                 )
+            session.add(collection)
+            session.commit()
 
             return EventSchema.model_validate(event)
 
     @classmethod
-    def post_collection(cls, filter_params):
-        ...
+    def post_collection(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        data: CollectionPostSchema,
+        uuid_document: QueryUUIDDocumentOptional = set(),
+    ) -> EventSchema:
+        with sessionmaker() as session:
+            # Create collection
+            user = User.if_exists(session, token["uuid"])
+            collection = Collection(**data.model_dump())
+            collection.user = user
+            session.add(collection)
+            session.commit()
+
+            documents = list(
+                session.execute(
+                    select(Document).where(Document.uuid.in_(uuid_document))
+                ).scalars()
+            )
+
+            # Create documents
+            assocs = list(
+                AssocCollectionDocument(
+                    id_document=dd.id,
+                    id_collection=collection.id,
+                )
+                for dd in documents
+            )
+            session.add_all(assocs)
+            session.commit()
+            session.refresh(collection)
+
+            event_common = dict(
+                api_origin="POST /collections",
+                api_version=__version__,
+                kind=KindEvent.create,
+                uuid_user=user.uuid,
+            )
+            session.add(
+                event := Event(
+                    **event_common,
+                    detail="Collection created.",
+                    kind_obj=KindObject.collection,
+                    uuid_obj=collection.uuid,
+                    children=[
+                        session.refresh(assoc)
+                        or Event(
+                            **event_common,
+                            detail="Document asigned to collection.",
+                            kind_obj=KindObject.assignment,
+                            uuid_obj=assoc.uuid,
+                        )
+                        for assoc in assocs
+                    ],
+                )
+            )
+
+            return JSONResponse(EventSchema.model_validate(event).model_dump(), 201)
 
 
 class GrantView(BaseView):
@@ -538,7 +630,7 @@ class GrantView(BaseView):
                     children=[
                         Event(
                             **common,
-                            kind_obj=KindObject.assoc_user_document,
+                            kind_obj=KindObject.grant,
                             uuid_obj=grant.uuid,
                             detail=f"Grant `{grant.level}` revoked.",
                         )
@@ -713,7 +805,7 @@ class GrantView(BaseView):
                             Event(
                                 **common,
                                 uuid_obj=assoc.uuid,
-                                kind_obj=KindObject.assoc_user_document,
+                                kind_obj=KindObject.grant,
                             )
                         ],
                     )
@@ -926,9 +1018,10 @@ class UserView(BaseView):
 
             # Get exclusive_documents.
             exclusive_documents = list(
-                session.execute(user.q_select_documents_exclusive())
+                session.execute(user.q_select_documents_exclusive()).scalars()
             )
             for dd in exclusive_documents:
+                print(dd)
                 event.children.append(
                     Event(
                         uuid_user=uuid,

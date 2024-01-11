@@ -14,10 +14,12 @@
   id: 4
   name: Chicharon.
   description: A collection about New Mexican food.
-- id_user: null
+  uuid: 'eee-eee-eee'
+- id_user: 2
   id: 5
   name: Adovada and Chicharon.
   description: A collection about New Mexican food.
+  uuid: 'foo-ooo-ooo'
 - id_user: null
   id: 6
   name: Mole and Tacos.

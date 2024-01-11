@@ -11,6 +11,7 @@ from app.models import (
     Document,
     Edit,
     Event,
+    KindObject,
     Level,
     User,
 )
@@ -36,7 +37,8 @@ class ModelTestMeta(type):
             raise ValueError(f"`{name}.M={M}` must be a subclass of `{Base}`.")
 
         if (dummies_file := namespace.get("dummies_file")) is None:
-            dummies_file = util.Path.test_assets(f"{M.__tablename__}.yaml")
+            kind = KindObject._value2member_map_[M.__tablename__]
+            dummies_file = util.Path.test_assets(f"{kind.name}.yaml")
             namespace["dummies_file"] = dummies_file
 
         # Dummies. Cannot declare dummies directly.
@@ -432,8 +434,8 @@ class TestCollection(BaseModelTest):
             collection = self.get_collection(session)
             user_initial = TestUser.get_user(session, user_initial_id)
             user_final = TestUser.get_user(session, user_final_id)
-            assert collection.name not in user_initial.collections
-            assert collection.name in user_final.collections
+            assert collection.uuid not in user_initial.collections
+            assert collection.uuid in user_final.collections
             assert collection.id_user == user_final.id
 
             collection.user = user_initial

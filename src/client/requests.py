@@ -40,6 +40,7 @@ FlagUUIDDocumentsOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-document")
 ]
 FlagUUIDUser: TypeAlias = Annotated[str, typer.Option("--uuid-user")]
+FlagUUIDUserOptional: TypeAlias = Annotated[Optional[str], typer.Option("--uuid-user")]
 FlagUUIDUsers: TypeAlias = Annotated[List[str], typer.Option("--uuid-user")]
 FlagUUIDUsersOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-user")
@@ -49,7 +50,8 @@ FlagName = Annotated[Optional[str], typer.Option("--name")]
 FlagDescription = Annotated[Optional[str], typer.Option("--description")]
 FlagUrl = Annotated[Optional[str], typer.Option("--url")]
 FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
-FlagPublic = Annotated[Optional[bool], typer.Option("--public")]
+FlagPublic = Annotated[bool, typer.Option("--public/--private")]
+FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
 
 
 ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument()]
@@ -97,7 +99,7 @@ class BaseRequests:
         if client is not None:
             self.client = client
 
-    @property
+    @functools.cached_property
     def headers(self):
         h = dict(
             content_type="application/json",
@@ -106,6 +108,7 @@ class BaseRequests:
             h.update(authorization=f"bearer {self.token}")
         return h
 
+    @functools.cached_property
     def typer(self) -> typer.Typer:
         t = typer.Typer()
         for cmd in self.commands:
@@ -159,15 +162,67 @@ class DocumentRequests(BaseRequests):
         )
 
 
-class CollectionReqests(BaseRequests):
+class CollectionRequests(BaseRequests):
+    commands = ("read", "create", "delete", "update")
+
     async def read(
-        self, uuid_collection: ArgUUIDCollection, child: FlagChildrenCollection
-    ) -> str:
-        ...
+        self,
+        uuid_collection: ArgUUIDCollection,
+        child: FlagChildrenCollection | None = None,
+    ) -> httpx.Response:
+        url_parts = ["collections", uuid_collection]
+        if child is not None:
+            url_parts.append(child)
+        url = "/" + "/".join(url_parts)
+        return await self.client.get(url, headers=self.headers)
+
+    async def create(
+        self,
+        name: FlagName = None,
+        description: FlagDescription = None,
+        public: FlagPublic = None,
+        uuid_document: FlagUUIDDocumentsOptional = set(),  # type: ignore
+    ) -> httpx.Response:
+        return await self.client.post(
+            "/collections",
+            params=dict(uuid_document=uuid_document),
+            json=dict(name=name, description=description, public=public),
+            headers=self.headers,
+        )
+
+    async def delete(
+        self,
+        uuid_collection: ArgUUIDCollection,
+    ) -> httpx.Response:
+        return await self.client.delete(
+            f"/collections/{uuid_collection}",
+            headers=self.headers,
+        )
+
+    async def update(
+        self,
+        uuid_collection: ArgUUIDCollection,
+        name: FlagName = None,
+        description: FlagDescription = None,
+        public: FlagPublicOptional = None,
+        uuid_user: FlagUUIDUserOptional = None,
+    ) -> httpx.Response:
+        params = dict(
+            name=name,
+            description=description,
+            public=public,
+            uuid_user=uuid_user,
+        )
+        params = {k: v for k, v in params.items() if v is not None}
+        return await self.client.patch(
+            f"/collections/{uuid_collection}",
+            params=params,
+            headers=self.headers,
+        )
 
 
 class UserRequests(BaseRequests):
-    commands = ("read", "read_child", "update", "create", "delete")
+    commands = ("read", "update", "create", "delete")
 
     async def read(
         self,
@@ -178,7 +233,7 @@ class UserRequests(BaseRequests):
         if child is not None:
             url_parts.append(child)
 
-        url = "/".join(url_parts)
+        url = "/" + "/".join(url_parts)
         return await self.client.get(
             url,
             headers=self.headers,

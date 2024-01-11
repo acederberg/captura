@@ -83,6 +83,7 @@ class UserSchema(BaseModel):
 
 
 # =========================================================================== #
+# Collection and Assignment Schema
 
 
 class CollectionBaseSchema(BaseModel):
@@ -91,14 +92,14 @@ class CollectionBaseSchema(BaseModel):
 
 
 class CollectionPostSchema(CollectionBaseSchema):
-    ...
+    public: bool = True
 
 
 class CollectionPatchSchema(BaseModel):
     name: Name | None = None
     description: Description | None = None
-    public: Optional[bool] = None
     uuid_user: UUID = None
+    public: bool | None = None
 
 
 class CollectionMetadataSchema(CollectionBaseSchema):
@@ -106,8 +107,21 @@ class CollectionMetadataSchema(CollectionBaseSchema):
     uuid_user: UUID = None
 
 
-class CollectionSchema(CollectionBaseSchema):
-    ...
+class CollectionSchema(CollectionPostSchema):
+    uuid: UUID
+
+
+class AssignmentPostSchema(BaseModel):
+    uuid_document: UUID
+    uuid_collection: UUID
+
+
+class AssignmentSchema(AssignmentPostSchema):
+    uuid: UUID
+
+
+# =========================================================================== #
+# Docoment and Grant Schemas
 
 
 class DocumentMetadataSchema(BaseModel):
@@ -120,6 +134,37 @@ class DocumentMetadataSchema(BaseModel):
 class DocumentSchema(DocumentMetadataSchema):
     # name: Name
     content: Content
+    public: bool = True
+
+
+class DocumentPostSchema(BaseModel):
+    public: bool = True
+
+
+class GrantPostSchema(BaseModel):
+    # NOTE: `uuid_document` is not included here because this is only used in
+    #       `POST /grants/users/<uuid>`.
+    model_config = ConfigDict(use_enum_values=False)
+    uuid_user: UUID
+    level: Annotated[Level, Field()]
+
+    @field_validator("level", mode="before")
+    def validate_level(cls, v) -> None | Level:
+        if isinstance(v, int):
+            return Level._value2member_map_.get(v)
+        elif isinstance(v, str):
+            return Level[v]
+        else:
+            return v
+
+
+class GrantSchema(GrantPostSchema):
+    uuid: UUID
+    uuid_document: UUID
+
+
+# =========================================================================== #
+# Edits Schema
 
 
 class EditMetadataSchema(BaseModel):
@@ -147,37 +192,12 @@ class EventSchema(BaseModel):
     children: Annotated["List[EventSchema]", Field(default=list())]
 
 
+# =========================================================================== #
+# Composite schemas
+#
+# NOTE: Some of these might fit into the previous categories.
+
+
 class PostUserSchema(UserSchema):
-    collections: Annotated[List[CollectionSchema], Field(default=list())]
+    collections: Annotated[List[CollectionPostSchema], Field(default=list())]
     documents: Annotated[List[DocumentSchema], Field(default=list())]
-
-
-class GrantPostSchema(BaseModel):
-    # NOTE: `uuid_document` is not included here because this is only used in
-    #       `POST /grants/users/<uuid>`.
-    model_config = ConfigDict(use_enum_values=False)
-    uuid_user: UUID
-    level: Annotated[Level, Field()]
-
-    @field_validator("level", mode="before")
-    def validate_level(cls, v) -> None | Level:
-        if isinstance(v, int):
-            return Level._value2member_map_.get(v)
-        elif isinstance(v, str):
-            return Level[v]
-        else:
-            return v
-
-
-class GrantSchema(GrantPostSchema):
-    uuid: UUID
-    uuid_document: UUID
-
-
-class AssignmentPostSchema(BaseModel):
-    uuid_document: UUID
-    uuid_collection: UUID
-
-
-class AssignmentSchema(AssignmentPostSchema):
-    uuid: UUID
