@@ -1,4 +1,5 @@
 import asyncio
+from sqlalchemy import func
 import json
 import secrets
 import sys
@@ -11,12 +12,28 @@ import yaml
 from app import __version__, util
 from app.__main__ import main
 from app.auth import Auth
-from app.models import AssocUserDocument, Document, KindEvent, Level, KindObject, User
-from app.schemas import EventSchema, GrantSchema, UserSchema
+from app.models import (
+    AssocUserDocument,
+    ChildrenCollection,
+    Collection,
+    Document,
+    KindEvent,
+    Level,
+    KindObject,
+    User,
+)
+from app.schemas import (
+    CollectionMetadataSchema,
+    CollectionSchema,
+    EventSchema,
+    GrantSchema,
+    UserSchema,
+)
 from app.views import AppView, GrantView
 from client.config import DefaultsConfig
 from client.requests import (
     BaseRequests,
+    CollectionRequests,
     GrantRequests,
     ChildrenUser,
     Level,
@@ -29,6 +46,7 @@ from sqlalchemy.orm import Session, make_transient, sessionmaker
 from .conftest import PytestClientConfig
 
 CURRENT_APP_VERSION = __version__
+DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
 DEFAULT_UUID: str = "00000000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
@@ -149,7 +167,9 @@ class TestUserViews(BaseTestViews):
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    async def test_get_user_deleted(self, client: UserRequests):
+    async def test_get_user_deleted(
+        self, client: UserRequests, sessionmaker: sessionmaker[Session]
+    ):
         """Test `GET /users/{uuid}` on a user that has been deleted.
 
         This endpoint should state that the user has been deleted but provide a
@@ -158,8 +178,8 @@ class TestUserViews(BaseTestViews):
         async def get_all(status) -> Tuple[httpx.Response, ...]:
             res = await asyncio.gather(
                 client.read(DEFAULT_UUID),
-                client.read(DEFAULT_UUID, ChildrenUser.collections),
                 client.read(DEFAULT_UUID, ChildrenUser.documents),
+                client.read(DEFAULT_UUID, ChildrenUser.collections),
             )
             if err := next((check_status(rr, status) for rr in res), None):
                 raise err
@@ -186,6 +206,11 @@ class TestUserViews(BaseTestViews):
                 else:
                     raise AssertionError(f"Unexpected event with `{child.kind_obj=}`.")
 
+        with sessionmaker() as session:
+            session.execute(update(Document).values(deleted=False))
+            session.execute(update(Collection).values(deleted=False))
+            session.commit()
+
         res = await get_all(200)
         _, res_docs, res_coll = res
         assert len(res_docs.json()), "Expected user to have documents."
@@ -199,7 +224,7 @@ class TestUserViews(BaseTestViews):
             raise ValueError(
                 f"Expected no user content for user `{DEFAULT_UUID}`, but "
                 "content was not returned from the following endpoints "
-                f"despirte returning a `204` status code: `{bad}`."
+                f"despite returning a `204` status code: `{bad}`."
             )
 
         await delete(restore=True)
@@ -614,3 +639,373 @@ class TestGrantView(BaseTestViews):
         )
         if err := check_status(res, 201):
             raise err
+
+
+class TestCollectionView(BaseTestViews):
+    T = CollectionRequests
+
+    @pytest.fixture
+    def client_user(self, client: CollectionRequests) -> UserRequests:
+        return UserRequests.from_(client)
+
+    @pytest.mark.asyncio
+    async def test_read_collection(self, client: CollectionRequests):
+        """General test of `GET /collection/<uuid>`."""
+
+        # Read some collections.
+        res = await client.read(DEFAULT_UUID_COLLECTION)
+        if err := check_status(res, 200):
+            raise err
+
+        data = res.json()
+        assert isinstance(data, dict)
+        collection = CollectionSchema.model_validate(data)
+        assert collection.uuid == DEFAULT_UUID_COLLECTION
+
+    @pytest.mark.asyncio
+    async def test_read_collection_cannot_deleted(
+        self,
+        client: CollectionRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        """Verify that items staged for deletion cannot be obtianed through
+        `GET /collection/<uuid>`.
+        """
+
+        with sessionmaker() as session:
+            # Make sure is not staged for deletion and verify can read.
+            collection = Collection.if_exists(session, DEFAULT_UUID_COLLECTION)
+            collection.deleted = False
+            session.add(collection)
+            session.commit()
+
+            res = await client.read(DEFAULT_UUID_COLLECTION)
+            if err := check_status(res, 200):
+                raise err
+
+            data = res.json()
+            assert isinstance(data, dict)
+            CollectionSchema.model_validate(data)
+
+            # Stage collection for deletion
+            collection.deleted = True
+            res = await client.read(DEFAULT_UUID_COLLECTION)
+            if err := check_status(res, 404):
+                raise err
+
+    @pytest.mark.asyncio
+    async def test_read_collection_private(
+        self, client: CollectionRequests, sessionmaker: sessionmaker[Session]
+    ):
+        """Verify that private collections are only visible to those who are
+        the owner on `GET /collection/<uuid>`.
+        """
+
+        with sessionmaker() as session:
+            # Make sure a user can read their own private collection.
+            user = User.if_exists(session, DEFAULT_UUID)
+            collection = Collection.if_exists(session, DEFAULT_UUID_COLLECTION)
+            collection.user = user
+            collection.public = False
+            session.add(collection)
+            session.commit()
+
+            res = await client.read(DEFAULT_UUID_COLLECTION)
+            if err := check_status(res, 200):
+                raise err
+            data = res.json()
+            assert isinstance(data, dict)
+
+            # Assign the default collection to a new user and make it private.
+            user_new = User.if_exists(session, DEFAULT_UUID)
+            collection.user = user_new
+            session.add(collection)
+            session.commit()
+
+            res = await client.read(DEFAULT_UUID_COLLECTION)
+            if err := check_status(res, 403):
+                raise err
+
+            # Make default collection public again.
+            # Leave it with the other user.
+            collection.public = True
+            session.add(collection)
+            session.commit()
+
+            res = await client.read(DEFAULT_UUID_COLLECTION)
+            if err := check_status(res, 200):
+                raise err
+            data = res.json()
+            assert isinstance(data, dict)
+
+            collection.user = user
+            session.add(collection)
+            session.commit()
+
+    @pytest.mark.asyncio
+    async def test_create_collection(
+        self,
+        client: CollectionRequests,
+        client_user: UserRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        """General test of `POST /collection/<uuid>`."""
+
+        def event_common(event):
+            assert event.api_origin == "POST /collections"
+            assert event.uuid_user == user.uuid
+            assert event.kind == KindEvent.create
+            assert event.api_version == __version__
+
+        def check_event(event):
+            event_common(event)
+            assert event.kind_obj == KindObject.collection
+            assert (event.uuid_obj) is not None
+
+            for event_child in event.children:
+                event_common(event_child)
+                assert event_child.kind_obj == KindObject.assignment
+                assert event_child.uuid_parent == event.uuid
+                assert event_child.uuid_obj is not None
+
+        async def check_created_documents(event):
+            res = await client.read(
+                event.uuid_obj,
+                ChildrenCollection.documents,
+            )
+            if err := check_status(res, 200):
+                raise err
+            data = res.json()
+            assert isinstance(data, list)
+            assert len(data) == len(event.children)
+
+        collections_created_uuids: List[str] = list()
+        with sessionmaker() as session:
+            user = User.if_exists(session, DEFAULT_UUID)
+            document_uuids = list(
+                session.execute(
+                    select(Document.uuid)
+                    .join(AssocUserDocument)
+                    .where(AssocUserDocument.id_user == user.id)
+                ).scalars()
+            )
+            session.execute(update(Document).values(deleted=False))
+            session.commit()
+            assert (n := len(document_uuids)) > 0, "Expected documents for user 1."
+
+            # Test with documents that are not deleted.
+            res = await client.create(
+                name="Test Create Collection 1",
+                description="This is also created by `test_create_collection`.",
+                public=True,
+                uuid_document=document_uuids,
+            )
+            if err := check_status(res, 201):
+                raise err
+
+            event = EventSchema.model_validate_json(res.content)
+            assert (
+                len(event.children) == n
+            ), "There should be a child event for every document."
+            check_event(event)
+            await check_created_documents(event)
+            collections_created_uuids.append(event.uuid_obj)
+
+            # Stage some documents for deletion and make sure that documents
+            # staged for deletion do not get added to the collection.
+            session.execute(update(Document).values(deleted=True))
+            session.commit()
+
+            res = await client.create(
+                name="Test Create Collection 2",
+                description="This is created by `test_create_collection`.",
+                public=True,
+                uuid_document=document_uuids,
+            )
+            if err := check_status(res, 201):
+                raise err
+
+            event = EventSchema.model_validate_json(res.content)
+            assert len(event.children) == 0
+            check_event(event)
+            await check_created_documents(event)
+            collections_created_uuids.append(event.uuid_obj)
+
+            # Collection should have no documents
+
+            # NOTE: Verify that public documents can be added to the
+            #       collection. Notice that this document is userless.
+            session.execute(update(Document).values(deleted=False))
+            session.add(
+                document_new := Document(
+                    name="Test Create Collection Public Document",
+                    description="This document should be public and not deleted.",
+                    content=b"You're momma iz so _.",
+                    format="md",
+                    public=True,
+                )
+            )
+            session.commit()
+
+            res = await client.create(
+                name="Test Create Collection 3",
+                description="This is created by `test_create_collection`.",
+                public=True,
+                uuid_document=[document_new.uuid],
+            )
+            if err := check_status(res, 201):
+                raise err
+
+            event = EventSchema.model_validate_json(res.content)
+            assert len(event.children) == 1
+            check_event(event)
+            await check_created_documents(event)
+            collections_created_uuids.append(event.uuid_obj)
+
+            # NOTE: Veryify that private documents belonging to abother user
+            #       (or in this case no user) cannot be added.
+            document_new.public = False
+            session.add(document_new)
+            session.commit()
+
+            res = await client.create(
+                name="Test Create Collection 4",
+                description="This is created by `test_create_collection`.",
+                public=True,
+                uuid_document=[document_new.uuid],
+            )
+            if err := check_status(res, 201):
+                raise err
+
+            event = EventSchema.model_validate_json(res.content)
+            assert len(event.children) == 0
+            check_event(event)
+            await check_created_documents(event)
+            collections_created_uuids.append(event.uuid_obj)
+
+            # NOTE: Veryify that the created collections exist.
+            # BONUS: Using the `client_user` fixture.
+            res = await client_user.read(
+                DEFAULT_UUID,
+                ChildrenUser.collections,
+                collections_created_uuids,
+            )
+            if err := check_status(res, 200):
+                raise err
+
+            collections = {
+                uuid: CollectionMetadataSchema.model_validate(data)
+                for uuid, data in res.json().items()
+            }
+            assert len(collections) == 4
+            assert all(key in collections_created_uuids for key in collections)
+
+            # BONUS: Make sure that deletion filtering works for the user client
+            session.execute(
+                update(Collection)
+                .where(Collection.uuid.in_(collections_created_uuids))
+                .values(deleted=True)
+            )
+            session.commit()
+
+            res = await client_user.read(
+                DEFAULT_UUID,
+                ChildrenUser.collections,
+                collections_created_uuids,
+            )
+            if err := check_status(res, 200):
+                raise err
+            assert len(res.json()) == 0, "Collections should be staged for deletion."
+
+    @pytest.mark.asyncio
+    async def test_create_collection_deleted_documents(
+        self,
+        client: CollectionRequests,
+        client_user: UserRequests,
+        sessionmaker: sessionmaker[Session],
+        auth: Auth,
+    ):
+        """Verify that deleted documents will not be assigned to a posted
+        collection.
+        """
+
+        # NOTE: Acting as user `99999999`.
+        client.token = auth.encode({"uuid": "99999999"})
+        client_user.token = client.token
+
+        with sessionmaker() as session:
+            user = User.if_exists(session, "99999999")
+            u = update(Collection).where(Collection.id_user == user.id)
+            session.execute(u.values(deleted=True))
+            session.commit()
+
+            res = await client.create(
+                name="Test Create Collection Delete Documents",
+                description="Tests that deleted documents cannot be posted with a new collection.",
+                public=False,
+            )
+            if err := check_status(res, 201):
+                raise err
+
+            event = EventSchema.model_validate_json(res.content)
+            assert event.api_origin == "POST /collections"
+            assert event.api_version == __version__
+            assert event.uuid_user == "99999999"
+            assert event.uuid is not None
+            assert event.kind == KindEvent.create
+            assert event.kind_obj == KindObject.collection
+            assert len(event.children) == 0, "Documents should have not been assigned."
+
+            # BONUS: Verify that the collection exists for the user but cannot
+            #        be accessed by others when private.
+            async def user_read_and_check(expect: int):
+                res = await client_user.read(
+                    "99999999",
+                    ChildrenUser.collections,
+                    event.uuid_obj,
+                )
+                if err := check_status(res, 200):
+                    raise err
+                data = res.json()
+                assert len(data) == expect
+
+                res = await client.read(event.uuid_obj)
+                if err := check_status(res, 200 if expect else 404):
+                    raise err
+
+            # NOTE: Act like user `00000000` so that access controllers are
+            #       used.
+            client.token = auth.encode({"uuid": DEFAULT_UUID})
+            client_user.token = client.token
+            await user_read_and_check(0)
+
+            # Bonus: Change access to public and verify that non-owning users
+            #        can access.
+            session.execute(u.values(public=True))
+            session.commit()
+
+            await user_read_and_check(1)
+
+    @pytest.mark.asyncio
+    async def test_delete_collection(self, client: CollectionRequests):
+        """General test of `DELETE /collection/<uuid>`."""
+        ...
+
+    @pytest.mark.asyncio
+    async def test_delete_collection_access(self, client: CollectionRequests):
+        """Users should only be able to delete their own collections with
+        `DELETE /collection/<uuid>`. They should not be able to delete
+        universal (userless) collections either."""
+        ...
+
+    @pytest.mark.asyncio
+    async def test_patch_collection(self, client: CollectionRequests):
+        """General test of `PATCH /collection/<uuid>`."""
+        ...
+
+    @pytest.mark.asyncio
+    async def test_patch_collection_access(self, client: CollectionRequests):
+        """Users should only be able to update their own collections with
+        `PATCH /collection/<uuid>`. They should not be able to update
+        universal (userless) collections either."""
+        ...

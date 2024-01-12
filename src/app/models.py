@@ -327,31 +327,19 @@ class User(Base, MixinsPrimary):
         )
 
     def q_select_documents_exclusive(self, document_uuids: Set[str] | None = None):
-        # q = select(Document.id).where(
-        #     Document.id == AssocUserDocument.id_document,
-        #     AssocUserDocument.level == Level.own,
-        #     AssocUserDocument.id_user == self.id,
-        # )
-        # q = select(AssocUserDocument.id_document.label("id_document")).where(
-        #     self.q_conds_grants(document_uuids, level)
-        # )
-
         level = Level.own
-        q = self.q_select_documents(document_uuids, level)
-
-        # literally = literal_column("id_document")
-        # q = (
-        #     select(literally, func.count(literally).label("owner_count"))
-        #     .select_from(q)
-        #     .group_by(literally)
-        # )
         q = (
             select(Document.id, func.count(Document.id).label("owner_count"))
-            .select_from(q)
+            .select_from(self.q_select_documents(document_uuids, level))
             .group_by(Document.id)
         )
-
-        q = select(Document.id).select_from(q).where(literal_column("owner_count") == 1)
+        q = (
+            select(Document.id)
+            .select_from(q)
+            .where(
+                literal_column("owner_count") == 1,
+            )
+        )
         q = select(Document).where(Document.id.in_(q))
         return q
         #

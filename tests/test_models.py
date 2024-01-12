@@ -240,6 +240,36 @@ class TestUser(BaseModelTest):
             assert count is not None
             assert count > 0, f"{collections = }"  # type: ignore
 
+    @pytest.mark.asyncio
+    async def test_user_documents_excludes_deleted(
+        self,
+        sessionmaker: sessionmaker[Session],
+    ):
+        with sessionmaker() as session:
+            # Verify that collections exist
+            user = User.if_exists(session, "00000000")
+            n_collections = session.execute(
+                select(func.count()).select_from(
+                    select(Collection).where(Collection.id_user == user.id)
+                )
+            ).scalar()
+            assert n_collections > 0, "Expected collections for user."
+
+            # Verify that collections staged for deletion are not included in
+            # erlationship
+            u = update(Collection).where(Collection.id_user == user.id)
+            session.execute(u.values(deleted=True))
+            session.commit()
+            session.refresh(user)
+
+            assert not len(user.collections)
+
+            session.execute(u.values(deleted=False))
+            session.commit()
+            session.refresh(user)
+
+            assert len(user.collections) == n_collections
+
     def test_documents_relationship(
         self,
         sessionmaker: sessionmaker[Session],

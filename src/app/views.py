@@ -1,6 +1,7 @@
 """Api routers and functions. 
 This includes a metaclass so that undecorated functions may be tested.
 """
+import json
 import logging
 from typing import (
     Annotated,
@@ -20,8 +21,8 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.params import Param
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel
-from sqlalchemy import delete, func, label, literal_column, select, update
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import delete, func, label, literal_column, select, union, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import __version__, util
@@ -64,14 +65,14 @@ from app.schemas import (
 )
 
 logger = util.get_logger(__name__)
-QueryUUIDCollection: TypeAlias = Annotated[
-    List[str], Query(min_length=4, max_length=16)
-]
+QueryUUIDCollection: TypeAlias = Annotated[Set[str], Query(min_length=1)]
+QueryUUIDCollectionOptional: TypeAlias = Annotated[Set[str], Query(min_length=0)]
 QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDDocument: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDDocumentOptional: TypeAlias = Annotated[Optional[Set[str]], Query()]
 QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=0)]
 QueryUUIDUserOptional: TypeAlias = Annotated[None | Set[str], Query(min_length=0)]
+QueryUUIDEditOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=0)]
 QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
 PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDCollection: TypeAlias = Annotated[str, Path()]
@@ -241,7 +242,6 @@ class DocumentView(BaseView):
         with makesession() as session:
             # Add the documents
             logger.debug("Adding new documents for user `%s`.", uuid)
-            Document._updated_by_user_uuid
             documents = {
                 document.name: Document(**document.model_dump())
                 for document in documents_raw
@@ -346,13 +346,12 @@ class CollectionView(BaseView):
             collection = Collection.if_exists(session, uuid)
             user = User.if_exists(session, token["uuid"])
             user.check_can_access_collection(collection)
-            documents = session.execute(
-                collection.q_select_documents(uuid_document),
-            ).scalars()
-            return [
-                DocumentMetadataSchema.model_validate(document)
-                for document in documents
-            ]
+            documents = list(
+                session.execute(
+                    collection.q_select_documents(uuid_document),
+                ).scalars()
+            )
+            return documents
 
     @classmethod
     def delete_collection(
@@ -509,8 +508,18 @@ class CollectionView(BaseView):
 
             documents = list(
                 session.execute(
-                    select(Document).where(Document.uuid.in_(uuid_document))
-                ).scalars()
+                    union(
+                        select(Document)
+                        .join(AssocUserDocument)
+                        .where(Document.deleted == False)
+                        .where(user.q_conds_grants(uuid_document)),
+                        select(Document).where(
+                            Document.deleted == False,
+                            Document.public == True,
+                            Document.uuid.in_(uuid_document),
+                        ),
+                    )
+                )
             )
 
             # Create documents
@@ -549,6 +558,8 @@ class CollectionView(BaseView):
                     ],
                 )
             )
+            session.commit()
+            session.refresh(event)
 
             return JSONResponse(EventSchema.model_validate(event).model_dump(), 201)
 
@@ -910,35 +921,61 @@ class UserView(BaseView):
 
             return children  # type: ignore
 
+    # TODO: Test that users can not access other users' private docs/colls from
+    #       here.
     @classmethod
     def get_user_documents(
-        cls, makesession: DependsSessionMaker, uuid: PathUUIDUser
+        cls,
+        makesession: DependsSessionMaker,
+        token: DependsToken,
+        uuid: PathUUIDUser,
+        uuid_document: QueryUUIDDocumentOptional = set(),
     ) -> Dict[str, DocumentMetadataSchema]:
-        return cls.select_user_child(
+        res = cls.select_user_child(
             "documents",
             makesession,
             uuid,
         )
+        if token["uuid"] != uuid:
+            res = {k: v for k, v in res.items() if v.public}
+        if uuid_document:
+            res = {k: v for k, v in res.items() if k in uuid_document}
+
+        return res
 
     @classmethod
     def get_user_collections(
-        cls, makesession: DependsSessionMaker, uuid: PathUUIDUser
+        cls,
+        makesession: DependsSessionMaker,
+        token: DependsToken,
+        uuid: PathUUIDUser,
+        uuid_collection: QueryUUIDCollectionOptional = set(),
     ) -> Dict[str, CollectionMetadataSchema]:
-        return cls.select_user_child(
-            "collections",
-            makesession,
-            uuid,
-        )
+        res = cls.select_user_child("collections", makesession, uuid)
+        if token["uuid"] != uuid:
+            res = {k: v for k, v in res.items() if v.public}
+        if uuid_collection:
+            res = {k: v for k, v in res.items() if k in uuid_collection}
+
+        return res
 
     @classmethod
     def get_user_edits(
-        cls, makesession: DependsSessionMaker, uuid: PathUUIDUser
+        cls,
+        makesession: DependsSessionMaker,
+        token: DependsToken,
+        uuid: PathUUIDUser,
+        uuid_edit: QueryUUIDEditOptional = set(),
     ) -> List[EditMetadataSchema]:
-        return cls.select_user_child(
+        res = cls.select_user_child(
             "edits",
             makesession,
             uuid,
         )
+        if token["uuid"] != uuid:
+            res = [item for item in res if item.public]
+        if uuid_document:
+            res = [item for item in res if item.uuid in uuid_edit]
 
     # ----------------------------------------------------------------------- #
     # CRUD without R

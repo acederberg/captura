@@ -16,6 +16,7 @@ from typing import (
     Tuple,
     TypeAlias,
 )
+from typing_extensions import Self
 
 import httpx
 import rich
@@ -33,18 +34,43 @@ from app.schemas import UserUpdateSchema
 
 from client.config import Config
 
+# =========================================================================== #
+# Typer Flags and Args.
 
-FlagUUIDDocument: TypeAlias = Annotated[str, typer.Option("--uuid-document")]
+# --------------------------------------------------------------------------- #
+# UUID Flags and Arguments
+# NOTE: Annotations should eventually include help.
+
+# FlagUUIDDocument: TypeAlias = Annotated[str, typer.Option("--uuid-document")]
+FlagUUIDUser: TypeAlias = Annotated[
+    str,
+    typer.Option(
+        "--uuid-user",
+        help="Transfer ownship of a collection to this UUID.",
+    ),
+]
+FlagUUIDUserOptional: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option("--uuid-user"),
+]
+FlagUUIDChildrenOptional: TypeAlias = Annotated[
+    Optional[List[str]], typer.Option("--uuid-child", "--uuid-children")
+]
 FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document")]
 FlagUUIDDocumentsOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-document")
 ]
-FlagUUIDUser: TypeAlias = Annotated[str, typer.Option("--uuid-user")]
-FlagUUIDUserOptional: TypeAlias = Annotated[Optional[str], typer.Option("--uuid-user")]
 FlagUUIDUsers: TypeAlias = Annotated[List[str], typer.Option("--uuid-user")]
 FlagUUIDUsersOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-user")
 ]
+ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument()]
+ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
+ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
+
+# --------------------------------------------------------------------------- #
+# Field flags
+
 FlagLevel: TypeAlias = Annotated[LevelStr, typer.Option("--level")]
 FlagName = Annotated[Optional[str], typer.Option("--name")]
 FlagDescription = Annotated[Optional[str], typer.Option("--description")]
@@ -54,15 +80,18 @@ FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
 
 
-ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument()]
-ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
-ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
+# --------------------------------------------------------------------------- #
+# Children flags
 
-FlagChildrenUser: TypeAlias = Annotated[Optional[ChildrenUser], typer.Option("--child")]
-FlagChildrenCollection: TypeAlias = Annotated[
-    ChildrenCollection, typer.Option("--child")
+FlagChildrenUser: TypeAlias = Annotated[
+    Optional[ChildrenUser], typer.Option("--child", "--children")
 ]
-FlagChildrenDocument: TypeAlias = Annotated[ChildrenDocument, typer.Option("--child")]
+FlagChildrenCollection: TypeAlias = Annotated[
+    ChildrenCollection, typer.Option("--child", "--children")
+]
+FlagChildrenDocument: TypeAlias = Annotated[
+    ChildrenDocument, typer.Option("--child", "--children")
+]
 
 
 V = ParamSpec("V")
@@ -86,6 +115,14 @@ class BaseRequests:
     config: Config
     client: httpx.AsyncClient
     commands: ClassVar[Tuple[str, ...]]
+
+    @classmethod
+    def from_(cls, v: "BaseRequests") -> Self:
+        return cls(
+            client=v.client,
+            config=v.config,
+            token=v.token,
+        )
 
     def __init__(
         self,
@@ -181,11 +218,11 @@ class CollectionRequests(BaseRequests):
         name: FlagName = None,
         description: FlagDescription = None,
         public: FlagPublic = None,
-        uuid_document: FlagUUIDDocumentsOptional = set(),  # type: ignore
+        uuid_document: FlagUUIDDocumentsOptional = list(),
     ) -> httpx.Response:
         return await self.client.post(
             "/collections",
-            params=dict(uuid_document=uuid_document),
+            params=dict(uuid_document=list(uuid_document)),
             json=dict(name=name, description=description, public=public),
             headers=self.headers,
         )
@@ -228,7 +265,23 @@ class UserRequests(BaseRequests):
         self,
         uuid_user: ArgUUIDUser,
         child: FlagChildrenUser = None,
+        child_uuids: FlagUUIDChildrenOptional = None,
     ):
+        params = dict()
+        match [child, child_uuids]:
+            case [None, None]:
+                pass
+            case [None, _]:
+                _ = "`child_uuids` can only be specified when `child` is too."
+                raise ValueError(_)
+            case [ChildrenUser.collections, _]:
+                params["uuid_collection"] = child_uuids
+            case [ChildrenUser.documents, _]:
+                params["uuid_document"] = child_uuids
+            case _:
+                _ = "Invalid combination of `--child` and `--uuid-child`."
+                raise ValueError(_)
+
         url_parts = ["users", uuid_user]
         if child is not None:
             url_parts.append(child)
@@ -236,6 +289,7 @@ class UserRequests(BaseRequests):
         url = "/" + "/".join(url_parts)
         return await self.client.get(
             url,
+            params=params,
             headers=self.headers,
         )
 
