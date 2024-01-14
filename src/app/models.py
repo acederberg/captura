@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, Dict, List, Self, Set, Tuple
 
 from sqlalchemy import (
+    union,
     BinaryExpression,
     ColumnElement,
     Enum,
@@ -205,6 +206,18 @@ class AssocCollectionDocument(Base):
         primary_key=True,
     )
 
+    def uuid_document(self) -> str:
+        session = self.get_session()
+        return session.execute(
+            select(Document.uuid).where(Document.id == self.id_document)
+        ).scalar()
+
+    def uuid_collection(self) -> str:
+        session = self.get_session()
+        return session.execute(
+            select(Collection.uuid).where(Collection.id == self.id_collection)
+        ).scalar()
+
 
 class AssocUserDocument(Base):
     __tablename__ = "_assocs_users_documents"
@@ -219,6 +232,18 @@ class AssocUserDocument(Base):
         primary_key=True,
     )
     level: Mapped[Level] = mapped_column(Enum(Level))
+
+    def uuid_document(self) -> str:
+        session = self.get_session()
+        return session.execute(
+            select(Document.uuid).where(Document.id == self.id_document)
+        ).scalar()
+
+    def uuid_user(self) -> str:
+        session = self.get_session()
+        return session.execute(
+            select(User.uuid).where(User.id == self.id_user)
+        ).scalar()
 
 
 class User(Base, MixinsPrimary):
@@ -323,7 +348,18 @@ class User(Base, MixinsPrimary):
         return (
             select(Document)
             .join(AssocUserDocument)
-            .where(self.q_conds_grants(document_uuids, level))
+            .where(
+                self.q_conds_grants(document_uuids, level),
+                Document.deleted == False,
+            )
+        )
+
+    def q_select_documents_assignable(self, document_uuids: Set[str] | None = None):
+        """Get documents that can be assigned to user collections"""
+
+        return union(
+            self.q_select_documents(document_uuids),
+            Document.q_select_public(document_uuids),
         )
 
     def q_select_documents_exclusive(self, document_uuids: Set[str] | None = None):
@@ -486,6 +522,18 @@ class Document(Base, MixinsPrimary):
 
     # ----------------------------------------------------------------------- #
     # Queries
+    @classmethod
+    def q_select_public(
+        cls,
+        document_uuids: Set[str] | None = None,
+    ):
+        q = select(cls).where(cls.public)
+        if document_uuids is not None:
+            q = q.where(
+                cls.uuid.in_(document_uuids),
+                cls.deleted == False,
+            )
+        return q
 
     def q_conds_grants(
         self, user_uuids: Set[str] | None = None, level: Level | None = None

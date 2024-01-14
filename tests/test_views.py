@@ -13,6 +13,7 @@ from app import __version__, util
 from app.__main__ import main
 from app.auth import Auth
 from app.models import (
+    AssocCollectionDocument,
     AssocUserDocument,
     ChildrenCollection,
     Collection,
@@ -987,9 +988,59 @@ class TestCollectionView(BaseTestViews):
             await user_read_and_check(1)
 
     @pytest.mark.asyncio
-    async def test_delete_collection(self, client: CollectionRequests):
+    async def test_delete_collection(
+        self, client: CollectionRequests, client_user: UserRequests
+    ):
         """General test of `DELETE /collection/<uuid>`."""
-        ...
+
+        res = await client_user.read(DEFAULT_UUID, ChildrenUser.collections)
+        if err := check_status(res, 200):
+            raise err
+
+        collection_uuids_initial = set(res.json().keys())
+        uuid_collection, *_ = collection_uuids_initial
+
+        res = await client.read(uuid_collection, ChildrenCollection.documents)
+        if err := check_status(res, 200):
+            raise err
+
+        document_uuids = set(res.json().keys())
+        if not (n_documents := len(document_uuids)):
+            raise AssertionError("Expected documents for collection.")
+
+        with sessionmaker() as session:
+            collection = Collection.if_exists(session, uuid_collection)
+            res = session.execute(
+                select(AssocCollectionDocument.uuid)
+                .join(Document)
+                .where(
+                    Document.uuid.in_(document_uuids),
+                    AssocCollectionDocument.id_collection != collection.id,
+                )
+            )
+            assoc_ids = list(res.scalars())
+
+            res = await client.delete(uuid_collection)
+            if err := check_status(res, 200):
+                raise err
+
+            def event_common(event):
+                assert event.uuid is not None
+                assert event.api_origin == "DELETE /collections/<uuid>"
+                assert event.api_version == __version__
+                assert event.kind == KindEvent.create
+
+            event = EventSchema(res.content)
+            event_common(event)
+            assert event.kind_obj == KindObject.collection
+            assert event.uuid_obj == uuid_collection
+            assert len(event.children) == n_documents
+
+            for item in event.children:
+                event_common(event)
+                assert item.kind_obj == KindObject.assignment
+                assert item.uuid_obj in assoc_ids
+                assert not len(item.children)
 
     @pytest.mark.asyncio
     async def test_delete_collection_access(self, client: CollectionRequests):

@@ -125,14 +125,15 @@ class AssignmentSchema(AssignmentPostSchema):
 
 
 class DocumentMetadataSchema(BaseModel):
-    uuid: UUID = None
-    name: Name  # excluded bc metadata is labeld by name.
+    # uuid excluded bc metadata is labeld by it.
+    name: Name
     description: Description
     format: Format
 
 
 class DocumentSchema(DocumentMetadataSchema):
     # name: Name
+    uuid: UUID = None
     content: Content
     public: bool = True
 

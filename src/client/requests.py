@@ -41,32 +41,39 @@ from client.config import Config
 # UUID Flags and Arguments
 # NOTE: Annotations should eventually include help.
 
-# FlagUUIDDocument: TypeAlias = Annotated[str, typer.Option("--uuid-document")]
-FlagUUIDUser: TypeAlias = Annotated[
-    str,
+FlagUUIDChildrenOptional: TypeAlias = Annotated[
+    List[str], typer.Option("--uuid-child", "--uuid-children")
+]
+
+
+# User
+
+ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument(help="User uuid.")]
+FlagUUIDUserOptional: TypeAlias = Annotated[
+    Optional[str],
     typer.Option(
         "--uuid-user",
         help="Transfer ownship of a collection to this UUID.",
     ),
 ]
-FlagUUIDUserOptional: TypeAlias = Annotated[
-    Optional[str],
-    typer.Option("--uuid-user"),
+FlagUUIDUsers: TypeAlias = Annotated[
+    List[str], typer.Option("--uuid-user", help="A required list of user UUIDs.")
 ]
-FlagUUIDChildrenOptional: TypeAlias = Annotated[
-    Optional[List[str]], typer.Option("--uuid-child", "--uuid-children")
+FlagUUIDUsersOptional: TypeAlias = Annotated[
+    Optional[List[str]],
+    typer.Option("--uuid-user", help="An optional list of user UUIDs."),
 ]
+
+
+# Documents
+
 FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document")]
 FlagUUIDDocumentsOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-document")
 ]
-FlagUUIDUsers: TypeAlias = Annotated[List[str], typer.Option("--uuid-user")]
-FlagUUIDUsersOptional: TypeAlias = Annotated[
-    Optional[List[str]], typer.Option("--uuid-user")
-]
-ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument()]
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
 ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
+
 
 # --------------------------------------------------------------------------- #
 # Field flags
@@ -100,12 +107,17 @@ RequestCallable = Callable[V, httpx.Response]
 
 
 def handle_response(response: httpx.Response) -> None:
-    content = response.json()
+    try:
+        content = response.json()
+    except json.JSONDecodeError:
+        content = None
+
     if 200 <= response.status_code < 300:
         rich.print_json(json.dumps(content))
     else:
         rich.print(f"[red]Recieved bad status code `{response.status_code}`.")
-        rich.print("[red]" + json.dumps(content, indent=2))
+        if content:
+            rich.print("[red]" + json.dumps(content, indent=2))
 
 
 class BaseRequests:
@@ -160,6 +172,10 @@ class BaseRequests:
         self,
         fn: AsyncRequestCallable,
     ) -> RequestCallable:
+        """Decorated commands to make requests into usable (by typer)
+        functions."""
+
+        # Add the client.
         async def with_client_injected(
             *args: V.args,
             **kwargs: V.kwargs,
@@ -180,6 +196,7 @@ class BaseRequests:
                 handle_response(response)
                 return response
 
+        # Make sync
         @functools.wraps(fn)
         def wrapper(*args: V.args, **kwargs: V.kwargs) -> httpx.Response:
             return asyncio.run(with_client_injected(*args, **kwargs))
@@ -206,23 +223,40 @@ class CollectionRequests(BaseRequests):
         self,
         uuid_collection: ArgUUIDCollection,
         child: FlagChildrenCollection | None = None,
+        uuid_child: FlagUUIDChildrenOptional = list(),
     ) -> httpx.Response:
+        params: Dict[str, Any] = dict()
+        match [child, uuid_child]:
+            case [None, None]:
+                pass
+            case [ChildrenCollection.documents, _]:
+                params.update(uuid_document=uuid_child)
+            case [ChildrenCollection.edits, _]:
+                params.update(uuid_edit=uuid_child)
+            case _:
+                rich.print(
+                    "[red]`--uuid-child` can only be used when `--child` is "
+                    "provided."
+                )
+                raise typer.Exit(1)
+
+        # Determine URL
         url_parts = ["collections", uuid_collection]
         if child is not None:
             url_parts.append(child)
         url = "/" + "/".join(url_parts)
-        return await self.client.get(url, headers=self.headers)
+        return await self.client.get(url, params=params, headers=self.headers)
 
     async def create(
         self,
         name: FlagName = None,
         description: FlagDescription = None,
-        public: FlagPublic = None,
+        public: FlagPublicOptional = None,
         uuid_document: FlagUUIDDocumentsOptional = list(),
     ) -> httpx.Response:
         return await self.client.post(
             "/collections",
-            params=dict(uuid_document=list(uuid_document)),
+            params=dict(uuid_document=uuid_document),
             json=dict(name=name, description=description, public=public),
             headers=self.headers,
         )
@@ -265,22 +299,26 @@ class UserRequests(BaseRequests):
         self,
         uuid_user: ArgUUIDUser,
         child: FlagChildrenUser = None,
-        child_uuids: FlagUUIDChildrenOptional = None,
+        child_uuids: FlagUUIDChildrenOptional = list(),
     ):
         params = dict()
-        match [child, child_uuids]:
-            case [None, None]:
+        match [child, bool(len(child_uuids))]:
+            case [None, False]:
                 pass
-            case [None, _]:
-                _ = "`child_uuids` can only be specified when `child` is too."
-                raise ValueError(_)
+            case [None, True]:
+                rich.print(
+                    "[red]`child_uuids` can only be specified when `child` is too."
+                )
+                raise typer.Exit(1)
             case [ChildrenUser.collections, _]:
                 params["uuid_collection"] = child_uuids
             case [ChildrenUser.documents, _]:
                 params["uuid_document"] = child_uuids
             case _:
-                _ = "Invalid combination of `--child` and `--uuid-child`."
-                raise ValueError(_)
+                rich.print(
+                    "[red]Invalid combination of `--child` and `--uuid-child`.",
+                )
+                raise typer.Exit(2)
 
         url_parts = ["users", uuid_user]
         if child is not None:
@@ -295,7 +333,7 @@ class UserRequests(BaseRequests):
 
     async def update(
         self,
-        uuid_user: FlagUUIDUser,
+        uuid_user: ArgUUIDUser,
         name: FlagName = None,
         description: FlagDescription = None,
         url: FlagUrl = None,
@@ -335,6 +373,46 @@ class UserRequests(BaseRequests):
         return await self.client.delete(
             f"/users/{uuid_user}",
             params=dict(uuid_user=uuid_user, restore=restore),
+            headers=self.headers,
+        )
+
+
+class AssignmentRequests(BaseRequests):
+    commands = ("read", "create", "delete")
+
+    async def read(
+        self,
+        uuid_collection: ArgUUIDCollection,
+        uuid_document: FlagUUIDDocumentsOptional = list(),
+    ):
+        params: Dict[str, Any] = dict()
+        if uuid_document:
+            params.update(uuid_document=uuid_document)
+        return await self.client.get(
+            f"/assignments/collections/{uuid_collection}",
+            params=params,
+            headers=self.headers,
+        )
+
+    async def delete(
+        self,
+        uuid_collection: ArgUUIDCollection,
+        uuid_document: FlagUUIDDocuments,
+    ):
+        return await self.client.delete(
+            f"/assignments/collections/{uuid_collection}",
+            params=dict(uuid_document=uuid_document),
+            headers=self.headers,
+        )
+
+    async def create(
+        self,
+        uuid_collection: ArgUUIDCollection,
+        uuid_document: FlagUUIDDocuments,
+    ):
+        return await self.client.post(
+            f"/assignments/collections/{uuid_collection}",
+            params=dict(uuid_document=uuid_document),
             headers=self.headers,
         )
 

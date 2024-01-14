@@ -48,6 +48,7 @@ from app.models import (
 )
 from app.schemas import (
     UUID,
+    AssignmentSchema,
     CollectionMetadataSchema,
     CollectionPatchSchema,
     CollectionPostSchema,
@@ -74,6 +75,7 @@ QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=0)]
 QueryUUIDUserOptional: TypeAlias = Annotated[None | Set[str], Query(min_length=0)]
 QueryUUIDEditOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=0)]
 QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
+QueryRestore: TypeAlias = Annotated[bool, Query()]
 PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDCollection: TypeAlias = Annotated[str, Path()]
 PathUUIDDocument: TypeAlias = Annotated[str, Path()]
@@ -359,7 +361,7 @@ class CollectionView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid: PathUUIDCollection,
-    ) -> EventSchema:
+    ) -> None:  # EventSchema:
         with sessionmaker() as session:
             collection = Collection.if_exists(session, uuid)
             user = User.if_exists(session, token["uuid"])
@@ -377,13 +379,20 @@ class CollectionView(BaseView):
 
             # NOTE: Soft deletion of collections will require that this
             #       association table has a 'deleted' column.
-            assoc_uuids: List[str] = list(
-                session.execute(
-                    select(AssocCollectionDocument.uuid).where(
-                        Collection.id == AssocCollectionDocument.id_collection
-                    )
-                ).scalars()
+            assoc_uuids: List[str]
+            document_uuids: List[str]
+            res = session.execute(
+                select(Document.uuid, AssocCollectionDocument.uuid)
+                .select_from(Collection)
+                .join(AssocCollectionDocument)
+                .join(Document)
+                .where(Collection.id == uuid)
             )
+            print(list(res))
+            return
+
+            # Transpose
+            assoc_uuids, document_uuids = zip(*res)
             session.execute(
                 update(AssocCollectionDocument)
                 .where(Collection.id == AssocCollectionDocument.id_collection)
@@ -564,6 +573,269 @@ class CollectionView(BaseView):
             return JSONResponse(EventSchema.model_validate(event).model_dump(), 201)
 
 
+# NOTE: Should mirron :class:`GrantView`. Updates not supported, scoped by
+#       collection.
+class AssignmentView(BaseView):
+    view_routes = dict(
+        delete_assignment="/collections/{uuid_collection}",
+        post_assignment="/collections/{uuid_collection}",
+        get_assignment="/collections/{uuid_collection}",
+    )
+
+    @classmethod
+    def delete_assignment(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        uuid_collection: PathUUIDCollection,
+        uuid_document: QueryUUIDDocument,
+        restore: QueryRestore = False,
+    ) -> EventSchema:
+        event_common = dict(
+            api_origin="DELETE /assignments/collections/<uuid>",
+            api_version=__version__,
+            kind=KindEvent.delete,
+            uuid_user=token["uuid"],
+            detail=f"Assignment {'restored' if restore else 'deleted'}.",
+        )
+        with sessionmaker() as session:
+            user = User.if_exists(session, token["uuid"])
+            collection = Collection.if_exists(session, uuid_collection)
+            user.check_can_access_collection(collection)
+            q_uuids = (
+                select(Document.uuid)
+                .select_from(Document)
+                .join(AssocCollectionDocument)
+                .where(
+                    AssocCollectionDocument.id_collection == collection.id,
+                    Document.uuid.in_(uuid_document),
+                    AssocCollectionDocument.deleted == False,
+                )
+            )
+            uuid_assigned = set(session.execute(q_uuids).scalars())
+
+            assocs = session.execute(
+                select(AssocCollectionDocument)
+                .join(Document)
+                .where(
+                    Document.uuid.in_(uuid_assigned),
+                    AssocCollectionDocument.id_collection == collection.id,
+                )
+            ).scalars()
+
+            assocs = list(assocs)
+            for assoc in assocs:
+                assoc.deleted = not restore
+                session.add(assoc)
+            session.commit()
+
+            # Create events
+            event = Event(
+                **event_common,
+                kind_obj=KindObject.collection,
+                uuid_obj=collection.uuid,
+                children=[
+                    session.refresh(assoc)
+                    or Event(
+                        **event_common,
+                        kind_obj=KindObject.document,
+                        uuid_obj=assoc.uuid_document(),
+                        children=[
+                            Event(
+                                **event_common,
+                                kind_obj=KindObject.assignment,
+                                uuid_obj=assoc.uuid,
+                            )
+                        ],
+                    )
+                    for assoc in assocs
+                ],
+            )
+            session.add(event)
+            session.commit()
+            session.refresh(event)
+
+            return EventSchema.model_validate(event)
+
+    @classmethod
+    def post_assignment(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        uuid_collection: PathUUIDCollection,
+        uuid_document: QueryUUIDDocument,
+    ) -> EventSchema:
+        event_common = dict(
+            api_origin="POST /collections/assignments/<uuid>",
+            api_version=__version__,
+            kind=KindEvent.create,
+            uuid_user=token["uuid"],
+            detail="Assignment reactivated.",
+        )
+        with sessionmaker() as session:
+            user = User.if_exists(session, token["uuid"])
+            collection = Collection.if_exists(session, uuid_collection)
+            user.check_can_access_collection(collection)
+
+            # Find and reactivate any tht already exist but are staged for
+            # deleteion
+            q_uuids = (
+                select(Document.uuid)
+                .select_from(Document)
+                .join(AssocCollectionDocument)
+                .where(
+                    AssocCollectionDocument.id_collection == collection.id,
+                    Document.uuid.in_(uuid_document),
+                )
+            )
+            uuid_assigned = set(session.execute(q_uuids).scalars())
+            q_assocs_deleted = (
+                select(AssocCollectionDocument)
+                .join(Document)
+                .where(
+                    Document.uuid.in_(uuid_assigned),
+                    AssocCollectionDocument.deleted,
+                )
+            )
+            assocs_deleted = list(session.execute(q_assocs_deleted).scalars())
+
+            # print("assocs_deleted", assocs_deleted)
+            events_reactivated: List[Event] = list()
+            uuid_assocs_deleted: Set[str] = set()
+            if len(assocs_deleted):
+                _, events_reactivated = zip(
+                    *[
+                        (
+                            assoc.uuid,
+                            Event(
+                                **event_common,
+                                kind_obj=KindObject.document,
+                                uuid_obj=assoc.uuid_document(),
+                                children=[
+                                    Event(
+                                        **event_common,
+                                        kind_obj=KindObject.assignment,
+                                        uuid_obj=assoc.uuid,
+                                    )
+                                ],
+                            ),
+                        )
+                        for assoc in assocs_deleted
+                    ]
+                )
+                uuid_assocs_deleted = set(_)
+
+                session.execute(
+                    update(AssocCollectionDocument)
+                    .where(
+                        AssocCollectionDocument.deleted == True,
+                        AssocCollectionDocument.uuid.in_(uuid_assocs_deleted),
+                    )
+                    .values(deleted=False)
+                )
+                session.commit()
+
+            q_docs_ass = select(
+                literal_column("id"),
+                literal_column("uuid"),
+            ).select_from(user.q_select_documents_assignable(uuid_document))
+            uuid_document_validated = {
+                id: uuid for id, uuid in session.execute(q_docs_ass)
+            }
+            print("uuid_document", uuid_document)
+            print("uuid_assigned", uuid_assigned)
+            print("uuid_document_validated", uuid_document_validated)
+
+            if bad := uuid_document - set(uuid_document_validated.values()):
+                detail: Dict[str, Any] = dict(msg="Cannot assign documents.")
+                detail.update(
+                    uuid_document=list(bad),
+                    uuid_collection=uuid_collection,
+                )
+                raise HTTPException(400, detail=detail)
+
+            # Create
+            assocs = list(
+                AssocCollectionDocument(
+                    id_document=id_document,
+                    id_collection=collection.id,
+                )
+                for id_document, uuid_document in uuid_document_validated.items()
+                if uuid_document not in uuid_assigned
+            )
+            session.add_all(assocs)
+            session.commit()
+
+            # Create events
+            event_common.update(detail="Assignment created.")
+            event = Event(
+                **event_common,
+                kind_obj=KindObject.collection,
+                uuid_obj=collection.uuid,
+            )
+            event.children = [
+                session.refresh(assoc)
+                or Event(
+                    **event_common,
+                    kind_obj=KindObject.document,
+                    uuid_obj=assoc.uuid_document(),
+                    children=[
+                        Event(
+                            **event_common,
+                            kind_obj=KindObject.assignment,
+                            uuid_obj=assoc.uuid,
+                        )
+                    ],
+                )
+                for assoc in assocs
+            ]
+            event.children += events_reactivated
+            session.add(event)
+            session.commit()
+            session.refresh(event)
+
+            return EventSchema.model_validate(event)
+
+    @classmethod
+    def get_assignment(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        uuid_collection: PathUUIDCollection,
+        uuid_document: QueryUUIDDocumentOptional = set(),
+    ) -> List[AssignmentSchema]:
+        with sessionmaker() as session:
+            user = User.if_exists(session, token["uuid"])
+            collection = Collection.if_exists(session, uuid_collection)
+            user.check_can_access_collection(collection)
+
+            q = (
+                select(
+                    Collection.uuid.label("uuid_collection"),
+                    AssocCollectionDocument.uuid.label("uuid"),
+                    Document.uuid.label("uuid_document"),
+                )
+                .select_from(Document)
+                .join(AssocCollectionDocument)
+                .join(Collection)
+                .where(
+                    AssocCollectionDocument.id_collection == collection.id,
+                    AssocCollectionDocument.deleted != True,
+                )
+            )
+            if uuid_document:
+                q = q.where(Document.uuid.in_(uuid_document))
+            res = session.execute(q)
+            return list(
+                AssignmentSchema(
+                    uuid_collection=item.uuid_collection,
+                    uuid_document=item.uuid_document,
+                    uuid=item.uuid,
+                )
+                for item in res
+            )
+
+
 class GrantView(BaseView):
     # NOTE: Updates should not be supported. It makes more sense to just delete
     #       the permissions and create new ones.
@@ -573,9 +845,6 @@ class GrantView(BaseView):
         get_grants_document="/documents/{uuid_document}",
         get_grants_user="/users/{uuid_user}",
     )
-
-    # ----------------------------------------------------------------------- #
-    # Sharing.
 
     @classmethod
     def delete_grants(
@@ -1203,6 +1472,7 @@ class AppView(BaseView):
     view_routes = {"get_index": "/"}
     view_children = {
         "/grants": GrantView,
+        "/assignments": AssignmentView,
         "/users": UserView,
         "/collections": CollectionView,
         "/documents": DocumentView,
