@@ -14,6 +14,7 @@ from typing import (
     Optional,
     ParamSpec,
     Tuple,
+    Type,
     TypeAlias,
 )
 from typing_extensions import Self
@@ -126,7 +127,8 @@ class BaseRequests:
     token: str | None
     config: Config
     client: httpx.AsyncClient
-    commands: ClassVar[Tuple[str, ...]]
+    commands: ClassVar[Tuple[str, ...]] = tuple()
+    children: ClassVar[None | Tuple[Type[Self], ...]] = None
 
     @classmethod
     def from_(cls, v: "BaseRequests") -> Self:
@@ -145,8 +147,7 @@ class BaseRequests:
         # self.typer = typer.Typer()
         self.token = token
         self.config = config
-        if client is not None:
-            self.client = client
+        self.client = client
 
     @functools.cached_property
     def headers(self):
@@ -159,13 +160,24 @@ class BaseRequests:
 
     @functools.cached_property
     def typer(self) -> typer.Typer:
-        t = typer.Typer()
+        t: typer.Typer = typer.Typer()
         for cmd in self.commands:
             fn = getattr(self, cmd, None)
             if fn is None:
                 raise ValueError(f"No such attribute `{cmd}` of `{self}`.")
             decorated_cmd = self.request_to_cmd(fn)
             t.command(cmd)(decorated_cmd)
+        if self.children is None:
+            return t
+
+        for T in self.children:
+            # print(T.__name__)
+            # print(RequestsEnums._value2member_map_[T].name)
+            t.add_typer(
+                T.from_(self).typer,
+                name=RequestsEnums._value2member_map_[T].name,
+            )
+
         return t
 
     def request_to_cmd(
@@ -226,8 +238,8 @@ class CollectionRequests(BaseRequests):
         uuid_child: FlagUUIDChildrenOptional = list(),
     ) -> httpx.Response:
         params: Dict[str, Any] = dict()
-        match [child, uuid_child]:
-            case [None, None]:
+        match [child, not len(uuid_child)]:
+            case [None, True]:
                 pass
             case [ChildrenCollection.documents, _]:
                 params.update(uuid_document=uuid_child)
@@ -476,3 +488,16 @@ class GrantRequests(BaseRequests):
             headers=self.headers,
             params=dict(uuid_user=uuid_user),
         )
+
+
+class RequestsEnums(enum.Enum):
+    users = UserRequests
+    collections = CollectionRequests
+    documents = DocumentRequests
+    grants = GrantRequests
+    assignments = AssignmentRequests
+
+
+class Requests(BaseRequests):
+    commands = tuple()
+    children = tuple(v.value for v in RequestsEnums)

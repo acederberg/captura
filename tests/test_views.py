@@ -33,11 +33,13 @@ from app.schemas import (
 from app.views import AppView, GrantView
 from client.config import DefaultsConfig
 from client.requests import (
+    AssignmentRequests,
     BaseRequests,
     CollectionRequests,
     GrantRequests,
     ChildrenUser,
     Level,
+    Requests,
     UserRequests,
 )
 from fastapi import HTTPException
@@ -51,6 +53,18 @@ DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
 DEFAULT_UUID: str = "00000000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
+
+
+@pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
+async def client_app(
+    client_config: PytestClientConfig,
+    async_client: httpx.AsyncClient,
+    auth: Auth,
+    request,
+    T: Type[BaseRequests] = Requests,
+):
+    token = auth.encode(request.param or DEFAULT_TOKEN_PAYLOAD)
+    return T(client_config, async_client, token=token)
 
 
 class BaseTestViews:
@@ -642,6 +656,34 @@ class TestGrantView(BaseTestViews):
             raise err
 
 
+class TestAssignmentView(BaseTestViews):
+    T = AssignmentRequests
+
+    @pytest.mark.asyncio
+    async def test_read_assignment(
+        self,
+        client: AssignmentRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        ...
+
+    @pytest.mark.asyncio
+    async def test_delete_assignment(
+        self,
+        client: AssignmentRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        ...
+
+    @pytest.mark.asyncio
+    async def test_post_assignment(
+        self,
+        client: AssignmentRequests,
+        sessionmaker: sessionmaker[Session],
+    ):
+        ...
+
+
 class TestCollectionView(BaseTestViews):
     T = CollectionRequests
 
@@ -796,7 +838,7 @@ class TestCollectionView(BaseTestViews):
 
             # Test with documents that are not deleted.
             res = await client.create(
-                name="Test Create Collection 1",
+                name=f"Test Create Collection `1-{secrets.token_urlsafe()}`.",
                 description="This is also created by `test_create_collection`.",
                 public=True,
                 uuid_document=document_uuids,
@@ -818,7 +860,7 @@ class TestCollectionView(BaseTestViews):
             session.commit()
 
             res = await client.create(
-                name="Test Create Collection 2",
+                name=f"Test Create Collection `2-{secrets.token_urlsafe()}`",
                 description="This is created by `test_create_collection`.",
                 public=True,
                 uuid_document=document_uuids,
@@ -849,7 +891,7 @@ class TestCollectionView(BaseTestViews):
             session.commit()
 
             res = await client.create(
-                name="Test Create Collection 3",
+                name=f"Test Create Collection `3-{secrets.token_urlsafe()}",
                 description="This is created by `test_create_collection`.",
                 public=True,
                 uuid_document=[document_new.uuid],
@@ -1004,7 +1046,7 @@ class TestCollectionView(BaseTestViews):
         if err := check_status(res, 200):
             raise err
 
-        document_uuids = set(res.json().keys())
+        document_uuids = set(rr["uuid"] for rr in res.json())
         if not (n_documents := len(document_uuids)):
             raise AssertionError("Expected documents for collection.")
 

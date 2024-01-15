@@ -41,7 +41,7 @@ from app import __version__
 #       to create the types needed by fastapi and typer.
 #
 
-LENGTH_NAME: int = 64
+LENGTH_NAME: int = 96
 LENGTH_TITLE: int = 128
 LENGTH_DESCRIPTION: int = 256
 LENGTH_URL: int = 256
@@ -432,7 +432,7 @@ class Collection(Base, MixinsPrimary):
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(LENGTH_NAME), unique=True)
+    name: Mapped[str] = mapped_column(String(LENGTH_NAME))
     description: Mapped[str] = mapped_column(
         String(LENGTH_DESCRIPTION),
         nullable=True,
@@ -442,7 +442,6 @@ class Collection(Base, MixinsPrimary):
     user: Mapped[User] = relationship(
         primaryjoin="User.id==Collection.id_user",
         back_populates="collections",
-        # cascade="all, delete-orphan",
     )
 
     # NOTE: Deletion is included here since this used to read collection
