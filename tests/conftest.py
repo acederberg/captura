@@ -109,9 +109,7 @@ def load_tables(sessionmaker: _sessionmaker[Session], setup_cleanup):
     logger.info("Reloading tables (fixture `load_tables`).")
     with sessionmaker() as session:
         backwards = list(Base.metadata.sorted_tables)
-        print(backwards)
         backwards.reverse()
-        print(backwards)
         for table in backwards:
             logger.debug("Cleaning `%s`.", table.name)
             cls = ModelTestMeta.__children__.get(table.name)

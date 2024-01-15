@@ -125,7 +125,9 @@ class AssignmentSchema(AssignmentPostSchema):
 
 
 class DocumentMetadataSchema(BaseModel):
-    # uuid excluded bc metadata is labeld by it.
+    # uuid was initially excluded bc metadata is labeld by it.
+    # But returning dictionaries sucks so it will be removed soon.
+    uuid: UUID
     name: Name
     description: Description
     format: Format

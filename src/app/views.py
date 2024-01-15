@@ -350,9 +350,10 @@ class CollectionView(BaseView):
             user.check_can_access_collection(collection)
             documents = list(
                 session.execute(
-                    collection.q_select_documents(uuid_document),
+                    q := collection.q_select_documents(uuid_document),
                 ).scalars()
             )
+            print(q)
             return documents
 
     @classmethod
@@ -666,7 +667,7 @@ class AssignmentView(BaseView):
         uuid_document: QueryUUIDDocument,
     ) -> EventSchema:
         event_common = dict(
-            api_origin="POST /collections/assignments/<uuid>",
+            api_origin="POST /assignments/collections/<uuid>",
             api_version=__version__,
             kind=KindEvent.create,
             uuid_user=token["uuid"],
@@ -699,7 +700,7 @@ class AssignmentView(BaseView):
             )
             assocs_deleted = list(session.execute(q_assocs_deleted).scalars())
 
-            # print("assocs_deleted", assocs_deleted)
+            print("assocs_deleted", assocs_deleted)
             events_reactivated: List[Event] = list()
             uuid_assocs_deleted: Set[str] = set()
             if len(assocs_deleted):

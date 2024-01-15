@@ -296,7 +296,14 @@ class User(Base, MixinsPrimary):
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
     ) -> ColumnElement[bool]:
-        cond = AssocUserDocument.id_user == self.id
+        cond_ = (
+            AssocUserDocument.id_user == self.id,
+            # Document.deleted == False,
+            # AssocUserDocument.deleted == False,
+        )
+        # print("CONDS", cond_)
+        cond = and_(*cond_)
+
         if document_uuids is not None:
             cond = and_(
                 cond,
@@ -350,7 +357,6 @@ class User(Base, MixinsPrimary):
             .join(AssocUserDocument)
             .where(
                 self.q_conds_grants(document_uuids, level),
-                Document.deleted == False,
             )
         )
 
@@ -455,11 +461,16 @@ class Collection(Base, MixinsPrimary):
     )
 
     def q_conds_assignment(
-        self, document_uuids: Set[str] | None = None
+        self, document_uuids: Set[str] | None = None, exclude_deleted: bool = True
     ) -> ColumnElement[bool]:
         # NOTE: To add the conditions for document select (like level) use
         #       `q_conds_assoc`.
-        cond = AssocCollectionDocument.id_collection == self.id
+        cond = and_(AssocCollectionDocument.id_collection == self.id)
+        if exclude_deleted:
+            cond = and_(
+                cond,
+                AssocCollectionDocument.deleted == False,
+            )
         if document_uuids is not None:
             document_ids = Document.q_select_ids(document_uuids)
             cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
@@ -487,7 +498,10 @@ class Collection(Base, MixinsPrimary):
         q = (
             select(Document)
             .join(AssocCollectionDocument)
-            .where(self.q_conds_assignment(document_uuids))
+            .where(
+                self.q_conds_assignment(document_uuids),
+                Document.deleted == False,
+            )
         )
         return q
 

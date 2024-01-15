@@ -172,10 +172,10 @@ class BaseRequests:
 
         for T in self.children:
             # print(T.__name__)
-            # print(RequestsEnums._value2member_map_[T].name)
+            # print(RequestsEnum._value2member_map_[T].name)
             t.add_typer(
                 T.from_(self).typer,
-                name=RequestsEnums._value2member_map_[T].name,
+                name=RequestsEnum._value2member_map_[T].name,
             )
 
         return t
@@ -490,7 +490,7 @@ class GrantRequests(BaseRequests):
         )
 
 
-class RequestsEnums(enum.Enum):
+class RequestsEnum(enum.Enum):
     users = UserRequests
     collections = CollectionRequests
     documents = DocumentRequests
@@ -500,4 +500,30 @@ class RequestsEnums(enum.Enum):
 
 class Requests(BaseRequests):
     commands = tuple()
-    children = tuple(v.value for v in RequestsEnums)
+    children = tuple(v.value for v in RequestsEnum)
+
+    users: UserRequests
+    collections: CollectionRequests
+    documents: DocumentRequests
+    grants: GrantRequests
+    assignments: AssignmentRequests
+
+    def __init__(
+        self,
+        config: Config,
+        client: httpx.AsyncClient | None = None,
+        token: str | None = None,
+    ):
+        super().__init__(config, client=client, token=token)
+        for requester in RequestsEnum:
+            setattr(
+                self,
+                requester.name,
+                requester.value(config, client, token),
+            )
+
+    def update_token(self, token: str):
+        self.token = token
+        for ee in RequestsEnum:
+            requester = getattr(self, ee.name)
+            requester.token = token

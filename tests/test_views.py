@@ -3,7 +3,7 @@ from sqlalchemy import func
 import json
 import secrets
 import sys
-from typing import Any, AsyncGenerator, Tuple, Type
+from typing import Any, AsyncGenerator, List, Tuple, Type
 
 import httpx
 import pytest
@@ -24,6 +24,7 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    AssignmentSchema,
     CollectionMetadataSchema,
     CollectionSchema,
     EventSchema,
@@ -43,7 +44,7 @@ from client.requests import (
     UserRequests,
 )
 from fastapi import HTTPException
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, update, and_
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from .conftest import PytestClientConfig
@@ -56,13 +57,13 @@ DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
 
 
 @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
-async def client_app(
+async def requests(
     client_config: PytestClientConfig,
     async_client: httpx.AsyncClient,
     auth: Auth,
     request,
     T: Type[BaseRequests] = Requests,
-):
+) -> BaseRequests:
     token = auth.encode(request.param or DEFAULT_TOKEN_PAYLOAD)
     return T(client_config, async_client, token=token)
 
@@ -659,24 +660,241 @@ class TestGrantView(BaseTestViews):
 class TestAssignmentView(BaseTestViews):
     T = AssignmentRequests
 
+    def add_assocs(
+        self,
+        sessionmaker: sessionmaker[Session],
+        deleted=False,
+    ) -> List[AssocCollectionDocument]:
+        with sessionmaker() as session:
+            # Clear exist assocs
+            user = User.if_exists(session, DEFAULT_UUID)
+            collection = Collection.if_exists(session, DEFAULT_UUID_COLLECTION)
+            session.execute(
+                delete(AssocCollectionDocument).where(
+                    AssocCollectionDocument.id_collection == collection.id
+                )
+            )
+            session.commit()
+
+            # Added refreshed assocs
+            assocs = [
+                AssocCollectionDocument(
+                    id_collection=collection.id,
+                    id_document=dd.id,
+                    deleted=deleted,
+                )
+                for dd in user.documents.values()
+            ]
+            session.add_all(assocs)
+            session.commit()
+            return assocs
+
     @pytest.mark.asyncio
     async def test_read_assignment(
         self,
-        client: AssignmentRequests,
+        requests: Requests,
         sessionmaker: sessionmaker[Session],
     ):
-        ...
+        assocs = self.add_assocs(sessionmaker)
+
+        # Make sure that the collection has some assignments.
+        res = await requests.collections.read(
+            DEFAULT_UUID_COLLECTION,
+            ChildrenCollection.documents,
+        )
+        if err := check_status(res):
+            raise err
+
+        result = res.json()
+        assert isinstance(result, list)
+        if len(result) != len(assocs):
+            raise ValueError(
+                "Expected the same number of documents for collection "
+                f"`{DEFAULT_UUID_COLLECTION}` as inserted associations."
+            )
+
+        # Make sure the number of assignments read is correct.
+        res = await requests.assignments.read(DEFAULT_UUID_COLLECTION)
+        if err := check_status(res):
+            raise err
+
+        result = res.json()
+        assert isinstance(result, list)
+        assign = list(AssignmentSchema.model_validate(item) for item in result)
+        if len(assign) != len(assocs):
+            raise ValueError(
+                "Expected the same number of documents for collection "
+                f"`{DEFAULT_UUID_COLLECTION}` as documents from `GET "
+                "/collections/<uuid>/collections`."
+            )
 
     @pytest.mark.asyncio
-    async def test_delete_assignment(
+    async def test_get_assignment_deleted(
         self,
-        client: AssignmentRequests,
+        requests: Requests,
         sessionmaker: sessionmaker[Session],
     ):
-        ...
+        # Verify that assignments staged for deletion cannot be read.
+        self.add_assocs(sessionmaker, deleted=True)
+        res = await requests.assignments.read(DEFAULT_UUID_COLLECTION)
+        if err := check_status(res, 200):
+            raise err
+
+        result = res.json()
+        assert isinstance(result, list)
+        if len(result):
+            msg = "Expected no results for assignments staged for deletion."
+            raise AssertionError(msg)
+
+        # Verify that the collection does not get documents for assignments
+        # staged for deletion.
+        res = await requests.collections.read(
+            DEFAULT_UUID_COLLECTION,
+            ChildrenCollection.documents,
+        )
+        if err := check_status(res, 200):
+            raise err
+        elif not isinstance(result := res.json(), list):
+            raise AssertionError("Result should be a dict.")
+        elif len(result):
+            msg = "Expected no results for assignments staged for deletion."
+            msg += f"Got `{json.dumps(result)}`."
+            raise AssertionError(msg)
 
     @pytest.mark.asyncio
     async def test_post_assignment(
+        self, requests: Requests, sessionmaker: sessionmaker[Session]
+    ):
+        def event_common(event: EventSchema, detail=None):
+            assert event.api_origin == "POST /assignments/collections/<uuid>"
+            assert event.api_version == __version__
+            assert event.kind == KindEvent.create
+            assert event.uuid_user == DEFAULT_UUID
+            assert event.detail == detail or "Assignment created."
+
+        # Start with no entries so that we can analyze events.        with sessionmaker() as session:
+        with sessionmaker() as session:
+            conds = and_(
+                AssocCollectionDocument.id_collection == Collection.id,
+                Collection.uuid == DEFAULT_UUID_COLLECTION,
+            )
+            session.execute(delete(AssocCollectionDocument).where(conds))
+            session.commit()
+
+        # There should not be documents or assignments
+        res_docs_coll, res_docs_users, res_assign = await asyncio.gather(
+            requests.collections.read(
+                DEFAULT_UUID_COLLECTION, ChildrenCollection.documents
+            ),
+            requests.users.read(DEFAULT_UUID, ChildrenUser.documents),
+            requests.assignments.read(DEFAULT_UUID_COLLECTION),
+        )
+        if err := check_status(res_docs_coll, 200):
+            raise err
+        results = res_docs_coll.json()
+        assert isinstance(results, list)  # TODO: Fix return types.
+        assert not len(results), "Expected no documents for collection."
+
+        if err := check_status(res_assign, 200):
+            raise err
+        results = res_assign.json()
+        assert isinstance(results, list)
+        assert not len(results), "Expected no assingment for collection."
+
+        if err := check_status(res_docs_users, 200):
+            raise err
+        results = res_docs_users.json()
+        assert isinstance(results, dict)
+        assert len(results), "Expected documents for user."
+        uuid_document = list(results.keys())
+
+        # Post new assignments, assign all user documents to this user.
+        res = await requests.assignments.create(
+            DEFAULT_UUID_COLLECTION,
+            uuid_document,
+        )
+        if err := check_status(res, 201):
+            raise err
+        event = EventSchema.model_validate_json(res.content)
+
+        # Read assignment UUIDs to check events.
+        with sessionmaker() as session:
+            q = select(AssocCollectionDocument.uuid).where(conds)
+            res = session.execute(q)
+            uuid_assignment = set(res.scalars())
+
+        event_common(event)
+        assert len(event.children) == len(uuid_document)
+        assert event.kind_obj == KindObject.collection
+        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
+
+        for item in event.children:
+            event_common(item)
+            assert len(item.children) == 1
+            assert item.kind_obj == KindObject.document
+            assert item.uuid_obj in uuid_document
+
+            subitem, *_ = item.children
+            event_common(subitem)
+            assert len(subitem.children) == 0
+            assert subitem.kind_obj == KindObject.assignment
+            assert subitem.uuid_obj in uuid_assignment
+
+        # Verify reads, indempotent
+        ress = await asyncio.gather(
+            requests.assignments.create(DEFAULT_UUID_COLLECTION, uuid_document),
+            requests.assignments.read(DEFAULT_UUID_COLLECTION),
+            requests.collections.read(
+                DEFAULT_UUID_COLLECTION,
+                ChildrenCollection.documents,
+            ),
+        )
+        errs = (e for rr in ress if (e := check_status(rr)) is not None)
+        if err := next(errs, None):
+            raise err
+
+        res, res_assign, res_collection = ress
+        assert len(res_assign.json()) == len(uuid_document)
+        assert set(item["uuid"] for item in res_collection.json()) == set(uuid_document)
+
+        event = EventSchema.model_validate_json(res.content)
+        event_common(event)
+        assert event.kind_obj == KindObject.collection
+        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
+        assert not len(event.children)
+
+        # Verify reactivates those staged for deletion.
+        with sessionmaker() as session:
+            session.execute(update(AssocCollectionDocument).values(deleted=True))
+            session.commit()
+        DETAIL = "Assignment reactivated."
+        res = await requests.assignments.create(
+            DEFAULT_UUID_COLLECTION,
+            uuid_document,
+        )
+        if err := check_status(res, 201):
+            raise err
+
+        event = EventSchema.model_validate_json(res.content)
+        event_common(event)
+        assert len(event.children) == len(uuid_document)
+        assert event.kind_obj == KindObject.collection
+        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
+
+        for item in event.children:
+            event_common(item, detail=DETAIL)
+            assert len(item.children) == 1
+            assert item.kind_obj == KindObject.document
+            assert item.uuid_obj in uuid_document
+
+            subitem, *_ = item.children
+            event_common(subitem, detail=DETAIL)
+            assert len(subitem.children) == 0
+            assert subitem.kind_obj == KindObject.assignment
+            assert subitem.uuid_obj in uuid_assignment
+
+    @pytest.mark.asyncio
+    async def test_delete_assignment(
         self,
         client: AssignmentRequests,
         sessionmaker: sessionmaker[Session],
