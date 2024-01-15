@@ -86,6 +86,7 @@ FlagUrl = Annotated[Optional[str], typer.Option("--url")]
 FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
 FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
+FlagRestore = Annotated[bool, typer.Option("--restore/--delete")]
 
 
 # --------------------------------------------------------------------------- #
@@ -276,9 +277,11 @@ class CollectionRequests(BaseRequests):
     async def delete(
         self,
         uuid_collection: ArgUUIDCollection,
+        restore: FlagRestore = False,
     ) -> httpx.Response:
         return await self.client.delete(
             f"/collections/{uuid_collection}",
+            params=dict(restore=restore),
             headers=self.headers,
         )
 
@@ -380,7 +383,7 @@ class UserRequests(BaseRequests):
         )
 
     async def delete(
-        self, uuid_user: ArgUUIDUser, restore: bool = False
+        self, uuid_user: ArgUUIDUser, restore: FlagRestore = False
     ) -> httpx.Response:
         return await self.client.delete(
             f"/users/{uuid_user}",
@@ -410,10 +413,11 @@ class AssignmentRequests(BaseRequests):
         self,
         uuid_collection: ArgUUIDCollection,
         uuid_document: FlagUUIDDocuments,
+        restore: FlagRestore = False,
     ):
         return await self.client.delete(
             f"/assignments/collections/{uuid_collection}",
-            params=dict(uuid_document=uuid_document),
+            params=dict(uuid_document=uuid_document, restore=restore),
             headers=self.headers,
         )
 
@@ -482,11 +486,12 @@ class GrantRequests(BaseRequests):
         self,
         uuid_document: ArgUUIDDocument,
         uuid_user: FlagUUIDUsers,
+        restore: FlagRestore = False,
     ) -> httpx.Response:
         return await self.client.delete(
             f"/grants/documents/{uuid_document}",
             headers=self.headers,
-            params=dict(uuid_user=uuid_user),
+            params=dict(uuid_user=uuid_user, restore=restore),
         )
 
 

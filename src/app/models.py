@@ -188,6 +188,33 @@ class Event(Base):
 
     user: Mapped["User"] = relationship()
 
+    def update(
+        self,
+        session: Session | None = None,
+        _recurance: int = 0,
+        *,
+        api_origin: str | None = None,
+        detail: str | None = None,
+        uuid_user: str | None = None,
+    ):
+        "Update safe fields recursively. DOES NOT commit."
+
+        session = session or self.get(session)
+        if api_origin is not None:
+            self.api_origin = api_origin
+        if detail is not None:
+            self.detail = detail
+        if uuid_user is not None:
+            self.uuid_user = uuid_user
+        for child in self.children:
+            child.update(
+                session,
+                _recurance + 1,
+                api_origin=api_origin,
+                detail=detail,
+                uuid_user=uuid_user,
+            )
+
 
 class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"
@@ -295,14 +322,14 @@ class User(Base, MixinsPrimary):
         self,
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
+        exclude_deleted: bool = True,
     ) -> ColumnElement[bool]:
-        cond_ = (
-            AssocUserDocument.id_user == self.id,
-            # Document.deleted == False,
-            # AssocUserDocument.deleted == False,
-        )
-        # print("CONDS", cond_)
-        cond = and_(*cond_)
+        cond = AssocUserDocument.id_user == self.id
+        if exclude_deleted:
+            cond = and_(
+                Document.deleted == False,
+                cond,
+            )
 
         if document_uuids is not None:
             cond = and_(
@@ -535,6 +562,7 @@ class Document(Base, MixinsPrimary):
 
     # ----------------------------------------------------------------------- #
     # Queries
+
     @classmethod
     def q_select_public(
         cls,
