@@ -516,6 +516,13 @@ class CollectionView(BaseView):
         data: CollectionPostSchema,
         uuid_document: QueryUUIDDocumentOptional = set(),
     ) -> EventSchema:
+        event_common = dict(
+            api_origin="POST /collections",
+            api_version=__version__,
+            kind=KindEvent.create,
+            uuid_user=token["uuid"],
+            detail="Collection created.",
+        )
         with sessionmaker() as session:
             # Create collection
             user = User.if_exists(session, token["uuid"])
@@ -523,28 +530,31 @@ class CollectionView(BaseView):
             collection.user = user
             session.add(collection)
             session.commit()
+            session.refresh(collection)
+            uuid_collection = collection.uuid
 
-            event_common = dict(
-                api_origin="POST /collections",
-                api_version=__version__,
-                kind=KindEvent.create,
-                uuid_user=user.uuid,
-                detail="Collection created.",
-            )
+        uuid_event_assign: str | None = None
+        if uuid_document:
+            uuid_event_assign = AssignmentView.post_assignment(
+                sessionmaker,
+                token,
+                uuid_collection,
+                uuid_document,
+            ).uuid
+
+        with sessionmaker() as session:
             event = Event(
                 **event_common,
                 kind_obj=KindObject.collection,
                 uuid_obj=collection.uuid,
             )
-            if uuid_document:
-                event.children.append(
-                    event_assignment := AssignmentView.post_assignment(
-                        sessionmaker,
-                        token,
-                        collection.uuid,
-                        uuid_document,
-                    )
-                )
+            if uuid_event_assign is not None:
+                event_assignment = session.execute(
+                    select(Event).where(Event.uuid == uuid_event_assign)
+                ).scalar()
+                if event_assignment is None:
+                    raise HTTPException(420, detail="Server must be stoned.")
+                event.children.append(event_assignment)
                 detail = event_assignment.detail
                 detail = detail.replace(".", "(POST /collections).")
                 event_assignment.update(
@@ -591,32 +601,36 @@ class AssignmentView(BaseView):
             user.check_can_access_collection(collection)
             q_uuids = (
                 select(Document.uuid)
-                .select_from(Document)
                 .join(AssocCollectionDocument)
                 .where(
                     AssocCollectionDocument.id_collection == collection.id,
                     Document.uuid.in_(uuid_document),
-                    # AssocCollectionDocument.deleted == False,
+                    AssocCollectionDocument.deleted == restore,
                 )
             )
             uuid_assigned = set(session.execute(q_uuids).scalars())
+            print("uuid_document", uuid_document)
+            # print("q_uuids", q_uuids)
+            print("uuid_assigned", uuid_assigned)
 
-            assocs = session.execute(
+            q = (
                 select(AssocCollectionDocument)
                 .join(Document)
                 .where(
                     Document.uuid.in_(uuid_assigned),
                     AssocCollectionDocument.id_collection == collection.id,
                 )
-            ).scalars()
-
-            assocs = list(assocs)
+            )
+            # print("q", q)
+            assocs = list((session.execute(q)).scalars())
             for assoc in assocs:
+                print("assoc ->", assoc.uuid)
                 assoc.deleted = not restore
                 session.add(assoc)
             session.commit()
 
             # Create events
+            # print(event_common)
             event = Event(
                 **event_common,
                 kind_obj=KindObject.collection,
@@ -657,7 +671,7 @@ class AssignmentView(BaseView):
             api_version=__version__,
             kind=KindEvent.create,
             uuid_user=token["uuid"],
-            detail="Assignment reactivated.",
+            detail="Assignment restored.",
         )
         with sessionmaker() as session:
             user = User.if_exists(session, token["uuid"])

@@ -199,7 +199,7 @@ class Event(Base):
     ):
         "Update safe fields recursively. DOES NOT commit."
 
-        session = session or self.get(session)
+        session = session or self.get_session()
         if api_origin is not None:
             self.api_origin = api_origin
         if detail is not None:
