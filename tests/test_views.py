@@ -1,4 +1,5 @@
 import asyncio
+from http import HTTPMethod
 import functools
 
 from yaml.events import Event
@@ -63,6 +64,7 @@ from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from .conftest import PytestClientConfig
 
+logger = util.get_logger(__name__)
 CURRENT_APP_VERSION = __version__
 DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
@@ -86,24 +88,39 @@ P = ParamSpec("P")
 
 
 def checks_event(
-    fn: Callable[Concatenate[Any, EventSchema, P], None]
-) -> Callable[Concatenate[Any, EventSchema, P], AssertionError | None]:
+    fn: Callable[Concatenate[Any, httpx.Response, P], EventSchema]
+) -> Callable[
+    Concatenate[Any, httpx.Response, P],
+    Tuple[EventSchema, AssertionError | None],
+]:
+    """Turn assertions in `check_event` methods into more useful messages.
+
+    Generally :param:`fn` should be decorated with classmethod after decoration
+    with this.
+    """
+
     @functools.wraps(fn)
     def wrapper(
-        self: Any,
-        event: EventSchema,
+        cls: Any,
+        res: httpx.Response,
         *args: P.args,
         **kwargs: P.kwargs,
-    ) -> AssertionError | None:
+    ) -> Tuple[EventSchema, AssertionError | None]:
+        event: EventSchema | None = None
+        err: AssertionError | None = None
         try:
-            fn(self, event, *args, **kwargs)
-        except AssertionError as err:
+            event = fn(cls, res, *args, **kwargs)
+        except AssertionError as _err:
             # Yes, it is a joke.
-            cerial = json.dumps(event.model_dump(), indent=2)
-            msg = " ".join(err.args)
+            cerial = json.dumps(res.json(), indent=2)
+            msg = " ".join(_err.args)
             msg = "\n".join((msg, f"Event `{cerial}`."))
-            return AssertionError(msg)
-        return None
+            err = AssertionError(msg)
+
+        if event is None:
+            event = EventSchema.model_validate_json(res.content)
+
+        return event, err
 
     return wrapper
 
@@ -801,18 +818,111 @@ class TestAssignmentView(BaseTestViews):
             msg += f"Got `{json.dumps(result)}`."
             raise AssertionError(msg)
 
+    @classmethod
+    @checks_event
+    def check_event(
+        cls,
+        response: httpx.Response,
+        *,
+        uuid_document: List[str] | None,
+        uuid_assignment: List[str] | None,
+        restore: bool = False,
+        **overwrite,
+    ) -> EventSchema:
+        """One function for event checking.
+
+        This will make tests more readable.
+        """
+
+        url = "/assignments/collections"
+        request = response.request
+        event = EventSchema.model_validate_json(response.content)
+        expect_common = dict(
+            api_version=__version__,
+            uuid_user=DEFAULT_UUID,
+            kind_obj=KindObject.assignment,
+        )
+
+        match request.method:
+            case HTTPMethod.GET:
+                msg = "`GET` should not return an `EventSchema`."
+                raise AssertionError(msg)
+            case HTTPMethod.POST:
+                expect_common.update(
+                    api_origin=f"POST {url}/<uuid>",
+                    kind=KindEvent.create,
+                    detail="Assignment created.",
+                )
+            case HTTPMethod.DELETE:
+                expect_common.update(
+                    api_origin=f"DELETE {url}/<uuid>",
+                    kind=KindEvent.delete,
+                    detail="Assignment deleted.",
+                )
+            case _:
+                raise ValueError(f"Unexpected method `{request.method}`.")
+
+        expect_common.update(overwrite)
+        expect_common_fields = {
+            "api_origin",
+            "api_version",
+            "kind",
+            "uuid_user",
+            "detail",
+        }
+
+        def event_common(event: EventSchema):
+            assert event.uuid is not None
+            for field in expect_common_fields:
+                value = getattr(event, field, None)
+                value_expect = expect_common.get(field)
+                if value is None:
+                    raise ValueError(f"`expect.{field}` should not be `None`.")
+                elif value_expect is None:
+                    msg = f"`expect_common[{field}]` should not be `None`."
+                    raise ValueError(msg)
+                if value != value_expect:
+                    raise AssertionError(
+                        f"Field `{field}` of event `{event.uuid}` should have "
+                        f"value `{value_expect}` but has value `{value}`."
+                    )
+
+        # NOTE: This is done here and not in the pattern match since these
+        #       should have a similar structure.
+        # NOTE: This response is returned when the database has an entry staged
+        #       for deletion but it is restored. For `POST` requests it is
+        #       included only in the child events hence the logic below.
+        if not restore:
+            event_common(event)
+        elif request.method == "POST":
+            event_common(event)
+            expect_common.update(detail="Assignment restored.")
+        else:
+            expect_common.update(detail="Assignment restored.")
+            event_common(event)
+        assert event.kind_obj == KindObject.collection
+        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
+
+        for item in event.children:
+            event_common(item)
+            assert len(item.children) == 1
+            assert item.kind_obj == KindObject.document
+            if uuid_document is not None:
+                assert item.uuid_obj in uuid_document
+
+            subitem, *_ = item.children
+            event_common(subitem)
+            assert len(subitem.children) == 0
+            assert subitem.kind_obj == KindObject.assignment
+            if uuid_assignment is not None:
+                assert subitem.uuid_obj in uuid_assignment
+
+        return event
+
     @pytest.mark.asyncio
     async def test_post_assignment(
         self, requests: Requests, sessionmaker: sessionmaker[Session]
     ):
-        def event_common(event: EventSchema, detail=None):
-            assert event.api_origin == "POST /assignments/collections/<uuid>"
-            assert event.api_version == __version__
-            assert event.kind == KindEvent.create
-            assert event.uuid_user == DEFAULT_UUID
-            assert event.detail == detail or "Assignment created."
-
-        # Start with no entries so that we can analyze events.        with sessionmaker() as session:
         with sessionmaker() as session:
             conds = and_(
                 AssocCollectionDocument.id_collection == Collection.id,
@@ -855,30 +965,35 @@ class TestAssignmentView(BaseTestViews):
         )
         if err := check_status(res, 201):
             raise err
-        event = EventSchema.model_validate_json(res.content)
+        event, err = self.check_event(
+            res,
+            uuid_document=uuid_document,
+            uuid_assignment=None,
+        )
+        if err is not None:
+            raise err
 
         # Read assignment UUIDs to check events.
         with sessionmaker() as session:
             q = select(AssocCollectionDocument.uuid).where(conds)
-            res = session.execute(q)
-            uuid_assignment = set(res.scalars())
+            uuid_assignment: List[str] = list(session.execute(q).scalars())
 
-        event_common(event)
-        assert len(event.children) == len(uuid_document)
-        assert event.kind_obj == KindObject.collection
-        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
+        if len(uuid_assignment) != len(uuid_document):
+            raise AssertionError(
+                "There should  be an equal number of assignments and documents"
+                f" for this collection `{len(uuid_document)=}` and "
+                f"`{len(uuid_assignment)=}`."
+            )
 
-        for item in event.children:
-            event_common(item)
-            assert len(item.children) == 1
-            assert item.kind_obj == KindObject.document
-            assert item.uuid_obj in uuid_document
-
-            subitem, *_ = item.children
-            event_common(subitem)
-            assert len(subitem.children) == 0
-            assert subitem.kind_obj == KindObject.assignment
-            assert subitem.uuid_obj in uuid_assignment
+        check_event_arg = dict(
+            uuid_document=uuid_document, uuid_assignment=uuid_assignment
+        )
+        event, err = self.check_event(res, **check_event_arg)
+        if err is not None:
+            raise err
+        assert len(event.children) == len(
+            uuid_document
+        ), "Expected an event for event document."
 
         # Verify reads, indempotent
         ress = await asyncio.gather(
@@ -897,17 +1012,15 @@ class TestAssignmentView(BaseTestViews):
         assert len(res_assign.json()) == len(uuid_document)
         assert set(item["uuid"] for item in res_collection.json()) == set(uuid_document)
 
-        event = EventSchema.model_validate_json(res.content)
-        event_common(event)
-        assert event.kind_obj == KindObject.collection
-        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
-        assert not len(event.children)
+        event, err = self.check_event(res, **check_event_arg)
+        if err is not None:
+            raise err
+        assert len(event.children) == 0
 
         # Verify reactivates those staged for deletion.
         with sessionmaker() as session:
             session.execute(update(AssocCollectionDocument).values(deleted=True))
             session.commit()
-        DETAIL = "Assignment reactivated."
         res = await requests.assignments.create(
             DEFAULT_UUID_COLLECTION,
             uuid_document,
@@ -915,57 +1028,10 @@ class TestAssignmentView(BaseTestViews):
         if err := check_status(res, 201):
             raise err
 
-        event = EventSchema.model_validate_json(res.content)
-        event_common(event)
+        event, err = self.check_event(res, **check_event_arg, restore=True)
+        if err is not None:
+            raise err
         assert len(event.children) == len(uuid_document)
-        assert event.kind_obj == KindObject.collection
-        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
-
-        for item in event.children:
-            event_common(item, detail=DETAIL)
-            assert len(item.children) == 1
-            assert item.kind_obj == KindObject.document
-            assert item.uuid_obj in uuid_document
-
-            subitem, *_ = item.children
-            event_common(subitem, detail=DETAIL)
-            assert len(subitem.children) == 0
-            assert subitem.kind_obj == KindObject.assignment
-            assert subitem.uuid_obj in uuid_assignment
-
-    @checks_event
-    def check_event_delete(
-        self,
-        event: EventSchema,
-        uuid_document: List[str],
-        uuid_assignment: List[str],
-        restore: bool = False,
-    ):
-        def event_common(event: EventSchema):
-            assert event.api_origin == "DELETE /assignments/collections/<uuid>"
-            assert event.api_version == __version__
-            assert event.kind == KindEvent.delete
-            assert event.uuid_user == "00000000"
-            if restore:
-                assert event.detail == "Assignment restored."
-            else:
-                assert event.detail == "Assignment deleted."
-
-        event_common(event)
-        assert event.kind_obj == KindObject.collection
-        assert event.uuid_obj == DEFAULT_UUID_COLLECTION
-
-        for item in event.children:
-            event_common(item)
-            assert len(item.children) == 1
-            assert item.kind_obj == KindObject.document
-            assert item.uuid_obj in uuid_document
-
-            subitem, *_ = item.children
-            event_common(subitem)
-            assert not len(subitem.children)
-            assert subitem.kind_obj == KindObject.assignment
-            assert subitem.uuid_obj in uuid_assignment
 
     @pytest.mark.asyncio
     async def test_delete_assignment(
@@ -995,8 +1061,9 @@ class TestAssignmentView(BaseTestViews):
         if err := check_status(res, 200):
             raise err
 
-        event = EventSchema.model_validate_json(res.content)
-        err = self.check_event_delete(event, uuid_document, uuid_assignment)
+        event, err = self.check_event(
+            res, uuid_document=uuid_document, uuid_assignment=uuid_assignment
+        )
         if err is not None:
             raise err
         assert len(event.children) == (n := len(uuid_document))
@@ -1016,7 +1083,9 @@ class TestAssignmentView(BaseTestViews):
             raise err
 
         event = EventSchema.model_validate_json(res.content)
-        err = self.check_event_delete(event, uuid_document, uuid_assignment)
+        event, err = self.check_event(
+            res, uuid_document=uuid_document, uuid_assignment=uuid_assignment
+        )
         if err is not None:
             raise err
         assert len(event.children) == 0
@@ -1039,8 +1108,14 @@ class TestAssignmentView(BaseTestViews):
         if err := check_status(res, 200):
             raise err
 
-        event = EventSchema.model_validate_json(res.content)
-        err = self.check_event_delete(event, uuid_document, uuid_assignment, True)
+        event, err = self.check_event(
+            res,
+            uuid_document=uuid_document,
+            uuid_assignment=uuid_assignment,
+            restore=True,
+        )
+        assert len(event.children) == len(uuid_document)
+
         if err is not None:
             raise err
         assert len(event.children) == n
