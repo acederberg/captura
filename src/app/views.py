@@ -57,6 +57,7 @@ from app.schemas import (
     DocumentSchema,
     EditMetadataSchema,
     EditSchema,
+    EventBaseSchema,
     EventSchema,
     GrantPostSchema,
     GrantSchema,
@@ -76,9 +77,16 @@ QueryUUIDUserOptional: TypeAlias = Annotated[None | Set[str], Query(min_length=0
 QueryUUIDEditOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=0)]
 QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
 QueryRestore: TypeAlias = Annotated[bool, Query()]
+QueryTree: TypeAlias = Annotated[bool, Query()]
+QueryRoots: TypeAlias = Annotated[bool, Query()]
+QueryKindEvent: TypeAlias = Annotated[Optional[KindEvent], Query()]
+QueryKindObject: TypeAlias = Annotated[Optional[KindObject], Query()]
+QueryUUIDEventObject: TypeAlias = Annotated[Optional[str], Query()]
+
 PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDCollection: TypeAlias = Annotated[str, Path()]
 PathUUIDDocument: TypeAlias = Annotated[str, Path()]
+PathUUIDEvent: TypeAlias = Annotated[str, Path()]
 
 
 # =========================================================================== #
@@ -370,7 +378,7 @@ class CollectionView(BaseView):
         event_common = dict(
             api_version=__version__,
             api_origin="DELETE /collections/<uuid>",
-            kind=KindEvent.create,
+            kind=KindEvent.delete,
             uuid_user=token["uuid"],
             detail="Collection deleted.",
         )
@@ -415,9 +423,11 @@ class CollectionView(BaseView):
                 uuid_obj=token["uuid"],
             )
 
+            print("event_assign_uuid", event_assign_uuid)
             if event_assign_uuid is not None:
                 q = select(Event).where(Event.uuid == event_assign_uuid)
                 event_assignment = session.execute(q).scalar()
+                assert event_assignment is not None
 
                 detail = event_assignment.detail
                 detail = detail.replace(".", " (DELETE /collections/<uuid>).")
@@ -426,6 +436,7 @@ class CollectionView(BaseView):
                     api_origin=event_common["api_origin"],
                     detail=detail,
                 )
+                print("Appending...")
                 event.children.append(event_assignment)
 
             session.add(event)
@@ -1387,6 +1398,7 @@ class UserView(BaseView):
                         for cc in data.collections
                     ]
                 )
+
                 session.commit()
                 session.add_all(
                     [
@@ -1444,9 +1456,11 @@ class AuthView(BaseView):
         will not use auth0 mode. NEVER run this application in production while
         using tokens in endpoint mode, it will allow undesired access to user
         information (because anybody could imitate any user by minting a token
-        with that particular users UUID.
+        with that particular users UUID).
         """
+
         logger.warning("Minting token...")
+
         if config.auth0.use:
             raise HTTPException(
                 409,
@@ -1463,6 +1477,62 @@ class AuthView(BaseView):
             )
 
 
+class EventsView(BaseView):
+    view_routes = dict(get_event="/{uuid_event}", get_events="")
+
+    @classmethod
+    def get_event(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        uuid_event: PathUUIDEvent,
+        tree: QueryTree = False,
+    ) -> EventSchema:
+        with sessionmaker() as session:
+            user = User.if_exists(session, token["uuid"])
+            event = Event.if_exists(session, uuid_event)
+            if event.uuid_user != user.uuid:
+                raise HTTPException(403)
+
+            if tree:
+                while uuid_parent := event.uuid_parent:
+                    print(uuid_parent)
+                    event = Event.if_exists(session, uuid_parent)
+
+            return EventSchema.model_validate(event)
+
+    @classmethod
+    def get_events(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        tree: QueryTree = True,
+        kind: QueryKindEvent = None,
+        kind_obj: QueryKindObject = None,
+        uuid_obj: QueryUUIDEventObject = None,
+    ) -> List[EventBaseSchema]:
+        with sessionmaker() as session:
+            q = select(Event).where(Event.uuid_user == token["uuid"])
+            if kind:
+                q = q.where(Event.kind == kind)
+            if kind_obj:
+                q = q.where(Event.kind_obj == kind_obj)
+            if uuid_obj:
+                q = q.where(Event.uuid_obj == uuid_obj)
+
+            events = list(session.execute(q).scalars())
+            if tree:
+                events = list(
+                    {
+                        root.uuid: root
+                        for ee in events
+                        if (root := ee.root()) is not None
+                    }.values()
+                )
+
+            return [EventBaseSchema.model_validate(ee) for ee in events]
+
+
 class AppView(BaseView):
     view_router = FastAPI()  # type: ignore
     view_routes = {"get_index": "/"}
@@ -1473,6 +1543,7 @@ class AppView(BaseView):
         "/collections": CollectionView,
         "/documents": DocumentView,
         "/auth": AuthView,
+        "/events": EventsView,
     }
 
     @classmethod

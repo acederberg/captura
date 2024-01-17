@@ -179,9 +179,8 @@ class EditSchema(BaseModel):
     message: Message
 
 
-class EventSchema(BaseModel):
+class EventBaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-
     api_origin: str
     api_version: str
     uuid_parent: UUID
@@ -192,6 +191,9 @@ class EventSchema(BaseModel):
     kind_obj: KindObject
     timestamp: UnixTimestamp
     detail: str
+
+
+class EventSchema(EventBaseSchema):
     children: Annotated["List[EventSchema]", Field(default=list())]
 
 

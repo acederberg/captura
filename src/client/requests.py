@@ -25,6 +25,7 @@ import typer
 import yaml
 from app.models import (
     ChildrenDocument,
+    KindEvent,
     Level,
     ChildrenCollection,
     ChildrenUser,
@@ -495,12 +496,88 @@ class GrantRequests(BaseRequests):
         )
 
 
+ArgUUIDEvent: TypeAlias = Annotated[str, typer.Argument()]
+FlagTree: TypeAlias = Annotated[
+    bool,
+    typer.Option(
+        "--tree/--no-tree",
+        help="Return the full event tree associated with search results.",
+    ),
+]
+FlagOnlyRoots: TypeAlias = Annotated[
+    bool,
+    typer.Option(
+        "--roots/--all",
+        help="Return only heads (entries with no parents).",
+    ),
+]
+FlagKind: TypeAlias = Annotated[
+    Optional[KindEvent],
+    typer.Option("--kind", "-k", help="Matches against the `kind` field."),
+]
+FlagKindObject: TypeAlias = Annotated[
+    Optional[KindObject],
+    typer.Option(
+        "--object",
+        "-o",
+        help="Object kind, matches again the `kind_obj` field.",
+    ),
+]
+FlagUUIDEventObject: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(
+        "--uuid-object",
+        "--uuid",
+        help="Target object UUID.",
+    ),
+]
+
+
+class EventsRequests(BaseRequests):
+    commands = ("read", "search")
+
+    async def read(
+        self,
+        uuid_event: ArgUUIDEvent,
+        tree: FlagTree = True,
+    ):
+        return await self.client.get(
+            f"/events/{uuid_event}",
+            headers=self.headers,
+            params=dict(uuid_user=uuid_event, tree=tree),
+        )
+
+    async def search(
+        self,
+        roots: FlagOnlyRoots = True,
+        tree: FlagTree = True,
+        kind: FlagKind = None,
+        kind_obj: FlagKindObject = None,
+        uuid_obj: FlagUUIDEventObject = None,
+    ):
+        params = dict(
+            roots=roots,
+            tree=tree,
+            uuid_obj=uuid_obj,
+            kind=getattr(kind, "value", None),
+            kind_obj=getattr(kind_obj, "value", None),
+        )
+        params = {k: v for k, v in params.items() if v is not None}
+        print(params)
+        return await self.client.get(
+            "/events",
+            headers=self.headers,
+            params=params,
+        )
+
+
 class RequestsEnum(enum.Enum):
     users = UserRequests
     collections = CollectionRequests
     documents = DocumentRequests
     grants = GrantRequests
     assignments = AssignmentRequests
+    events = EventsRequests
 
 
 class Requests(BaseRequests):

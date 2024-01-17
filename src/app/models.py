@@ -124,16 +124,6 @@ class Base(DeclarativeBase):
             raise HTTPException(418)
         return session
 
-
-class MixinsPrimary:
-    """Creation and deletion data will go into the table associated with
-    :class:`Event`.
-    """
-
-    uuid: Mapped[MappedColumnUUID]
-    public: Mapped[bool] = mapped_column(default=True)
-    deleted: Mapped[bool] = mapped_column(default=False)
-
     # NOTE: Only `classmethod`s should need session due to `object_session`.
     @classmethod
     def if_exists(
@@ -149,6 +139,16 @@ class MixinsPrimary:
             detail["uuid"] = uuid
             raise HTTPException(status, detail=detail)
         return m
+
+
+class MixinsPrimary:
+    """Creation and deletion data will go into the table associated with
+    :class:`Event`.
+    """
+
+    uuid: Mapped[MappedColumnUUID]
+    public: Mapped[bool] = mapped_column(default=True)
+    deleted: Mapped[bool] = mapped_column(default=False)
 
     @classmethod
     def q_select_ids(cls, uuids: Set[str]) -> Select:
@@ -214,6 +214,13 @@ class Event(Base):
                 detail=detail,
                 uuid_user=uuid_user,
             )
+
+    def root(self, session: Session | None = None) -> Self:
+        if self.uuid_parent is None:
+            return self
+
+        session = session or self.get_session()
+        return Event.if_exists(session, self.uuid_parent, 500)
 
 
 class AssocCollectionDocument(Base):

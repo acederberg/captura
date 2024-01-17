@@ -1,6 +1,7 @@
 import asyncio
 from http import HTTPMethod
 import functools
+import itertools
 
 from yaml.events import Event
 from sqlalchemy import func
@@ -12,6 +13,8 @@ from typing import (
     AsyncGenerator,
     Callable,
     Concatenate,
+    Dict,
+    Iterable,
     List,
     ParamSpec,
     Self,
@@ -70,6 +73,7 @@ DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
 DEFAULT_UUID: str = "00000000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
+EVENT_COMMON_FIELDS = {"api_origin", "api_version", "kind", "uuid_user", "detail"}
 
 
 @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
@@ -82,6 +86,23 @@ async def requests(
 ) -> BaseRequests:
     token = auth.encode(request.param or DEFAULT_TOKEN_PAYLOAD)
     return T(client_config, async_client, token=token)
+
+
+def event_compare(event: EventSchema, expect_common: Dict[str, Any]) -> None:
+    assert event.uuid is not None
+    for field in EVENT_COMMON_FIELDS:
+        value = getattr(event, field, None)
+        value_expect = expect_common.get(field)
+        if value is None:
+            raise ValueError(f"`expect.{field}` should not be `None`.")
+        elif value_expect is None:
+            msg = f"`expect_common[{field}]` should not be `None`."
+            raise ValueError(msg)
+        if value != value_expect:
+            raise AssertionError(
+                f"Field `{field}` of event `{event.uuid}` should have "
+                f"value `{value_expect}` but has value `{value}`."
+            )
 
 
 P = ParamSpec("P")
@@ -145,8 +166,19 @@ class BaseTestViews:
 
 
 def check_status(
-    response: httpx.Response, expect: int | None = None
+    response: httpx.Response | Tuple[httpx.Response, ...], expect: int | None = None
 ) -> AssertionError | None:
+    # DO RECURSE
+    if isinstance(response, tuple):
+        errs = "\n".join(
+            str(err) for rr in response if (err := check_status(rr, expect)) is not None
+        )
+        if not errs:
+            return None
+
+        return AssertionError(errs)
+
+    # BASE CASE
     if expect is not None and response.status_code == expect:
         return None
     elif 200 <= response.status_code < 300:
@@ -167,8 +199,8 @@ def check_status(
         f"Unexpected status code `{response.status_code}` from {msg}. The "
         f"response included the following detail: {res_json}."
     )
-    if auth := req.headers.get("authorization"):
-        msg += f"\nAuthorization: {auth}"
+    # if auth := req.headers.get("authorization"):
+    #     msg += f"\nAuthorization: {auth}"
 
     return AssertionError(msg)
 
@@ -717,13 +749,13 @@ class TestGrantView(BaseTestViews):
 class TestAssignmentView(BaseTestViews):
     T = AssignmentRequests
 
+    @classmethod
     def add_assocs(
-        self,
+        cls,
         sessionmaker: sessionmaker[Session],
         deleted=False,
     ) -> List[AssocCollectionDocument]:
         with sessionmaker() as session:
-            # Clear exist assocs
             user = User.if_exists(session, DEFAULT_UUID)
             collection = Collection.if_exists(session, DEFAULT_UUID_COLLECTION)
             session.execute(
@@ -827,6 +859,7 @@ class TestAssignmentView(BaseTestViews):
         uuid_document: List[str] | None,
         uuid_assignment: List[str] | None,
         restore: bool = False,
+        event: EventSchema | None = None,
         **overwrite,
     ) -> EventSchema:
         """One function for event checking.
@@ -836,7 +869,7 @@ class TestAssignmentView(BaseTestViews):
 
         url = "/assignments/collections"
         request = response.request
-        event = EventSchema.model_validate_json(response.content)
+        event = event or EventSchema.model_validate_json(response.content)
         expect_common = dict(
             api_version=__version__,
             uuid_user=DEFAULT_UUID,
@@ -863,29 +896,6 @@ class TestAssignmentView(BaseTestViews):
                 raise ValueError(f"Unexpected method `{request.method}`.")
 
         expect_common.update(overwrite)
-        expect_common_fields = {
-            "api_origin",
-            "api_version",
-            "kind",
-            "uuid_user",
-            "detail",
-        }
-
-        def event_common(event: EventSchema):
-            assert event.uuid is not None
-            for field in expect_common_fields:
-                value = getattr(event, field, None)
-                value_expect = expect_common.get(field)
-                if value is None:
-                    raise ValueError(f"`expect.{field}` should not be `None`.")
-                elif value_expect is None:
-                    msg = f"`expect_common[{field}]` should not be `None`."
-                    raise ValueError(msg)
-                if value != value_expect:
-                    raise AssertionError(
-                        f"Field `{field}` of event `{event.uuid}` should have "
-                        f"value `{value_expect}` but has value `{value}`."
-                    )
 
         # NOTE: This is done here and not in the pattern match since these
         #       should have a similar structure.
@@ -893,25 +903,25 @@ class TestAssignmentView(BaseTestViews):
         #       for deletion but it is restored. For `POST` requests it is
         #       included only in the child events hence the logic below.
         if not restore:
-            event_common(event)
+            event_compare(event, expect_common)
         elif request.method == "POST":
-            event_common(event)
+            event_compare(event, expect_common)
             expect_common.update(detail="Assignment restored.")
         else:
             expect_common.update(detail="Assignment restored.")
-            event_common(event)
+            event_compare(event, expect_common)
         assert event.kind_obj == KindObject.collection
         assert event.uuid_obj == DEFAULT_UUID_COLLECTION
 
         for item in event.children:
-            event_common(item)
+            event_compare(item, expect_common)
             assert len(item.children) == 1
             assert item.kind_obj == KindObject.document
             if uuid_document is not None:
                 assert item.uuid_obj in uuid_document
 
             subitem, *_ = item.children
-            event_common(subitem)
+            event_compare(subitem, expect_common)
             assert len(subitem.children) == 0
             assert subitem.kind_obj == KindObject.assignment
             if uuid_assignment is not None:
@@ -1239,6 +1249,70 @@ class TestCollectionView(BaseTestViews):
             session.add(collection)
             session.commit()
 
+    @classmethod
+    @checks_event
+    def check_event(
+        cls,
+        res: httpx.Response,
+        *,
+        uuid_document: List[str] | None,
+        uuid_assignment: List[str] | None,
+        restore: bool = False,
+    ) -> EventSchema:
+        url = "/collections"
+        request = res.request
+        event = EventSchema.model_validate_json(res.content)
+        event_expected = dict(
+            api_version=__version__,
+            uuid_user=DEFAULT_UUID,
+            kind_obj=KindObject.collection,
+        )
+
+        match request.method:
+            case HTTPMethod.GET:
+                raise ValueError("`GET` should not return events.")
+            case HTTPMethod.DELETE:
+                event_expected.update(
+                    kind=KindEvent.delete,
+                    detail="Collection deleted.",
+                    api_origin=f"DELETE {url}/<uuid>",
+                )
+            case HTTPMethod.POST:
+                event_expected.update(
+                    kind=KindEvent.create,
+                    detail="Collection created.",
+                    api_origin=f"POST {url}/<uuid>",
+                )
+            case HTTPMethod.PATCH:
+                event_expected.update(
+                    kind=KindEvent.update,
+                    detail="Collection updated.",
+                    api_origin=f"PATCH {url}/<uuid>.",
+                )
+            case _:
+                raise ValueError(f"Unexpected method `{request.method}`.")
+
+        event_compare(event, event_expected)
+        if (
+            request.method == HTTPMethod.POST.value
+            or request.method == HTTPMethod.DELETE.value
+        ):
+            if event.children:
+                assert len(event.children) == 1
+                (event_assocs,) = event.children
+                TestAssignmentView.check_event(
+                    res,
+                    uuid_document=uuid_document,
+                    uuid_assignment=uuid_assignment,
+                    restore=restore,
+                    event=event_assocs,
+                )
+        else:
+            raise ValueError("Not ready")
+            ...
+
+        return event
+
     @pytest.mark.asyncio
     async def test_create_collection(
         self,
@@ -1247,24 +1321,6 @@ class TestCollectionView(BaseTestViews):
         sessionmaker: sessionmaker[Session],
     ):
         """General test of `POST /collection/<uuid>`."""
-
-        def event_common(event):
-            assert event.api_origin == "POST /collections"
-            assert event.uuid_user == user.uuid
-            assert event.kind == KindEvent.create
-            assert event.api_version == __version__
-
-        def check_event(event):
-            ...
-            # event_common(event)
-            # assert event.kind_obj == KindObject.collection
-            # assert (event.uuid_obj) is not None
-            #
-            # for event_child in event.children:
-            #     event_common(event_child)
-            #     assert event_child.kind_obj == KindObject.assignment
-            #     assert event_child.uuid_parent == event.uuid
-            #     assert event_child.uuid_obj is not None
 
         async def check_created_documents(event):
             res = await client.read(
@@ -1280,7 +1336,7 @@ class TestCollectionView(BaseTestViews):
         collections_created_uuids: List[str] = list()
         with sessionmaker() as session:
             user = User.if_exists(session, DEFAULT_UUID)
-            document_uuids = list(
+            uuid_document = list(
                 session.execute(
                     select(Document.uuid)
                     .join(AssocUserDocument)
@@ -1289,46 +1345,64 @@ class TestCollectionView(BaseTestViews):
             )
             session.execute(update(Document).values(deleted=False))
             session.commit()
-            assert (n := len(document_uuids)) > 0, "Expected documents for user 1."
+            assert len(uuid_document) > 0, "Expected documents for user 1."
 
-            # Test with documents that are not deleted.
-            res = await client.create(
-                name=f"Test Create Collection `1-{secrets.token_urlsafe()}`.",
-                description="This is also created by `test_create_collection`.",
-                public=True,
-                uuid_document=document_uuids,
+        # Test with documents that are not deleted.
+        res = await client.create(
+            name=f"Test Create Collection `1-{secrets.token_urlsafe()}`.",
+            description="This is created by `test_create_collection`.",
+            public=True,
+            uuid_document=uuid_document,
+        )
+        if err := check_status(res, 201):
+            raise err
+
+        with sessionmaker() as session:
+            uuid_assignment = list(
+                session.execute(
+                    select(AssocCollectionDocument.uuid)
+                    .join(Collection)
+                    .where(
+                        Collection.uuid == DEFAULT_UUID_COLLECTION,
+                    )
+                ).scalars()
             )
-            if err := check_status(res, 201):
-                raise err
 
-            event = EventSchema.model_validate_json(res.content)
-            assert (
-                len(event.children) == 1
-            ), "There should be a child event for every document."
-            check_event(event)
-            await check_created_documents(event)
-            collections_created_uuids.append(event.uuid_obj)
+        check_event_args = dict(
+            uuid_document=uuid_document,
+            uuid_assignment=uuid_assignment,
+        )
+        event, err = self.check_event(res, **check_event_args)
+        if err is not None:
+            raise err
+        assert len(event.children)
 
+        await check_created_documents(event)
+        collections_created_uuids.append(event.uuid_obj)
+
+        with sessionmaker() as session:
             # Stage some documents for deletion and make sure that documents
             # staged for deletion do not get added to the collection.
             session.execute(update(Document).values(deleted=True))
             session.commit()
 
-            res = await client.create(
-                name=f"Test Create Collection `2-{secrets.token_urlsafe()}`",
-                description="This is created by `test_create_collection`.",
-                public=True,
-                uuid_document=document_uuids,
-            )
-            if err := check_status(res, 201):
-                raise err
+        res = await client.create(
+            name=f"Test Create Collection `2-{secrets.token_urlsafe()}`",
+            description="This is created by `test_create_collection`.",
+            public=True,
+            uuid_document=uuid_document,
+        )
+        if err := check_status(res, 201):
+            raise err
 
-            event = EventSchema.model_validate_json(res.content)
-            assert len(event.children) == 0
-            check_event(event)
-            await check_created_documents(event)
-            collections_created_uuids.append(event.uuid_obj)
+        event = EventSchema.model_validate_json(res.content)
+        assert len(event.children) == 0
+        self.check_event(res, **check_event_args)
 
+        await check_created_documents(event)
+        collections_created_uuids.append(event.uuid_obj)
+
+        with sessionmaker() as session:
             # Collection should have no documents
 
             # NOTE: Verify that public documents can be added to the
@@ -1375,9 +1449,11 @@ class TestCollectionView(BaseTestViews):
             if err := check_status(res, 201):
                 raise err
 
-            event = EventSchema.model_validate_json(res.content)
+            event, err = self.check_event(res, **check_event_args)
             assert len(event.children) == 0
-            check_event(event)
+            if err is not None:
+                raise err
+
             await check_created_documents(event)
             collections_created_uuids.append(event.uuid_obj)
 
@@ -1487,60 +1563,137 @@ class TestCollectionView(BaseTestViews):
     @pytest.mark.asyncio
     async def test_delete_collection(
         self,
-        client: CollectionRequests,
-        client_user: UserRequests,
+        requests: Requests,
         sessionmaker: sessionmaker[Session],
     ):
         """General test of `DELETE /collection/<uuid>`."""
 
-        res = await client_user.read(DEFAULT_UUID, ChildrenUser.collections)
-        if err := check_status(res, 200):
+        uuid_collection = DEFAULT_UUID_COLLECTION
+
+        # Add some documents.
+        res_docs = await requests.users.read(DEFAULT_UUID, ChildrenUser.documents)
+        if err := check_status(res_docs, 200):
             raise err
 
-        collection_uuids_initial = set(res.json().keys())
-        uuid_collection, *_ = collection_uuids_initial
+        assert isinstance(data := res_docs.json(), dict)
+        assert len(data), "Expected documents for user."
+        uuid_document = list(data.keys())
+        assert len(uuid_document)
 
-        res = await client.read(uuid_collection, ChildrenCollection.documents)
-        if err := check_status(res, 200):
+        res_assign = await requests.assignments.create(uuid_collection, uuid_document)
+        if err := check_status(res_assign, 200):
             raise err
 
-        document_uuids = set(rr["uuid"] for rr in res.json())
-        if not (n_documents := len(document_uuids)):
-            raise AssertionError("Expected documents for collection.")
+        event, err = TestAssignmentView.check_event(
+            res_assign,
+            uuid_assignment=None,
+            uuid_document=uuid_document,
+        )
+        assert len(event.children) == len(uuid_document)
+        if err is not None:
+            raise err
 
         with sessionmaker() as session:
             collection = Collection.if_exists(session, uuid_collection)
             res = session.execute(
-                select(AssocCollectionDocument.uuid)
-                .join(Document)
-                .where(
-                    Document.uuid.in_(document_uuids),
-                    AssocCollectionDocument.id_collection != collection.id,
-                )
+                q := select(AssocCollectionDocument.uuid)
+                .select_from(Collection)
+                .join(AssocCollectionDocument)
+                .where(Collection.uuid == uuid_collection)
             )
-            assoc_ids = list(res.scalars())
+            uuid_assignment = list(res.scalars())
+            assert len(uuid_assignment) == len(
+                uuid_document
+            ), "For every document there should be exactly on assignment."
 
-            res = await client.delete(uuid_collection)
-            if err := check_status(res, 200):
-                raise err
-            #
-            # def event_common(event):
-            #     assert event.uuid is not None
-            #     assert event.api_origin == "DELETE /collections/<uuid>"
-            #     assert event.api_version == __version__
-            #     assert event.kind == KindEvent.create
-            #
-            # event = EventSchema.model_validate_json(res.content)
-            # event_common(event)
-            # assert event.kind_obj == KindObject.collection
-            # assert event.uuid_obj == uuid_collection
-            # assert len(event.children) == n_documents
-            #
-            # for item in event.children:
-            #     event_common(event)
-            #     assert item.kind_obj == KindObject.assignment
-            #     assert item.uuid_obj in assoc_ids
-            #     assert not len(item.children)
+        res = await requests.collections.delete(uuid_collection)
+        if err := check_status(res, 200):
+            raise err
+
+        check_event_args = dict(
+            uuid_document=uuid_document,
+            uuid_assignment=uuid_assignment,
+        )
+        event, err = self.check_event(res, **check_event_args)
+        if err is not None:
+            raise err
+        assert len(event.children) == 1
+        assert len(event.children[0].children) == len(uuid_document)
+
+        # indempotent
+        res = await requests.collections.delete(uuid_collection)
+        if err := check_status(res, 200):
+            raise err
+
+        event, err = self.check_event(res, **check_event_args)
+        if err is not None:
+            raise err
+        assert len(event.children) == 1
+        assert len(event.children[0].children) == 0
+
+        # Verify directly with database
+        with sessionmaker() as session:
+            cond = Collection.uuid == uuid_collection
+            collection = session.execute(select(Collection).where(cond)).scalar()
+            assert collection is not None
+            assert collection.deleted
+
+            assocs = set(
+                session.execute(
+                    select(AssocCollectionDocument.uuid)
+                    .select_from(Document)
+                    .join(AssocCollectionDocument)
+                    .join(Collection)
+                    .where(cond, AssocCollectionDocument.deleted)
+                ).scalars()
+            )
+            assert len(assocs) == len(uuid_assignment)
+
+        # Verify not available through endpoints.
+        res, res_assign = await asyncio.gather(
+            requests.collections.read(uuid_collection),
+            requests.assignments.read(uuid_collection),
+        )
+        if err := check_status((res, res_assign), 404):
+            raise err
+
+        # BONUS: Cannot reactivate assignments directly
+        res_assign = await requests.assignments.create(
+            uuid_collection,
+            uuid_document,
+        )
+        if err := check_status(res_assign, 404):
+            raise err
+
+        # Restore
+        res = await requests.collections.delete(uuid_collection, restore=True)
+        if err := check_status(res):
+            raise err
+
+        with sessionmaker() as session:
+            uuid_assignment_restored = set(
+                session.execute(
+                    select(AssocCollectionDocument.uuid).where(
+                        AssocCollectionDocument.uuid.in_(uuid_assignment),
+                        AssocCollectionDocument.deleted == False,
+                    )
+                ).scalars()
+            )
+            assert len(uuid_assignment_restored) == len(uuid_assignment)
+
+        event, err = self.check_event(res, **check_event_args)
+        if err is not None:
+            raise err
+        assert len(event.children) == 1
+        assert len(event.children[0].children) == len(uuid_document)
+
+        # Verify
+        res, res_assign = await asyncio.gather(
+            requests.collections.read(uuid_collection),
+            requests.assignments.read(uuid_collection),
+        )
+        if err := check_status((res, res_assign), 200):
+            raise err
 
     @pytest.mark.asyncio
     async def test_delete_collection_access(self, client: CollectionRequests):
