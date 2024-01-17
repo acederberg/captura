@@ -21,7 +21,7 @@ PATTERN_BEARER: re.Pattern = re.compile(
     "^Bearer (?P<token>(?P<header>[\\w_-]+).(?P<payload>[\\w_-]+).(?P<signature>[\\w_-]+))$",
     flags=re.I,
 )
-PYTEST_KID = "00000000"
+PYTEST_KID = "000-000-000"
 PATH_PYTEST_PUBLIC_KEY: str = util.Path.docker("pytest-public.pem")
 PATH_PYTEST_PRIVATE_KEY: str = util.Path.docker("pytest-private.pem")
 

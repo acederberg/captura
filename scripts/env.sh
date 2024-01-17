@@ -29,7 +29,7 @@ if [[ ! $TOKEN ]]; then
   export TOKEN=$( \
     curl -X POST "$SERVER_IP:8080/auth/token" \
       -H "Content-Type: Application/JSON" \
-      --data '{"uuid": "00000000"}' \
+      --data '{"uuid": "000-000-000"}' \
     | sed 's/"//g' \
   )
 else echo "Token already exists."

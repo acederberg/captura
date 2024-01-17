@@ -1,11 +1,11 @@
 - id: 1
-  uuid: !!str 99999999
+  uuid: 99d-99d-99d
   name: you're mom
   description: The joke is that it is mispelled.
   url_image: null
   url: null
 
-- uuid: !!str 00000000
+- uuid: 000-000-000
   id: 2
   name: acederberg
   description: maintainer of this project

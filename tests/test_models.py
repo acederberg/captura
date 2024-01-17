@@ -247,7 +247,7 @@ class TestUser(BaseModelTest):
     ):
         with sessionmaker() as session:
             # Verify that collections exist
-            user = User.if_exists(session, "00000000")
+            user = User.if_exists(session, "000-000-000")
             n_collections = session.execute(
                 select(func.count()).select_from(
                     select(Collection).where(Collection.id_user == user.id)

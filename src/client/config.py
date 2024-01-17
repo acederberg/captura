@@ -6,7 +6,7 @@ from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 
 class DefaultsConfig(BaseModel):
-    uuid_user: Annotated[str, Field(default="00000000")]
+    uuid_user: Annotated[str, Field(default="000-000-000")]
     token: str | None = None
 
 

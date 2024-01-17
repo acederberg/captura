@@ -2,6 +2,7 @@ import asyncio
 from http import HTTPMethod
 import functools
 import itertools
+from certifi import where
 
 from yaml.events import Event
 from sqlalchemy import func
@@ -71,7 +72,7 @@ logger = util.get_logger(__name__)
 CURRENT_APP_VERSION = __version__
 DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
-DEFAULT_UUID: str = "00000000"
+DEFAULT_UUID: str = "000-000-000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
 EVENT_COMMON_FIELDS = {"api_origin", "api_version", "kind", "uuid_user", "detail"}
 
@@ -146,6 +147,38 @@ def checks_event(
     return wrapper
 
 
+@checks_event
+def check_event_update(
+    _,
+    res: httpx.Response,
+    fields: Set[str],
+    *,
+    kind_obj: str,
+    api_origin: str,
+    uuid_obj: str,
+    uuid_user: str,
+    detail: str,
+) -> EventSchema:
+    event = EventSchema.model_validate_json(res.content)
+    common = dict(api_version=__version__, kind=KindEvent.update)
+    common.update(
+        kind_obj=kind_obj,
+        api_origin=api_origin,
+        uuid_user=uuid_user,
+        uuid_obj=uuid_obj,
+    )
+    event_compare(event, common)
+    assert event.detail == detail
+    for item in event.children:
+        assert not len(item.children)
+        event_compare(event, common)
+
+        assert detail in item.detail
+        assert any(field in item.detail for field in fields)
+
+    return event
+
+
 class BaseTestViews:
     T: Type[BaseRequests]
 
@@ -157,7 +190,7 @@ class BaseTestViews:
         auth: Auth,
         request,
     ):
-        token = auth.encode(request.param or DEFAULT_TOKEN_PAYLOAD)
+        token = auth.encode(request.param)
         return self.T(client_config, async_client, token=token)
 
     @pytest.fixture(scope="session", autouse=True)
@@ -171,17 +204,24 @@ def check_status(
     # DO RECURSE
     if isinstance(response, tuple):
         errs = "\n".join(
-            str(err) for rr in response if (err := check_status(rr, expect)) is not None
+            str(err)
+            for rr in response
+            if (err := check_status(rr, expect=expect)) is not None
         )
         if not errs:
             return None
 
         return AssertionError(errs)
 
+    if expect is None:
+        match response.request.method:
+            case HTTPMethod.POST:
+                expect = 201
+            case _:
+                expect = 200
+
     # BASE CASE
-    if expect is not None and response.status_code == expect:
-        return None
-    elif 200 <= response.status_code < 300:
+    if response.status_code == expect:
         return None
 
     req_json = (req := response.request).read().decode()
@@ -196,11 +236,12 @@ def check_status(
     if req_json:
         msg += f"with body `{req_json}`"
     msg = (
-        f"Unexpected status code `{response.status_code}` from {msg}. The "
-        f"response included the following detail: {res_json}."
+        f"Unexpected status code `{response.status_code}` (expected "
+        f"`{expect}`) from {msg}. The response included the following "
+        f"detail: {res_json}."
     )
-    # if auth := req.headers.get("authorization"):
-    #     msg += f"\nAuthorization: {auth}"
+    if auth := req.headers.get("authorization"):
+        msg += f"\nAuthorization: {auth}"
 
     return AssertionError(msg)
 
@@ -233,6 +274,7 @@ class TestUserViews(BaseTestViews):
         Users should be able to access articles.
         """
 
+        client.token = None
         read, update, delete = await asyncio.gather(
             client.read(DEFAULT_UUID),
             client.update(DEFAULT_UUID, name="woops"),
@@ -343,7 +385,10 @@ class TestUserViews(BaseTestViews):
     async def test_patch_user(self, client: UserRequests):
         new_name = secrets.token_hex(4)
         good, bad = await asyncio.gather(
-            *(client.update(uuid, name=new_name) for uuid in (DEFAULT_UUID, "99999999"))
+            *(
+                client.update(uuid, name=new_name)
+                for uuid in (DEFAULT_UUID, "99d-99d-99d")
+            )
         )
         if err := check_status(good):
             raise err
@@ -381,7 +426,7 @@ class TestUserViews(BaseTestViews):
 
     @pytest.mark.asyncio
     async def test_delete_user_not_owned(self, client: UserRequests):
-        res = await client.delete("99999999")
+        res = await client.delete("99d-99d-99d")
         if err := check_status(res, 403):
             raise err
         assert (
@@ -461,7 +506,7 @@ class TestGrantView(BaseTestViews):
         sessionmaker: sessionmaker[Session],
     ):
         """Test functionality of `GET /grants/user/<uuid>`."""
-        res = await client.read_user("00000000")
+        res = await client.read_user("000-000-000")
         if err := check_status(res, 200):
             raise err
 
@@ -473,7 +518,7 @@ class TestGrantView(BaseTestViews):
 
         # Grants should specify only one user.
         uuids, uuids_users = zip(*((gg.uuid, gg.uuid_user) for gg in grants))
-        assert set(uuids_users) == {"00000000"}
+        assert set(uuids_users) == {"000-000-000"}
 
         # Number of grants should equal the number of entries the owner has in
         # this table.
@@ -491,7 +536,7 @@ class TestGrantView(BaseTestViews):
 
         In the future, admins will be able to read grants of arbitrary users.
         """
-        res = await client.read_user("99999999")
+        res = await client.read_user("99d-99d-99d")
         if err := check_status(res, 403):
             raise err
         assert res.json()["detail"] == dict(msg="Users can only read their own grants.")
@@ -563,7 +608,7 @@ class TestGrantView(BaseTestViews):
         # Manually remove existing grants.
         with sessionmaker() as session:
             try:
-                user = User.if_exists(session, "99999999")
+                user = User.if_exists(session, "99d-99d-99d")
                 document = Document.if_exists(session, DEFAULT_UUID_DOCS)
             except HTTPException:
                 raise AssertionError("Could not find expected user/document.")
@@ -588,7 +633,7 @@ class TestGrantView(BaseTestViews):
         # Recreate grants
         res = await client.create(
             DEFAULT_UUID_DOCS,
-            ["99999999"],
+            ["99d-99d-99d"],
             level=Level.own,  # type: ignore
         )
         if err := check_status(res, 201):
@@ -605,7 +650,7 @@ class TestGrantView(BaseTestViews):
         event_user, *_ = event.children
         check_common(event_user)
 
-        assert event_user.uuid_obj == "99999999"
+        assert event_user.uuid_obj == "99d-99d-99d"
         assert event_user.kind_obj == KindObject.user
 
         # Check layer three
@@ -626,7 +671,7 @@ class TestGrantView(BaseTestViews):
         assert (n := len(grants)) == 2, f"Expected two grants, got `{n}`."
 
         # POST to test indempotence.
-        res = await client.create(DEFAULT_UUID_DOCS, ["99999999"])
+        res = await client.create(DEFAULT_UUID_DOCS, ["99d-99d-99d"])
         if err := check_status(res, 201):
             raise err
 
@@ -673,12 +718,14 @@ class TestGrantView(BaseTestViews):
         assert (n_grants_init := len(grants)), "Expected grants."
 
         # Get initial grant to compare against event.
-        initial_grant = next((gg for gg in grants if gg.uuid_user == "99999999"), None)
+        initial_grant = next(
+            (gg for gg in grants if gg.uuid_user == "99d-99d-99d"), None
+        )
         assert (
             initial_grant is not None
-        ), "There should be a grant on `aaa-aaa-aaa` for `99999999`."
+        ), "There should be a grant on `aaa-aaa-aaa` for `99d-99d-99d`."
 
-        res = await client.delete(DEFAULT_UUID_DOCS, ["99999999"])
+        res = await client.delete(DEFAULT_UUID_DOCS, ["99d-99d-99d"])
         if err := check_status(res):
             raise err
 
@@ -694,7 +741,7 @@ class TestGrantView(BaseTestViews):
         event_user, *_ = event.children
         check_common(event_user)
 
-        assert event_user.uuid_obj == "99999999"
+        assert event_user.uuid_obj == "99d-99d-99d"
         assert event_user.kind_obj == KindObject.user
         assert event_user.detail == f"Grant `{initial_grant.level}` revoked."
 
@@ -714,7 +761,9 @@ class TestGrantView(BaseTestViews):
                 select(Document).where(Document.uuid == DEFAULT_UUID_DOCS)
             ).scalar()
             assert document is not None
-            user = session.execute(select(User).where(User.uuid == "99999999")).scalar()
+            user = session.execute(
+                select(User).where(User.uuid == "99d-99d-99d")
+            ).scalar()
             assert user is not None
 
             assoc = session.execute(
@@ -732,10 +781,10 @@ class TestGrantView(BaseTestViews):
 
         grants = [GrantSchema.model_validate(item) for item in res.json()]
         assert len(grants) == n_grants_init - 1, "Expected one less grant."
-        grant_final = next((gg for gg in grants if gg.uuid_user == "99999999"), None)
+        grant_final = next((gg for gg in grants if gg.uuid_user == "99d-99d-99d"), None)
         assert (
             grant_final is None
-        ), "Expected no grants for `99999999` on `aaa-aaa-aaa`."
+        ), "Expected no grants for `99d-99d-99d` on `aaa-aaa-aaa`."
 
         res = await client.create(
             DEFAULT_UUID_DOCS,
@@ -1274,13 +1323,13 @@ class TestCollectionView(BaseTestViews):
             case HTTPMethod.DELETE:
                 event_expected.update(
                     kind=KindEvent.delete,
-                    detail="Collection deleted.",
+                    detail=f"Collection {'restored' if restore else 'deleted'}.",
                     api_origin=f"DELETE {url}/<uuid>",
                 )
             case HTTPMethod.POST:
                 event_expected.update(
                     kind=KindEvent.create,
-                    detail="Collection created.",
+                    detail="Collection created`.",
                     api_origin=f"POST {url}/<uuid>",
                 )
             case HTTPMethod.PATCH:
@@ -1503,12 +1552,12 @@ class TestCollectionView(BaseTestViews):
         collection.
         """
 
-        # NOTE: Acting as user `99999999`.
-        client.token = auth.encode({"uuid": "99999999"})
+        # NOTE: Acting as user `99d-99d-99d`.
+        client.token = auth.encode({"uuid": "99d-99d-99d"})
         client_user.token = client.token
 
         with sessionmaker() as session:
-            user = User.if_exists(session, "99999999")
+            user = User.if_exists(session, "99d-99d-99d")
             u = update(Collection).where(Collection.id_user == user.id)
             session.execute(u.values(deleted=True))
             session.commit()
@@ -1524,7 +1573,7 @@ class TestCollectionView(BaseTestViews):
             event = EventSchema.model_validate_json(res.content)
             assert event.api_origin == "POST /collections"
             assert event.api_version == __version__
-            assert event.uuid_user == "99999999"
+            assert event.uuid_user == "99d-99d-99d"
             assert event.uuid is not None
             assert event.kind == KindEvent.create
             assert event.kind_obj == KindObject.collection
@@ -1534,7 +1583,7 @@ class TestCollectionView(BaseTestViews):
             #        be accessed by others when private.
             async def user_read_and_check(expect: int):
                 res = await client_user.read(
-                    "99999999",
+                    "99d-99d-99d",
                     ChildrenUser.collections,
                     event.uuid_obj,
                 )
@@ -1547,7 +1596,7 @@ class TestCollectionView(BaseTestViews):
                 if err := check_status(res, 200 if expect else 404):
                     raise err
 
-            # NOTE: Act like user `00000000` so that access controllers are
+            # NOTE: Act like user `000-000-000` so that access controllers are
             #       used.
             client.token = auth.encode({"uuid": DEFAULT_UUID})
             client_user.token = client.token
@@ -1581,7 +1630,7 @@ class TestCollectionView(BaseTestViews):
         assert len(uuid_document)
 
         res_assign = await requests.assignments.create(uuid_collection, uuid_document)
-        if err := check_status(res_assign, 200):
+        if err := check_status(res_assign):
             raise err
 
         event, err = TestAssignmentView.check_event(
@@ -1681,7 +1730,7 @@ class TestCollectionView(BaseTestViews):
             )
             assert len(uuid_assignment_restored) == len(uuid_assignment)
 
-        event, err = self.check_event(res, **check_event_args)
+        event, err = self.check_event(res, **check_event_args, restore=True)
         if err is not None:
             raise err
         assert len(event.children) == 1
@@ -1700,12 +1749,65 @@ class TestCollectionView(BaseTestViews):
         """Users should only be able to delete their own collections with
         `DELETE /collection/<uuid>`. They should not be able to delete
         universal (userless) collections either."""
-        ...
 
     @pytest.mark.asyncio
-    async def test_patch_collection(self, client: CollectionRequests):
+    async def test_patch_collection(self, requests: Requests, auth: Auth):
         """General test of `PATCH /collection/<uuid>`."""
-        ...
+
+        fields = {"uuid_user", "name", "description", "public"}
+        uuid_collection = DEFAULT_UUID_COLLECTION
+
+        # Make a collection public and change its name
+        res = await requests.collections.update(
+            uuid_collection,
+            name=(name := "Test `PATCH /collection`."),
+            public=True,
+        )
+        if err := check_status(res, 200):
+            raise err
+
+        fields = {"public", "name"}
+        common = dict(
+            kind_obj=KindObject.collection,
+            api_origin="PATCH /cofllection",
+            uuid_obj=DEFAULT_UUID_COLLECTION,
+            uuid_user=DEFAULT_UUID,
+            detail="Collection updated",
+        )
+        event, err = check_event_update(None, res, fields, **common)
+        if err := check_status(res, 200):
+            raise err
+        assert len(event.children) == 2
+
+        res = await requests.collections.read(uuid_collection)
+        if err := check_status(res, 200):
+            raise err
+        collection = CollectionSchema.model_validate_json(res.content)
+        assert collection.name == name
+        assert collection.public == True
+
+        # Transfer ownership
+        uuid_user = "99d-99d-99d"
+        res = await requests.collections.update(
+            uuid_collection, uuid_user=uuid_user, public=False
+        )
+        if (err := check_status(res)) is not None:
+            raise err
+
+        event, err = check_event_update(None, res, fields, **common)
+        if err is not None:
+            raise err
+
+        # Verify readability.
+        res = await requests.collections.read(uuid_collection)
+        if err := check_status(res, 403):
+            raise err
+
+        requests.update_token(auth.encode({"uuid": "99d-99d-99d"}))
+
+        res = await requests.collections.read(uuid_collection)
+        if err := check_status(res):
+            raise err
 
     @pytest.mark.asyncio
     async def test_patch_collection_access(self, client: CollectionRequests):

@@ -375,12 +375,13 @@ class CollectionView(BaseView):
         uuid_collection: PathUUIDCollection,
         restore: bool = False,
     ) -> None:  # EventSchema:
+        print("HERE")
         event_common = dict(
             api_version=__version__,
             api_origin="DELETE /collections/<uuid>",
             kind=KindEvent.delete,
             uuid_user=token["uuid"],
-            detail="Collection deleted.",
+            detail=f"Collection {'restored' if restore else 'deleted'}.",
         )
         with sessionmaker() as session:
             collection = Collection.if_exists(session, uuid_collection)
@@ -450,13 +451,13 @@ class CollectionView(BaseView):
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
-        uuid: PathUUIDCollection,
+        uuid_collection: PathUUIDCollection,
         updates: CollectionPatchSchema = Depends(),
     ):
         """Update collection details or transfer ownership of collection. To
         assign new documents, please `PUT /assign/document/<uuid>."""
         with sessionmaker() as session:
-            collection = Collection.if_exists(session, uuid)
+            collection = Collection.if_exists(session, uuid_collection)
             user = User.if_exists(session, token["uuid"])
             if user.id != collection.id_user:
                 raise HTTPException(
@@ -464,7 +465,7 @@ class CollectionView(BaseView):
                     detail=dict(
                         msg="User can only delete their own collections.",
                         uuid_user=token["uuid"],
-                        uuid_collection=uuid,
+                        uuid_collection=uuid_collection,
                     ),
                 )
             event_common = dict(
@@ -687,6 +688,8 @@ class AssignmentView(BaseView):
         with sessionmaker() as session:
             user = User.if_exists(session, token["uuid"])
             collection = Collection.if_exists(session, uuid_collection)
+            if collection.deleted:
+                raise HTTPException(404)
             user.check_can_access_collection(collection)
 
             # Find and reactivate any tht already exist but are staged for
@@ -709,6 +712,7 @@ class AssignmentView(BaseView):
                     AssocCollectionDocument.deleted,
                 )
             )
+            print("HERE")
             assocs_deleted = list(session.execute(q_assocs_deleted).scalars())
 
             events_reactivated: List[Event] = list()
@@ -802,7 +806,8 @@ class AssignmentView(BaseView):
             session.commit()
             session.refresh(event)
 
-            return EventSchema.model_validate(event)
+            res = EventSchema.model_validate(event).model_dump()
+            return JSONResponse(res, 201)  # type: Ignore
 
     @classmethod
     def get_assignment(
@@ -815,6 +820,8 @@ class AssignmentView(BaseView):
         with sessionmaker() as session:
             user = User.if_exists(session, token["uuid"])
             collection = Collection.if_exists(session, uuid_collection)
+            if collection.deleted:
+                raise HTTPException(404)
             user.check_can_access_collection(collection)
 
             q = (
@@ -1477,7 +1484,7 @@ class AuthView(BaseView):
             )
 
 
-class EventsView(BaseView):
+class EventView(BaseView):
     view_routes = dict(get_event="/{uuid_event}", get_events="")
 
     @classmethod
@@ -1543,7 +1550,7 @@ class AppView(BaseView):
         "/collections": CollectionView,
         "/documents": DocumentView,
         "/auth": AuthView,
-        "/events": EventsView,
+        "/events": EventView,
     }
 
     @classmethod
