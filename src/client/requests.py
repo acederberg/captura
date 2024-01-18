@@ -21,6 +21,7 @@ from typing_extensions import Self
 
 import httpx
 import rich
+from rich.console import Console
 import typer
 import yaml
 from app.models import (
@@ -39,10 +40,30 @@ from client.config import Config
 # =========================================================================== #
 # Typer Flags and Args.
 
+CONSOLE = Console()
+
+
+class Verbage(str, enum.Enum):
+    read = "read"
+    search = "search"
+    update = "update"
+    delete = "delete"
+    create = "create"
+
+    apply = "apply"
+    destroy = "destroy"
+
+
+class Output(str, enum.Enum):
+    json = "json"
+    table = "table"
+
+
 # --------------------------------------------------------------------------- #
 # UUID Flags and Arguments
 # NOTE: Annotations should eventually include help.
 
+FlagOutput: TypeAlias = Annotated[Output, typer.Option("--output", "-o")]
 FlagUUIDChildrenOptional: TypeAlias = Annotated[
     List[str], typer.Option("--uuid-child", "--uuid-children")
 ]
@@ -108,34 +129,83 @@ V = ParamSpec("V")
 AsyncRequestCallable = Callable[V, Coroutine[httpx.Response, Any, Any]]
 RequestCallable = Callable[V, httpx.Response]
 
+from rich.table import Table
 
-def handle_response(response: httpx.Response) -> None:
+
+def print_table(res: httpx.Response, data=None) -> None:
+    table = Table()
+
+    data = data or res.json()
+    if isinstance(data, dict):
+        if not all(not isinstance(item, dict) for item in data):
+            data = [data]
+        else:
+            data = list(
+                dict(uuid=uuid, **item) if "uuid" not in item else item
+                for uuid, item in data.items()
+            )
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Results must be a coerced into a `list`, have `{type(data)}`."
+        )
+
+    keys = data[0].keys()
+    for count, key in enumerate(keys):
+        table.add_column(
+            key,
+            style=typer.colors.BLUE if (count % 2) else typer.colors.BRIGHT_BLUE,
+            justify="center",
+        )
+
+    if data:
+        for item in data:
+            flat = tuple(str(item[key]) for key in keys)
+            table.add_row(*flat)
+
+    CONSOLE.print(table)
+
+
+def print_json(res: httpx.Response, data=None) -> None:
+    data = res.json() or data
+    CONSOLE.print_json(json.dumps(data))
+
+
+def print_result(res: httpx.Response, output: FlagOutput, *, data=None) -> None:
+    match output:
+        case Output.json:
+            print_json(res, data)
+        case Output.table:
+            print_table(res, data)
+
+
+def handle_response(res: httpx.Response, output: FlagOutput) -> None:
     try:
-        content = response.json()
+        data = res.json()
     except json.JSONDecodeError:
-        content = None
+        data = None
 
-    if 200 <= response.status_code < 300:
-        rich.print_json(json.dumps(content))
+    if 200 <= res.status_code < 300:
+        print_result(res, output, data=data)
     else:
-        rich.print(f"[red]Recieved bad status code `{response.status_code}`.")
-        if content:
-            rich.print("[red]" + json.dumps(content, indent=2))
+        CONSOLE.print(f"[red]Recieved bad status code `{res.status_code}`.")
+        if data:
+            CONSOLE.print("[red]" + json.dumps(data, indent=2))
 
 
 class BaseRequests:
     """ """
 
+    output: Output | None
     token: str | None
     config: Config
-    client: httpx.AsyncClient
+    _client: httpx.AsyncClient | None
     commands: ClassVar[Tuple[str, ...]] = tuple()
     children: ClassVar[None | Tuple[Type[Self], ...]] = None
 
     @classmethod
     def from_(cls, v: "BaseRequests") -> Self:
         return cls(
-            client=v.client,
+            client=v._client,
             config=v.config,
             token=v.token,
         )
@@ -149,9 +219,17 @@ class BaseRequests:
         # self.typer = typer.Typer()
         self.token = token
         self.config = config
-        self.client = client
+        self._client = client
+        self.output = None
 
     @functools.cached_property
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            msg = "Client has was not provided to constructor or set."
+            raise ValueError(msg)
+        return self._client
+
+    @property
     def headers(self):
         h = dict(
             content_type="application/json",
@@ -160,21 +238,27 @@ class BaseRequests:
             h.update(authorization=f"bearer {self.token}")
         return h
 
+    def callback(self, output: FlagOutput = Output.json):
+        """Specify request output format."""
+        if self.output is None:
+            self.output = output
+
     @functools.cached_property
     def typer(self) -> typer.Typer:
-        t: typer.Typer = typer.Typer()
+        t: typer.Typer = typer.Typer(callback=self.callback)
         for cmd in self.commands:
+            if Verbage._member_map_.get(cmd.split("_")[0]) is None:
+                raise ValueError(f"Illegal verbage `{cmd}`.")
+
             fn = getattr(self, cmd, None)
             if fn is None:
                 raise ValueError(f"No such attribute `{cmd}` of `{self}`.")
             decorated_cmd = self.request_to_cmd(fn)
-            t.command(cmd)(decorated_cmd)
+            t.command(cmd.replace("_", "-"))(decorated_cmd)
         if self.children is None:
             return t
 
         for T in self.children:
-            # print(T.__name__)
-            # print(RequestsEnum._value2member_map_[T].name)
             t.add_typer(
                 T.from_(self).typer,
                 name=RequestsEnum._value2member_map_[T].name,
@@ -196,7 +280,7 @@ class BaseRequests:
         ) -> httpx.Response:
             app = None
             if not self.config.remote:
-                typer.echo("[green]Using app instance in client.")
+                CONSOLE.print("[green]Using app instance in client.")
                 from app.views import AppView
 
                 app = AppView.view_router
@@ -207,7 +291,7 @@ class BaseRequests:
                 self.client = client
                 self.token = self.config.defaults.token
                 response = await fn(*args, **kwargs)
-                handle_response(response)
+                handle_response(response, self.output)
                 return response
 
         # Make sync
@@ -221,7 +305,10 @@ class BaseRequests:
 class DocumentRequests(BaseRequests):
     commands = ("read",)
 
-    async def read(self, document_ids: FlagUUIDDocuments = []) -> httpx.Response:
+    async def read(
+        self,
+        document_ids: FlagUUIDDocuments = [],
+    ) -> httpx.Response:
         url = "/documents"
         return await self.client.get(
             url,
@@ -248,7 +335,7 @@ class CollectionRequests(BaseRequests):
             case [ChildrenCollection.edits, _]:
                 params.update(uuid_edit=uuid_child)
             case _:
-                rich.print(
+                CONSOLE.print(
                     "[red]`--uuid-child` can only be used when `--child` is "
                     "provided."
                 )
@@ -322,7 +409,7 @@ class UserRequests(BaseRequests):
             case [None, False]:
                 pass
             case [None, True]:
-                rich.print(
+                CONSOLE.print(
                     "[red]`child_uuids` can only be specified when `child` is too."
                 )
                 raise typer.Exit(1)
@@ -331,7 +418,7 @@ class UserRequests(BaseRequests):
             case [ChildrenUser.documents, _]:
                 params["uuid_document"] = child_uuids
             case _:
-                rich.print(
+                CONSOLE.print(
                     "[red]Invalid combination of `--child` and `--uuid-child`.",
                 )
                 raise typer.Exit(2)
@@ -519,7 +606,7 @@ FlagKindObject: TypeAlias = Annotated[
     Optional[KindObject],
     typer.Option(
         "--object",
-        "-o",
+        "-j",
         help="Object kind, matches again the `kind_obj` field.",
     ),
 ]
@@ -535,6 +622,10 @@ FlagUUIDEventObject: TypeAlias = Annotated[
 
 class EventsRequests(BaseRequests):
     commands = ("read", "search")
+
+    def callback(self, output: FlagOutput = Output.table):
+        """Specify request output format."""
+        self.output = output
 
     async def read(
         self,
@@ -563,7 +654,6 @@ class EventsRequests(BaseRequests):
             kind_obj=getattr(kind_obj, "value", None),
         )
         params = {k: v for k, v in params.items() if v is not None}
-        print(params)
         return await self.client.get(
             "/events",
             headers=self.headers,
@@ -589,6 +679,7 @@ class Requests(BaseRequests):
     documents: DocumentRequests
     grants: GrantRequests
     assignments: AssignmentRequests
+    events: EventsRequests
 
     def __init__(
         self,

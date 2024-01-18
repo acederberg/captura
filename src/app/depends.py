@@ -14,6 +14,7 @@ import jwt
 from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from typing import Tuple
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -106,6 +107,25 @@ def auth(
 DependsAuth: TypeAlias = Annotated[Auth, Depends(auth, use_cache=False)]
 
 
+def try_decode(
+    auth,
+    authorization,
+) -> Tuple[Dict[str, str], HTTPException | None]:
+    try:
+        return auth.decode(authorization), None
+    except jwt.DecodeError:
+        _msg = "Failed to decode bearer token."
+    except jwt.InvalidAudienceError:
+        _msg = "Invalid bearer token audience."
+    except jwt.InvalidIssuerError:
+        _msg = "Invalid bearer token issuer."
+    except jwt.InvalidTokenError:
+        _msg = "Invalid bearer token."
+    except ValueError as err:
+        _msg = err.args[0]
+    return None, HTTPException(401, detail="Invalid Token: " + _msg)
+
+
 @cache
 def token(
     auth: DependsAuth,
@@ -119,22 +139,25 @@ def token(
     :param authorization: Authorization header. It should match
         :const:`PATTERN_BEARER`.
     """
-    try:
-        return auth.decode(authorization)
-    except jwt.DecodeError:
-        _msg = "Failed to decode bearer token."
-    except jwt.InvalidAudienceError:
-        _msg = "Invalid bearer token audience."
-    except jwt.InvalidIssuerError:
-        _msg = "Invalid bearer token issuer."
-    except jwt.InvalidTokenError:
-        _msg = "Invalid bearer token."
-    except ValueError as err:
-        _msg = err.args[0]
-
-    raise HTTPException(401, detail="Invalid Token: " + _msg)
+    decoded, err = try_decode(auth, authorization)
+    if err is not None:
+        raise err
+    return decoded
 
 
+def token_optional(
+    auth: DependsAuth,
+    authorization: Annotated[str | None, Header()] = None,
+) -> Dict[str, str] | None:
+    if authorization is not None:
+        return token(auth, authorization)
+    return None
+
+
+DependsTokenOptional: TypeAlias = Annotated[
+    Dict[str, str],
+    Depends(token_optional),
+]
 DependsToken: TypeAlias = Annotated[Dict[str, str], Depends(token)]
 
 

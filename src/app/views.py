@@ -1,8 +1,7 @@
 """Api routers and functions. 
 This includes a metaclass so that undecorated functions may be tested.
 """
-import json
-import logging
+from http import HTTPMethod
 from typing import (
     Annotated,
     Any,
@@ -18,11 +17,8 @@ from typing import (
 )
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
-from fastapi.params import Param
-from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ValidationError
-from sqlalchemy import delete, func, label, literal_column, select, union, update
+from sqlalchemy import delete, literal_column, select, union, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import __version__, util
@@ -32,6 +28,7 @@ from app.depends import (
     DependsFilter,
     DependsSessionMaker,
     DependsToken,
+    DependsTokenOptional,
     DependsUUID,
 )
 from app.models import (
@@ -117,23 +114,30 @@ class ViewMeta(type):
     @classmethod
     def add_route(cls, T, name_fn: str, route: APIRoute):
         name = T.__name__
-        if "_" not in name_fn:
-            logger.debug(
-                "Ignoring `%s -> %s` of `%s.view_routes`.", name_fn, route, name
-            )
+
+        # Parse name
+        raw, _ = name_fn.split("_", 1)
+        http_meth = next((hh for hh in HTTPMethod if hh.value.lower() == raw), None)
+        if http_meth is None:
+            logger.warning(f"Could not determine method of `{name_fn}`.")
             return
 
-        logger.debug("Adding `%s` to `%s` router at `%s`.", name_fn, name, route)
-        http_meth, _ = name_fn.split("_", 1)
-        match http_meth:
-            case "get" | "post" | "delete" | "patch" | "put":
-                fn = getattr(T, name_fn, None)
-                if fn is None:
-                    msg = f"No such method `{name_fn}` of `{name}`."
-                    raise ValueError(msg)
-                getattr(T.view_router, http_meth)(route)(fn)  # type: ignore
-            case _:
-                logger.debug("Skipping `%s.%s`.", name, name_fn)
+        # Find attr
+        fn = getattr(T, name_fn, None)
+        if fn is None:
+            msg = f"No such method `{name_fn}` of `{name}`."
+            raise ValueError(msg)
+
+        # Create decorator kwargs
+        kwargs = dict()
+        if http_meth == HTTPMethod.POST:
+            kwargs.update(status_code=201)
+
+        # kwargs.update(views_route_args)
+
+        # Get the decoerator and call it.
+        decorator = getattr(T.view_router, http_meth.value.lower())
+        decorator(route, **kwargs)(fn)
 
     def __new__(cls, name, bases, namespace):
         T = super().__new__(cls, name, bases, namespace)
@@ -340,6 +344,9 @@ class CollectionView(BaseView):
             collection = Collection.if_exists(session, uuid)
             if collection.deleted:
                 raise HTTPException(404)
+            # elif not collection.public and token["uuid"] != collection.user.uuid:
+            #     raise HTTPException(404)
+
             user = User.if_exists(session, token["uuid"])
             user.check_can_access_collection(collection)
             return collection
@@ -375,7 +382,6 @@ class CollectionView(BaseView):
         uuid_collection: PathUUIDCollection,
         restore: bool = False,
     ) -> None:  # EventSchema:
-        print("HERE")
         event_common = dict(
             api_version=__version__,
             api_origin="DELETE /collections/<uuid>",
@@ -405,7 +411,6 @@ class CollectionView(BaseView):
             q = select(literal_column("uuid"))
             q = union(q.select_from(collection.q_select_documents()), p)
             uuid_document = set(session.execute(q).scalars())
-            print("uuid_document", uuid_document)
 
         event_assign_uuid: str | None = None
         if len(uuid_document):
@@ -424,7 +429,6 @@ class CollectionView(BaseView):
                 uuid_obj=token["uuid"],
             )
 
-            print("event_assign_uuid", event_assign_uuid)
             if event_assign_uuid is not None:
                 q = select(Event).where(Event.uuid == event_assign_uuid)
                 event_assignment = session.execute(q).scalar()
@@ -437,7 +441,6 @@ class CollectionView(BaseView):
                     api_origin=event_common["api_origin"],
                     detail=detail,
                 )
-                print("Appending...")
                 event.children.append(event_assignment)
 
             session.add(event)
@@ -547,12 +550,14 @@ class CollectionView(BaseView):
 
         uuid_event_assign: str | None = None
         if uuid_document:
-            uuid_event_assign = AssignmentView.post_assignment(
+            res = AssignmentView.post_assignment(
                 sessionmaker,
                 token,
                 uuid_collection,
                 uuid_document,
             ).uuid
+            # print(res.content)
+            # print(res.uuid)
 
         with sessionmaker() as session:
             event = Event(
@@ -578,8 +583,7 @@ class CollectionView(BaseView):
             session.commit()
             session.refresh(event)
 
-            dumper = EventSchema.model_validate(event).model_dump()
-            return JSONResponse(dumper, 201)
+            return EventSchema.model_validate(event)
 
 
 # NOTE: Should mirron :class:`GrantView`. Updates not supported, scoped by
@@ -621,9 +625,6 @@ class AssignmentView(BaseView):
                 )
             )
             uuid_assigned = set(session.execute(q_uuids).scalars())
-            print("uuid_document", uuid_document)
-            # print("q_uuids", q_uuids)
-            print("uuid_assigned", uuid_assigned)
 
             q = (
                 select(AssocCollectionDocument)
@@ -633,16 +634,13 @@ class AssignmentView(BaseView):
                     AssocCollectionDocument.id_collection == collection.id,
                 )
             )
-            # print("q", q)
             assocs = list((session.execute(q)).scalars())
             for assoc in assocs:
-                print("assoc ->", assoc.uuid)
                 assoc.deleted = not restore
                 session.add(assoc)
             session.commit()
 
             # Create events
-            # print(event_common)
             event = Event(
                 **event_common,
                 kind_obj=KindObject.collection,
@@ -712,7 +710,6 @@ class AssignmentView(BaseView):
                     AssocCollectionDocument.deleted,
                 )
             )
-            print("HERE")
             assocs_deleted = list(session.execute(q_assocs_deleted).scalars())
 
             events_reactivated: List[Event] = list()
@@ -806,8 +803,8 @@ class AssignmentView(BaseView):
             session.commit()
             session.refresh(event)
 
-            res = EventSchema.model_validate(event).model_dump()
-            return JSONResponse(res, 201)  # type: Ignore
+            res = EventSchema.model_validate(event)
+            return res
 
     @classmethod
     def get_assignment(
@@ -1110,10 +1107,7 @@ class GrantView(BaseView):
             session.add(event)
             session.commit()
 
-            return JSONResponse(
-                EventSchema.model_validate(event).model_dump(),
-                201,
-            )  # type: ignore
+            return EventSchema.model_validate(event)
 
 
 class UserView(BaseView):
@@ -1140,8 +1134,8 @@ class UserView(BaseView):
     def get_user(
         cls,
         makesession: DependsSessionMaker,
-        token: DependsToken,
         uuid: PathUUIDUser,
+        token: DependsTokenOptional = None,
     ) -> UserSchema:
         """Get user metadata.
 
@@ -1150,6 +1144,15 @@ class UserView(BaseView):
 
         with makesession() as session:
             user = User.if_exists(session, uuid, 404)
+            if user.deleted:
+                raise HTTPException(404)
+            elif user.public:
+                return user  # type: ignore
+            # At this point reject bad tokens. A user should be able to read
+            # their own account.
+            elif user != token["uuid"]:
+                raise HTTPException(401)
+
             return user  # type: ignore
 
     # NOTE: The token depends is included since API billing will depend on
@@ -1198,10 +1201,14 @@ class UserView(BaseView):
 
         with makesession() as session:
             user: User = User.if_exists(session, uuid)
+            if user.deleted:
+                raise HTTPException(404)
+
             children: List[Collection] | List[Edit] | List[Document]
             children = getattr(user, child)
-            if not len(children):
-                JSONResponse([], 204)
+
+            # if not len(children):
+            #     JSONResponse([], 204)
 
             return children  # type: ignore
 
@@ -1338,9 +1345,8 @@ class UserView(BaseView):
             )
 
             # Get exclusive_documents.
-            exclusive_documents = list(
-                session.execute(user.q_select_documents_exclusive()).scalars()
-            )
+            q = user.q_select_documents_exclusive()
+            exclusive_documents = list(session.execute(q).scalars())
             for dd in exclusive_documents:
                 event.children.append(
                     Event(
@@ -1442,10 +1448,7 @@ class UserView(BaseView):
                 session.commit()
 
             session.refresh(event)
-            return JSONResponse(  # type: ignore
-                EventSchema.model_validate(event).model_dump(),
-                status_code=201,
-            )
+            return EventSchema.model_validate(event)
 
 
 class AuthView(BaseView):
@@ -1503,7 +1506,6 @@ class EventView(BaseView):
 
             if tree:
                 while uuid_parent := event.uuid_parent:
-                    print(uuid_parent)
                     event = Event.if_exists(session, uuid_parent)
 
             return EventSchema.model_validate(event)
@@ -1527,6 +1529,11 @@ class EventView(BaseView):
             if uuid_obj:
                 q = q.where(Event.uuid_obj == uuid_obj)
 
+            q = q.order_by(Event.timestamp)
+            # q = q.order_by(Event.uuid)
+            # q = q.order_by(Event.uuid_parent)
+            # q = q.order_by(Event.uuid_obj)
+            q = q.order_by(Event.api_origin)
             events = list(session.execute(q).scalars())
             if tree:
                 events = list(

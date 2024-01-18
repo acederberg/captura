@@ -89,9 +89,11 @@ async def requests(
     return T(client_config, async_client, token=token)
 
 
-def event_compare(event: EventSchema, expect_common: Dict[str, Any]) -> None:
+def event_compare(
+    event: EventSchema, expect_common: Dict[str, Any], ignore: Set[str] = set()
+) -> None:
     assert event.uuid is not None
-    for field in EVENT_COMMON_FIELDS:
+    for field in EVENT_COMMON_FIELDS - ignore:
         value = getattr(event, field, None)
         value_expect = expect_common.get(field)
         if value is None:
@@ -157,24 +159,39 @@ def check_event_update(
     api_origin: str,
     uuid_obj: str,
     uuid_user: str,
-    detail: str,
+    detail: str | None = None,
 ) -> EventSchema:
     event = EventSchema.model_validate_json(res.content)
-    common = dict(api_version=__version__, kind=KindEvent.update)
+    common: Dict[str, Any] = dict(
+        api_version=__version__,
+        kind=KindEvent.update,
+    )
     common.update(
         kind_obj=kind_obj,
         api_origin=api_origin,
         uuid_user=uuid_user,
         uuid_obj=uuid_obj,
     )
-    event_compare(event, common)
-    assert event.detail == detail
+    event_compare(event, common, ignore={"detail"})
+    if detail is not None:
+        assert detail in event.detail
+
     for item in event.children:
         assert not len(item.children)
-        event_compare(event, common)
+        event_compare(event, common, ignore={"detail"})
 
-        assert detail in item.detail
-        assert any(field in item.detail for field in fields)
+        if detail is not None:
+            assert detail in item.detail
+
+        if "ownership transfered" in item.detail:
+            continue
+
+        bad = set(field for field in fields if field not in item.detail)
+        if bad:
+            raise AssertionError(
+                f"Detail `{item.detail}` of event `{item.uuid}` should "
+                f"contain one of the following: `{bad}`."
+            )
 
     return event
 
@@ -282,55 +299,69 @@ class TestUserViews(BaseTestViews):
         )
         if err := check_status(read, 200):
             raise err
-        elif err := check_status(update, 401):
+        elif err := check_status(update, 422):
             raise err
-        elif err := check_status(delete, 401):
+        elif err := check_status(delete, 422):
             raise err
+
+        # TODO: Add tests that only public users and documents can be read.
 
     # TODO: Add a test that collaborators can see this users account.
     @pytest.mark.asyncio
-    async def test_get_user_public(self, client: UserRequests):
+    async def test_get_user_public(self, client: UserRequests, auth: Auth):
         """Test GET /users/{uuid} for a private user.
 
         Eventually the queries should deal with 'deactivation' via API
         eventually.
         """
         response = await client.update(DEFAULT_UUID, public=False)
-        if err := check_status(response, 200):
+        if err := check_status(response):
             raise err
 
+        # Act like other user, should not be able to find.
+        token_init = client.token
+        client.token = (token_secondary := auth.encode({"uuid": "99d-99d-99d"}))
         response = await client.read(DEFAULT_UUID)
-        if err := check_status(response, 204):
+        if err := check_status(response, 401):
             raise err
 
+        # Back to initial user.
+        client.token = token_init
         response = await client.update(DEFAULT_UUID, public=True)
-        if err := check_status(response, 200):
+        if err := check_status(response):
             raise err
 
+        # Now other user should be able to find.
+        client.token = token_secondary
         response = await client.read(DEFAULT_UUID)
-        if err := check_status(response, 200):
+        if err := check_status(response):
             raise err
         result = response.json()
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    async def test_get_user_deleted(
-        self, client: UserRequests, sessionmaker: sessionmaker[Session]
-    ):
+    async def test_get_user_deleted(self, client, sessionmaker: sessionmaker[Session]):
         """Test `GET /users/{uuid}` on a user that has been deleted.
 
         This endpoint should state that the user has been deleted but provide a
         response with a `404` status code."""
 
-        async def get_all(status) -> Tuple[httpx.Response, ...]:
-            res = await asyncio.gather(
+        async def get_all(
+            status: int,
+            status_children: int | None = None,
+        ) -> Tuple[httpx.Response, ...]:
+            res_read, *res = await asyncio.gather(
                 client.read(DEFAULT_UUID),
                 client.read(DEFAULT_UUID, ChildrenUser.documents),
                 client.read(DEFAULT_UUID, ChildrenUser.collections),
             )
-            if err := next((check_status(rr, status) for rr in res), None):
+
+            status_children = status_children or status
+            if err := check_status(res_read, status):
                 raise err
-            return res
+            elif err := check_status(tuple(res), status_children):
+                raise err
+            return res_read, *res
 
         async def delete(restore=False):
             response = await client.delete(DEFAULT_UUID, restore=restore)
@@ -365,7 +396,8 @@ class TestUserViews(BaseTestViews):
 
         await delete()
 
-        res = await get_all(204)
+        # User shold not exist, nor should children.
+        res = await get_all(404)
         bad = list(rr.request.url for rr in res if rr.request.content)
         if len(bad):
             raise ValueError(
@@ -1245,6 +1277,8 @@ class TestCollectionView(BaseTestViews):
 
             # Stage collection for deletion
             collection.deleted = True
+            session.add(collection)
+            session.commit()
             res = await client.read(DEFAULT_UUID_COLLECTION)
             if err := check_status(res, 404):
                 raise err
@@ -1263,6 +1297,7 @@ class TestCollectionView(BaseTestViews):
             collection = Collection.if_exists(session, DEFAULT_UUID_COLLECTION)
             collection.user = user
             collection.public = False
+            collection.deleted = False
             session.add(collection)
             session.commit()
 
@@ -1273,7 +1308,7 @@ class TestCollectionView(BaseTestViews):
             assert isinstance(data, dict)
 
             # Assign the default collection to a new user and make it private.
-            user_new = User.if_exists(session, DEFAULT_UUID)
+            user_new = User.if_exists(session, "99d-99d-99d")
             collection.user = user_new
             session.add(collection)
             session.commit()
@@ -1329,8 +1364,8 @@ class TestCollectionView(BaseTestViews):
             case HTTPMethod.POST:
                 event_expected.update(
                     kind=KindEvent.create,
-                    detail="Collection created`.",
-                    api_origin=f"POST {url}/<uuid>",
+                    detail="Collection created.",
+                    api_origin=f"POST {url}",
                 )
             case HTTPMethod.PATCH:
                 event_expected.update(
@@ -1593,7 +1628,7 @@ class TestCollectionView(BaseTestViews):
                 assert len(data) == expect
 
                 res = await client.read(event.uuid_obj)
-                if err := check_status(res, 200 if expect else 404):
+                if err := check_status(res, 200 if expect else 403):
                     raise err
 
             # NOTE: Act like user `000-000-000` so that access controllers are
@@ -1769,7 +1804,7 @@ class TestCollectionView(BaseTestViews):
         fields = {"public", "name"}
         common = dict(
             kind_obj=KindObject.collection,
-            api_origin="PATCH /cofllection",
+            api_origin="PATCH /collections/<uuid>",
             uuid_obj=DEFAULT_UUID_COLLECTION,
             uuid_user=DEFAULT_UUID,
             detail="Collection updated",
@@ -1794,6 +1829,8 @@ class TestCollectionView(BaseTestViews):
         if (err := check_status(res)) is not None:
             raise err
 
+        common["detail"] = None
+        fields = {"public"}
         event, err = check_event_update(None, res, fields, **common)
         if err is not None:
             raise err
@@ -1803,7 +1840,11 @@ class TestCollectionView(BaseTestViews):
         if err := check_status(res, 403):
             raise err
 
-        requests.update_token(auth.encode({"uuid": "99d-99d-99d"}))
+        token_initial = requests.token
+        token_secondary = auth.encode({"uuid": "99d-99d-99d"})
+        requests.update_token(token_secondary)
+        assert requests.token == token_secondary
+        assert requests.collections.token == token_secondary
 
         res = await requests.collections.read(uuid_collection)
         if err := check_status(res):
