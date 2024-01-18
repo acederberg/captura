@@ -10,9 +10,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
-name = "articles-api"
+name = "captura"
 version = "0.0.0"
-description = "An api to server markdown and reStructured text as json or rendered HTML."
+description = "An api to serve markdown and reStructured text as json or rendered HTML."
 readme = "README.rst"
 keywords = ["api", "rst", "markdown"]
 #liscense = "Lisense :: OSI Approved :: MIT License"
@@ -112,3 +112,7 @@ push            = false
 
 
 [tool.setuptools_scm]
+
+
+[tool.setuptools.package-data]
+"captura" = ["py.typed"]
