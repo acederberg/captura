@@ -18,7 +18,7 @@ from typing import (
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
 from fastapi.routing import APIRoute
-from sqlalchemy import delete, literal_column, select, union, update
+from sqlalchemy import ScalarResult, delete, literal_column, select, union, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import __version__, util
@@ -39,6 +39,7 @@ from app.models import (
     Edit,
     Event,
     KindEvent,
+    KindRecurse,
     Level,
     KindObject,
     User,
@@ -79,6 +80,8 @@ QueryRoots: TypeAlias = Annotated[bool, Query()]
 QueryKindEvent: TypeAlias = Annotated[Optional[KindEvent], Query()]
 QueryKindObject: TypeAlias = Annotated[Optional[KindObject], Query()]
 QueryUUIDEventObject: TypeAlias = Annotated[Optional[str], Query()]
+QueryFlat: TypeAlias = Annotated[bool, Query()]
+QueryKindRecurse: TypeAlias = Annotated[None | KindRecurse, Query()]
 
 PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDCollection: TypeAlias = Annotated[str, Path()]
@@ -136,6 +139,7 @@ class ViewMeta(type):
         # kwargs.update(views_route_args)
 
         # Get the decoerator and call it.
+        logger.debug("Adding function `%s` at route `%s`.", fn.__name__, route)
         decorator = getattr(T.view_router, http_meth.value.lower())
         decorator(route, **kwargs)(fn)
 
@@ -1488,7 +1492,16 @@ class AuthView(BaseView):
 
 
 class EventView(BaseView):
-    view_routes = dict(get_event="/{uuid_event}", get_events="")
+    view_routes = dict(
+        get_event="/{uuid_event}",
+        get_events="",
+        patch_event_objects="/{uuid_event}/objects",
+        # patch_object="/{uuid_event}/objects/restore/{uuid_obj}",
+        # get_event_objects="/{uuid_event}/objects",
+    )
+
+    class EventWithPathSchema(EventBaseSchema):
+        uuid_root: str
 
     @classmethod
     def get_event(
@@ -1515,13 +1528,19 @@ class EventView(BaseView):
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
-        tree: QueryTree = True,
+        flatten: QueryFlat = True,
+        kind_recurse: QueryKindRecurse = None,
         kind: QueryKindEvent = None,
         kind_obj: QueryKindObject = None,
         uuid_obj: QueryUUIDEventObject = None,
-    ) -> List[EventBaseSchema]:
+    ) -> List[EventWithPathSchema] | List[EventBaseSchema]:
+        if not flatten and kind_recurse is not None:
+            detail = dict(kind_recurse=kind_recurse.name, flatten=flatten)
+            msg = "Cannot specify `kind_recurse` when `flatten` is `False`."
+            detail.update(msg=msg)
+            raise HTTPException(422, detail=detail)
         with sessionmaker() as session:
-            q = select(Event).where(Event.uuid_user == token["uuid"])
+            q = select(Event.uuid).where(Event.uuid_user == token["uuid"])
             if kind:
                 q = q.where(Event.kind == kind)
             if kind_obj:
@@ -1529,22 +1548,88 @@ class EventView(BaseView):
             if uuid_obj:
                 q = q.where(Event.uuid_obj == uuid_obj)
 
-            q = q.order_by(Event.timestamp)
-            # q = q.order_by(Event.uuid)
-            # q = q.order_by(Event.uuid_parent)
-            # q = q.order_by(Event.uuid_obj)
-            q = q.order_by(Event.api_origin)
-            events = list(session.execute(q).scalars())
-            if tree:
-                events = list(
-                    {
-                        root.uuid: root
-                        for ee in events
-                        if (root := ee.root()) is not None
-                    }.values()
-                )
+            q = q.where(Event.uuid_parent.is_(None))
+            uuid_event: Set[str] = set(session.execute(q).scalars())
 
-            return [EventBaseSchema.model_validate(ee) for ee in events]
+            if flatten:
+                q = Event.q_select_recursive(
+                    uuid_event,
+                    kind_recurse=kind_recurse,
+                ).order_by(Event.timestamp)
+                events = session.execute(q)
+                T = cls.EventWithPathSchema
+            else:
+                q = Event.q_uuid(uuid_event).order_by(Event.timestamp)
+                events = session.execute(q).scalars()
+                T = EventBaseSchema
+
+            return [T.model_validate(ee) for ee in events]  # type: ignore;
+
+    @classmethod
+    def patch_event_objects(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        uuid_event: PathUUIDUser,
+    ) -> List[EventWithPathSchema]:
+        """Restore a deletion from an event."""
+
+        with sessionmaker() as session:
+            event = Event.if_exists(session, uuid_event)
+            q = event.q_select_recursive({uuid_event})
+            print(q)
+            res = session.execute(q)
+            keys = res.keys()
+            print(keys)
+            events = list(dict(zip(keys, values)) for values in res.tuples())
+            return events
+            raise HTTPException(504)
+
+            detail = dict(uuid_event=uuid, uuid_user=token["uuid"])
+            if event.uuid_user != token["uuid"]:
+                detail.update(msg="User does not own event.")
+                raise HTTPException(403, detail=detail)
+            elif event.kind != KindEvent.delete:
+                detail.update(msg="Event must be a delete event.")
+                raise HTTPException(400, detail=detail)
+
+            event_common = dict(
+                api_version=__version__,
+                api_origin="PATCH /events/restore/<uuid>",
+                detail="Restoring deleted items from event",
+                uuid_user=token["uuid"],
+            )
+            event_event = Event(
+                kind=KindEvent.restore,
+                kind_obj=KindObject.event,
+                uuid_obj=event.uuid,
+                **event_common,
+            )
+
+            for item in event.flattened():
+                oo = item.object_()
+                if not oo:
+                    continue
+                oo.deleted = False
+                event_event.children.append(
+                    Event(
+                        kind=KindEvent.restore,
+                        kind_obj=KindObject.event,
+                        uuid_obj=token["uuid"],
+                        **event_common,
+                        children=[
+                            Event(
+                                kind=KindEvent.restore,
+                                kind_obj=item.kind_obj,
+                                uuid_obj=item.uuid_obj,
+                                **event_common,
+                            )
+                        ],
+                    )
+                )
+            session.commit()
+
+            return EventSchema.model_validate(event_event)
 
 
 class AppView(BaseView):

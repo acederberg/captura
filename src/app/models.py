@@ -4,10 +4,25 @@ from fastapi import HTTPException
 import secrets
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Self, Set, Tuple
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Self,
+    Set,
+    Tuple,
+    Type,
+)
 
 from sqlalchemy import (
+    CTE,
+    ColumnClause,
+    CompoundSelect,
     union,
+    union_all,
     BinaryExpression,
     ColumnElement,
     Enum,
@@ -18,6 +33,7 @@ from sqlalchemy import (
     func,
     literal_column,
     select,
+    text,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -40,6 +56,7 @@ from app import __version__
 # NOTE: These enums will be used throughout the program and a should be used
 #       to create the types needed by fastapi and typer.
 #
+
 
 LENGTH_NAME: int = 96
 LENGTH_TITLE: int = 128
@@ -67,6 +84,7 @@ class KindEvent(str, enum.Enum):
     update = "update"
     delete = "delete"
     grant = "grant"
+    restore = "restore"
 
 
 # This maps table names to their corresponding API names.
@@ -78,6 +96,11 @@ class KindObject(str, enum.Enum):
     event = "events"
     assignment = "_assocs_collections_documents"
     grant = "_assocs_users_documents"
+
+
+class KindRecurse(str, enum.Enum):
+    depth_first = "depth-first"
+    bredth_first = "bredth_first"
 
 
 class ChildrenUser(str, enum.Enum):
@@ -98,12 +121,14 @@ class ChildrenDocument(str, enum.Enum):
 # NOTE: Indexing is important as it is how the front end will get most data.
 #       This is done to keep relationships opaque (by keeping the primary keys
 #       out of the users views) and to avoid having to specify multiple primary
-#       keys for some resources (e.g. `AssocUserDocument`. See
+#       keys for some resources (e.g. `AssocUserDocument`). See
 #
 #       .. code::
 #
 #           https://dev.mysql.com/doc/refman/8.0/en/mysql-indexes.html
 #
+
+
 MappedColumnUUID = Annotated[
     str,
     mapped_column(
@@ -139,6 +164,10 @@ class Base(DeclarativeBase):
             detail["uuid"] = uuid
             raise HTTPException(status, detail=detail)
         return m
+
+    @classmethod
+    def q_uuid(cls, uuids: set[str]):
+        return select(cls).where(cls.uuid.in_(uuids))
 
 
 class MixinsPrimary:
@@ -221,6 +250,65 @@ class Event(Base):
 
         session = session or self.get_session()
         return Event.if_exists(session, self.uuid_parent, 500)
+
+    def flattened(self) -> Generator["Event", None, None]:
+        yield self
+        for child in self.children:
+            yield from child.flattened()
+
+    def object_(self) -> Any | None:
+        T = Tables[self.kind_obj.value]
+        session = self.get_session()
+        return session.execute(
+            select(T.value).where(T.value.uuid == self.uuid_obj),
+        ).scalar()
+
+    @classmethod
+    def cte_recursive(cls, uuid_event: str) -> CTE:
+        rand = secrets.token_urlsafe(4)
+        q = (
+            select(
+                Event,
+                uuid_root := literal_column(f"'{uuid_event}'").label("uuid_root"),
+                func.cast(Event.uuid, String(512)).label("path"),
+                literal_column("0").label("level"),
+            )
+            .where(Event.uuid == uuid_event)
+            .cte(f"find_children_{rand}", recursive=True)
+        )
+
+        roots_alias = q.alias(f"BB_{rand}")
+        events_alias = Event.__table__.alias(f"AA_{rand}")
+
+        p = select(
+            events_alias,
+            uuid_root,
+            func.concat(roots_alias.c.path, ",", events_alias.c.uuid).label("path"),
+            literal_column("level + 1").label("level"),
+        ).where(
+            events_alias.c.uuid_parent == roots_alias.c.uuid,
+            func.find_in_set(events_alias.c.uuid, roots_alias.c.path) == 0,
+        )
+        q = q.union_all(p)
+        return q
+
+    @classmethod
+    def q_select_recursive(
+        cls,
+        uuid_event: Set[str],
+        kind_recurse: KindRecurse = KindRecurse.depth_first,
+    ) -> CompoundSelect:
+        def qq(uuid):
+            q = select(cls.cte_recursive(uuid))
+            match kind_recurse:
+                case KindRecurse.depth_first:
+                    q = q.order_by(literal_column("path"))
+                case _:
+                    pass
+            q = q.order_by("timestamp")
+            return q
+
+        return union(*(qq(uuid) for uuid in uuid_event))
 
 
 class AssocCollectionDocument(Base):
@@ -658,6 +746,16 @@ class Edit(Base, MixinsPrimary):
     )
 
 
+class Tables(enum.Enum):
+    assignments = AssocCollectionDocument
+    grants = AssocUserDocument
+    events = Event
+    users = User
+    collections = Collection
+    documents = Document
+    edits = Edit
+
+
 __all__ = (
     "Base",
     "User",
@@ -666,4 +764,13 @@ __all__ = (
     "AssocUserDocument",
     "Document",
     "Edit",
+    "Tables",
+    "KindEvent",
+    "KindObject",
+    "Level",
+    "LevelStr",
+    "KindObject",
+    "ChildrenUser",
+    "ChildrenCollection",
+    "ChildrenDocument",
 )

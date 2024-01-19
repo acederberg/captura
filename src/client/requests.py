@@ -34,6 +34,7 @@ from app.models import (
     KindObject,
 )
 from app.schemas import UserUpdateSchema
+from app.views import KindRecurse
 
 from client.config import Config
 
@@ -46,6 +47,7 @@ CONSOLE = Console()
 class Verbage(str, enum.Enum):
     read = "read"
     search = "search"
+    restore = "restore"
     update = "update"
     delete = "delete"
     create = "create"
@@ -97,10 +99,16 @@ FlagUUIDDocumentsOptional: TypeAlias = Annotated[
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
 ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
 
+# Events
+
+FlagUUIDEvent = Annotated[str, typer.Option("--uuid-event")]
+FlagUUIDEventOptional = Annotated[Optional[str], typer.Option("--uuid-event")]
 
 # --------------------------------------------------------------------------- #
 # Field flags
 
+
+FlagColumns: TypeAlias = Annotated[List[str], typer.Option("--column")]
 FlagLevel: TypeAlias = Annotated[LevelStr, typer.Option("--level")]
 FlagName = Annotated[Optional[str], typer.Option("--name")]
 FlagDescription = Annotated[Optional[str], typer.Option("--description")]
@@ -109,6 +117,7 @@ FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
 FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
 FlagRestore = Annotated[bool, typer.Option("--restore/--delete")]
+FlagKindRecurse: TypeAlias = Annotated[KindRecurse, typer.Option("--recurse-strategy")]
 
 
 # --------------------------------------------------------------------------- #
@@ -132,7 +141,12 @@ RequestCallable = Callable[V, httpx.Response]
 from rich.table import Table
 
 
-def print_table(res: httpx.Response, data=None) -> None:
+def print_table(
+    res: httpx.Response,
+    *,
+    data=None,
+    columns: FlagColumns = list(),
+) -> None:
     table = Table()
 
     data = data or res.json()
@@ -149,7 +163,13 @@ def print_table(res: httpx.Response, data=None) -> None:
             f"Results must be a coerced into a `list`, have `{type(data)}`."
         )
 
-    keys = data[0].keys()
+    print("columns", columns)
+    keys = tuple(data[0].keys())
+    if columns:
+        keys = tuple(key for key in columns if keys)
+    print("keys", keys)
+
+    table.add_column("count")
     for count, key in enumerate(keys):
         table.add_column(
             key,
@@ -158,34 +178,46 @@ def print_table(res: httpx.Response, data=None) -> None:
         )
 
     if data:
-        for item in data:
+        for count, item in enumerate(data):
             flat = tuple(str(item[key]) for key in keys)
-            table.add_row(*flat)
+            table.add_row(str(count), *flat)
 
     CONSOLE.print(table)
 
 
-def print_json(res: httpx.Response, data=None) -> None:
+def print_json(res: httpx.Response, *, data=None) -> None:
     data = res.json() or data
     CONSOLE.print_json(json.dumps(data))
 
 
-def print_result(res: httpx.Response, output: FlagOutput, *, data=None) -> None:
+def print_result(
+    res: httpx.Response,
+    output: FlagOutput,
+    *,
+    columns: FlagColumns = list(),
+    data=None,
+) -> None:
     match output:
         case Output.json:
-            print_json(res, data)
+            print_json(res, data=data)
         case Output.table:
-            print_table(res, data)
+            print_table(res, data=data, columns=columns)
 
 
-def handle_response(res: httpx.Response, output: FlagOutput) -> None:
+def handle_response(
+    res: httpx.Response,
+    output: FlagOutput,
+    *,
+    columns: FlagColumns = None,
+    data=None,
+) -> None:
     try:
-        data = res.json()
+        data = data if data is not None else res.json()
     except json.JSONDecodeError:
         data = None
 
     if 200 <= res.status_code < 300:
-        print_result(res, output, data=data)
+        print_result(res, output, data=data, columns=columns)
     else:
         CONSOLE.print(f"[red]Recieved bad status code `{res.status_code}`.")
         if data:
@@ -195,6 +227,7 @@ def handle_response(res: httpx.Response, output: FlagOutput) -> None:
 class BaseRequests:
     """ """
 
+    columns: List[str]
     output: Output | None
     token: str | None
     config: Config
@@ -221,6 +254,7 @@ class BaseRequests:
         self.config = config
         self._client = client
         self.output = None
+        self.columns = list()
 
     @functools.cached_property
     def client(self) -> httpx.AsyncClient:
@@ -238,8 +272,12 @@ class BaseRequests:
             h.update(authorization=f"bearer {self.token}")
         return h
 
-    def callback(self, output: FlagOutput = Output.json):
+    def callback(self, output: FlagOutput = Output.json, columns: FlagColumns = list()):
         """Specify request output format."""
+        if output == Output.json and len(columns):
+            CONSOLE.print("Cannot specify `--columns` with `--output=json`.")
+            raise typer.Exit(1)
+
         if self.output is None:
             self.output = output
 
@@ -291,7 +329,7 @@ class BaseRequests:
                 self.client = client
                 self.token = self.config.defaults.token
                 response = await fn(*args, **kwargs)
-                handle_response(response, self.output)
+                handle_response(response, self.output, columns=self.columns)
                 return response
 
         # Make sync
@@ -584,17 +622,10 @@ class GrantRequests(BaseRequests):
 
 
 ArgUUIDEvent: TypeAlias = Annotated[str, typer.Argument()]
-FlagTree: TypeAlias = Annotated[
+FlagFlatten: TypeAlias = Annotated[
     bool,
     typer.Option(
-        "--tree/--no-tree",
-        help="Return the full event tree associated with search results.",
-    ),
-]
-FlagOnlyRoots: TypeAlias = Annotated[
-    bool,
-    typer.Option(
-        "--roots/--all",
+        "--flatten/--heads",
         help="Return only heads (entries with no parents).",
     ),
 ]
@@ -621,17 +652,34 @@ FlagUUIDEventObject: TypeAlias = Annotated[
 
 
 class EventsRequests(BaseRequests):
-    commands = ("read", "search")
+    commands = ("read", "search", "restore")
+    columns = [
+        "timestamp",
+        "uuid_root",
+        "uuid_parent",
+        "uuid",
+        "api_version",
+        "api_origin",
+        "kind",
+        "kind_obj",
+        "uuid_obj",
+    ]
 
-    def callback(self, output: FlagOutput = Output.table):
+    def callback(
+        self,
+        output: FlagOutput = Output.table,
+        columns: FlagColumns = list(),
+    ):
         """Specify request output format."""
         self.output = output
+        if not columns:
+            self.columns = columns
+        print(self.columns)
 
     async def read(
         self,
         uuid_event: ArgUUIDEvent,
-        tree: FlagTree = True,
-    ):
+    ) -> httpx.Response:
         return await self.client.get(
             f"/events/{uuid_event}",
             headers=self.headers,
@@ -640,18 +688,18 @@ class EventsRequests(BaseRequests):
 
     async def search(
         self,
-        roots: FlagOnlyRoots = True,
-        tree: FlagTree = True,
+        flatten: FlagFlatten = True,
         kind: FlagKind = None,
         kind_obj: FlagKindObject = None,
         uuid_obj: FlagUUIDEventObject = None,
-    ):
+        recurse: FlagKindRecurse = KindRecurse.depth_first,
+    ) -> httpx.Response:
         params = dict(
-            roots=roots,
-            tree=tree,
+            flatten=flatten,
             uuid_obj=uuid_obj,
-            kind=getattr(kind, "value", None),
-            kind_obj=getattr(kind_obj, "value", None),
+            kind=kind.value if kind is not None else None,
+            kind_obj=kind_obj.value if kind_obj is not None else None,
+            recurse=recurse.value if recurse is not None else None,
         )
         params = {k: v for k, v in params.items() if v is not None}
         return await self.client.get(
@@ -659,6 +707,26 @@ class EventsRequests(BaseRequests):
             headers=self.headers,
             params=params,
         )
+
+    async def restore(
+        self,
+        uuid_object: FlagUUIDEventObject = None,
+        uuid_event: FlagUUIDEventOptional = None,
+    ) -> httpx.Response:
+        match [uuid_object is None, uuid_event is None]:
+            case [True, True] | [False | False]:
+                CONSOLE.print(
+                    "Exactly one of `--uuid-object` and `--uuid-event` must be specified."
+                )
+                raise typer.Exit(1)
+            case [True, _]:
+                return await self.client.patch(
+                    f"/events/{uuid_event}/objects", headers=self.headers
+                )
+            case [_, True]:
+                return await self.client.patch(
+                    f"/events/objects/{uuid_object}", headers=self.headers
+                )
 
 
 class RequestsEnum(enum.Enum):

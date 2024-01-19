@@ -1,5 +1,7 @@
 from typing import Any, ClassVar, Dict, List, Self, Type
+import json
 
+from app import __version__
 import pytest
 import yaml
 from app import util
@@ -11,6 +13,7 @@ from app.models import (
     Document,
     Edit,
     Event,
+    KindEvent,
     KindObject,
     Level,
     User,
@@ -670,3 +673,38 @@ class TestEvent(BaseModelTest):
         session.commit()
 
     M = Event
+
+    def test_flattened(self):
+        def make_uuid(char: str) -> str:
+            return "-".join(char * 3 for _ in range(3))
+
+        def make(char: str, children: List[Event] = list()) -> Event:
+            uuid = make_uuid(char)
+            return Event(uuid=uuid, **common, children=children)
+
+        common = dict(
+            kind=KindEvent.create,
+            kind_obj=KindObject.event,
+            uuid_obj="666-666-666",
+            uuid_user="test-flattened",
+            detail="TEST FLATTENED",
+            api_version=__version__,
+            api_origin="TestEvent",
+        )
+
+        # Traversing the below tree depth first should reorder the letters
+        B = make("B", [make("C"), make("D"), make("E", [make("F"), make("G")])])
+        H = make(
+            "H",
+            [make("I", [make("J"), make("K", [make("L"), make("M", [make("N")])])])],
+        )
+        A = make("A", [B, H])
+
+        nodechars = "ABCDEFGHIJKLMN"
+        uuids = {
+            node.uuid: make_uuid(nodechars[index])
+            for index, node in enumerate(A.flattened())
+        }
+
+        # assert rich.print_json(json.dumps(uuids, indent=2))
+        assert list(uuids) == list(uuids.values())

@@ -13,7 +13,7 @@ From a mathmatical standpoint, this is 'good enough' because UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
@@ -191,6 +191,28 @@ class EventBaseSchema(BaseModel):
     kind_obj: KindObject
     timestamp: UnixTimestamp
     detail: str
+
+    @field_serializer("kind_obj", return_type=str)
+    def serailize_kind_obj(self, v: Any, info) -> str:
+        return v.name
+
+    @field_validator("kind_obj", mode="before")
+    def validate_level(cls, v: None | str | KindObject) -> None | KindObject:
+        print("==============================")
+        print("1", v, type(v))
+        w = v
+        if isinstance(v, str):
+            try:
+                w = KindObject[v]
+            except KeyError:
+                w = KindObject._value2member_map_.get(v)
+        print("2", w, type(w))
+        if w is None:
+            msg = f"Could not find enum value associated with `{v}`."
+            raise ValueError(msg)
+        print("3", w, type(w))
+
+        return w
 
 
 class EventSchema(EventBaseSchema):
