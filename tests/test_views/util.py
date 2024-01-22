@@ -11,7 +11,8 @@ from app import __version__
 import pytest_asyncio
 import httpx
 from app.auth import Auth
-from client.requests import Requests, BaseRequests
+from client.requests import Requests
+from client.util import BaseRequest
 from ..conftest import PytestClientConfig
 
 from typing import Type
@@ -29,8 +30,8 @@ async def requests(
     async_client: httpx.AsyncClient,
     auth: Auth,
     request,
-    T: Type[BaseRequests] = Requests,
-) -> BaseRequests:
+    T: Type[BaseRequest] = Requests,
+) -> BaseRequest:
     token = auth.encode(request.param or DEFAULT_TOKEN_PAYLOAD)
     return T(client_config, async_client, token=token)
 
@@ -143,7 +144,7 @@ def check_event_update(
 
 
 class BaseTestViews:
-    T: Type[BaseRequests]
+    T: Type[BaseRequest]
 
     @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
     async def client(

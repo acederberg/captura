@@ -592,12 +592,6 @@ class TestCollectionView(BaseTestViews):
             raise err
 
     @pytest.mark.asyncio
-    async def test_delete_collection_access(self, client: CollectionRequests):
-        """Users should only be able to delete their own collections with
-        `DELETE /collection/<uuid>`. They should not be able to delete
-        universal (userless) collections either."""
-
-    @pytest.mark.asyncio
     async def test_patch_collection(self, requests: Requests, auth: Auth):
         """General test of `PATCH /collection/<uuid>`."""
 
@@ -662,9 +656,16 @@ class TestCollectionView(BaseTestViews):
         if err := util.check_status(res):
             raise err
 
-    @pytest.mark.asyncio
-    async def test_patch_collection_access(self, client: CollectionRequests):
-        """Users should only be able to update their own collections with
-        `PATCH /collection/<uuid>`. They should not be able to update
-        universal (userless) collections either."""
-        ...
+    # @pytest.mark.asyncio
+    # async def test_patch_collection_access(self, client: CollectionRequests):
+    #     """Users should only be able to update their own collections with
+    #     `PATCH /collection/<uuid>`. They should not be able to update
+    #     universal (userless) collections either."""
+    #     ...
+
+    # @pytest.mark.asyncio
+    # async def test_delete_collection_access(self, client: CollectionRequests):
+    #     """Users should only be able to delete their own collections with
+    #     `DELETE /collection/<uuid>`. They should not be able to delete
+    #     universal (userless) collections either."""
+    #

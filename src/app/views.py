@@ -1,9 +1,8 @@
 """Api routers and functions. 
 This includes a metaclass so that undecorated functions may be tested.
 """
-import asyncio
-from datetime import datetime
 from http import HTTPMethod
+from os import walk
 from typing import (
     Annotated,
     Any,
@@ -13,14 +12,12 @@ from typing import (
     Literal,
     Optional,
     Set,
-    Tuple,
-    Type,
     TypeAlias,
 )
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, WebSocket
 from fastapi.routing import APIRoute
-from sqlalchemy import ScalarResult, delete, literal_column, select, union, update
+from sqlalchemy import delete, literal_column, select, union, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import __version__, util
@@ -1497,6 +1494,12 @@ class AuthView(BaseView):
 
 
 class EventView(BaseView):
+    """
+    ..
+        NOTE: Events should never return results in flattened format from
+              anywhere besides here.
+    """
+
     view_routes = dict(
         get_event="/{uuid_event}",
         get_events="",
@@ -1606,14 +1609,8 @@ class EventView(BaseView):
 
         with sessionmaker() as session:
             event = Event.if_exists(session, uuid_event)
-            q = event.q_select_recursive({uuid_event})
-            res = session.execute(q)
-            keys = res.keys()
-            events = list(dict(zip(keys, values)) for values in res.tuples())
-            return events
-            raise HTTPException(504)
 
-            detail = dict(uuid_event=uuid, uuid_user=token["uuid"])
+            detail = dict(uuid_event=uuid_event, uuid_user=token["uuid"])
             if event.uuid_user != token["uuid"]:
                 detail.update(msg="User does not own event.")
                 raise HTTPException(403, detail=detail)
@@ -1634,11 +1631,19 @@ class EventView(BaseView):
                 **event_common,
             )
 
-            for item in event.flattened():
+            lit_uuid = literal_column("uuid")
+            q_recurse = event.q_select_recursive({uuid_event})
+            flattened = select(lit_uuid).select_from(q_recurse)
+
+            for uuid in session.execute(flattened).scalars():
+                # print("uuid", uuid)
+                item = Event.if_exists(session, uuid, 500)
+                # print("item", item)
                 oo = item.object_()
                 if not oo:
                     continue
                 oo.deleted = False
+                # print("oo", oo)
                 event_event.children.append(
                     Event(
                         kind=KindEvent.restore,
@@ -1655,9 +1660,15 @@ class EventView(BaseView):
                         ],
                     )
                 )
-            session.commit()
 
-            return EventSchema.model_validate(event_event)
+            session.add(event_event)
+            session.commit()
+            session.refresh(event_event)
+            q = event.q_select_recursive({event_event.uuid})
+            # q = select(Event).where(Event.uuid.in_(select(lit_uuid).select_from(q)))
+            return [
+                EventWithRootSchema.model_validate(row) for row in session.execute(q)
+            ]
 
 
 class AppView(BaseView):

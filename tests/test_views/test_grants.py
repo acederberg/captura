@@ -14,7 +14,6 @@ from app.schemas import (
 )
 from client.requests import (
     GrantRequests,
-    Level,
 )
 from fastapi import HTTPException
 from sqlalchemy import delete, select

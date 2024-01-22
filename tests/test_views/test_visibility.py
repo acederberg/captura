@@ -9,7 +9,7 @@ publiic. The rules are as follows:
 from typing import Awaitable, Callable, ParamSpec
 import httpx
 import pytest
-from client.requests import RequestCallable, Requests
+from client.requests import Requests
 from . import util
 from .util import requests
 

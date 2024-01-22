@@ -438,3 +438,7 @@ class TestAssignmentView(BaseTestViews):
 
         assert len(res_collection.json()) == n
         assert len(res_collection.json()) == n
+
+    def test_assignment_restore_from_event(self, requests: Requests):
+        # Read user and their docs
+        ...

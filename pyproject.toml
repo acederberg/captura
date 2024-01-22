@@ -43,7 +43,8 @@ dependencies = [
   "typer",
   "rich",
   "pyjwt[crypto]",
-	"httpx"
+	"httpx",
+  "websockets",
 ]
 
 requires-python = ">=3.7" # because https://github.com/pydantic/pydantic/blob/main/pyproject.toml
@@ -95,6 +96,7 @@ ignore = [
 
 
 [tool.mypy]
+ignore_missing_imports = true
 
 
 [tool.bumpver]
@@ -109,7 +111,6 @@ push            = false
 [tool.bumpver.file_patterns]
 "pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
 "src/app/__init__.py" = ["{version}"]
-
 
 [tool.setuptools_scm]
 
