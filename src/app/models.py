@@ -310,6 +310,25 @@ class Event(Base):
 
         return union(*(qq(uuid) for uuid in uuid_event))
 
+    @classmethod
+    def q_select_search(
+        cls,
+        uuid_user: str,
+        *,
+        kind: str | None = None,
+        kind_obj: str | None = None,
+        uuid_obj: str | None = None,
+    ) -> Select:
+        q = select(cls.uuid).where(cls.uuid_user == uuid_user)
+        if kind is not None:
+            q = q.where(cls.kind == kind)
+        if kind_obj is not None:
+            q = q.where(cls.kind_obj == kind_obj)
+        if uuid_obj is not None:
+            q = q.where(cls.uuid_obj == uuid_obj)
+        q = q.where(Event.uuid_parent.is_(None))
+        return q
+
 
 class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"

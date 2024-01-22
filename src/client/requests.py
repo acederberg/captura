@@ -1,3 +1,4 @@
+import websockets
 import asyncio
 import enum
 import functools
@@ -6,16 +7,20 @@ import json
 from typing import (
     Annotated,
     Any,
+    AsyncGenerator,
+    Awaitable,
     Callable,
     ClassVar,
     Coroutine,
     Dict,
+    Generic,
     List,
     Optional,
     ParamSpec,
     Tuple,
     Type,
     TypeAlias,
+    TypeVar,
 )
 from typing_extensions import Self
 
@@ -177,10 +182,21 @@ def print_table(
             justify="center",
         )
 
-    if data:
-        for count, item in enumerate(data):
-            flat = tuple(str(item[key]) for key in keys)
-            table.add_row(str(count), *flat)
+    if not data:
+        CONSOLE.print("[green]No data to display.")
+        return
+
+    def norepeat(row: Dict[str, Any], row_last: Dict[str, Any], key: str):
+        value_row_last, value_row = row_last.get(key), row.get(key)
+        if value_row == value_row_last:
+            return "`"
+        return str(value_row)
+
+    row_last: Dict[str, Any] = dict()
+    for count, row in enumerate(data):
+        flat = tuple(norepeat(row, row_last, key) for key in keys)
+        table.add_row(str(count), *flat)
+        row_last = row
 
     CONSOLE.print(table)
 
@@ -653,17 +669,6 @@ FlagUUIDEventObject: TypeAlias = Annotated[
 
 class EventsRequests(BaseRequests):
     commands = ("read", "search", "restore")
-    columns = [
-        "timestamp",
-        "uuid_root",
-        "uuid_parent",
-        "uuid",
-        "api_version",
-        "api_origin",
-        "kind",
-        "kind_obj",
-        "uuid_obj",
-    ]
 
     def callback(
         self,
@@ -673,7 +678,11 @@ class EventsRequests(BaseRequests):
         """Specify request output format."""
         self.output = output
         if not columns:
+            columns = ["api_origin", "timestamp", "uuid_root"]
+            columns += ["uuid_parent", "uuid", "kind", "kind_obj"]
+            columns += ["uuid_obj"]
             self.columns = columns
+
         print(self.columns)
 
     async def read(
@@ -727,6 +736,58 @@ class EventsRequests(BaseRequests):
                 return await self.client.patch(
                     f"/events/objects/{uuid_object}", headers=self.headers
                 )
+
+    # async def ws_watch(
+    #     self,
+    #     watcher: Callable[
+    #         [websockets.WebSocketClientProtocol, Any],
+    #         Awaitable[None],
+    #     ],
+    #     flatten: FlagFlatten = True,
+    #     kind: FlagKind = None,
+    #     kind_obj: FlagKindObject = None,
+    #     uuid_obj: FlagUUIDEventObject = None,
+    #     recurse: FlagKindRecurse = KindRecurse.depth_first,
+    # ) -> None:
+    #     url = f"{self.config.host}/events"
+    #     params = dict(
+    #         flatten=flatten,
+    #         kind=kind,
+    #         kind_obj=kind_obj,
+    #         uuid_obj=uuid_obj,
+    #         recurse=recurse,
+    #     )
+    #     async with websockets.connect(url) as websocket:
+    #         await websocket.send(params)
+    #
+    #         while res := await websocket.recv():
+    #             await watcher(websocket, res)
+    #
+    # async def cmd_watch(
+    #     self,
+    #     flatten: FlagFlatten = True,
+    #     kind: FlagKind = None,
+    #     kind_obj: FlagKindObject = None,
+    #     uuid_obj: FlagUUIDEventObject = None,
+    #     recurse: FlagKindRecurse = KindRecurse.depth_first,
+    # ):
+    #     async def console_watcher(
+    #         websocket: websockets.WebSocketClientProtocol,
+    #         res: Any,
+    #     ) -> None:
+    #         CONSOLE.print("[green]===================================================")
+    #         CONSOLE.print(f"[green]Message Recv: {res}")
+    #         req = CONSOLE.input("[green]Message Sent: ")
+    #         await websocket.send(req)
+    #
+    #     params = dict(
+    #         flatten=flatten,
+    #         kind=kind,
+    #         kind_obj=kind_obj,
+    #         uuid_obj=uuid_obj,
+    #         recurse=recurse,
+    #     )
+    #     return self.ws_watch(console_watcher, *params)
 
 
 class RequestsEnum(enum.Enum):

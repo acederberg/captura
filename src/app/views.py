@@ -1,6 +1,8 @@
 """Api routers and functions. 
 This includes a metaclass so that undecorated functions may be tested.
 """
+import asyncio
+from datetime import datetime
 from http import HTTPMethod
 from typing import (
     Annotated,
@@ -16,13 +18,14 @@ from typing import (
     TypeAlias,
 )
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, WebSocket
 from fastapi.routing import APIRoute
 from sqlalchemy import ScalarResult, delete, literal_column, select, union, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import __version__, util
 from app.depends import (
+    DependsAsyncSessionMaker,
     DependsAuth,
     DependsConfig,
     DependsFilter,
@@ -57,6 +60,8 @@ from app.schemas import (
     EditSchema,
     EventBaseSchema,
     EventSchema,
+    EventSearchSchema,
+    EventWithRootSchema,
     GrantPostSchema,
     GrantSchema,
     PostUserSchema,
@@ -1500,9 +1505,6 @@ class EventView(BaseView):
         # get_event_objects="/{uuid_event}/objects",
     )
 
-    class EventWithPathSchema(EventBaseSchema):
-        uuid_root: str
-
     @classmethod
     def get_event(
         cls,
@@ -1524,46 +1526,74 @@ class EventView(BaseView):
             return EventSchema.model_validate(event)
 
     @classmethod
-    def get_events(
+    async def get_events(
         cls,
-        sessionmaker: DependsSessionMaker,
+        sessionmaker: DependsAsyncSessionMaker,
         token: DependsToken,
+        param: EventSearchSchema = Depends(),
         flatten: QueryFlat = True,
-        kind_recurse: QueryKindRecurse = None,
-        kind: QueryKindEvent = None,
-        kind_obj: QueryKindObject = None,
-        uuid_obj: QueryUUIDEventObject = None,
-    ) -> List[EventWithPathSchema] | List[EventBaseSchema]:
-        if not flatten and kind_recurse is not None:
-            detail = dict(kind_recurse=kind_recurse.name, flatten=flatten)
-            msg = "Cannot specify `kind_recurse` when `flatten` is `False`."
-            detail.update(msg=msg)
-            raise HTTPException(422, detail=detail)
-        with sessionmaker() as session:
-            q = select(Event.uuid).where(Event.uuid_user == token["uuid"])
-            if kind:
-                q = q.where(Event.kind == kind)
-            if kind_obj:
-                q = q.where(Event.kind_obj == kind_obj)
-            if uuid_obj:
-                q = q.where(Event.uuid_obj == uuid_obj)
+        kind_recurse: QueryKindRecurse = KindRecurse.depth_first,
+    ) -> List[EventWithRootSchema] | List[EventBaseSchema]:
+        # if not flatten and param.kind_recurse is not None:
+        #     detail = dict(
+        #         kind_recurse=param.kind_recurse.name,
+        #         flatten=flatten,
+        #     )
+        #     msg = "Cannot specify `kind_recurse` when `flatten` is `False`."
+        #     detail.update(msg=msg)
+        #     raise HTTPException(422, detail=detail)
 
-            q = q.where(Event.uuid_parent.is_(None))
-            uuid_event: Set[str] = set(session.execute(q).scalars())
+        async with sessionmaker() as session:
+            q = Event.q_select_search(token["uuid"], **param.model_dump())
+            res = await session.execute(q)
+            uuid_event: Set[str] = set(res.scalars())
 
             if flatten:
                 q = Event.q_select_recursive(
                     uuid_event,
                     kind_recurse=kind_recurse,
                 ).order_by(Event.timestamp)
-                events = session.execute(q)
-                T = cls.EventWithPathSchema
+                events = await session.execute(q)
+                T = EventWithRootSchema
             else:
                 q = Event.q_uuid(uuid_event).order_by(Event.timestamp)
-                events = session.execute(q).scalars()
+                events = (await session.execute(q)).scalars()
                 T = EventBaseSchema
 
-            return [T.model_validate(ee) for ee in events]  # type: ignore;
+            return [T.model_validate(ee) for ee in events]
+
+    ## TODO: Finish this later when time exists for it.
+    # @classmethod
+    # async def ws_events(
+    #     cls,
+    #     websocket: WebSocket,
+    #     sessionmaker: DependsAsyncSessionMaker,
+    #     token: DependsToken,
+    #     param: EventSearchSchema = Depends(),
+    #     flatten: QueryFlat = True,
+    #     kind_recurse: QueryKindRecurse = KindRecurse.depth_first,
+    #     wait: Annotated[int, Query(gt=1, lt=60)] = 1,
+    # ) -> None:
+    #     WS_MAX_LIFETIME: int = 36000
+    #
+    #     await websocket.accept()
+    #     timestamp_connection_start = int(datetime.timestamp(datetime.now()))
+    #     lifetime = 0
+    #
+    #     while (lifetime := lifetime + wait) < WS_MAX_LIFETIME:
+    #         # events = await cls.get_events(
+    #         #     sessionmaker,
+    #         #     token,
+    #         #     param=param,
+    #         #     flatten=flatten,
+    #         #     kind_recurse=kind_recurse,
+    #         # )
+    #         # await websocket.send_json(events)
+    #         # await asyncio.sleep(wait)
+    #         text = await websocket.receive_text()
+    #         await websocket.send(f"text = `{text}`.")
+    #
+    #     ...
 
     @classmethod
     def patch_event_objects(
@@ -1571,16 +1601,14 @@ class EventView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid_event: PathUUIDUser,
-    ) -> List[EventWithPathSchema]:
+    ) -> List[EventWithRootSchema]:
         """Restore a deletion from an event."""
 
         with sessionmaker() as session:
             event = Event.if_exists(session, uuid_event)
             q = event.q_select_recursive({uuid_event})
-            print(q)
             res = session.execute(q)
             keys = res.keys()
-            print(keys)
             events = list(dict(zip(keys, values)) for values in res.tuples())
             return events
             raise HTTPException(504)

@@ -24,6 +24,7 @@ from app.models import (
     LENGTH_NAME,
     LENGTH_URL,
     KindEvent,
+    KindRecurse,
     Level,
     KindObject,
 )
@@ -197,22 +198,28 @@ class EventBaseSchema(BaseModel):
         return v.name
 
     @field_validator("kind_obj", mode="before")
-    def validate_level(cls, v: None | str | KindObject) -> None | KindObject:
-        print("==============================")
-        print("1", v, type(v))
-        w = v
+    def validate_kind(cls, v: None | str | KindObject) -> None | KindObject:
         if isinstance(v, str):
             try:
                 w = KindObject[v]
             except KeyError:
                 w = KindObject._value2member_map_.get(v)
-        print("2", w, type(w))
-        if w is None:
-            msg = f"Could not find enum value associated with `{v}`."
-            raise ValueError(msg)
-        print("3", w, type(w))
+                if w is None:
+                    msg = f"Could not find enum value associated with `{v}`."
+                    raise ValueError(msg)
+            return w
 
-        return w
+        return v
+
+
+class EventSearchSchema(BaseModel):
+    kind: KindEvent | None = None
+    kind_obj: KindObject | None = None
+    uuid_obj: str | None = None
+
+
+class EventWithRootSchema(EventBaseSchema):
+    uuid_root: str
 
 
 class EventSchema(EventBaseSchema):

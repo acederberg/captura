@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from typing import Tuple
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio.session import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import util
@@ -68,7 +70,16 @@ def engine(config: DependsConfig) -> Engine:
     return config.engine()
 
 
+@cache
+def async_engine(config: DependsConfig) -> AsyncEngine:
+    logger.debug("Dependency `engine` called.")
+    return config.async_engine()
+
+
 DependsEngine: TypeAlias = Annotated[Engine, Depends(engine, use_cache=False)]
+DependsAsyncEngine: TypeAlias = Annotated[
+    AsyncEngine, Depends(async_engine, use_cache=False)
+]
 
 
 @cache
@@ -81,8 +92,26 @@ def session_maker(engine: DependsEngine) -> sessionmaker[Session]:
     return sessionmaker(engine)
 
 
+@cache
+def async_session_maker(
+    async_engine: DependsAsyncEngine,
+) -> async_sessionmaker[AsyncSession]:
+    """
+    :param engine: An ``sqlalchemy.engine``, probably from :func:`engine`.
+    :returns: A ``sqlalchemy.orm.sessionmaker`` for creating sessions.
+    """
+    logger.debug("Dependency `session_maker` called.")
+    print(async_engine)
+    return async_sessionmaker(bind=async_engine, class_=AsyncSession)
+
+
 DependsSessionMaker: TypeAlias = Annotated[
-    sessionmaker[Session], Depends(session_maker, use_cache=False)
+    sessionmaker[Session],
+    Depends(session_maker),
+]
+DependsAsyncSessionMaker: TypeAlias = Annotated[
+    async_sessionmaker[AsyncSession],
+    Depends(async_session_maker),
 ]
 
 

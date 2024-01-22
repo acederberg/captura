@@ -161,7 +161,6 @@ class TestAssignmentView(BaseTestViews):
 
         url = "/assignments/collections"
         request = response.request
-        print(response.json())
         event = event or EventSchema.model_validate_json(response.content)
         expect_common = dict(
             api_version=__version__,

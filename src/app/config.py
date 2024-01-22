@@ -21,19 +21,12 @@ Instead do
     def is_local(config: Annotated[Config, Depends(Config)]) -> bool:
         return config.m
 """
-import logging
-from functools import cache
-from os import environ
-from typing import Annotated, Literal
+from typing import Annotated
 
-from fastapi import Depends
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 from sqlalchemy.engine import URL, Engine, create_engine
-from yaml_settings_pydantic import (
-    BaseYamlSettings,
-    YamlFileConfigDict,
-    YamlSettingsConfigDict,
-)
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 from app import util
 
@@ -67,6 +60,7 @@ class MySqlHostConfig(BaseHashable):
     :attr database: The hosts database to use.
     """
 
+    drivername_async: Annotated[str, Field("mysql+asyncmy")]
     drivername: Annotated[str, Field("mysql+pymysql")]
     host: Annotated[str, Field("db")]
     port: Annotated[int, Field(3306)]
@@ -122,5 +116,17 @@ class Config(BaseHashable, BaseYamlSettings):
     auth0: Auth0Config
 
     def engine(self, **kwargs) -> Engine:
-        url = URL.create(**self.mysql.host.model_dump())
+        url = URL.create(
+            **self.mysql.host.model_dump(exclude={"drivername", "drivername_async"}),
+            drivername=self.mysql.host.drivername,
+        )
         return create_engine(url, **kwargs)
+
+    def async_engine(self, **kwargs) -> AsyncEngine:
+        url = URL.create(
+            **self.mysql.host.model_dump(
+                exclude={"drivername", "drivername_async"},
+            ),
+            drivername=self.mysql.host.drivername_async,
+        )
+        return create_async_engine(url, **kwargs)
