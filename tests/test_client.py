@@ -1,23 +1,43 @@
 import inspect
-from client.util import BaseRequest
+from typing import Any, Self
+from client.base import BaseRequest
 import httpx
 from client.config import Config
+from client.handlers import ConsoleHandler, Handler
 
 
 def test_base_request(client_config: Config):
+    class FooHandler:
+        status_code: int | None
+        data: Any | None
+
+        def __init__(self):
+            self.status_code = None
+            self.data = None
+
+        async def __call__(
+            self,
+            res: httpx.Response,
+            data: Any | None = None,
+        ) -> httpx.Response:
+            self.status_code = res.status_code
+            self.data = data or res.json()
+
+            return res
+
     class Req(BaseRequest):
         commands = ("read",)
         command = "test"
 
-        def read(self, foo: str, bar: str) -> httpx.Response:
-            ...
+        async def read(self, foo: str, bar: str) -> httpx.Response:
+            return httpx.Response(100)
 
-    # if not isinstance(Req.read, property):
-    #     msg = "`read` should be transformed into a function property."
-    #     raise ValueError(msg)
-    # assert len(Req.fns) == 1
-
-    req = Req(client_config)
+    foo: Handler = FooHandler()
+    req = Req(client_config, handler=foo)
     assert hasattr(req.read, "__call__")
 
-    assert print(inspect.signature(req.read))
+    sig = inspect.signature(req.read)
+    assert sig.return_annotation == httpx.Response
+    assert "foo" in sig.parameters
+    assert "bar" in sig.parameters
+    assert len(sig.parameters) == 2

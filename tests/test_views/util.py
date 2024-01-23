@@ -12,7 +12,7 @@ import pytest_asyncio
 import httpx
 from app.auth import Auth
 from client.requests import Requests
-from client.util import BaseRequest
+from client.base import BaseRequest
 from ..conftest import PytestClientConfig
 
 from typing import Type

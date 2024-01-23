@@ -14,7 +14,6 @@ from typing import (
     Dict,
 )
 
-import httpx
 from pydantic import BaseModel, Field
 from rich.console import Console
 import typer
@@ -26,20 +25,22 @@ from rich.table import Table
 
 
 # =========================================================================== #
-# OUTPUTS
+# Types and Constants
 
 CONSOLE = Console()
-# Handler = Callable[[httpx.Response, Optional[Any]], None]
-
-T = TypeVar("T", covariant=True)
 
 
-# NOTE: Usually a pydantic class with some chainable methods, expect `T` to be
-#       self. The pydantic class will have data derived by flags (usually
-#       created by a callback in typer or explicitly in tests).
-class Handler(Protocol, Generic[T]):
-    def __call__(self, res: httpx.Response, data: Any | None = None) -> T:
+class Handler(Protocol):
+    async def __call__(
+        self,
+        res: httpx.Response,
+        data: Any | None = None,
+    ) -> httpx.Response:
         ...
+
+
+# =========================================================================== #
+# Handler instances.
 
 
 class ConsoleHandler(BaseModel):
@@ -48,13 +49,11 @@ class ConsoleHandler(BaseModel):
     This should be built by a handler somewhere.
     """
 
-    # output: Annotated[Output, Field(default=Output.json)]
-    # columns: Annotated[List[str], Field()]
     output: Annotated[flags.FlagOutput, Field(default=Output.json)]
     columns: Annotated[flags.FlagColumns, Field(default_factory=list)]
     data: Annotated[Any | None, Field(default=None)]
 
-    def __call__(
+    async def __call__(
         self,
         res: httpx.Response,
         data=None,
@@ -153,8 +152,11 @@ class ConsoleHandler(BaseModel):
                     for uuid, item in data.items()
                 )
         if not isinstance(data, list):
-            raise ValueError(
-                f"Results must be a coerced into a `list`, have `{type(data)}`."
-            )
+            msg = "Results must be a coerced into a `list` "
+            msg += f"(is `{type(data)}`)."
+            raise ValueError(msg)
 
         return data
+
+
+foo: Handler = ConsoleHandler(output=Output.json, columns=list(), data=None)

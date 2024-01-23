@@ -1,3 +1,4 @@
+import inspect
 from typing import ClassVar, Type, TypeVar
 import functools
 import asyncio
@@ -33,7 +34,7 @@ import typer
 from client import flags
 from client.flags import Output, Verbage
 from client.config import Config
-from client.handlers import ConsoleHandler, Handler, T
+from client.handlers import ConsoleHandler, Handler
 
 
 # =========================================================================== #
@@ -49,17 +50,19 @@ from client.handlers import ConsoleHandler, Handler, T
 V = ParamSpec("V")
 S = TypeVar("S")
 RequestMethod = Callable[Concatenate[S, V], Awaitable[httpx.Response]]
-RequestMethodWithHandler = Callable[Concatenate[S, V], T]
 
 
-def try_handler(fn: RequestMethod) -> RequestMethodWithHandler:
-    @functools.wraps(fn)
-    async def wrapper(self, *args: V.args, **kwargs: V.kwargs) -> T:
-        res = await fn(self, *args, **kwargs)
+def try_handler(meth: RequestMethod) -> RequestMethod:
+    @functools.wraps(meth)
+    async def wrapper(
+        self,
+        *args: V.args,
+        **kwargs: V.kwargs,
+    ) -> httpx.Response:
+        res = await meth(self, *args, **kwargs)
         if self.handler:
-            if asyncio.iscoroutinefunction(self.handler):
-                return await self.handler(res)
-            return self.handler(res)
+            handler: Handler = self.handler
+            return await handler(res)
         return res
 
     return wrapper
@@ -117,11 +120,7 @@ class RequestMixins:
 class RequestMeta(type):
     def __new__(cls, name: str, base, _namespace):
         namespace: Dict[str, Any] = dict(
-            command="base",
-            children=tuple(),
-            commands=tuple(),
-            columns=None,
-            fns=None,
+            command="base", children=tuple(), commands=tuple()
         )
         namespace.update(_namespace)
 

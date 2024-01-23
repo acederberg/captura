@@ -15,9 +15,9 @@ from app.models import (
 from app.models import KindRecurse
 
 
-from client import flags, handlers
+from client import flags
 from client.flags import Output
-from client.util import BaseRequest, try_handler
+from client.base import BaseRequest
 from client.handlers import CONSOLE
 
 
