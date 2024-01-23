@@ -15,9 +15,10 @@ from app.models import (
 from app.models import KindRecurse
 
 
-from client import flags
+from client import flags, handlers
 from client.flags import Output
-from client.util import BaseRequest
+from client.util import BaseRequest, try_handler
+from client.handlers import CONSOLE
 
 
 class DocumentRequests(BaseRequest):
