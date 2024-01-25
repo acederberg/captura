@@ -1,4 +1,4 @@
-from typing import Any, AsyncGenerator
+from typing import Any, AnyStr, AsyncGenerator, Annotated, Dict
 
 import httpx
 import pytest
@@ -8,8 +8,8 @@ from app.auth import Auth
 from app.config import Config
 from app.models import Base
 from app.views import AppView
-from client.config import Config as ClientConfig
-from pydantic import BaseModel
+from client.config import Config as ClientConfig, ProfileConfig
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ class PytestSubConfig(BaseModel):
     """
 
     emit_sql: bool = False
-    recreate_tables: bool = False
+    recreate_tables: bool = True
 
 
 class PytestConfig(Config):
@@ -63,6 +63,10 @@ def config() -> PytestConfig:
     return PytestConfig()  # type: ignore
 
 
+class PyTestClientProfileConfig(ProfileConfig):
+    token: Annotated[str | None, Field()]  # type: ignore
+
+
 class PytestClientConfig(ClientConfig):
     model_config = YamlSettingsConfigDict(
         yaml_files={
@@ -72,7 +76,8 @@ class PytestClientConfig(ClientConfig):
             )
         }
     )
-    token: str | None = None
+
+    profiles: Annotated[Dict[str, PyTestClientProfileConfig], Field()] = None  # type: ignore
 
 
 @pytest.fixture(scope="session")
@@ -81,7 +86,15 @@ def client_config() -> PytestClientConfig:
         "`client_config` fixture called. Loading from `%s`.",
         util.PATH_CONFIG_TEST_CLIENT,
     )
-    return PytestClientConfig()
+    raw: Dict[str, Any] = dict(
+        hosts=dict(
+            docker=dict(host="http://localhost:8080", remote=True),
+            app=dict(host="http://localhost:8080", remote=False),
+        ),
+        profiles=dict(me=dict(token=None, uuid_user="000-000-000")),
+        use=dict(host="docker", profile="me"),
+    )
+    return PytestClientConfig(**raw)
 
 
 # =========================================================================== #
@@ -154,14 +167,14 @@ async def async_client(
     client: httpx.AsyncClient
 
     app = None
-    if not client_config.remote:
+    if (host := client_config.host) is None or host.remote:
         app = AppView.view_router
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
 
     async with httpx.AsyncClient(
         app=app,
-        base_url=client_config.host or "localhost:8080",
+        base_url=client_config.host.host,
     ) as client:
         yield client
 

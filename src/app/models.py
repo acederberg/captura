@@ -1,6 +1,6 @@
 import enum
 from logging import warn
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 import secrets
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -68,9 +68,10 @@ LENGTH_FORMAT: int = 8
 
 
 class Level(enum.Enum):
+    # NOTE: Must be consisten with sql
     view = 0
-    modify = 10
-    own = 20
+    modify = 1
+    own = 2
 
 
 class LevelStr(str, enum.Enum):
@@ -169,6 +170,14 @@ class Base(DeclarativeBase):
     def q_uuid(cls, uuids: set[str]):
         return select(cls).where(cls.uuid.in_(uuids))
 
+    def check_not_deleted(self, status_code: int = 410, msg=None) -> Self:
+        if not hasattr(self, "deleted"):
+            msg = f"`{self.__class__.__name__}` has no column `deleted`."
+            raise ValueError(msg)
+        if getattr(self, "deleted"):
+            raise HTTPException(status_code, msg="Item is deleted.")
+        return self
+
 
 class MixinsPrimary:
     """Creation and deletion data will go into the table associated with
@@ -205,15 +214,18 @@ class Event(Base):
         ForeignKey("events.uuid"),
         nullable=True,
     )
+    uuid_undo: Mapped[str | None] = mapped_column(ForeignKey("events.uuid"))
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
     uuid_obj: Mapped[MappedColumnUUID]
+
+    api_origin: Mapped[str] = mapped_column(String(64))
+    api_version: Mapped[str] = mapped_column(String(16), default=__version__)
     kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))
     kind_obj: Mapped[KindObject] = mapped_column(Enum(KindObject))
     detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
-    children: Mapped[List["Event"]] = relationship("Event")
-    api_origin: Mapped[str] = mapped_column(String(64))
-    api_version: Mapped[str] = mapped_column(String(16), default=__version__)
+    children: Mapped[List["Event"]] = relationship("Event", foreign_keys=uuid_parent)
+    undo: Mapped["Event"] = relationship("Event", foreign_keys=uuid_undo)
 
     user: Mapped["User"] = relationship()
 
@@ -244,24 +256,27 @@ class Event(Base):
                 uuid_user=uuid_user,
             )
 
-    def root(self, session: Session | None = None) -> Self:
-        if self.uuid_parent is None:
-            return self
+    # def root(self, session: Session | None = None) -> Self:
+    #     if self.uuid_parent is None:
+    #         return self
+    #
+    #     session = session or self.get_session()
+    #     return Event.if_exists(session, self.uuid_parent, 500)
 
-        session = session or self.get_session()
-        return Event.if_exists(session, self.uuid_parent, 500)
+    # def flattened(self) -> Generator["Event", None, None]:
+    #     yield self
+    #     for child in self.children:
+    #         yield from child.flattened()
 
-    def flattened(self) -> Generator["Event", None, None]:
-        yield self
-        for child in self.children:
-            yield from child.flattened()
-
-    def object_(self) -> Any | None:
-        T = Tables[self.kind_obj.value]
+    @property
+    def object_(self) -> "AnyModelBesidesEvent | None":
         session = self.get_session()
-        return session.execute(
-            select(T.value).where(T.value.uuid == self.uuid_obj),
-        ).scalar()
+        t = Tables[self.kind_obj.value].value
+        q = select(t).where(t.uuid == self.uuid_obj)
+        res = session.execute(q).scalar()  # type: ignore
+        if res is not None and res.__tablename__ == self.__tablename__:
+            return None
+        return res  # type: ignore
 
     @classmethod
     def cte_recursive(cls, uuid_event: str) -> CTE:
@@ -329,6 +344,32 @@ class Event(Base):
         q = q.where(Event.uuid_parent.is_(None))
         return q
 
+    def check_kind(
+        self, kind: KindEvent | None = None, kind_obj: KindObject | None = None
+    ) -> Self:
+        detail = dict(uuid_event=self.uuid)
+        fmt = "Expected event of kind `{}`."
+        if kind is not None and self.kind != kind:
+            msg = fmt.format(kind.name)
+            detail.update(kind_event=self.kind, kind_expected=kind, msg=msg)
+            raise HTTPException(400, detail=detail)
+        if kind_obj is not None and self.kind_obj != kind_obj:
+            msg = fmt.format(kind_obj.name)
+            detail.update(
+                kind_obj_event=self.kind_obj,
+                kind_obj_expected=kind_obj,
+                msg=fmt.format(kind_obj.name),
+            )
+            raise HTTPException(400, detail=detail)
+        return self
+
+    def check_not_undone(self):
+        if self.uuid_undo is not None:
+            msg = "Cannot undo event that has already been undone."
+            detail = dict(uuid_event=self.uuid, uuid_undo=self.uuid_undo, detail=msg)
+            raise HTTPException(400, detail=detail)
+        return self
+
 
 class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"
@@ -347,22 +388,32 @@ class AssocCollectionDocument(Base):
         primary_key=True,
     )
 
+    @property
     def uuid_document(self) -> str:
         session = self.get_session()
-        return session.execute(
+        res = session.execute(
             select(Document.uuid).where(Document.id == self.id_document)
         ).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
 
+    @property
     def uuid_collection(self) -> str:
         session = self.get_session()
-        return session.execute(
+        res = session.execute(
             select(Collection.uuid).where(Collection.id == self.id_collection)
         ).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
 
 
+# NOTE: Should be able to be passed directly into `GrantSchema`.
 class AssocUserDocument(Base):
     __tablename__ = "_assocs_users_documents"
 
+    deleted: Mapped[MappedColumnDeleted]
     uuid: Mapped[MappedColumnUUID]
     id_user: Mapped[int] = mapped_column(
         ForeignKey("users.id"),
@@ -374,17 +425,23 @@ class AssocUserDocument(Base):
     )
     level: Mapped[Level] = mapped_column(Enum(Level))
 
+    @property
     def uuid_document(self) -> str:
         session = self.get_session()
-        return session.execute(
+        res = session.execute(
             select(Document.uuid).where(Document.id == self.id_document)
         ).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
 
+    @property
     def uuid_user(self) -> str:
         session = self.get_session()
-        return session.execute(
-            select(User.uuid).where(User.id == self.id_user)
-        ).scalar()
+        res = session.execute(select(User.uuid).where(User.id == self.id_user)).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
 
 
 class User(Base, MixinsPrimary):
@@ -398,9 +455,6 @@ class User(Base, MixinsPrimary):
     description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
     url_image: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
     url: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
-
-    # This should be a dictionary of collection names mapping to lists of
-    # article names.
 
     # documents: Mapped[Dict[str, List[str]]] = relationship(Documents)
 
@@ -442,6 +496,7 @@ class User(Base, MixinsPrimary):
         if exclude_deleted:
             cond = and_(
                 Document.deleted == False,
+                AssocUserDocument.deleted == False,
                 cond,
             )
 
@@ -453,7 +508,7 @@ class User(Base, MixinsPrimary):
                 ),
             )
         if level is not None:
-            cond = and_(cond, AssocUserDocument.level >= level)
+            cond = and_(cond, AssocUserDocument.level >= level.value)
 
         return cond
 
@@ -461,6 +516,7 @@ class User(Base, MixinsPrimary):
         self,
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
+        exclude_deleted: bool = True,
     ) -> Select:
         # NOTE: Attempting to make roughly the following query:
         #
@@ -485,7 +541,8 @@ class User(Base, MixinsPrimary):
             .join(AssocUserDocument)
             .join(Document)
         )
-        q = q.where(self.q_conds_grants(document_uuids, level))
+        conds = self.q_conds_grants(document_uuids, level, exclude_deleted)
+        q = q.where(conds)
         return q
 
     def q_select_documents(
@@ -546,25 +603,28 @@ class User(Base, MixinsPrimary):
 
     def check_can_access_document(self, document: "Document", level: Level) -> Self:
         session = self.get_session()
-        assocs: List[Level] = list(
-            session.execute(
-                select(AssocUserDocument.level).where(
-                    AssocUserDocument.id_user == self.id,
-                    AssocUserDocument.id_document == document.id,
-                )
-            ).scalars()
+
+        q = self.q_select_grants({document.uuid}, level)
+        q_assoc_uuid = select(literal_column("uuid")).select_from(q)
+        q_assocs = select(AssocUserDocument).where(
+            AssocUserDocument.uuid.in_(q_assoc_uuid)
         )
+        # print(q_assocs.compile(session.bind, compile_kwargs={"literal_binds": True}))
+        res = session.execute(q_assocs).scalars()
+        assocs: List[AssocUserDocument] = list(res)
+        # print(res)
+
         detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
         if not (n := len(assocs)):
             detail.update(
-                msg="No grant for document.",
+                msg=f"No grant for document with level `{level.name}`.",
             )
             raise HTTPException(403, detail=detail)
         elif n != 1:
             # Server is a teapot because this is unlikely to ever happen.
             detail.update(msg="There should only be one grant.")
             raise HTTPException(418, detail=detail)
-        elif assocs[0].value < Level.own.value:
+        elif assocs[0].level.value < level.value:
             detail.update(msg=f"User must have grant of level `{level.name}`.")
             raise HTTPException(403, detail=detail)
 
@@ -572,6 +632,14 @@ class User(Base, MixinsPrimary):
 
     def check_sole_owner_document(self, document: "Document") -> Self:
         ...
+
+    def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
+        if self.uuid != event.uuid_user:
+            detail = dict(uuid_event=event.uuid, uuid_user=self.uuid)
+            detail.update(msg="User cannot access event.")
+            raise HTTPException(status_code, detail=detail)
+
+        return self
 
 
 class Collection(Base, MixinsPrimary):
@@ -602,7 +670,9 @@ class Collection(Base, MixinsPrimary):
     )
 
     def q_conds_assignment(
-        self, document_uuids: Set[str] | None = None, exclude_deleted: bool = True
+        self,
+        document_uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
     ) -> ColumnElement[bool]:
         # NOTE: To add the conditions for document select (like level) use
         #       `q_conds_assoc`.
@@ -618,7 +688,10 @@ class Collection(Base, MixinsPrimary):
 
         return cond
 
-    def q_select_assignment(self, document_uuids: Set[str] | None = None) -> Select:
+    def q_select_assignment(
+        self,
+        document_uuids: Set[str] | None = None,
+    ) -> Select:
         q = (
             select(
                 AssocCollectionDocument.uuid.label("uuid"),
@@ -691,9 +764,18 @@ class Document(Base, MixinsPrimary):
         return q
 
     def q_conds_grants(
-        self, user_uuids: Set[str] | None = None, level: Level | None = None
+        self,
+        user_uuids: Set[str] | None = None,
+        level: Level | None = None,
+        exclude_deleted: bool = True,
     ) -> ColumnElement[bool]:
         exp = AssocUserDocument.id_document == self.id
+        if exclude_deleted:
+            exp = and_(
+                exp,
+                AssocUserDocument.deleted == False,
+                User.deleted == False,
+            )
         if user_uuids is not None:
             exp = and_(
                 exp,
@@ -706,7 +788,10 @@ class Document(Base, MixinsPrimary):
         return exp
 
     def q_select_grants(
-        self, user_uuids: Set[str] | None = None, level: Level | None = None
+        self,
+        user_uuids: Set[str] | None = None,
+        level: Level | None = None,
+        exclude_deleted: bool = True,
     ) -> Select:
         """Query to find grants (AssocUserDocument) for this document.
 
@@ -725,7 +810,11 @@ class Document(Base, MixinsPrimary):
             .select_from(Document)
             .join(AssocUserDocument)
             .join(User)
-            .where(self.q_conds_grants(user_uuids=user_uuids, level=level))
+            .where(
+                self.q_conds_grants(
+                    user_uuids=user_uuids, level=level, exclude_deleted=exclude_deleted
+                )
+            )
         )
 
     def q_select_users(
@@ -773,6 +862,12 @@ class Tables(enum.Enum):
     collections = Collection
     documents = Document
     edits = Edit
+
+
+AnyModelBesidesEvent = (
+    AssocUserDocument | AssocCollectionDocument | User | Collection | Document | Edit
+)
+AnyModel = Event | AnyModelBesidesEvent
 
 
 __all__ = (

@@ -42,6 +42,85 @@ class TestAssignmentView(BaseTestViews):
     T = AssignmentRequests
 
     @classmethod
+    @util.checks_event
+    def check_event(
+        cls,
+        response: httpx.Response,
+        *,
+        uuid_document: List[str] | None,
+        uuid_assignment: List[str] | None,
+        restore: bool = False,
+        event: EventSchema | None = None,
+        **overwrite,
+    ) -> EventSchema:
+        """One function for event checking.
+
+        This will make tests more readable.
+        """
+
+        url = "/assignments/collections"
+        request = response.request
+        event = event or EventSchema.model_validate_json(response.content)
+        expect_common = dict(
+            api_version=__version__,
+            uuid_user=util.DEFAULT_UUID,
+            kind_obj=KindObject.assignment,
+        )
+
+        match request.method:
+            case HTTPMethod.GET:
+                msg = "`GET` should not return an `EventSchema`."
+                raise AssertionError(msg)
+            case HTTPMethod.POST:
+                expect_common.update(
+                    api_origin=f"POST {url}/<uuid>",
+                    kind=KindEvent.create,
+                    detail="Assignment created.",
+                )
+            case HTTPMethod.DELETE:
+                expect_common.update(
+                    api_origin=f"DELETE {url}/<uuid>",
+                    kind=KindEvent.delete,
+                    detail="Assignment deleted.",
+                )
+            case _:
+                raise ValueError(f"Unexpected method `{request.method}`.")
+
+        expect_common.update(overwrite)
+
+        # NOTE: This is done here and not in the pattern match since these
+        #       should have a similar structure.
+        # NOTE: This response is returned when the database has an entry staged
+        #       for deletion but it is restored. For `POST` requests it is
+        #       included only in the child events hence the logic below.
+        if not restore:
+            util.event_compare(event, expect_common)
+        elif request.method == "POST":
+            util.event_compare(event, expect_common)
+            expect_common.update(detail="Assignment restored.")
+        else:
+            expect_common.update(detail="Assignment restored.")
+            util.event_compare(event, expect_common)
+        assert event.kind_obj == KindObject.collection
+        assert event.uuid_obj == util.DEFAULT_UUID_COLLECTION
+
+        for item in event.children:
+            util.event_compare(item, expect_common)
+            assert len(item.children) == 1
+            assert item.kind_obj == KindObject.document
+            if uuid_document is not None:
+                assert item.uuid_obj in uuid_document
+
+            subitem, *_ = item.children
+            util.event_compare(subitem, expect_common)
+            assert len(subitem.children) == 0
+            assert subitem.kind_obj == KindObject.assignment
+            if uuid_assignment is not None:
+                assert subitem.uuid_obj in uuid_assignment
+
+        return event
+
+    @classmethod
     def add_assocs(
         cls,
         sessionmaker: sessionmaker[Session],
@@ -141,85 +220,6 @@ class TestAssignmentView(BaseTestViews):
             msg = "Expected no results for assignments staged for deletion."
             msg += f"Got `{json.dumps(result)}`."
             raise AssertionError(msg)
-
-    @classmethod
-    @util.checks_event
-    def check_event(
-        cls,
-        response: httpx.Response,
-        *,
-        uuid_document: List[str] | None,
-        uuid_assignment: List[str] | None,
-        restore: bool = False,
-        event: EventSchema | None = None,
-        **overwrite,
-    ) -> EventSchema:
-        """One function for event checking.
-
-        This will make tests more readable.
-        """
-
-        url = "/assignments/collections"
-        request = response.request
-        event = event or EventSchema.model_validate_json(response.content)
-        expect_common = dict(
-            api_version=__version__,
-            uuid_user=util.DEFAULT_UUID,
-            kind_obj=KindObject.assignment,
-        )
-
-        match request.method:
-            case HTTPMethod.GET:
-                msg = "`GET` should not return an `EventSchema`."
-                raise AssertionError(msg)
-            case HTTPMethod.POST:
-                expect_common.update(
-                    api_origin=f"POST {url}/<uuid>",
-                    kind=KindEvent.create,
-                    detail="Assignment created.",
-                )
-            case HTTPMethod.DELETE:
-                expect_common.update(
-                    api_origin=f"DELETE {url}/<uuid>",
-                    kind=KindEvent.delete,
-                    detail="Assignment deleted.",
-                )
-            case _:
-                raise ValueError(f"Unexpected method `{request.method}`.")
-
-        expect_common.update(overwrite)
-
-        # NOTE: This is done here and not in the pattern match since these
-        #       should have a similar structure.
-        # NOTE: This response is returned when the database has an entry staged
-        #       for deletion but it is restored. For `POST` requests it is
-        #       included only in the child events hence the logic below.
-        if not restore:
-            util.event_compare(event, expect_common)
-        elif request.method == "POST":
-            util.event_compare(event, expect_common)
-            expect_common.update(detail="Assignment restored.")
-        else:
-            expect_common.update(detail="Assignment restored.")
-            util.event_compare(event, expect_common)
-        assert event.kind_obj == KindObject.collection
-        assert event.uuid_obj == util.DEFAULT_UUID_COLLECTION
-
-        for item in event.children:
-            util.event_compare(item, expect_common)
-            assert len(item.children) == 1
-            assert item.kind_obj == KindObject.document
-            if uuid_document is not None:
-                assert item.uuid_obj in uuid_document
-
-            subitem, *_ = item.children
-            util.event_compare(subitem, expect_common)
-            assert len(subitem.children) == 0
-            assert subitem.kind_obj == KindObject.assignment
-            if uuid_assignment is not None:
-                assert subitem.uuid_obj in uuid_assignment
-
-        return event
 
     @pytest.mark.asyncio
     async def test_post_assignment(

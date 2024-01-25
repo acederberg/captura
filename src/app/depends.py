@@ -184,7 +184,7 @@ def token_optional(
 
 
 DependsTokenOptional: TypeAlias = Annotated[
-    Dict[str, str],
+    None | Dict[str, str],
     Depends(token_optional),
 ]
 DependsToken: TypeAlias = Annotated[Dict[str, str], Depends(token)]
@@ -241,16 +241,3 @@ def user(
 
 
 DependsUser: TypeAlias = Annotated[User, Depends(user)]
-
-
-# =========================================================================== #
-
-
-class Filter(BaseModel):
-    limit: int = 10
-    pattern: None | str = None
-    # NOTE: Tagging would be helpful
-    # tag: None | str = None
-
-
-DependsFilter: TypeAlias = Annotated[Filter, Depends()]

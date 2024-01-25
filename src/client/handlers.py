@@ -1,3 +1,4 @@
+import re
 import httpx
 from typing import (
     Annotated,
@@ -17,8 +18,11 @@ from typing import (
 from pydantic import BaseModel, Field
 from rich.console import Console
 import typer
+from rich.syntax import Syntax, SyntaxTheme
 
 from typing import Callable, Optional
+
+import yaml
 from client import flags
 from client.flags import Output
 from rich.table import Table
@@ -26,7 +30,9 @@ from rich.table import Table
 
 # =========================================================================== #
 # Types and Constants
+# About `CONSOLE_THEME`: https://pygments.org/docs/styles/#getting-a-list-of-available-styles
 
+CONSOLE_THEME = "fruity"
 CONSOLE = Console()
 
 
@@ -57,7 +63,7 @@ class ConsoleHandler(BaseModel):
         self,
         res: httpx.Response,
         data=None,
-    ) -> Self:
+    ) -> httpx.Response:
         try:
             data = data if data is not None else res.json()
         except json.JSONDecodeError:
@@ -67,16 +73,22 @@ class ConsoleHandler(BaseModel):
             self.print_err(res, data)
             raise typer.Exit(1)
 
+        status = None
         match self.output:
             case Output.json:
                 status = self.print_json(res, data)
             case Output.table:
                 status = self.print_table(res, data)
+            case Output.yaml:
+                status = self.print_yaml(res, data)
+            case _ as bad:
+                CONSOLE.print(f"[red]Unknown output format `{bad}`.")
+                raise typer.Exit(1)
 
         if status:
             raise typer.Exit(status)
 
-        return self
+        return res
 
     def print_err(self, res: httpx.Response, data=None) -> int:
         CONSOLE.print(f"[red]Request failed with status `{res.status_code}`.")
@@ -88,13 +100,26 @@ class ConsoleHandler(BaseModel):
     def print_json(self, res: httpx.Response, data=None) -> int:
         data = res.json() or data
         try:
-            stringified = json.dumps(data)
+            stringified = json.dumps(data, indent=2)
         except TypeError as err:
             CONSOLE.print("[red]Failed to decode response JSON.")
             CONSOLE.print(f"[red]{str(err)}")
             return 1
 
-        CONSOLE.print_json(stringified)
+        CONSOLE.print(Syntax(stringified, "json", theme=CONSOLE_THEME))
+        return 0
+
+    def print_yaml(self, res: httpx.Response, data=None) -> int:
+        data = res.json() or data
+        try:
+            stringified = yaml.dump(data)
+        except yaml.YAMLError as err:
+            CONSOLE.print("[red]Failed to decode response JSON.")
+            CONSOLE.print(f"[red]{str(err)}")
+            return 1
+
+        stringified = "# YAML Ouput\n---\n" + stringified
+        CONSOLE.print(Syntax(stringified, "yaml", theme=CONSOLE_THEME))
         return 0
 
     def print_table(self, res: httpx.Response, data=None) -> int:
@@ -116,7 +141,7 @@ class ConsoleHandler(BaseModel):
         if self.columns:
             keys = tuple(key for key in self.columns if keys)
 
-        if not self.columns or "count" in self.columns:
+        if include_count := not self.columns or "count" in self.columns:
             table.add_column("count")
 
         for ii, key in enumerate(keys):
@@ -137,7 +162,10 @@ class ConsoleHandler(BaseModel):
         row_last: Dict[str, Any] = dict()
         for count, row in enumerate(data):
             flat = tuple(omit(row, row_last, key) for key in keys)
-            table.add_row(str(count), *flat)
+            if include_count:
+                table.add_row(str(count), *flat)
+            else:
+                table.add_row(*flat)
             row_last = row
 
         return table
@@ -159,4 +187,4 @@ class ConsoleHandler(BaseModel):
         return data
 
 
-foo: Handler = ConsoleHandler(output=Output.json, columns=list(), data=None)
+# foo: Handler = ConsoleHandler(output=Output.json, columns=list(), data=None)

@@ -2,6 +2,7 @@ import inspect
 from typing import ClassVar, Type, TypeVar
 import functools
 import asyncio
+from app.views import AppView
 
 import fastapi
 from client import flags
@@ -78,12 +79,11 @@ class RequestMixins:
     children: ClassVar[Tuple[Type[Self], ...]]
 
     children_instances: Dict[str, "BaseRequest"]
-    token: str | None
+    _token: str | None
     config: Config
     handler: Handler | None
 
     _client: httpx.AsyncClient | None
-    _app: fastapi.FastAPI | None
 
     # NOTE: Handler should only be passed for non cli purposes (i.e. in pytest
     #       fixtures). In the case of typer, the callback will create a
@@ -95,25 +95,22 @@ class RequestMixins:
         token: str | None = None,
         *,
         children_instances: Dict[str, "BaseRequest"] = dict(),
-        app: fastapi.FastAPI | None = None,
         handler: Handler | None = None,
     ):
         self.config = config
         self._client = client
 
         self.children_instances = children_instances
-        self.token = token
+        self._token = token
         self.handler = handler
-        self._app = app
 
     @classmethod
     def from_(cls, v: "BaseRequest") -> Self:
         return cls(
             handler=v.handler,
             client=v._client,
-            app=v._app,
             config=v.config,
-            token=v.token,
+            token=v._token,
         )
 
 
@@ -159,8 +156,11 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
         """Add client and self. Make sync."""
 
         async def wrapper(*args: V.args, **kwargs: V.kwargs):
+            app = None
+            if not self.config.host.remote:
+                app = AppView.view_router
             async with httpx.AsyncClient(
-                base_url=self.config.host, app=self._app
+                base_url=self.config.host.host, app=app
             ) as client:
                 self.client = client
                 res = await fn(*args, **kwargs)
@@ -180,7 +180,6 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
     @functools.cached_property
     def typer(self) -> typer.Typer:
         # Necessary are the function from `fns` must be bound.
-
         t: typer.Typer = typer.Typer(callback=self.callback)
         for command in self.commands:
             command_clean = command.replace("_", "-")
@@ -197,6 +196,12 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
             t.add_typer(requester.typer, name=name)
 
         return t
+
+    @property
+    def token(self):
+        if self._token is not None:
+            return self._token
+        return self.config.profile.token
 
     @property
     def headers(self):

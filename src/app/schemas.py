@@ -13,9 +13,17 @@ From a mathmatical standpoint, this is 'good enough' because UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
-from typing import Annotated, Any, List, Literal, Optional
+import enum
+from typing import Annotated, Any, List, Literal, Optional, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from app.models import (
     LENGTH_CONTENT,
@@ -30,13 +38,14 @@ from app.models import (
 )
 
 UUID = Annotated[
-    None | str,
-    Field(
+    str,
+    _FieldUUID := Field(
         min_length=4,
         max_length=16,
         description="Universally unique identifier for a table row.",
     ),
 ]
+UUIDOptional = Annotated[str | None, _FieldUUID]
 UnixTimestamp = Annotated[None | int, Field(description="Unix timestamp.")]
 Name = Annotated[str, Field(min_length=1, max_length=LENGTH_NAME)]
 Description = Annotated[
@@ -49,18 +58,8 @@ Format = Annotated[Literal["md", "rst", "tEx"], Field(default="md")]
 Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
 
 
-def generate_alias(v: str) -> str:
-    if v.startswith("_"):
-        v = v.replace("_", "", 1)
-    return v
-
-
-class BaseSchema(BaseModel):
-    model_config = ConfigDict(alias_generator=generate_alias)
-    updated_timestamp: UnixTimestamp
-    created_timestamp: UnixTimestamp
-    updated_by_user_uuid: UUID
-    created_by_user_uuid: UUID
+class BaseSearchSchema(BaseModel):
+    limit: int = 10
 
 
 # =========================================================================== #
@@ -76,11 +75,16 @@ class UserUpdateSchema(BaseModel):
 
 
 class UserSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     uuid: UUID = None
     name: Name
     description: Description
     url_image: Url = None
     url: Url = None
+
+
+class UserSearchSchema(BaseSearchSchema):
+    name_like: str | None = None
 
 
 # =========================================================================== #
@@ -136,13 +140,17 @@ class DocumentMetadataSchema(BaseModel):
 
 class DocumentSchema(DocumentMetadataSchema):
     # name: Name
-    uuid: UUID = None
     content: Content
     public: bool = True
 
 
 class DocumentPostSchema(BaseModel):
     public: bool = True
+
+
+class DocumentSearchSchema(BaseSearchSchema):
+    name_like: str | None = None
+    description_like: str | None = None
 
 
 class GrantPostSchema(BaseModel):
@@ -184,7 +192,7 @@ class EventBaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     api_origin: str
     api_version: str
-    uuid_parent: UUID
+    uuid_parent: UUIDOptional
     uuid: UUID
     uuid_obj: UUID
     uuid_user: UUID
@@ -224,6 +232,49 @@ class EventWithRootSchema(EventBaseSchema):
 
 class EventSchema(EventBaseSchema):
     children: Annotated["List[EventSchema]", Field(default=list())]
+
+
+class KindObjectMinimalSchema(enum.Enum):
+    users = UserSchema
+    collections = CollectionMetadataSchema
+    documents = DocumentMetadataSchema
+    events = EventSchema
+    assignments = AssignmentSchema
+    grants = GrantSchema
+
+
+AnyMinimalSchema = (
+    EventSchema
+    | UserSchema
+    | DocumentMetadataSchema
+    | CollectionMetadataSchema
+    | AssignmentSchema
+    | GrantSchema
+)
+
+
+class ObjectSchema(BaseModel):
+    kind: KindObject
+    data: AnyMinimalSchema
+
+
+class EventsObjectsSchema(BaseModel):
+    objects: List[ObjectSchema | None]
+    events: List[EventWithRootSchema]
+
+    @model_validator(mode="after")
+    def check_lengths(self) -> Self:
+        p, q = (len(self.objects), len(self.events))
+        if p != q:
+            msg = "`events` and `objects` must have the same length."
+            raise ValueError(msg)
+        return self
+
+
+class EventActionSchema(BaseModel):
+    action: KindEvent
+    events: List[EventWithRootSchema]
+    detail: EventsObjectsSchema
 
 
 # =========================================================================== #

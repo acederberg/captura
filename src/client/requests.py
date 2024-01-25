@@ -2,6 +2,8 @@ import enum
 from typing import (
     Any,
     Dict,
+    ParamSpec,
+    TypeVar,
 )
 
 import httpx
@@ -18,21 +20,37 @@ from app.models import KindRecurse
 from client import flags
 from client.flags import Output
 from client.base import BaseRequest
-from client.handlers import CONSOLE
+from client.handlers import CONSOLE, ConsoleHandler
+
+
+T, S = TypeVar("T"), TypeVar("S")
+
+
+def params(**kwargs) -> Dict[str, Any]:
+    return {k: v for k, v in kwargs.items() if v is not None}
 
 
 class DocumentRequests(BaseRequest):
     command = "documents"
-    commands = ("read",)
+    commands = ("read", "search")
 
-    async def read(
+    async def read(self, uuid_document: flags.ArgUUIDDocument) -> httpx.Response:
+        url = f"/documents/{uuid_document}"
+        return await self.client.get(url, headers=self.headers)
+
+    async def search(
         self,
-        document_ids: flags.FlagUUIDDocuments = [],
-    ) -> httpx.Response:
-        url = "/documents"
+        limit: flags.FlagLimit = 10,
+        name_like: flags.FlagNameLike = None,
+        description_like: flags.FlagDescriptionLike = None,
+    ):
         return await self.client.get(
-            url,
-            params=dict(document_ids=document_ids),
+            "/documents",
+            params=params(
+                limit=limit,
+                name_like=name_like,
+                description_like=description_like,
+            ),
             headers=self.headers,
         )
 
@@ -118,7 +136,18 @@ class CollectionRequests(BaseRequest):
 
 class UserRequests(BaseRequest):
     command = "users"
-    commands = ("read", "update", "create", "delete")
+    commands = ("read", "search", "update", "create", "delete")
+
+    async def search(
+        self,
+        limit: flags.FlagLimit = 10,
+        name_like: flags.FlagNameLike = None,
+    ):
+        return await self.client.get(
+            "/users",
+            headers=self.headers,
+            params=params(limit=limit, name_like=name_like),
+        )
 
     async def read(
         self,
@@ -324,7 +353,10 @@ class EventsRequests(BaseRequest):
             columns += ["uuid_obj", "detail"]
             self.columns = columns
 
-        print(self.columns)
+        self.handler = ConsoleHandler(
+            output=output,
+            columns=columns,
+        )
 
     async def read(
         self,
@@ -344,6 +376,7 @@ class EventsRequests(BaseRequest):
         uuid_obj: flags.FlagUUIDEventObject = None,
         recurse: flags.FlagKindRecurse = KindRecurse.depth_first,
     ) -> httpx.Response:
+        print(self.handler)
         params = dict(
             flatten=flatten,
             uuid_obj=uuid_obj,
@@ -375,7 +408,8 @@ class EventsRequests(BaseRequest):
                 )
             case [True, True] | [False | False] | _:
                 CONSOLE.print(
-                    "Exactly one of `--uuid-object` and `--uuid-event` must be specified."
+                    "Exactly one of `--uuid-object` and `--uuid-event` must "
+                    "be specified."
                 )
                 raise typer.Exit(1)
 
@@ -462,7 +496,27 @@ class Requests(BaseRequest):
             setattr(self, child.name, child.value.from_(self))
 
     def update_token(self, token: str):
-        self.token = token
+        self._token = token
         for ee in RequestsEnum:
             requester = getattr(self, ee.name)
-            requester.token = token
+            requester._token = token
+
+    def callback(
+        self,
+        profile: flags.FlagProfile = None,
+        host: flags.FlagHost = None,
+    ) -> None:
+        """Update configuration from typer flags.
+
+        Put this in `typer.callback`."""
+        if profile is not None:
+            self.config.use.profile = profile
+        if self.config.profile is None:
+            CONSOLE.print(f"Missing configuration for host `{profile}`.")
+            raise typer.Exit(1)
+
+        if host is not None:
+            self.config.use.host = host
+        if self.config.host is None:
+            CONSOLE.print(f"Missing configuration for host `{profile}`.")
+            raise typer.Exit(1)

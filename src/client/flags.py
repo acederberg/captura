@@ -1,4 +1,5 @@
 from app.models import KindEvent, KindObject
+import yaml
 import enum
 import typer
 from app.models import (
@@ -28,6 +29,7 @@ class Verbage(str, enum.Enum):
 
 class Output(str, enum.Enum):
     json = "json"
+    yaml = "yaml"
     table = "table"
 
 
@@ -88,6 +90,11 @@ FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
 FlagRestore = Annotated[bool, typer.Option("--restore/--delete")]
 FlagKindRecurse: TypeAlias = Annotated[KindRecurse, typer.Option("--recurse-strategy")]
+FlagNameLike: TypeAlias = Annotated[Optional[str], typer.Option("--name-like")]
+FlagDescriptionLike: TypeAlias = Annotated[
+    Optional[str], typer.Option("--description-like")
+]
+FlagLimit: TypeAlias = Annotated[int, typer.Option("--limit")]
 
 
 # --------------------------------------------------------------------------- #
@@ -132,5 +139,24 @@ FlagUUIDEventObject: TypeAlias = Annotated[
         "--uuid-object",
         "--uuid",
         help="Target object UUID.",
+    ),
+]
+
+# --------------------------------------------------------------------------- #
+# Configuration Flags.
+
+FlagHost: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(
+        "--host",
+        help="Host from configuration to use.",
+    ),
+]
+FlagProfile: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(
+        "--profile",
+        "-p",
+        help="Profile from configuration to use.",
     ),
 ]

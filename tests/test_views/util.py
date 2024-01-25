@@ -4,13 +4,13 @@ import pytest
 import functools
 import json
 from typing import Dict, Any, Set, Callable, ParamSpec, Concatenate
-from app import util as u
 from app.schemas import EventSchema
 from app.models import KindEvent
 from app import __version__
 import pytest_asyncio
 import httpx
 from app.auth import Auth
+from app import util as u
 from client.requests import Requests
 from client.base import BaseRequest
 from ..conftest import PytestClientConfig
@@ -24,16 +24,8 @@ DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
 EVENT_COMMON_FIELDS = {"api_origin", "api_version", "kind", "uuid_user", "detail"}
 
 
-@pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
-async def requests(
-    client_config: PytestClientConfig,
-    async_client: httpx.AsyncClient,
-    auth: Auth,
-    request,
-    T: Type[BaseRequest] = Requests,
-) -> BaseRequest:
-    token = auth.encode(request.param or DEFAULT_TOKEN_PAYLOAD)
-    return T(client_config, async_client, token=token)
+# =========================================================================== #
+# Checks and compares
 
 
 def event_compare(
@@ -143,27 +135,9 @@ def check_event_update(
     return event
 
 
-class BaseTestViews:
-    T: Type[BaseRequest]
-
-    @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
-    async def client(
-        self,
-        client_config: PytestClientConfig,
-        async_client: httpx.AsyncClient,
-        auth: Auth,
-        request,
-    ):
-        token = auth.encode(request.param)
-        return self.T(client_config, async_client, token=token)
-
-    @pytest.fixture(scope="session", autouse=True)
-    def invoke_loader(self, load_tables, setup_cleanup):
-        ...
-
-
 def check_status(
-    response: httpx.Response | Tuple[httpx.Response, ...], expect: int | None = None
+    response: httpx.Response | Tuple[httpx.Response, ...],
+    expect: int | None = None,
 ) -> AssertionError | None:
     # DO RECURSE
     if isinstance(response, tuple):
@@ -208,3 +182,62 @@ def check_status(
         msg += f"\nAuthorization: {auth}"
 
     return AssertionError(msg)
+
+
+# =========================================================================== #
+# Objects
+
+
+class BaseTestViews:
+    T: Type[BaseRequest]
+
+    @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
+    async def client(
+        self,
+        client_config: PytestClientConfig,
+        async_client: httpx.AsyncClient,
+        auth: Auth,
+        request,
+    ):
+        token = auth.encode(request.param)
+        return self.T(client_config, async_client, token=token)
+
+    @pytest.fixture(scope="session", autouse=True)
+    def invoke_loader(self, load_tables, setup_cleanup):
+        ...
+
+
+class PytestHandler:
+    # err: AssertionError | None
+    data: Any | None
+    res: httpx.Response | None
+
+    def __init__(self):
+        # self.err = None
+        self.data = None
+        self.res = None
+
+    async def __call__(
+        self, res: httpx.Response, data: Any | None = None
+    ) -> httpx.Response:
+        # self.err = None
+        # self.data = (data := data or res.json())
+        # if err := check_status(res):
+        #     self.err = err
+        return res
+
+
+# =========================================================================== #
+# Fixtures
+
+
+@pytest_asyncio.fixture(params=[PytestHandler()])
+async def requests(
+    client_config: PytestClientConfig,
+    async_client: httpx.AsyncClient,
+    auth: Auth,
+    request,
+) -> BaseRequest:
+    token = auth.encode(DEFAULT_TOKEN_PAYLOAD)
+    handler = request.param
+    return Requests(client_config, async_client, token=token, handler=handler)

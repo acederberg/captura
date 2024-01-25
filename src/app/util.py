@@ -12,7 +12,7 @@ def get_logger(name: str) -> logging.Logger:
     ll = logging.getLogger(name)
 
     handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG)
+    handler.setLevel(logging.WARNING)
     ll.addHandler(handler)
 
     formatter = logging.Formatter(
@@ -20,7 +20,7 @@ def get_logger(name: str) -> logging.Logger:
     )
     handler.setFormatter(formatter)
 
-    ll.setLevel(logging.DEBUG)
+    ll.setLevel(logging.WARNING)
     return ll
 
 

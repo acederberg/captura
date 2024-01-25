@@ -1,37 +1,51 @@
 """Api routers and functions. 
 This includes a metaclass so that undecorated functions may be tested.
+
 """
+from sqlalchemy.engine import Row
+from sqlalchemy.sql.expression import false
 from http import HTTPMethod
-from os import walk
 from typing import (
     Annotated,
     Any,
     ClassVar,
     Dict,
+    Generator,
     List,
     Literal,
     Optional,
     Set,
+    Tuple,
     TypeAlias,
+    TypeVar,
 )
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, WebSocket
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    WebSocket,
+    status,
+)
 from fastapi.routing import APIRoute
-from sqlalchemy import delete, literal_column, select, union, update
+from sqlalchemy import delete, literal_column, or_, select, union, update
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql.expression import true
 
 from app import __version__, util
 from app.depends import (
     DependsAsyncSessionMaker,
     DependsAuth,
     DependsConfig,
-    DependsFilter,
     DependsSessionMaker,
     DependsToken,
     DependsTokenOptional,
-    DependsUUID,
 )
 from app.models import (
+    AnyModel,
     AssocCollectionDocument,
     AssocUserDocument,
     Collection,
@@ -42,6 +56,7 @@ from app.models import (
     KindRecurse,
     Level,
     KindObject,
+    Tables,
     User,
 )
 from app.schemas import (
@@ -53,8 +68,12 @@ from app.schemas import (
     CollectionSchema,
     DocumentMetadataSchema,
     DocumentSchema,
+    DocumentSearchSchema,
     EditMetadataSchema,
     EditSchema,
+    KindObjectMinimalSchema,
+    ObjectSchema,
+    UserSearchSchema,
     EventBaseSchema,
     EventSchema,
     EventSearchSchema,
@@ -65,6 +84,7 @@ from app.schemas import (
     UserSchema,
     UserUpdateSchema,
 )
+from app.schemas import EventsObjectsSchema, EventActionSchema
 
 logger = util.get_logger(__name__)
 QueryUUIDCollection: TypeAlias = Annotated[Set[str], Query(min_length=1)]
@@ -202,24 +222,35 @@ class BaseView(ViewMixins, metaclass=ViewMeta):
 
 class DocumentView(BaseView):
     view_routes = dict(
-        get_document="/{uuid}",
+        get_document="/{uuid_document}",
         get_documents="",
         post_document="",
-        put_document="",
-        delete_document="",
-        get_document_edits="/edits",
+        put_document="/{uuid_document}",
+        delete_document="/{uuid_document}",
+        get_document_edits="/{uuid_document}/edits",
     )
 
     @classmethod
     def get_document(
-        cls, makesession: DependsSessionMaker, uuid: PathUUIDUser
+        cls,
+        makesession: DependsSessionMaker,
+        uuid_document: PathUUIDDocument,
+        token: DependsTokenOptional = None,
     ) -> DocumentSchema:
         with makesession() as session:
-            document: Document | None = session.execute(
-                select(Document).where(Document.uuid == uuid)
-            ).scalar()
-            if document is None:
-                raise HTTPException(204)
+            document = Document.if_exists(session, uuid_document).check_not_deleted(410)
+            if not token:
+                if not document.public:
+                    msg = "User cannot access document."
+                    detail = dict(uuid_document=uuid_document, msg=msg)
+                    raise HTTPException(403, detail=detail)
+            else:
+                (
+                    User.if_exists(session, token["uuid"])
+                    .check_not_deleted(410)
+                    .check_can_access_document(document, Level.view)
+                )
+
             return document  # type: ignore
 
     @classmethod
@@ -227,16 +258,23 @@ class DocumentView(BaseView):
         cls,
         token: DependsToken,
         makesession: DependsSessionMaker,
-        filter: DependsFilter,
-    ) -> Dict[str, DocumentMetadataSchema]:
+        params: DocumentSearchSchema = Depends(),
+    ) -> List[DocumentMetadataSchema]:
         with makesession() as session:
-            results = {
-                item.name: item
-                for item in session.execute(
-                    select(Document).limit(filter.limit)
-                ).scalars()
-            }
-            return results  # type: ignore
+            # Get public documents
+            like_conds = list()
+            if params.name_like:
+                like_conds.append(Document.name.like(params.name_like))
+            if params.name_like:
+                like_conds.append(Document.name.like(params.name_like))
+
+            q = select(Document).where(
+                Document.public == true(), Document.deleted == false()
+            )
+            q = q.where(or_(*like_conds)).limit(params.limit)
+            q = q.order_by(Document.format).order_by(Document.name)
+
+            return list(session.execute(q).scalars())  # type: ignore
 
     @classmethod
     def get_document_edits(
@@ -255,8 +293,8 @@ class DocumentView(BaseView):
         token: DependsToken,
         makesession: DependsSessionMaker,
         documents_raw: List[DocumentSchema],
-        uuid_collection: QueryUUIDCollection = list(),
-        uuid_owner: QueryUUIDOwner = list(),
+        uuid_collection: QueryUUIDCollection = set(),
+        uuid_owner: QueryUUIDOwner = set(),
     ):
         uuid = token["uuid"]
         with makesession() as session:
@@ -562,8 +600,6 @@ class CollectionView(BaseView):
                 uuid_collection,
                 uuid_document,
             ).uuid
-            # print(res.content)
-            # print(res.uuid)
 
         with sessionmaker() as session:
             event = Event(
@@ -865,6 +901,32 @@ class GrantView(BaseView):
     )
 
     @classmethod
+    def verify_grantees(
+        cls,
+        session: Session,
+        uuid_user: QueryUUIDUser,
+    ) -> None:
+        """Provided :param:`uuid_user`, look for uuids that do not exist.
+
+        :param session: A session.
+        :param uuid_user: Users to check for.
+        :returns: Nothing.
+        """
+
+        q_uuid_users = select(User.uuid).where(
+            User.uuid.in_(uuid_user),
+            User.deleted == false(),
+        )
+        uuid_user_existing = set(session.execute(q_uuid_users).scalars())
+
+        if len(bad := uuid_user - uuid_user_existing):
+            detail = dict(
+                msg="Cannot grant to users that do not exist.",
+                uuid_user=bad,
+            )
+            raise HTTPException(400, detail=detail)
+
+    @classmethod
     def delete_grants(
         cls,
         makesession: DependsSessionMaker,
@@ -878,15 +940,23 @@ class GrantView(BaseView):
         #       Make sure that the revoker owns the specified document.
         uuid_revoker = token["uuid"]
         with makesession() as session:
-            logger.debug("Verifying document ownership.")
-            document: Document = Document.if_exists(session, uuid_document)
-            revoker = User.if_exists(session, uuid_revoker, 403)
-            revoker.check_can_access_document(document, Level.own)
+            # logger.debug("Verifying document ownership.")
+            document: Document = Document.if_exists(
+                session, uuid_document
+            ).check_not_deleted()
+            (
+                User.if_exists(session, uuid_revoker, 403)
+                .check_not_deleted()
+                .check_can_access_document(document, Level.own)
+            )
+
+            # NOTE: Look for users that do not exist or are deleted.
+            cls.verify_grantees(session, uuid_user)
 
             # NOTE: Since owners cannot reject the ownership of other owners.
-            logger.debug("Verifying revokee permissions.")
+            # logger.debug("Verifying revokee permissions.")
             q_select_grants = document.q_select_grants(uuid_user)
-            uuid_owners: List[str] = list(
+            uuid_owners: Set[str] = set(
                 session.execute(
                     select(literal_column("uuid_user"))
                     .select_from(q_select_grants)  # type: ignore
@@ -895,7 +965,7 @@ class GrantView(BaseView):
             )
             if len(uuid_owners):
                 detail = dict(
-                    msg="Owner cannot reject owners permission.",
+                    msg="Owner cannot reject grants of other owners.",
                     uuid_user_revoker=uuid_revoker,
                     uuid_user_revokees=uuid_owners,
                     uuid_documents=uuid_document,
@@ -905,42 +975,47 @@ class GrantView(BaseView):
             # NOTE: Base event indicates the document, secondary event
             #       indicates the users for which permissions were revoked.
             #       Tertiary event indicates information about the association
-            #       object.
+            #       object. The shape of the tree is based off of the shape of
+            #       the url on which this function can be called, where the
+            #       document is first, the users are second, and the grants
+            #       exist only as JSON.
             grants = list(session.execute(q_select_grants))
+            event_common = dict(
+                api_origin="DELETE /grants/documents/<uuid>",
+                uuid_user=uuid_revoker,
+                kind=KindEvent.grant,
+            )
             event = Event(
-                **(
-                    common := dict(
-                        api_origin="DELETE /grants/documents/<uuid>",
-                        uuid_user=uuid_revoker,
-                        kind=KindEvent.grant,
-                    )
-                ),
+                **event_common,
                 uuid_obj=uuid_document,
                 kind_obj=KindObject.document,
                 detail="Grants revoked.",
-            )
-            event.children = list(
-                Event(
-                    **common,
-                    kind_obj=KindObject.user,
-                    uuid_obj=grant.uuid_user,
-                    detail=f"Grant `{grant.level}` revoked.",
-                    children=[
-                        Event(
-                            **common,
-                            kind_obj=KindObject.grant,
-                            uuid_obj=grant.uuid,
-                            detail=f"Grant `{grant.level}` revoked.",
-                        )
-                    ],
-                )
-                for grant in grants
+                children=[
+                    Event(
+                        **event_common,
+                        kind_obj=KindObject.user,
+                        uuid_obj=uuid_user,
+                        detail=f"Grant `{grant.level.name}` revoked.",
+                        children=[
+                            Event(
+                                **event_common,
+                                kind_obj=KindObject.grant,
+                                uuid_obj=grant.uuid,
+                                detail=f"Grant `{grant.level.name}` revoked.",
+                            )
+                        ],
+                    )
+                    for grant in grants
+                ],
             )
             session.add(event)
             session.execute(
-                delete(AssocUserDocument).where(document.q_conds_grants(uuid_user))
+                update(AssocUserDocument)
+                .where(document.q_conds_grants(uuid_user))
+                .values(deleted=True)
             )
             session.commit()
+            session.refresh(event)
 
             return EventSchema.model_validate(event)  # type: ignore
 
@@ -991,10 +1066,12 @@ class GrantView(BaseView):
 
         with makesession() as session:
             # Verify that user has access
-            document = Document.if_exists(session, uuid_document)
-
-            user = User.if_exists(session, token["uuid"], 403)
-            user.check_can_access_document(document, Level.own)
+            document = Document.if_exists(session, uuid_document).check_not_deleted(410)
+            (
+                User.if_exists(session, token["uuid"], 403)
+                .check_not_deleted(410)
+                .check_can_access_document(document, Level.own)
+            )
 
             results = session.execute(document.q_select_grants(uuid_user))
             return [
@@ -1036,46 +1113,59 @@ class GrantView(BaseView):
         """
 
         with makesession() as session:
-            logger.debug("Verifying granter permissions.")
-            document: Document = Document.if_exists(session, uuid_document, 404)
-            granter: User = User.if_exists(session, token["uuid"], 403)
-            granter.check_can_access_document(document, Level.own)
+            # logger.debug("Verifying granter permissions.")
+            document: Document = Document.if_exists(
+                session, uuid_document
+            ).check_not_deleted()
 
-            logger.debug("Verifying that grantees exist.")
-            uuids_users = set(gg.uuid_user for gg in grants)
-            ids_uuids = {
-                k: v
-                for k, v in session.execute(
-                    select(User.uuid, User.id).where(User.uuid.in_(uuids_users))
-                )
-            }
-            if len(bad := uuids_users - set(ids_uuids)):
-                detail = dict(
-                    msg="Cannot grant to users that do not exist.",
-                    uuid_user=bad,
-                )
-                raise HTTPException(400, detail=detail)
+            granter: User = (
+                User.if_exists(session, token["uuid"], 403)
+                .check_not_deleted()
+                .check_can_access_document(document, Level.own)
+            )
+
+            uuid_user: Set[str] = set(gg.uuid_user for gg in grants)
+            cls.verify_grantees(session, uuid_user)
 
             # NOTE: Pick out grants that already exist. These grants will not
             #       be created and this will evident from the response.
-            logger.debug("Finding existing grants.")
-            uuids_existing = set(
-                session.execute(
-                    select(literal_column("uuid_user")).select_from(
-                        document.q_select_grants(uuids_users)  # type: ignore
-                    )
-                ).scalars()
+            # logger.debug("Finding existing grants.")
+            column_uuid_user = literal_column("uuid_user")
+            q_uuid_grant_existing = select(column_uuid_user).select_from(
+                document.q_select_grants(  # type: ignore
+                    user_uuids=uuid_user,
+                    exclude_deleted=False,
+                ).where(AssocUserDocument.deleted == false())
+            )
+            q_uuid_grant_deleted = select(column_uuid_user).select_from(
+                document.q_select_grants(  # type: ignore
+                    user_uuids=uuid_user,
+                    exclude_deleted=False,
+                ).where(AssocUserDocument.deleted == true())
+            )
+            uuid_grant_existing, uuid_grant_deleted = (
+                set(session.execute(q_uuid_grant_existing).scalars()),
+                set(session.execute(q_uuid_grant_deleted).scalars()),
             )
 
-            logger.debug("Creating associations for grants.")
+            session.execute(
+                update(AssocUserDocument)
+                .where(AssocUserDocument.uuid.in_(uuid_grant_deleted))
+                .values(deleted=False)
+            )
+            session.commit()
+            uuid_grant_existing |= uuid_grant_deleted
+
+            # logger.debug("Creating associations for grants.")
             assocs = {
                 gg.uuid_user: AssocUserDocument(
-                    id_user=ids_uuids[gg.uuid_user],
+                    id_user=User.if_exists(session, gg.uuid_user).id,
                     id_document=document.id,
                     level=gg.level,
+                    deleted=False,
                 )
                 for gg in grants
-                if gg.uuid_user not in uuids_existing
+                if gg.uuid_user not in uuid_grant_existing
             }
             session.add_all(assocs.values())
             session.commit()
@@ -1086,7 +1176,6 @@ class GrantView(BaseView):
             common = dict(
                 kind=KindEvent.grant,
                 uuid_user=granter.uuid,
-                detail="Grants issued.",
                 api_origin="POST /grants/documents/<uuid>",
                 api_version=__version__,
             )
@@ -1094,16 +1183,19 @@ class GrantView(BaseView):
                 **common,
                 uuid_obj=uuid_document,
                 kind_obj=KindObject.document,
+                detail="Grants issued.",
                 children=[
                     Event(
                         **common,
                         uuid_obj=uuid_user,
                         kind_obj=KindObject.user,
+                        detail=f"Grant `{assoc.level.name}` issued.",
                         children=[
                             Event(
                                 **common,
                                 uuid_obj=assoc.uuid,
                                 kind_obj=KindObject.grant,
+                                detail=f"Grant `{assoc.level.name}` issued.",
                             )
                         ],
                     )
@@ -1112,6 +1204,7 @@ class GrantView(BaseView):
             )
             session.add(event)
             session.commit()
+            session.refresh(event)
 
             return EventSchema.model_validate(event)
 
@@ -1169,9 +1262,8 @@ class UserView(BaseView):
     def get_users(
         cls,
         makesession: DependsSessionMaker,
-        filter: DependsFilter,
         token: DependsToken,
-        # collaborators: bool = False,
+        param: UserSearchSchema = Depends(),
     ) -> List[UserSchema]:
         """Get user collaborators or just list some users.
 
@@ -1180,11 +1272,18 @@ class UserView(BaseView):
         account, otherwise some random users should be returned.
         """
         with makesession() as session:
-            result: List[User] = list(
-                session.execute(select(User).limit(filter.limit)).scalars()
-            )
-            if not len(result):
-                raise HTTPException(204)
+            if token:
+                # Find collaborators.
+                ...
+
+            # Get public, active documents.
+            q = select(User).limit(param.limit)
+            if param.name_like is not None:
+                q = q.where(User.name.regexp_match(f"^.*{param.name_like}.*$"))
+            q = q.where(User.deleted == false())
+            q = q.where(User.public == true())
+
+            result: List[User] = list(session.execute(q).scalars())
             return result  # type: ignore
 
     # NOTE: This should not be decorated but should be used in the individual
@@ -1517,11 +1616,7 @@ class EventView(BaseView):
         tree: QueryTree = False,
     ) -> EventSchema:
         with sessionmaker() as session:
-            user = User.if_exists(session, token["uuid"])
-            event = Event.if_exists(session, uuid_event)
-            if event.uuid_user != user.uuid:
-                raise HTTPException(403)
-
+            _, event = cls.verify_access(session, token, uuid_event)
             if tree:
                 while uuid_parent := event.uuid_parent:
                     event = Event.if_exists(session, uuid_parent)
@@ -1531,7 +1626,7 @@ class EventView(BaseView):
     @classmethod
     async def get_events(
         cls,
-        sessionmaker: DependsAsyncSessionMaker,
+        sessionmaker: DependsSessionMaker,
         token: DependsToken,
         param: EventSearchSchema = Depends(),
         flatten: QueryFlat = True,
@@ -1546,9 +1641,10 @@ class EventView(BaseView):
         #     detail.update(msg=msg)
         #     raise HTTPException(422, detail=detail)
 
-        async with sessionmaker() as session:
+        with sessionmaker() as session:
+            User.if_exists(session, token["uuid"]).check_not_deleted()
             q = Event.q_select_search(token["uuid"], **param.model_dump())
-            res = await session.execute(q)
+            res = session.execute(q)
             uuid_event: Set[str] = set(res.scalars())
 
             if flatten:
@@ -1556,11 +1652,11 @@ class EventView(BaseView):
                     uuid_event,
                     kind_recurse=kind_recurse,
                 ).order_by(Event.timestamp)
-                events = await session.execute(q)
+                events = session.execute(q)
                 T = EventWithRootSchema
             else:
                 q = Event.q_uuid(uuid_event).order_by(Event.timestamp)
-                events = (await session.execute(q)).scalars()
+                events = (session.execute(q)).scalars()
                 T = EventBaseSchema
 
             return [T.model_validate(ee) for ee in events]
@@ -1599,7 +1695,7 @@ class EventView(BaseView):
     #     ...
 
     @classmethod
-    def patch_event_objects(
+    def get_event_objects(
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
@@ -1608,16 +1704,56 @@ class EventView(BaseView):
         """Restore a deletion from an event."""
 
         with sessionmaker() as session:
-            event = Event.if_exists(session, uuid_event)
+            user, event = cls.verify_access(session, token, uuid_event)
+            ...
 
-            detail = dict(uuid_event=uuid_event, uuid_user=token["uuid"])
-            if event.uuid_user != token["uuid"]:
-                detail.update(msg="User does not own event.")
-                raise HTTPException(403, detail=detail)
-            elif event.kind != KindEvent.delete:
-                detail.update(msg="Event must be a delete event.")
-                raise HTTPException(400, detail=detail)
+    @classmethod
+    def verify_access(
+        cls, session: Session, token: DependsToken, uuid_event: PathUUIDUser
+    ) -> Tuple[User, Event]:
+        event = Event.if_exists(session, uuid_event)
+        user = (
+            User.if_exists(session, token["uuid"])
+            .check_can_access_event(event)
+            .check_not_deleted(410)
+        )
 
+        return user, event
+
+    T = TypeVar("T")
+
+    @classmethod
+    def iter_eventobject(
+        cls, session: Session, events: List[T]
+    ) -> Generator[Tuple[T, AnyModel], None, None]:
+        for item in events:
+            tt = Tables[item.kind_obj].value
+            qq = select(tt).where(tt.uuid == item.uuid_obj)
+            oo = session.execute(qq).scalar()
+            if oo is None:
+                continue
+            yield item, oo
+
+    @classmethod
+    def patch_event_objects(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsToken,
+        uuid_event: PathUUIDUser,
+        dry_run: bool = True,
+    ) -> EventActionSchema:
+        """Restore a deletion from an event.
+
+        Return the events and updated objects.
+
+        :param dry_run:
+        """
+
+        with sessionmaker() as session:
+            user, event = cls.verify_access(session, token, uuid_event)
+            event.check_kind(KindEvent.delete).check_not_undone()
+
+            # Event for restoring from event.
             event_common = dict(
                 api_version=__version__,
                 api_origin="PATCH /events/restore/<uuid>",
@@ -1631,30 +1767,26 @@ class EventView(BaseView):
                 **event_common,
             )
 
-            lit_uuid = literal_column("uuid")
             q_recurse = event.q_select_recursive({uuid_event})
-            flattened = select(lit_uuid).select_from(q_recurse)
+            event_flat = list(session.execute(q_recurse))
+            objects: Dict[str, AnyModel] = dict()
 
-            for uuid in session.execute(flattened).scalars():
-                # print("uuid", uuid)
-                item = Event.if_exists(session, uuid, 500)
-                # print("item", item)
-                oo = item.object_()
-                if not oo:
-                    continue
-                oo.deleted = False
-                # print("oo", oo)
+            item: Row
+            for item, oo in cls.iter_eventobject(session, event_flat):
+                objects[item.uuid] = oo
                 event_event.children.append(
                     Event(
+                        # Restored item event.
                         kind=KindEvent.restore,
-                        kind_obj=KindObject.event,
-                        uuid_obj=token["uuid"],
+                        kind_obj=item.kind_obj,
+                        uuid_obj=item.uuid_obj,
                         **event_common,
                         children=[
+                            # Corresponding event.
                             Event(
                                 kind=KindEvent.restore,
-                                kind_obj=item.kind_obj,
-                                uuid_obj=item.uuid_obj,
+                                kind_obj=KindObject.event,
+                                uuid_obj=token["uuid"],
                                 **event_common,
                             )
                         ],
@@ -1664,11 +1796,40 @@ class EventView(BaseView):
             session.add(event_event)
             session.commit()
             session.refresh(event_event)
-            q = event.q_select_recursive({event_event.uuid})
-            # q = select(Event).where(Event.uuid.in_(select(lit_uuid).select_from(q)))
-            return [
-                EventWithRootSchema.model_validate(row) for row in session.execute(q)
-            ]
+
+            event.uuid_undo = event_event.uuid
+            session.add(event)
+            session.commit()
+            session.refresh(event)
+
+            q_event_event_flat = event.q_select_recursive({event_event.uuid})
+            event_event_flat = list(
+                EventWithRootSchema.model_validate(row)
+                for row in session.execute(q_event_event_flat)
+            )
+
+            return EventActionSchema(
+                action=KindEvent.restore,
+                events=event_event_flat,
+                detail=EventsObjectsSchema.model_validate(
+                    dict(
+                        events=list(event_flat),
+                        objects=list(
+                            ObjectSchema(
+                                data=KindObjectMinimalSchema[
+                                    item.kind_obj
+                                ].value.model_validate(objects[item.uuid]),
+                                kind=item.kind_obj,
+                            )
+                            for item in event_flat
+                        ),
+                    )
+                ),
+            )
+
+    @classmethod
+    def patch_object(cls):
+        ...
 
 
 class AppView(BaseView):
