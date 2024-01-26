@@ -47,6 +47,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
+from sqlalchemy.sql import false
 
 from app import __version__
 
@@ -144,6 +145,8 @@ MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 
 
 class Base(DeclarativeBase):
+    uuid: Mapped[MappedColumnUUID]
+
     def get_session(self) -> Session:
         session = object_session(self)
         if session is None:
@@ -167,6 +170,19 @@ class Base(DeclarativeBase):
         return m
 
     @classmethod
+    def if_many(
+        cls,
+        session: Session,
+        uuid: Set[str],
+        callback: Callable[[Self], Self] | None = None,
+    ) -> Tuple[Self, ...]:
+        res = session.execute(select(cls).where(cls.uuid.in_(uuid))).scalars()
+        if callback is not None:
+            res = (callback(item) for item in res)
+
+        return tuple(res)
+
+    @classmethod
     def q_uuid(cls, uuids: set[str]):
         return select(cls).where(cls.uuid.in_(uuids))
 
@@ -175,7 +191,8 @@ class Base(DeclarativeBase):
             msg = f"`{self.__class__.__name__}` has no column `deleted`."
             raise ValueError(msg)
         if getattr(self, "deleted"):
-            raise HTTPException(status_code, msg="Item is deleted.")
+            detail = dict(msg="Item is deleted.", uuid=self.uuid)
+            raise HTTPException(status_code, detail=detail)
         return self
 
 
@@ -184,7 +201,6 @@ class MixinsPrimary:
     :class:`Event`.
     """
 
-    uuid: Mapped[MappedColumnUUID]
     public: Mapped[bool] = mapped_column(default=True)
     deleted: Mapped[bool] = mapped_column(default=False)
 
@@ -256,17 +272,41 @@ class Event(Base):
                 uuid_user=uuid_user,
             )
 
-    # def root(self, session: Session | None = None) -> Self:
-    #     if self.uuid_parent is None:
-    #         return self
-    #
-    #     session = session or self.get_session()
-    #     return Event.if_exists(session, self.uuid_parent, 500)
+    def undone(
+        self,
+        uuid_user: str,
+        detail: str,
+        api_origin: str,
+        api_version: str = __version__,
+        callback: Callable[["Event"], "Event"] | None = None,
+    ) -> "Event":
+        """Create the inverse event."""
 
-    # def flattened(self) -> Generator["Event", None, None]:
-    #     yield self
-    #     for child in self.children:
-    #         yield from child.flattened()
+        if self.uuid_undo:
+            raise AttributeError("Cannot undo an event that has been undone.")
+
+        common: Dict[str, Any] = dict(
+            api_version=api_version,
+            api_origin=api_origin,
+            uuid_user=uuid_user,
+            detail=detail,
+        )
+
+        children = [item.undone(**common, callback=callback) for item in self.children]
+        event = self.__class__(
+            uuid_undo=self.uuid,
+            uuid_obj=self.uuid_obj,
+            kind_obj=self.kind_obj,
+            kind=KindEvent.restore,
+            children=children,
+            **common,
+        )
+        return event if callback is None else callback(event)
+
+    def flattened(self) -> Generator["Event", None, None]:
+        yield self
+        for child in self.children:
+            yield from child.flattened()
 
     @property
     def object_(self) -> "AnyModelBesidesEvent | None":
@@ -370,6 +410,21 @@ class Event(Base):
             raise HTTPException(400, detail=detail)
         return self
 
+    def find_root(self, session: Session | None = None) -> "Event":
+        if self.uuid_parent is None:
+            return self
+
+        session = session or self.get_session()
+        next_ = session.execute(
+            select(Event).where(Event.uuid == self.uuid_parent),
+        ).scalar()
+        if next_ is None:
+            msg = "Could not find parent event. Inconcievable!"
+            detail = dict(uuid_event=self.uuid, msg=msg)
+            raise HTTPException(418, detail=detail)
+
+        return next_
+
 
 class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"
@@ -464,7 +519,7 @@ class User(Base, MixinsPrimary):
         collection_class=attribute_keyed_dict("uuid"),
         cascade="all, delete",
         back_populates="user",
-        primaryjoin="and_(User.id==Collection.id_user, Collection.deleted == False)",
+        primaryjoin="and_(User.id==Collection.id_user, Collection.deleted == false())",
     )
 
     edits: Mapped[List["Edit"]] = relationship(
@@ -477,7 +532,7 @@ class User(Base, MixinsPrimary):
         collection_class=attribute_keyed_dict("uuid"),
         secondary=AssocUserDocument.__table__,
         back_populates="users",
-        primaryjoin="and_(User.id==AssocUserDocument.id_user, Document.deleted == False)",
+        primaryjoin="and_(User.id==AssocUserDocument.id_user, Document.deleted == false())",
         secondaryjoin="AssocUserDocument.id_document==Document.id",
     )
 
@@ -495,8 +550,8 @@ class User(Base, MixinsPrimary):
         cond = AssocUserDocument.id_user == self.id
         if exclude_deleted:
             cond = and_(
-                Document.deleted == False,
-                AssocUserDocument.deleted == False,
+                Document.deleted == false(),
+                AssocUserDocument.deleted == false(),
                 cond,
             )
 
@@ -665,8 +720,8 @@ class Collection(Base, MixinsPrimary):
         collection_class=attribute_keyed_dict("name"),
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
-        primaryjoin="and_(Collection.id==AssocCollectionDocument.id_collection, AssocCollectionDocument.deleted == False)",
-        secondaryjoin="and_(Document.deleted == False, Document.id==AssocCollectionDocument.id_document)",
+        primaryjoin="and_(Collection.id==AssocCollectionDocument.id_collection, AssocCollectionDocument.deleted == false())",
+        secondaryjoin="and_(Document.deleted == false(), Document.id==AssocCollectionDocument.id_document)",
     )
 
     def q_conds_assignment(
@@ -680,7 +735,7 @@ class Collection(Base, MixinsPrimary):
         if exclude_deleted:
             cond = and_(
                 cond,
-                AssocCollectionDocument.deleted == False,
+                AssocCollectionDocument.deleted == false(),
             )
         if document_uuids is not None:
             document_ids = Document.q_select_ids(document_uuids)
@@ -691,18 +746,10 @@ class Collection(Base, MixinsPrimary):
     def q_select_assignment(
         self,
         document_uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
     ) -> Select:
-        q = (
-            select(
-                AssocCollectionDocument.uuid.label("uuid"),
-                Document.uuid.label("uuid_document"),
-                Collection.uuid.label("uuid_collection"),
-            )
-            .select_from(Document)
-            .join(AssocCollectionDocument)
-            .join(Collection)
-        )
-        q = q.where(self.q_conds_assignment(document_uuids))
+        q = select(AssocCollectionDocument).join(Collection).join(Document)
+        q = q.where(self.q_conds_assignment(document_uuids, exclude_deleted))
         return q
 
     def q_select_documents(
@@ -714,7 +761,7 @@ class Collection(Base, MixinsPrimary):
             .join(AssocCollectionDocument)
             .where(
                 self.q_conds_assignment(document_uuids),
-                Document.deleted == False,
+                Document.deleted == false(),
             )
         )
         return q
@@ -759,7 +806,7 @@ class Document(Base, MixinsPrimary):
         if document_uuids is not None:
             q = q.where(
                 cls.uuid.in_(document_uuids),
-                cls.deleted == False,
+                cls.deleted == false(),
             )
         return q
 
@@ -773,8 +820,8 @@ class Document(Base, MixinsPrimary):
         if exclude_deleted:
             exp = and_(
                 exp,
-                AssocUserDocument.deleted == False,
-                User.deleted == False,
+                AssocUserDocument.deleted == false(),
+                User.deleted == false(),
             )
         if user_uuids is not None:
             exp = and_(
@@ -833,6 +880,34 @@ class Document(Base, MixinsPrimary):
         )
         return q
 
+    def q_conds_assignment(
+        self,
+        collection_uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
+    ) -> ColumnElement[bool]:
+        # NOTE: To add the conditions for document select (like level) use
+        #       `q_conds_assoc`.
+        cond = and_(AssocCollectionDocument.id_document == self.id)
+        if exclude_deleted:
+            cond = and_(
+                cond,
+                AssocCollectionDocument.deleted == false(),
+            )
+        if collection_uuids is not None:
+            collection_ids = Collection.q_select_ids(collection_uuids)
+            cond = and_(cond, AssocCollectionDocument.id_collection.in_(collection_ids))
+
+        return cond
+
+    def q_select_assignment(
+        self,
+        collection_uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        q = select(AssocCollectionDocument).join(Document).join(Collection)
+        q = q.where(self.q_conds_assignment(collection_uuids, exclude_deleted))
+        return q
+
 
 class Edit(Base, MixinsPrimary):
     __tablename__ = "edits"
@@ -862,6 +937,9 @@ class Tables(enum.Enum):
     collections = Collection
     documents = Document
     edits = Edit
+
+    _assocs_user_documents = AssocUserDocument
+    _assocs_collections_documents = AssocCollectionDocument
 
 
 AnyModelBesidesEvent = (

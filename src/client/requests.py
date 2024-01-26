@@ -32,7 +32,11 @@ def params(**kwargs) -> Dict[str, Any]:
 
 class DocumentRequests(BaseRequest):
     command = "documents"
-    commands = ("read", "search")
+    commands = ("read", "search", "delete")
+
+    async def delete(self, uuid_document: flags.ArgUUIDDocument) -> httpx.Response:
+        url = f"/documents/{uuid_document}"
+        return await self.client.delete(url, headers=self.headers)
 
     async def read(self, uuid_document: flags.ArgUUIDDocument) -> httpx.Response:
         url = f"/documents/{uuid_document}"
@@ -338,7 +342,7 @@ class GrantRequests(BaseRequest):
 
 class EventsRequests(BaseRequest):
     command = "events"
-    commands = ("read", "search", "restore")
+    commands = ("delete", "read", "search", "restore")
 
     def callback(
         self,
@@ -356,6 +360,12 @@ class EventsRequests(BaseRequest):
         self.handler = ConsoleHandler(
             output=output,
             columns=columns,
+        )
+
+    async def delete(self, uuid_event: flags.ArgUUIDEvent) -> httpx.Response:
+        return await self.client.delete(
+            f"/events/{uuid_event}",
+            headers=self.headers,
         )
 
     async def read(

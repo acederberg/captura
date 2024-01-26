@@ -122,6 +122,7 @@ class AssignmentPostSchema(BaseModel):
 
 
 class AssignmentSchema(AssignmentPostSchema):
+    model_config = ConfigDict(from_attributes=True)
     uuid: UUID
 
 
@@ -258,23 +259,9 @@ class ObjectSchema(BaseModel):
     data: AnyMinimalSchema
 
 
-class EventsObjectsSchema(BaseModel):
-    objects: List[ObjectSchema | None]
-    events: List[EventWithRootSchema]
-
-    @model_validator(mode="after")
-    def check_lengths(self) -> Self:
-        p, q = (len(self.objects), len(self.events))
-        if p != q:
-            msg = "`events` and `objects` must have the same length."
-            raise ValueError(msg)
-        return self
-
-
 class EventActionSchema(BaseModel):
-    action: KindEvent
-    events: List[EventWithRootSchema]
-    detail: EventsObjectsSchema
+    event_action: EventSchema
+    event_root: EventSchema
 
 
 # =========================================================================== #
