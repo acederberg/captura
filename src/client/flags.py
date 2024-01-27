@@ -69,6 +69,14 @@ FlagUUIDDocumentsOptional: TypeAlias = Annotated[
     Optional[List[str]], typer.Option("--uuid-document")
 ]
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
+
+
+# Collections
+
+FlagUUIDCollections: TypeAlias = Annotated[List[str], typer.Option("--uuid-collection")]
+FlagUUIDCollectionsOptional: TypeAlias = Annotated[
+    List[str], typer.Option("--uuid-collection")
+]
 ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
 
 # Events
@@ -88,7 +96,7 @@ FlagUrl = Annotated[Optional[str], typer.Option("--url")]
 FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
 FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
-FlagRestore = Annotated[bool, typer.Option("--restore/--delete")]
+FlagForce = Annotated[bool, typer.Option("--force/--no-force")]
 FlagKindRecurse: TypeAlias = Annotated[KindRecurse, typer.Option("--recurse-strategy")]
 FlagNameLike: TypeAlias = Annotated[Optional[str], typer.Option("--name-like")]
 FlagDescriptionLike: TypeAlias = Annotated[

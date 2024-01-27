@@ -150,7 +150,12 @@ class Base(DeclarativeBase):
     def get_session(self) -> Session:
         session = object_session(self)
         if session is None:
-            raise HTTPException(418)
+            detail = dict(
+                uuid=self.uuid,
+                kind=KindObject._value2member_map_[self.__tablename__].name,
+                msg="Could not find session.",
+            )
+            raise HTTPException(500, detail=detail)
         return session
 
     # NOTE: Only `classmethod`s should need session due to `object_session`.
@@ -186,11 +191,11 @@ class Base(DeclarativeBase):
     def q_uuid(cls, uuids: set[str]):
         return select(cls).where(cls.uuid.in_(uuids))
 
-    def check_not_deleted(self, status_code: int = 410, msg=None) -> Self:
+    def check_not_deleted(self, status_code: int = 410, deleted: bool = True) -> Self:
         if not hasattr(self, "deleted"):
             msg = f"`{self.__class__.__name__}` has no column `deleted`."
             raise ValueError(msg)
-        if getattr(self, "deleted"):
+        if getattr(self, "deleted") is deleted:
             detail = dict(msg="Item is deleted.", uuid=self.uuid)
             raise HTTPException(status_code, detail=detail)
         return self
@@ -601,7 +606,10 @@ class User(Base, MixinsPrimary):
         return q
 
     def q_select_documents(
-        self, document_uuids: Set[str] | None = None, level: Level | None = None
+        self,
+        document_uuids: Set[str] | None = None,
+        level: Level | None = None,
+        exclude_deleted: bool = True,
     ) -> Select:
         """Dual to :meth:`q_select_user_uuids`."""
 
@@ -609,7 +617,7 @@ class User(Base, MixinsPrimary):
             select(Document)
             .join(AssocUserDocument)
             .where(
-                self.q_conds_grants(document_uuids, level),
+                self.q_conds_grants(document_uuids, level, exclude_deleted),
             )
         )
 
@@ -733,10 +741,7 @@ class Collection(Base, MixinsPrimary):
         #       `q_conds_assoc`.
         cond = and_(AssocCollectionDocument.id_collection == self.id)
         if exclude_deleted:
-            cond = and_(
-                cond,
-                AssocCollectionDocument.deleted == false(),
-            )
+            cond = and_(cond, AssocCollectionDocument.deleted == false())
         if document_uuids is not None:
             document_ids = Document.q_select_ids(document_uuids)
             cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
@@ -748,21 +753,27 @@ class Collection(Base, MixinsPrimary):
         document_uuids: Set[str] | None = None,
         exclude_deleted: bool = True,
     ) -> Select:
-        q = select(AssocCollectionDocument).join(Collection).join(Document)
+        q = (
+            select(
+                AssocCollectionDocument,
+                Document.uuid.label("uuid_document"),
+                Collection.uuid.label("uuid_collection"),
+            )
+            .join(Collection)
+            .join(Document)
+        )
         q = q.where(self.q_conds_assignment(document_uuids, exclude_deleted))
         return q
 
     def q_select_documents(
         self,
         document_uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
     ) -> Select:
         q = (
             select(Document)
             .join(AssocCollectionDocument)
-            .where(
-                self.q_conds_assignment(document_uuids),
-                Document.deleted == false(),
-            )
+            .where(self.q_conds_assignment(document_uuids, exclude_deleted))
         )
         return q
 
@@ -848,14 +859,8 @@ class Document(Base, MixinsPrimary):
         :param level: The minimal level to select joined entries from.
         """
         return (
-            select(
-                AssocUserDocument.uuid.label("uuid"),
-                AssocUserDocument.level.label("level"),
-                Document.uuid.label("uuid_document"),
-                User.uuid.label("uuid_user"),
-            )
-            .select_from(Document)
-            .join(AssocUserDocument)
+            select(AssocUserDocument)
+            .join(Document)
             .join(User)
             .where(
                 self.q_conds_grants(
@@ -904,7 +909,15 @@ class Document(Base, MixinsPrimary):
         collection_uuids: Set[str] | None = None,
         exclude_deleted: bool = True,
     ) -> Select:
-        q = select(AssocCollectionDocument).join(Document).join(Collection)
+        q = (
+            select(
+                AssocCollectionDocument,
+                Document.uuid.label("uuid_document"),
+                Collection.uuid.label("uuid_collection"),
+            )
+            .join(Document)
+            .join(Collection)
+        )
         q = q.where(self.q_conds_assignment(collection_uuids, exclude_deleted))
         return q
 

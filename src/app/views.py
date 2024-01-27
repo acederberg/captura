@@ -33,7 +33,7 @@ from fastapi import (
 )
 from fastapi.routing import APIRoute
 from sqlalchemy import delete, literal_column, or_, select, union, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, make_transient, sessionmaker
 from sqlalchemy.sql.expression import true
 
 from app import __version__, util
@@ -89,13 +89,27 @@ from app.schemas import EventActionSchema
 
 logger = util.get_logger(__name__)
 QueryUUIDCollection: TypeAlias = Annotated[Set[str], Query(min_length=1)]
-QueryUUIDCollectionOptional: TypeAlias = Annotated[Set[str], Query(min_length=0)]
 QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDDocument: TypeAlias = Annotated[Set[str], Query(min_length=1)]
-QueryUUIDDocumentOptional: TypeAlias = Annotated[Optional[Set[str]], Query()]
-QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=0)]
-QueryUUIDUserOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=0)]
-QueryUUIDEditOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=0)]
+QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=1)]
+
+PathUUIDUser: TypeAlias = Annotated[str, Path()]
+PathUUIDCollection: TypeAlias = Annotated[str, Path()]
+PathUUIDDocument: TypeAlias = Annotated[str, Path()]
+PathUUIDEvent: TypeAlias = Annotated[str, Path()]
+
+# NOTE: Due to how `q_conds_` works (with empty `set()` versus `None`) the
+#       empty set cannot be allowed. When nothing is passed it ought to be
+#       `None`.
+QueryUUIDCollectionOptional: TypeAlias = Annotated[
+    Optional[Set[str]], Query(min_length=1)
+]
+QueryUUIDDocumentOptional: TypeAlias = Annotated[
+    Optional[Set[str]], Query(min_length=1)
+]
+QueryUUIDUserOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=1)]
+QueryUUIDEditOptional: TypeAlias = Annotated[Optional[Set[str]], Query(min_length=1)]
+
 QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
 QueryRestore: TypeAlias = Annotated[bool, Query()]
 QueryTree: TypeAlias = Annotated[bool, Query()]
@@ -105,11 +119,7 @@ QueryKindObject: TypeAlias = Annotated[Optional[KindObject], Query()]
 QueryUUIDEventObject: TypeAlias = Annotated[Optional[str], Query()]
 QueryFlat: TypeAlias = Annotated[bool, Query()]
 QueryKindRecurse: TypeAlias = Annotated[Optional[KindRecurse], Query()]
-
-PathUUIDUser: TypeAlias = Annotated[str, Path()]
-PathUUIDCollection: TypeAlias = Annotated[str, Path()]
-PathUUIDDocument: TypeAlias = Annotated[str, Path()]
-PathUUIDEvent: TypeAlias = Annotated[str, Path()]
+QueryForce: TypeAlias = Annotated[bool, Query()]
 
 
 # =========================================================================== #
@@ -246,7 +256,7 @@ class DocumentView(BaseView):
                     detail = dict(uuid_document=uuid_document, msg=msg)
                     raise HTTPException(403, detail=detail)
             else:
-                cls.verify_access(document)
+                cls.verify_access(session, token, document, level=Level.view)
 
             return document  # type: ignore
 
@@ -378,7 +388,9 @@ class DocumentView(BaseView):
         session: Session,
         token: DependsToken | User,
         uuid_document: PathUUIDDocument | Document,
+        *,
         level: Level,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Document]:
         ...
 
@@ -389,7 +401,9 @@ class DocumentView(BaseView):
         session: Session,
         token: DependsToken | User,
         uuid_document: QueryUUIDDocument | List[Document],
+        *,
         level: Level,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Tuple[Document, ...]]:
         ...
 
@@ -399,7 +413,9 @@ class DocumentView(BaseView):
         session: Session,
         token: DependsToken | User,
         uuid_document: PathUUIDDocument | QueryUUIDDocument | Document | List[Document],
+        *,
         level: Level,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Document] | Tuple[User, Tuple[Document, ...]]:
         if isinstance(token, dict):
             user = User.if_exists(session, token["uuid"], 403)
@@ -409,7 +425,9 @@ class DocumentView(BaseView):
         user = user.check_not_deleted(410)
 
         def check_one(document: Document) -> Document:
-            document = document.check_not_deleted(410)
+            # NOTE: Exclude deleted is only required for force deletion.
+            if exclude_deleted:
+                document = document.check_not_deleted(410)
             user.check_can_access_document(document, level)
             return document
 
@@ -432,8 +450,8 @@ class CollectionView(BaseView):
     """Routes for collection CRUD and metadata."""
 
     view_routes = dict(
-        get_collection="/{uuid}",
-        get_collection_documents="/{uuid}/documents",
+        get_collection="/{uuid_collection}",
+        get_collection_documents="/{uuid_collection}/documents",
         delete_collection="/{uuid_collection}",
         patch_collection="/{uuid_collection}",
         post_collection="",
@@ -446,6 +464,8 @@ class CollectionView(BaseView):
         session: Session,
         token: DependsToken | User,
         uuid_collection: PathUUIDCollection | Collection,
+        *,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Collection]:
         ...
 
@@ -456,6 +476,8 @@ class CollectionView(BaseView):
         session: Session,
         token: DependsToken,
         uuid_collection: QueryUUIDCollection | Sequence[Collection],
+        *,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Tuple[Collection, ...]]:
         ...
 
@@ -468,14 +490,22 @@ class CollectionView(BaseView):
         | QueryUUIDCollection
         | Collection
         | Sequence[Collection],
+        *,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Collection] | Tuple[User, Tuple[Collection, ...]]:
         if isinstance(token, dict):
-            user = User.if_exists(session, token["uuid"]).check_not_deleted(410)
+            user = User.if_exists(session, token["uuid"])
         else:
             user = token
 
+        user.check_not_deleted(410)
+
         def check_one(collection: Collection) -> Collection:
-            user.check_can_access_collection(collection.check_not_deleted(410))
+            # NOTE: `exclude_deleted` should only be ``True`` when a force
+            #       deletion is occuring.
+            if exclude_deleted:
+                collection = collection.check_not_deleted(410)
+            user.check_can_access_collection(collection)
             return collection
 
         if isinstance(uuid_collection, str):
@@ -501,7 +531,7 @@ class CollectionView(BaseView):
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
-        uuid: PathUUIDCollection,
+        uuid_collection: PathUUIDCollection,
     ) -> CollectionSchema:
         with sessionmaker() as session:
             collection = Collection.if_exists(session, uuid)
@@ -519,20 +549,19 @@ class CollectionView(BaseView):
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
-        uuid: PathUUIDCollection,
+        uuid_collection: PathUUIDCollection,
         uuid_document: QueryUUIDDocumentOptional = None,
     ) -> List[DocumentMetadataSchema]:
         """Return UUIDS for the documents."""
 
         with sessionmaker() as session:
-            collection = Collection.if_exists(session, uuid)
-            user = User.if_exists(session, token["uuid"])
-            user.check_can_access_collection(collection)
-            if collection.deleted:
-                raise HTTPException(404)
+            _, collection = cls.verify_access(session, token, uuid_collection)
             documents = list(
                 session.execute(
-                    collection.q_select_documents(uuid_document),
+                    collection.q_select_documents(
+                        uuid_document,
+                        exclude_deleted=True,
+                    ),
                 ).scalars()
             )
             return documents
@@ -698,7 +727,7 @@ class CollectionView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         data: CollectionPostSchema,
-        uuid_document: QueryUUIDDocumentOptional = set(),
+        uuid_document: QueryUUIDDocumentOptional = None,
     ) -> EventSchema:
         event_common = dict(
             api_origin="POST /collections",
@@ -770,21 +799,46 @@ class AssignmentView(BaseView):
         cls,
         session: Session,
         token: DependsToken,
-        *,
         uuid_collection: Set[str],
+        *,
         uuid_document: Set[str],
         level: Level,
+        exclude_deleted: bool = True,
     ) -> Tuple[User, Tuple[Document, ...], Tuple[Collection, ...]]:
         user, collections = CollectionView.verify_access(
             session,
             token,
             uuid_collection,
+            exclude_deleted=exclude_deleted,
         )
         user, documents = DocumentView.verify_access(
-            session, user, uuid_document, level
+            session,
+            user,
+            uuid_document,
+            level=level,
+            exclude_deleted=exclude_deleted,
         )
 
         return user, documents, collections
+
+    @classmethod
+    def split_assignments(
+        cls,
+        session: Session,
+        item,
+        uuid_values: Set[str],
+        uuid_column,
+    ) -> Tuple[Set[str], Set[str]]:
+        q = item.q_select_assignment(uuid_values, exclude_deleted=False)
+        exps = tuple(
+            select(uuid_column).select_from(
+                q.where(AssocCollectionDocument.deleted == bool_()).subquery()
+            )
+            for bool_ in (true, false)
+        )
+
+        out = tuple(set(session.execute(exp).scalars()) for exp in exps)
+        return out  # type: ignore
 
     @classmethod
     def delete_assignment_document(
@@ -793,6 +847,7 @@ class AssignmentView(BaseView):
         token: DependsToken,
         uuid_document: PathUUIDDocument,
         uuid_collection: QueryUUIDCollection,
+        force: QueryForce = False,
     ) -> EventSchema:
         with sessionmaker() as session:
             user, (document,), _ = cls.verify_access(
@@ -801,46 +856,73 @@ class AssignmentView(BaseView):
                 uuid_document={uuid_document},
                 uuid_collection=uuid_collection,
                 level=Level.own,
+                exclude_deleted=False,
+            )
+
+            # NOTE: Ignore entries that are already deletd.
+            uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
+                session, document, uuid_collection, literal_column("uuid")
+            )
+
+            if force:
+                detail = "Assignment force deleted."
+                uuid_assign_active |= uuid_assign_deleted
+                q_del = delete(AssocCollectionDocument).where(
+                    AssocCollectionDocument.uuid.in_(uuid_assign_active)
+                )
+            else:
+                detail = "Assignment deleted."
+                q_del = (
+                    update(AssocCollectionDocument)
+                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+                    .values(deleted=True)
+                )
+
+            # DELETED ALREADY EXCLUDED IN NON FORCE CASE
+            uuid_collection_wassign_active = set(
+                session.execute(
+                    select(Collection.uuid)
+                    .join(AssocCollectionDocument)
+                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+                ).scalars()
             )
             q_assocs = document.q_select_assignment(
-                uuid_collection, exclude_deleted=True
+                uuid_collection_wassign_active,
+                exclude_deleted=False,
             )
-
             assocs = list(session.execute(q_assocs).scalars())
-
-            lit = literal_column("uuid")
-            cond = lit.in_(select(lit).select_from(q_assocs))
-            session.execute(update(AssocUserDocument).where(cond).values(deleted=True))
 
             event_common: Dict[str, Any] = dict(
                 api_origin="DELETE /assignments/documents/<uuid>",
                 api_version=__version__,
-                detail="Assignment deleted.",
+                detail=detail,
                 uuid_user=user.uuid,
                 kind=KindEvent.delete,
             )
 
-            event = Event(
-                **event_common,
-                kind_obj=KindObject.document,
-                uuid_obj=document.uuid,
-                children=[
-                    Event(
-                        **event_common,
-                        kind_obj=KindObject.collection,
-                        uuid_obj=assoc.uuid_collection,
-                        children=[
-                            Event(
-                                **event_common,
-                                kind_obj=KindObject.assignment,
-                                uuid_obj=assoc.uuid_document,
-                            )
-                        ],
-                    )
-                    for assoc in assocs
-                ],
+            session.add(
+                event := Event(
+                    **event_common,
+                    kind_obj=KindObject.document,
+                    uuid_obj=document.uuid,
+                    children=[
+                        Event(
+                            **event_common,
+                            kind_obj=KindObject.collection,
+                            uuid_obj=assoc.uuid_collection,
+                            children=[
+                                Event(
+                                    **event_common,
+                                    kind_obj=KindObject.assignment,
+                                    uuid_obj=assoc.uuid,
+                                )
+                            ],
+                        )
+                        for assoc in assocs
+                    ],
+                )
             )
-            session.add(event)
+            session.execute(q_del)
             session.commit()
             session.refresh(event)
 
@@ -853,6 +935,7 @@ class AssignmentView(BaseView):
         token: DependsToken,
         uuid_collection: PathUUIDCollection,
         uuid_document: QueryUUIDDocument,
+        force: QueryForce = False,
     ) -> EventSchema:
         with sessionmaker() as session:
             user, _, (collection,) = cls.verify_access(
@@ -908,24 +991,6 @@ class AssignmentView(BaseView):
             return EventSchema.model_validate(event)
 
     @classmethod
-    def split_assignments(
-        cls,
-        session: Session,
-        item,
-        uuid_values: Set[str],
-        uuid_column,
-    ) -> Tuple[Set[str], Set[str]]:
-        q = item.q_select_assignment(uuid_values, exclude_deleted=False)
-        exps = (
-            select(uuid_column).select_from(
-                q.where(AssocCollectionDocument.deleted == bool_()).subquery()
-            )
-            for bool_ in (true, false)
-        )
-        out = tuple(set(session.execute(exp).scalars()) for exp in exps)
-        return out  # type: ignore
-
-    @classmethod
     def post_assignment_document(
         cls,
         sessionmaker: DependsSessionMaker,
@@ -933,13 +998,6 @@ class AssignmentView(BaseView):
         uuid_document: PathUUIDDocument,
         uuid_collection: QueryUUIDCollection,
     ) -> EventSchema:
-        event_common = dict(
-            api_origin="POST /assignments/document/<uuid>",
-            api_version=__version__,
-            kind=KindEvent.create,
-            uuid_user=token["uuid"],
-            detail="Assignment created.",
-        )
         with sessionmaker() as session:
             (user, (document,), collections) = cls.verify_access(
                 session,
@@ -949,56 +1007,50 @@ class AssignmentView(BaseView):
                 level=Level.view,
             )
 
-            # q_assocs = document.q_select_assignment(
-            #     uuid_collection, exclude_deleted=False
-            # )
-            # uuid_assocs_deleted, uuid_assocs_active = (
-            #     set(
-            #         session.execute(
-            #             select(AssocCollectionDocument.uuid_collection).select_from(
-            #                 q_assocs.where(
-            #                     AssocCollectionDocument.deleted == bool_()
-            #                 ).subquery()
-            #             )
-            #         ).scalars()
-            #     )
-            #     for bool_ in (true, false)
-            # )
-            uuid_assocs_deleted, uuid_assocs_active = cls.split_assignments(
-                session,
-                document,
-                uuid_collection,
-                Collection.uuid,
+            # Collection uuids for existing and deleted assignments
+            lit = literal_column("uuid_collection")
+            uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
+                session, document, uuid_collection, lit
             )
 
-            uuid_collection -= uuid_assocs_active
-            if uuid_assocs_deleted:
+            util.CONSOLE_APP.print("[red]" + str(uuid_assign_deleted))
+            util.CONSOLE_APP.print("[red]" + str(uuid_assign_active))
+            if uuid_assign_deleted:
                 raise HTTPException(
                     400,
                     detail=dict(
                         uuid_user=user.uuid,
                         uuid_document=document.uuid,
-                        uuid_collection=list(uuid_assocs_deleted),
+                        uuid_collection=list(uuid_assign_deleted),
                         msg="Assignments must be hard deleted to re-`POST`.",
                     ),
                 )
 
             assocs = [
                 AssocCollectionDocument(
-                    id_collection=collection.uuid_collection,
+                    id_collection=collection.id,
                     id_document=document.id,
                 )
                 for collection in collections
-                if collection.uuid in uuid_collection
+                if collection.uuid not in uuid_assign_active
             ]
             session.add_all(assocs)
+            session.commit()
 
+            event_common = dict(
+                api_origin="POST /assignments/document/<uuid>",
+                api_version=__version__,
+                kind=KindEvent.create,
+                uuid_user=token["uuid"],
+                detail="Assignment created.",
+            )
             event = Event(
                 **event_common,
                 kind_obj=KindObject.document,
                 uuid_obj=document.uuid,
                 children=[
-                    Event(
+                    session.refresh(assoc)
+                    or Event(
                         **event_common,
                         kind_obj=KindObject.collection,
                         uuid_obj=assoc.uuid_collection,
@@ -1040,10 +1092,6 @@ class AssignmentView(BaseView):
             uuid_doc_deleted, uuid_doc_active = cls.split_assignments(
                 session, collection, uuid_document, Document.uuid
             )
-            print("==========================================================")
-            print("uuid_doc_active", uuid_doc_active)
-            print("uuid_doc_deleted", uuid_doc_deleted)
-            print("==========================================================")
             uuid_document -= uuid_doc_active
             if uuid_doc_deleted:
                 raise HTTPException(
@@ -1130,17 +1178,18 @@ class AssignmentView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid_document: PathUUIDDocument,
-        uuid_collection: QueryUUIDCollection = set(),
+        uuid_collection: QueryUUIDCollectionOptional = None,
     ) -> List[AssignmentSchema]:
         with sessionmaker() as session:
             _, document = DocumentView.verify_access(
-                session, token, uuid_document, Level.view
+                session, token, uuid_document, level=Level.view
             )
             q = document.q_select_assignment(
                 uuid_collection,
                 exclude_deleted=True,
             )
-            res = session.execute(q)
+
+            res = session.execute(q).scalars()
             return list(AssignmentSchema.model_validate(item) for item in res)
 
 
@@ -1579,7 +1628,7 @@ class UserView(BaseView):
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid: PathUUIDUser,
-        uuid_document: QueryUUIDDocumentOptional = set(),
+        uuid_document: QueryUUIDDocumentOptional = None,
     ) -> Dict[str, DocumentMetadataSchema]:
         res = cls.select_user_child(
             "documents",
@@ -1599,7 +1648,7 @@ class UserView(BaseView):
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid: PathUUIDUser,
-        uuid_collection: QueryUUIDCollectionOptional = set(),
+        uuid_collection: QueryUUIDCollectionOptional = None,
     ) -> Dict[str, CollectionMetadataSchema]:
         res = cls.select_user_child("collections", makesession, uuid)
         if token["uuid"] != uuid:
@@ -1615,7 +1664,7 @@ class UserView(BaseView):
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid: PathUUIDUser,
-        uuid_edit: QueryUUIDEditOptional = set(),
+        uuid_edit: QueryUUIDEditOptional = None,
     ) -> List[EditMetadataSchema]:
         res = cls.select_user_child(
             "edits",
@@ -1982,7 +2031,10 @@ class EventView(BaseView):
 
     @classmethod
     def verify_access(
-        cls, session: Session, token: DependsToken, uuid_event: PathUUIDUser
+        cls,
+        session: Session,
+        token: DependsToken,
+        uuid_event: PathUUIDUser,
     ) -> Tuple[User, Event]:
         event = Event.if_exists(session, uuid_event)
         user = (

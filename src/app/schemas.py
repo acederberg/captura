@@ -124,6 +124,7 @@ class AssignmentPostSchema(BaseModel):
 class AssignmentSchema(AssignmentPostSchema):
     model_config = ConfigDict(from_attributes=True)
     uuid: UUID
+    deleted: bool
 
 
 # =========================================================================== #

@@ -2,6 +2,9 @@ import logging
 from os import environ
 from os import path
 
+from rich.console import Console
+from rich.syntax import Syntax
+
 ENV_PREFIX = "ARTICLES_"
 
 # =========================================================================== #
@@ -22,6 +25,19 @@ def get_logger(name: str) -> logging.Logger:
 
     ll.setLevel(logging.WARNING)
     return ll
+
+
+CONSOLE_APP = Console()
+
+
+def sql(session, *qs) -> None:
+    cmps = (
+        f"{q.compile(session.bind, compile_kwargs=dict(literal_binds=True))};"
+        for q in qs
+    )
+    cmp = "\n\n".join(cmps)
+    highlighted = Syntax(cmp, "mysql", theme="fruity")
+    CONSOLE_APP.print(highlighted)
 
 
 # =========================================================================== #

@@ -76,7 +76,7 @@ class RequestMixins:
     # CLASSVAR DEFAULTS ARE IN META
     command: ClassVar[str]
     commands: ClassVar[Tuple[str, ...]]
-    children: ClassVar[Tuple[Type[Self], ...]]
+    children: ClassVar[Tuple[Type["BaseRequest"], ...]]
 
     children_instances: Dict[str, "BaseRequest"]
     _token: str | None
