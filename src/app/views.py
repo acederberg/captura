@@ -938,6 +938,7 @@ class AssignmentView(BaseView):
         force: QueryForce = False,
     ) -> EventSchema:
         with sessionmaker() as session:
+            print("========================================================")
             user, _, (collection,) = cls.verify_access(
                 session,
                 token,
@@ -945,23 +946,45 @@ class AssignmentView(BaseView):
                 uuid_document=uuid_document,
                 level=Level.view,
             )
-            q_assocs = collection.q_select_assignment(
-                uuid_document, exclude_deleted=True
+            uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
+                session, collection, uuid_document, literal_column("uuid")
             )
-            assocs = list(session.execute(q_assocs).scalars())
+            if force:
+                detail = "Assignment force deleted."
+                uuid_assign_active |= uuid_assign_deleted
+                q_del = delete(AssocCollectionDocument).where(
+                    AssocCollectionDocument.uuid.in_(uuid_assign_active)
+                )
+            else:
+                detail = "Assignment deleted."
+                q_del = (
+                    update(AssocCollectionDocument)
+                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+                    .values(deleted=True)
+                )
 
-            for assoc in assocs:
-                assoc.deleted = True
-                session.add(assoc)
-            session.commit()
+            # NOTE: DO NOT EXCLUDED DELETED VALUES IN `q_select_assignment`.
+            #       DELETED VALUES MAY EXIST AND REQUIRE FORCE DELETION.
+            uuid_docs_active = set(
+                session.execute(
+                    select(Document.uuid)
+                    .join(AssocCollectionDocument)
+                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+                ).scalars()
+            )
+            q_assocs = collection.q_select_assignment(
+                uuid_docs_active, exclude_deleted=False
+            )
+            util.sql(session, q_assocs)
+            assocs = list(session.execute(q_assocs).scalars())
 
             # Create events
             event_common = dict(
                 api_origin="DELETE /assignments/collections/<uuid>",
                 api_version=__version__,
                 kind=KindEvent.delete,
-                uuid_user=token["uuid"],
-                detail="Assignment deleted.",
+                uuid_user=user.uuid,
+                detail=detail,
             )
             event = Event(
                 **event_common,
@@ -984,7 +1007,9 @@ class AssignmentView(BaseView):
                     for assoc in assocs
                 ],
             )
+
             session.add(event)
+            session.execute(q_del)
             session.commit()
             session.refresh(event)
 
@@ -1013,8 +1038,6 @@ class AssignmentView(BaseView):
                 session, document, uuid_collection, lit
             )
 
-            util.CONSOLE_APP.print("[red]" + str(uuid_assign_deleted))
-            util.CONSOLE_APP.print("[red]" + str(uuid_assign_active))
             if uuid_assign_deleted:
                 raise HTTPException(
                     400,
@@ -1090,9 +1113,11 @@ class AssignmentView(BaseView):
             )
 
             uuid_doc_deleted, uuid_doc_active = cls.split_assignments(
-                session, collection, uuid_document, Document.uuid
+                session,
+                collection,
+                uuid_document,
+                literal_column("uuid_document"),
             )
-            uuid_document -= uuid_doc_active
             if uuid_doc_deleted:
                 raise HTTPException(
                     400,
@@ -1111,7 +1136,7 @@ class AssignmentView(BaseView):
                     id_collection=collection.id,
                 )
                 for document in documents
-                if uuid_document in uuid_document
+                if document.uuid not in uuid_doc_active
             )
             session.add_all(assocs)
             session.commit()
@@ -1124,33 +1149,33 @@ class AssignmentView(BaseView):
                 uuid_user=token["uuid"],
                 detail="Assignment created.",
             )
-            event = Event(
-                **event_common,
-                kind_obj=KindObject.collection,
-                uuid_obj=collection.uuid,
-                children=[
-                    session.refresh(assoc)
-                    or Event(
-                        **event_common,
-                        kind_obj=KindObject.document,
-                        uuid_obj=assoc.uuid_document,
-                        children=[
-                            Event(
-                                **event_common,
-                                kind_obj=KindObject.assignment,
-                                uuid_obj=assoc.uuid,
-                            )
-                        ],
-                    )
-                    for assoc in assocs
-                ],
+            session.add(
+                event := Event(
+                    **event_common,
+                    kind_obj=KindObject.collection,
+                    uuid_obj=collection.uuid,
+                    children=[
+                        session.refresh(assoc)
+                        or Event(
+                            **event_common,
+                            kind_obj=KindObject.document,
+                            uuid_obj=assoc.uuid_document,
+                            children=[
+                                Event(
+                                    **event_common,
+                                    kind_obj=KindObject.assignment,
+                                    uuid_obj=assoc.uuid,
+                                )
+                            ],
+                        )
+                        for assoc in assocs
+                    ],
+                )
             )
-            session.add(event)
             session.commit()
             session.refresh(event)
 
-            res = EventSchema.model_validate(event)
-            return res
+            return EventSchema.model_validate(event)
 
     @classmethod
     def get_assignment_collection(
