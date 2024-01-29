@@ -1,34 +1,22 @@
-import inspect
-from typing import ClassVar, Type, TypeVar
 import functools
 import asyncio
 from app.views import AppView
 
-import fastapi
-from client import flags
-import enum
 import httpx
 from typing import (
+    Dict,
+    ClassVar,
+    Type,
+    TypeVar,
     Awaitable,
-    List,
     ParamSpec,
     Callable,
     Any,
     Concatenate,
     Tuple,
 )
-import enum
-import functools
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    ParamSpec,
-)
 from typing_extensions import Self
 
-import httpx
-from rich.console import Console
 import typer
 
 
@@ -40,13 +28,6 @@ from client.handlers import ConsoleHandler, Handler
 
 # =========================================================================== #
 # TYPES
-
-# class Mode(str, enum.Enum):
-#     test = "test"
-#     fn = "fn"
-#     cmd = "cmd"
-#
-#
 
 V = ParamSpec("V")
 S = TypeVar("S")
@@ -67,6 +48,10 @@ def try_handler(meth: RequestMethod) -> RequestMethod:
         return res
 
     return wrapper
+
+
+def params(**kwargs) -> Dict[str, Any]:
+    return {k: v for k, v in kwargs.items() if v is not None}
 
 
 # =========================================================================== #
@@ -217,3 +202,12 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
     ):
         """Specify request output format."""
         self.handler = ConsoleHandler(output=output, columns=columns)
+
+
+__all__ = (
+    "RequestMethod",
+    "try_handler",
+    "params",
+    "RequestMeta",
+    "BaseRequest",
+)

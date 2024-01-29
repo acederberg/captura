@@ -1,45 +1,35 @@
-from pydantic.generics import GenericModel
 import asyncio
-import typing
-
-from typing import AsyncGenerator, TypeVar, Generic
-import enum
-from os import path
-from typing import Annotated, List, Set, Type, TypeAlias
-from typing_extensions import Self
+from typing import List
 import typer
-
-import yaml
-
-from client import flags
 import httpx
-from pydantic import BaseModel, Field, field_validator, model_validator
-from app.models import KindObject, ChildrenAssignment
-from app.schemas import (
-    CollectionSchema,
-    UserSchema,
-    DocumentPostSchema,
-    CollectionPostSchema,
-    DocumentSchema,
-)
-from app import __version__
-from client.base import BaseRequest
-from client.handlers import ConsoleHandler, Handler
-from client.requests import Requests
+from pydantic import field_validator
+import enum
+import yaml
+import httpx
+from pydantic import BaseModel, model_validator, Field, GenerticModel
+
+from typing import Generic, Annotated, Tuple, Self, TypeVar
+
+from app.schemas import UserSchema
+from app.models import ChildrenAssignment, KindObject
+from client import flags
+from client.handlers import Handler
 
 
-class Mode(enum.Enum):
+class ApplyMode(enum.Enum):
     apply = "apply"
     destroy = "destroy"
 
 
-class CommandState:
-    requests: Requests
-    mode: Mode
-    handler: Handler
-    # data: Dict[str, Any]
+S = TypeVar("S")
 
-    def __init__(self, requests: Requests, mode: Mode, handler: Handler):
+
+class ApplyState(Generic[S]):
+    requests: S
+    mode: ApplyMode
+    handler: Handler
+
+    def __init__(self, requests: S, mode: ApplyMode, handler: Handler):
         self.requests = requests
         self.mode = mode
         self.handler = handler
@@ -84,7 +74,7 @@ class SpecAssignment(BaseModel):
 
         return self
 
-    async def __call__(self, state: CommandState) -> httpx.Response:
+    async def __call__(self, state: ApplyState) -> httpx.Response:
         client = state.requests.assignments
         documents, collections = client.documents, client.collections
         uuid_obj = [await self.resolve_uuid(state)]
@@ -116,7 +106,7 @@ class SpecAssignment(BaseModel):
             raise typer.Exit(status)
         return res
 
-    async def resolve_uuid(self, state: CommandState) -> str:
+    async def resolve_uuid(self, state: ApplyState) -> str:
         if (name := self.name) is None:
             return self.uuid_source  # type: ignore
 
@@ -142,9 +132,9 @@ class SpecDocument(DocumentPostSchema):
         Field(default=None),
     ]
 
-    async def __call__(self, state: CommandState) -> None:
+    async def __call__(self, state: ApplyState) -> None:
         match state.mode:
-            case Mode.apply:
+            case ApplyMode.apply:
                 post = self.model_dump(exclude={"collections"})
                 res = await state.requests.documents.create(post)
                 if status := await state.handler.handle(res):
@@ -158,7 +148,7 @@ class SpecDocument(DocumentPostSchema):
                     if status:
                         raise typer.Exit(status)
 
-            case Mode.destroy:
+            case ApplyMode.destroy:
                 # NOTE: Deletion should destroy assignments (to collections)
                 uuid = await self.resolve_uuid(state)
                 res = await state.requests.documents.delete(uuid)
@@ -167,7 +157,7 @@ class SpecDocument(DocumentPostSchema):
             case _:
                 raise ValueError()
 
-    async def resolve_uuid(self, state: CommandState) -> str:
+    async def resolve_uuid(self, state: ApplyState) -> str:
         # NOTE: Call only after `apply`.
         res = await state.requests.documents.search(name_like=self.name)
         if status := await state.handler.handle(res):
@@ -185,9 +175,9 @@ class SpecCollection(CollectionPostSchema):
         Field(default=None),
     ]
 
-    async def __call__(self, state: CommandState) -> httpx.Response:
+    async def __call__(self, state: ApplyState) -> httpx.Response:
         match state.mode:
-            case Mode.apply:
+            case ApplyMode.apply:
                 post = self.model_dump(exclude={"collections"})
                 res = await state.requests.collections.create(post)
                 if status := await state.handler.handle(res):
@@ -199,7 +189,7 @@ class SpecCollection(CollectionPostSchema):
                     )
                     if status := await state.handler.handle(res):
                         raise typer.Exit(status)
-            case Mode.destroy:
+            case ApplyMode.destroy:
                 # NOTE: Deletion should destroy assignments (to collections)
                 uuid = await self.resolve_uuid(state)
                 res = await state.requests.documents.delete(uuid)
@@ -208,7 +198,7 @@ class SpecCollection(CollectionPostSchema):
             case _:
                 raise ValueError()
 
-    async def resolve_uuid(self, state: CommandState) -> str:
+    async def resolve_uuid(self, state: ApplyState) -> str:
         # NOTE: Call only after `apply`.
         res = await state.requests.collections.search(name_like=self.name)
         if status := await state.handler.handle(res):
@@ -224,9 +214,9 @@ class SpecUser(UserSchema):
     documents: Annotated[List[SpecDocument] | None, Field(default=None)]
     collections: Annotated[List[SpecCollection] | None, Field(default=None)]
 
-    async def __call__(self, state: CommandState) -> None:
+    async def __call__(self, state: ApplyState) -> None:
         match state.mode:
-            case Mode.apply:
+            case ApplyMode.apply:
                 post = self.model_dump(exclude={"collections", "documents"})
                 res = await state.requests.users.create(**post)
                 if status := await state.handler.handle(res):
@@ -246,7 +236,7 @@ class SpecUser(UserSchema):
                     status = await state.handler.handle(res)
                     if status:
                         raise typer.Exit(status)
-            case Mode.destroy:
+            case ApplyMode.destroy:
                 ...
             case _:
                 raise ValueError()
@@ -260,8 +250,6 @@ class Specs(enum.Enum):
 
 
 Spec = SpecUser | SpecCollection | SpecDocument | SpecAssignment
-
-
 T = TypeVar("T", SpecUser, SpecCollection, SpecDocument, SpecAssignment)
 
 
@@ -283,27 +271,12 @@ class ObjectSchema(GenericModel, Generic[T]):
         TT = Specs[kind]
         return TT.value.model_validate(value)
 
-    async def __call__(self, state: CommandState):
+    async def __call__(self, state: ApplyState):
         return await self.spec(state)
 
-
-class Batch(BaseRequest):
-    command = "object"
-    commands = ("apply", "destroy")
-
-    def load(self, filepath: flags.ArgFilePath) -> ObjectSchema:
+    @classmethod
+    def load(cls, filepath: flags.ArgFilePath) -> Self:
         with open(filepath, "r") as file:
             data = yaml.safe_load(file)
         return ObjectSchema.model_validate(data)
-
-    def apply(self, filepath: flags.ArgFilePath) -> httpx.Request:
-        """I want something like `kubectl apply` because often I have data I
-        want to post and delete but I'd rather not write the args out so often
-        as this can become annoying.
-
-        See also :func:`destroy`."""
-
-        ...
-
-    def destroy(filepath: flags.ArgFilePath) -> httpx.Request:
-        ...
+        return ObjectSchema.model_validate(data)
