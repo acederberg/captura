@@ -61,7 +61,21 @@ class DocumentRequests(BaseRequest):
 
 class CollectionRequests(BaseRequest):
     command = "collections"
-    commands = ("read", "create", "delete", "update")
+    commands = ("read", "create", "delete", "update", "search")
+
+    async def search(
+        self,
+        name_like: flags.FlagNameLike = None,
+        description_like: flags.FlagDescriptionLike = None,
+    ) -> httpx.Response:
+        return await self.client.get(
+            "/collections",
+            params=params(
+                name_like=name_like,
+                description_like=description_like,
+            ),
+            headers=self.headers,
+        )
 
     async def read(
         self,
@@ -322,6 +336,14 @@ class AssignmentCollectionRequests(BaseRequest):
 class AssignmentRequests(BaseRequest):
     command = "assignments"
     children = (AssignmentCollectionRequests, AssignmentDocumentRequests)
+
+    collections: AssignmentCollectionRequests
+    documents: AssignmentDocumentRequests
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.documents = AssignmentDocumentRequests.from_(self)
+        self.collections = AssignmentCollectionRequests.from_(self)
 
 
 class GrantRequests(BaseRequest):

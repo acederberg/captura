@@ -67,6 +67,7 @@ from app.schemas import (
     CollectionPatchSchema,
     CollectionPostSchema,
     CollectionSchema,
+    CollectionSearchSchema,
     DocumentMetadataSchema,
     DocumentSchema,
     DocumentSearchSchema,
@@ -263,25 +264,22 @@ class DocumentView(BaseView):
     @classmethod
     def get_documents(
         cls,
-        token: DependsToken,
+        token: DependsTokenOptional,
         makesession: DependsSessionMaker,
         params: DocumentSearchSchema = Depends(),
     ) -> List[DocumentMetadataSchema]:
         with makesession() as session:
-            # Get public documents
-            like_conds = list()
-            if params.name_like:
-                like_conds.append(Document.name.like(params.name_like))
-            if params.name_like:
-                like_conds.append(Document.name.like(params.name_like))
-
-            q = select(Document).where(
-                Document.public == true(), Document.deleted == false()
+            q = Document.q_search(
+                token.get("uuid") if token is not None else None,
+                params.uuid_document,
+                name_like=params.name_like,
+                description_like=params.description_like,
+                all_=params.all_,
             )
-            q = q.where(or_(*like_conds)).limit(params.limit)
-            q = q.order_by(Document.format).order_by(Document.name)
-
-            return list(session.execute(q).scalars())  # type: ignore
+            return list(
+                DocumentMetadataSchema.model_validate(item)
+                for item in session.execute(q)
+            )
 
     @classmethod
     def get_document_edits(
@@ -451,6 +449,7 @@ class CollectionView(BaseView):
 
     view_routes = dict(
         get_collection="/{uuid_collection}",
+        get_collections="",
         get_collection_documents="/{uuid_collection}/documents",
         delete_collection="/{uuid_collection}",
         patch_collection="/{uuid_collection}",
@@ -534,15 +533,32 @@ class CollectionView(BaseView):
         uuid_collection: PathUUIDCollection,
     ) -> CollectionSchema:
         with sessionmaker() as session:
-            collection = Collection.if_exists(session, uuid)
-            if collection.deleted:
-                raise HTTPException(404)
-            # elif not collection.public and token["uuid"] != collection.user.uuid:
-            #     raise HTTPException(404)
+            user, collection = cls.verify_access(session, token, uuid_collection)
+            return CollectionSchema.model_validate(collection)
 
-            user = User.if_exists(session, token["uuid"])
-            user.check_can_access_collection(collection)
-            return collection
+    @classmethod
+    def get_collections(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        token: DependsTokenOptional = None,
+        param: CollectionSearchSchema = Depends(),
+    ) -> List[CollectionSchema]:
+        with sessionmaker() as session:
+            if token:
+                _ = User.if_exists(session, token["uuid"]).check_not_deleted(410)
+
+            q = Collection.q_search(
+                token.get("uuid") if token is not None else None,
+                param.uuid_collection,
+                exclude_deleted=True,
+                name_like=param.name_like,
+                description_like=param.description_like,
+                all_=True,
+                session=session,
+            )
+            return list(
+                CollectionSchema.model_validate(item) for item in session.execute(q)
+            )
 
     @classmethod
     def get_collection_documents(

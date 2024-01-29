@@ -14,6 +14,7 @@ uniquely to a corresponding database row (further, for tables with multiple
 foreign keys it is not necessary to specify multiple values).
 """
 import enum
+from typing import Set
 from typing import Annotated, Any, List, Literal, Optional, Self
 
 from pydantic import (
@@ -56,10 +57,14 @@ Url = Annotated[str | None, Field(min_length=8, max_length=LENGTH_URL)]
 Content = Annotated[bytes, Field(max_length=LENGTH_CONTENT)]
 Format = Annotated[Literal["md", "rst", "tEx"], Field(default="md")]
 Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
+UUIDS = Annotated[Set[str] | None, Field(default=None)]
 
 
 class BaseSearchSchema(BaseModel):
-    limit: int = 10
+    name_like: Annotated[str | None, Field(default=None)]
+    description_like: Annotated[str | None, Field(default=None)]
+    limit: Annotated[int, Field(default=10)]
+    all_: Annotated[bool, Field(default=True)]
 
 
 # =========================================================================== #
@@ -84,7 +89,7 @@ class UserSchema(BaseModel):
 
 
 class UserSearchSchema(BaseSearchSchema):
-    name_like: str | None = None
+    uuid_user: UUIDS
 
 
 # =========================================================================== #
@@ -113,7 +118,12 @@ class CollectionMetadataSchema(CollectionBaseSchema):
 
 
 class CollectionSchema(CollectionPostSchema):
+    model_config = ConfigDict(from_attributes=True)
     uuid: UUID
+
+
+class CollectionSearchSchema(BaseSearchSchema):
+    uuid_collection: UUIDS
 
 
 class AssignmentPostSchema(BaseModel):
@@ -134,6 +144,8 @@ class AssignmentSchema(AssignmentPostSchema):
 class DocumentMetadataSchema(BaseModel):
     # uuid was initially excluded bc metadata is labeld by it.
     # But returning dictionaries sucks so it will be removed soon.
+    model_config = ConfigDict(from_attributes=True)
+
     uuid: UUID
     name: Name
     description: Description
@@ -151,8 +163,7 @@ class DocumentPostSchema(BaseModel):
 
 
 class DocumentSearchSchema(BaseSearchSchema):
-    name_like: str | None = None
-    description_like: str | None = None
+    uuid_document: UUIDS
 
 
 class GrantPostSchema(BaseModel):
@@ -223,6 +234,7 @@ class EventBaseSchema(BaseModel):
 
 
 class EventSearchSchema(BaseModel):
+    uuid_event: UUIDS
     kind: KindEvent | None = None
     kind_obj: KindObject | None = None
     uuid_obj: str | None = None

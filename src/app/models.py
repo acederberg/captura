@@ -1,4 +1,7 @@
+# import abc
 import enum
+from sqlalchemy import BooleanClauseList, true
+from app import util
 from logging import warn
 from fastapi import HTTPException, status
 import secrets
@@ -19,6 +22,7 @@ from typing import (
 
 from sqlalchemy import (
     CTE,
+    Column,
     ColumnClause,
     CompoundSelect,
     union,
@@ -120,6 +124,16 @@ class ChildrenDocument(str, enum.Enum):
     edits = "edits"
 
 
+class ChildrenAssignment(str, enum.Enum):
+    documents = "documents"
+    collections = "collections"
+
+
+class ChildrenGrant(str, enum.Enum):
+    documents = "documents"
+    users = "users"
+
+
 # NOTE: Indexing is important as it is how the front end will get most data.
 #       This is done to keep relationships opaque (by keeping the primary keys
 #       out of the users views) and to avoid having to specify multiple primary
@@ -201,17 +215,114 @@ class Base(DeclarativeBase):
         return self
 
 
-class MixinsPrimary:
+class PrimaryTableMixins:
     """Creation and deletion data will go into the table associated with
     :class:`Event`.
     """
 
+    uuid: Mapped[MappedColumnUUID]
     public: Mapped[bool] = mapped_column(default=True)
     deleted: Mapped[bool] = mapped_column(default=False)
+    name: Mapped[str]
+    description: Mapped[str]
 
     @classmethod
     def q_select_ids(cls, uuids: Set[str]) -> Select:
-        return select(cls.id).where(cls.uuid.in_(uuids))
+        if (id := getattr(cls, "id", None)) is not None:
+            raise AttributeError(
+                f"Table `{cls.__name__}` must have an `id` `column` to use"
+                "`q_select_ids`."
+            )
+        elif not isinstance(id, Column):
+            raise ValueError("IDK what to do with an id column.")
+        return select(id).where(cls.uuid.in_(uuids))
+
+    @classmethod
+    def q_conds(
+        cls,
+        uuids: Set[str] | None,
+        exclude_deleted: bool = True,
+        *,
+        conds: BooleanClauseList | ColumnElement[bool] | None = None,
+    ) -> ColumnElement[bool] | None:
+        items = [conds] if conds is not None else []
+        if exclude_deleted:
+            items.append(cls.deleted == false())
+        if uuids is not None:
+            items.append(cls.uuid.in_(uuids))
+        return and_(*items) if len(items) else None
+
+    @classmethod
+    def q_conds_public(
+        cls,
+        uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
+    ) -> ColumnElement[bool]:
+        conds = cls.public == true()
+        return cls.q_conds(uuids, exclude_deleted, conds=conds)  # type: ignore
+
+    @classmethod
+    def q_select_public(
+        cls, uuids: Set[str] | None = None, exclude_deleted: bool = True
+    ):
+        q = select(cls).where(cls.q_conds_public(uuids, exclude_deleted))
+        return q
+
+    @classmethod
+    def q_search_conds(
+        cls,
+        name_like: str | None = None,
+        description_like: str | None = None,
+        conds=None,
+    ):
+        fmt = "^.*{}.*$"
+        items = [conds] if conds is not None else []
+        if name_like is not None:
+            items.append(cls.name.regexp_match(fmt.format(name_like)))
+        if description_like is not None:
+            items.append(cls.description.regexp_match(fmt.format(description_like)))
+        return and_(*items)
+
+    @classmethod
+    def q_search(
+        cls,
+        user_uuid: str | None,
+        uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
+        *,
+        all_: bool = True,
+        name_like: str | None = None,
+        description_like: str | None = None,
+        session=None,
+    ):
+        if not all_ and user_uuid is None:
+            raise ValueError("`all_` must be true when a user is not provided.")
+        q = None
+        if user_uuid:
+            q = cls.q_select_for_user(user_uuid, uuids, exclude_deleted)
+        r = None
+        if all_:
+            r = cls.q_select_public(uuids, exclude_deleted)
+
+        search_conds = cls.q_search_conds(name_like, description_like)
+        items = tuple(
+            p.where(search_conds) if search_conds is not None else p
+            for p in (q, r)
+            if p is not None
+        )
+        if not len(items):
+            raise ValueError()
+
+        return union(*items)
+
+    @classmethod
+    def q_select_for_user(
+        cls,
+        user_uuid: str,
+        uuids: Set[str] | None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        ...
 
 
 # =========================================================================== #
@@ -504,7 +615,7 @@ class AssocUserDocument(Base):
         return res
 
 
-class User(Base, MixinsPrimary):
+class User(PrimaryTableMixins, Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(
@@ -645,8 +756,15 @@ class User(Base, MixinsPrimary):
         )
         q = select(Document).where(Document.id.in_(q))
         return q
-        #
-        # return list(session.execute(q).scalars())
+
+    @classmethod
+    def q_select_for_user(
+        cls,
+        user_uuid: str | None,
+        uuids: Set[str] | None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        return cls.q_select_public(uuids, exclude_deleted)
 
     # ----------------------------------------------------------------------- #
     # Chainables for endpoints.
@@ -705,7 +823,7 @@ class User(Base, MixinsPrimary):
         return self
 
 
-class Collection(Base, MixinsPrimary):
+class Collection(PrimaryTableMixins, Base):
     __tablename__ = "collections"
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -740,11 +858,12 @@ class Collection(Base, MixinsPrimary):
         # NOTE: To add the conditions for document select (like level) use
         #       `q_conds_assoc`.
         cond = and_(AssocCollectionDocument.id_collection == self.id)
-        if exclude_deleted:
-            cond = and_(cond, AssocCollectionDocument.deleted == false())
-        if document_uuids is not None:
-            document_ids = Document.q_select_ids(document_uuids)
-            cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
+        # if exclude_deleted:
+        #     cond = and_(cond, AssocCollectionDocument.deleted == false())
+        # if document_uuids is not None:
+        #     document_ids = Document.q_select_ids(document_uuids)
+        #     cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
+        cond = and_(cond, self.q_conds(document_uuids, exclude_deleted))
 
         return cond
 
@@ -777,8 +896,22 @@ class Collection(Base, MixinsPrimary):
         )
         return q
 
+    @classmethod
+    def q_select_for_user(
+        cls,
+        user_uuid: str,
+        uuids: Set[str] | None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        return (
+            select(Collection)
+            .join(User)
+            .where(User.uuid == user_uuid)
+            .where(cls.q_conds(uuids, exclude_deleted))
+        )
 
-class Document(Base, MixinsPrimary):
+
+class Document(PrimaryTableMixins, Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -807,19 +940,6 @@ class Document(Base, MixinsPrimary):
 
     # ----------------------------------------------------------------------- #
     # Queries
-
-    @classmethod
-    def q_select_public(
-        cls,
-        document_uuids: Set[str] | None = None,
-    ):
-        q = select(cls).where(cls.public)
-        if document_uuids is not None:
-            q = q.where(
-                cls.uuid.in_(document_uuids),
-                cls.deleted == false(),
-            )
-        return q
 
     def q_conds_grants(
         self,
@@ -921,8 +1041,23 @@ class Document(Base, MixinsPrimary):
         q = q.where(self.q_conds_assignment(collection_uuids, exclude_deleted))
         return q
 
+    @classmethod
+    def q_select_for_user(
+        cls,
+        user_uuid: str,
+        uuids: Set[str] | None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        return (
+            select(Document)
+            .join(AssocUserDocument)
+            .join(User)
+            .where(User.uuid == user_uuid)
+            .where(cls.q_conds(uuids, exclude_deleted))
+        )
 
-class Edit(Base, MixinsPrimary):
+
+class Edit(PrimaryTableMixins, Base):
     __tablename__ = "edits"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

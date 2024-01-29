@@ -1,3 +1,4 @@
+import pathlib
 from app.models import KindEvent, KindObject
 import yaml
 import enum
@@ -167,4 +168,12 @@ FlagProfile: TypeAlias = Annotated[
         "-p",
         help="Profile from configuration to use.",
     ),
+]
+
+# --------------------------------------------------------------------------- #
+# Loader flags.
+
+ArgFilePath: TypeAlias = Annotated[
+    pathlib.Path,
+    typer.Argument(help="Path to the apply file."),
 ]

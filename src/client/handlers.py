@@ -1,4 +1,5 @@
 import re
+import asyncio
 import httpx
 from typing import (
     Annotated,
@@ -7,7 +8,9 @@ from typing import (
     Any,
     Protocol,
     Self,
+    Tuple,
     TypeVar,
+    overload,
 )
 import json
 from typing import (
@@ -37,11 +40,50 @@ CONSOLE = Console()
 
 
 class Handler(Protocol):
+    @overload
     async def __call__(
         self,
         res: httpx.Response,
         data: Any | None = None,
     ) -> httpx.Response:
+        ...
+
+    @overload
+    async def __call__(
+        self,
+        res: httpx.Response | Tuple[httpx.Response, ...],
+        data: Any | Tuple[Any, ...] | None = None,
+    ) -> httpx.Response:
+        ...
+
+    async def __call__(
+        self,
+        res: httpx.Response | Tuple[httpx.Response, ...],
+        data: Any | Tuple[Any, ...] | None = None,
+    ) -> httpx.Response:
+        ...
+
+    @overload
+    async def handle(
+        self,
+        res: httpx.Response,
+        data: Any | None = None,
+    ) -> int:
+        ...
+
+    @overload
+    async def handle(
+        self,
+        res: Tuple[httpx.Response, ...],
+        data: Tuple[Any, ...] | None = None,
+    ) -> int:
+        ...
+
+    async def handle(
+        self,
+        res: httpx.Response | Tuple[httpx.Response, ...],
+        data: Any | Tuple[Any, ...] | None = None,
+    ) -> int:
         ...
 
 
@@ -64,6 +106,28 @@ class ConsoleHandler(BaseModel):
         res: httpx.Response,
         data=None,
     ) -> httpx.Response:
+        status = await self.handle(res, data)
+        raise typer.Exit(status)
+
+    async def handle(
+        self,
+        res: httpx.Response | Tuple[httpx.Response, ...],
+        data: Any | Tuple[Any, ...] = None,
+    ) -> int:
+        match [res, data]:
+            case [[*items], [*data]]:
+                items = zip(items, data)
+                return sum((self.handle_one(*item) for item in items))
+            case [httpx.Response, data]:
+                return self.handle_one(res, data)
+            case _:
+                raise ValueError()
+
+    def handle_one(
+        self,
+        res: httpx.Response,
+        data: Any | None = None,
+    ) -> int:
         try:
             data = data if data is not None else res.json()
         except json.JSONDecodeError:
@@ -71,24 +135,18 @@ class ConsoleHandler(BaseModel):
 
         if not (200 <= res.status_code < 300):
             self.print_err(res, data)
-            raise typer.Exit(1)
+            return 1
 
-        status = None
         match self.output:
             case Output.json:
-                status = self.print_json(res, data)
+                return self.print_json(res, data)
             case Output.table:
-                status = self.print_table(res, data)
+                return self.print_table(res, data)
             case Output.yaml:
-                status = self.print_yaml(res, data)
+                return self.print_yaml(res, data)
             case _ as bad:
                 CONSOLE.print(f"[red]Unknown output format `{bad}`.")
-                raise typer.Exit(1)
-
-        if status:
-            raise typer.Exit(status)
-
-        return res
+                return 1
 
     def print_err(self, res: httpx.Response, data=None) -> int:
         CONSOLE.print(f"[red]Request failed with status `{res.status_code}`.")
