@@ -58,16 +58,17 @@ def params(**kwargs) -> Dict[str, Any]:
 
 
 class RequestMixins:
-    # CLASSVAR DEFAULTS ARE IN META
-    command: ClassVar[str]
-    commands: ClassVar[Tuple[str, ...]]
-    children: ClassVar[Tuple[Type["BaseRequest"], ...]]
+    # CLASSVAR DEFAULTS ARE IN META AS ATTRS
+    command: ClassVar[str] = "base"
+    commands: ClassVar[Tuple[str, ...]] = tuple()
+    children: ClassVar[Tuple["RequestMeta", ...]] = tuple()
 
     children_instances: Dict[str, "BaseRequest"]
-    _token: str | None
     config: Config
     handler: Handler | None
 
+    # Exposed as properties
+    _token: str | None
     _client: httpx.AsyncClient | None
 
     # NOTE: Handler should only be passed for non cli purposes (i.e. in pytest
@@ -91,6 +92,7 @@ class RequestMixins:
 
     @classmethod
     def from_(cls, v: "BaseRequest") -> Self:
+        "Make an instance from existing instance."
         return cls(
             handler=v.handler,
             client=v._client,
@@ -100,30 +102,45 @@ class RequestMixins:
 
 
 class RequestMeta(type):
-    def __new__(cls, name: str, base, _namespace):
-        namespace: Dict[str, Any] = dict(
-            command="base", children=tuple(), commands=tuple()
-        )
-        namespace.update(_namespace)
+    # NOTE: Should match classvars on `RequestMixins`.
+    command: str
+    commands: Tuple[str, ...]
+    children: Tuple["RequestMeta", ...]
 
-        # Check commands
-        acceptable = Verbage._value2member_map_
-        command, commands = namespace.get("command"), namespace.get("commands")
+    def __new__(cls, name: str, bases, namespace):
+        # NOTE: Construct T first so that commands from inherited fns
+        #       can be found and so that commands from bases may be included.
+        if RequestMixins not in bases:
+            bases = (*bases, RequestMixins)
+
+        T = super().__new__(cls, name, bases, namespace)
+        T.commands += tuple(
+            command
+            for base in bases
+            if isinstance(commands := getattr(base, "commands", None), tuple)
+            for command in commands
+        )
+
+        command, commands = T.command, T.commands
         if command is None:
-            raise ValueError(f"`{name}` missing `command`.")
+            raise ValueError(f"Missing command for `{name}`.")
+
+        acceptable = Verbage._value2member_map_
         if commands is None:
             raise AttributeError(f"`{name}` missing `commands`.")
-        elif len(bad := [cc for cc in commands if cc not in namespace]):
-            raise AttributeError(f"`{name}` missing commands `{bad}`.")
         elif len(bad := list(cc for cc in commands if cc not in acceptable)):
             msg = f"`{name}.commands` contains illegal verbage `{bad}`."
             raise AttributeError(msg)
+        elif len(bad := [cc for cc in commands if not hasattr(T, cc)]):
+            raise AttributeError(f"`{name}` missing commands `{bad}`.")
 
-        # Get commands for setter
-        namespace.update({cc: try_handler(namespace[cc]) for cc in commands})
-        # namespace["commands"] = commands
+        # NOTE: Decorate commands. Should be done after type construction
+        #       because all commands will not exist in `namespace`.
+        for cc in commands:
+            fn = getattr(T, cc)
+            fn_with_handler = try_handler(fn)
+            setattr(T, cc, fn_with_handler)
 
-        T = super().__new__(cls, name, base, namespace)
         return T
 
 

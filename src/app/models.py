@@ -93,7 +93,8 @@ class KindEvent(str, enum.Enum):
     restore = "restore"
 
 
-# This maps table names to their corresponding API names.
+# NOTE: This maps table names to their corresponding API names. It is important
+#       to note that this uses singular names and not plural names.
 class KindObject(str, enum.Enum):
     user = "users"
     document = "documents"
@@ -102,6 +103,25 @@ class KindObject(str, enum.Enum):
     event = "events"
     assignment = "_assocs_collections_documents"
     grant = "_assocs_users_documents"
+
+
+class Plural(str, enum.Enum):
+    user = "users"
+    document = "documents"
+    collection = "collections"
+    edit = "edits"
+    event = "events"
+    assignment = "assignments"
+    grant = "grants"
+
+
+class Singular(str, enum.Enum):
+    users = "user"
+    documents = "document"
+    collections = "collection"
+    edits = "edit"
+    assignments = "assignment"
+    grants = "gant"
 
 
 class KindRecurse(str, enum.Enum):

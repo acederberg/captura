@@ -1,19 +1,34 @@
 import asyncio
-from typing import List
-import typer
-import httpx
-from pydantic import field_validator
 import enum
-import yaml
+import json
+from typing import Annotated, Any, Dict, Generic, List, Self, Tuple, TypeVar
+
 import httpx
-from pydantic import BaseModel, model_validator, Field, GenerticModel
+import typer
+import yaml
+from app import __version__
+from app.models import ChildrenAssignment, Plural
+from app.schemas import CollectionPostSchema, DocumentPostSchema, UserSchema
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from typing import Generic, Annotated, Tuple, Self, TypeVar
-
-from app.schemas import UserSchema
-from app.models import ChildrenAssignment, KindObject
 from client import flags
-from client.handlers import Handler
+from client.handlers import CONSOLE, Handler
+from client.requests import Requests
+
+from .requests import Requests
+
+# from pydantic.generics import GenericModel
+
+
+# NOTE: Distinguishes errors from `ApplyError` since cannot raise `typer.Exit`
+#       responsibly in many instances.
+class ApplyError(Exception):
+    @classmethod
+    def bad_mode(cls, bad: Any) -> Self:
+        msg = f"Unknown mode {bad}, expected one of `apply` or `destroy`."
+        return cls(msg)
+
+    msg_vegue = ""
 
 
 class ApplyMode(enum.Enum):
@@ -21,15 +36,12 @@ class ApplyMode(enum.Enum):
     destroy = "destroy"
 
 
-S = TypeVar("S")
-
-
-class ApplyState(Generic[S]):
-    requests: S
+class ApplyState:
+    requests: Requests
     mode: ApplyMode
     handler: Handler
 
-    def __init__(self, requests: S, mode: ApplyMode, handler: Handler):
+    def __init__(self, requests: Requests, mode: ApplyMode, handler: Handler):
         self.requests = requests
         self.mode = mode
         self.handler = handler
@@ -69,8 +81,11 @@ class SpecAssignment(BaseModel):
 
     @model_validator(mode="after")
     def uuid_or_name(self) -> Self:
-        if not (self.uuid is None) == (self.name is None):
-            raise ValueError("Specify exactly one of `uuid_obj` and `kind_obj`.")
+        if (self.uuid is None) == (self.name is None):
+            raise ApplyError(
+                "Specify exactly one of `uuid` and `name`. Got "
+                f"`{self.uuid}` and `{self.name}`."
+            )
 
         return self
 
@@ -80,7 +95,7 @@ class SpecAssignment(BaseModel):
         uuid_obj = [await self.resolve_uuid(state)]
 
         if self.kind_source is None or self.uuid_source is None:
-            raise ValueError(
+            raise ApplyError(
                 "`SpecAssignment` must define `kind_owner` and `uuid_owner` "
                 "to continue. These should either be specified directly or by"
                 "adding them from another called."
@@ -95,10 +110,15 @@ class SpecAssignment(BaseModel):
                 res = await collections.delete(self.uuid_source, uuid_obj)
             case ["destroy", ChildrenAssignment.documents]:
                 res = await documents.delete(self.uuid_source, uuid_obj)
-            case [_ as bad_mode, _ as bad]:
-                raise ValueError(
-                    f"Unknown mode `{bad_mode}` (should be one of 'apply' or "
-                    f"'destroy') or source kind `{bad}` ` (expected one of "
+            case [
+                _ as bad_mode,
+                ChildrenAssignment.collections | ChildrenAssignment.documents,
+            ]:
+                raise ApplyError.bad_mode(bad_mode)
+
+            case ["apply" | "destroy", _ as bad]:
+                raise ApplyError(
+                    f"Unknown source kind `{bad}` ` (expected one of "
                     "`documents` or `collection`)."
                 )
 
@@ -116,12 +136,12 @@ class SpecAssignment(BaseModel):
             case ChildrenAssignment.collections:
                 res = await state.requests.collections.search(name_like=name)
             case _:
-                raise ValueError("Unknown `kind_obj` `ChildrenAssignment`.")
+                raise ApplyError("Unknown `kind_obj` `ChildrenAssignment`.")
 
         if status := await state.handler.handle(res):
             raise typer.Exit(status)
         elif len(data := res.json()) != 1:
-            raise ValueError("")
+            raise ApplyError(f"Name `{name}` specifies many results.")
 
         return data[0]["uuid"]
 
@@ -154,8 +174,8 @@ class SpecDocument(DocumentPostSchema):
                 res = await state.requests.documents.delete(uuid)
                 if status := await state.handler.handle(res):
                     raise typer.Exit(status)
-            case _:
-                raise ValueError()
+            case _ as bad:
+                raise ApplyError(f"Unknown mode `{bad}`.")
 
     async def resolve_uuid(self, state: ApplyState) -> str:
         # NOTE: Call only after `apply`.
@@ -164,7 +184,7 @@ class SpecDocument(DocumentPostSchema):
             raise typer.Exit(status)
 
         if len(data := res.json()) != 1:
-            raise ValueError()
+            raise ApplyError(f"Name `{name}` specifies many results.")
 
         return data[0]["uuid"]
 
@@ -195,8 +215,8 @@ class SpecCollection(CollectionPostSchema):
                 res = await state.requests.documents.delete(uuid)
                 if status := await state.handler.handle(res):
                     raise typer.Exit(status)
-            case _:
-                raise ValueError()
+            case _ as bad:
+                raise ApplyError(f"Unknown mode `{bad}`.")
 
     async def resolve_uuid(self, state: ApplyState) -> str:
         # NOTE: Call only after `apply`.
@@ -205,7 +225,7 @@ class SpecCollection(CollectionPostSchema):
             raise typer.Exit(status)
 
         if len(data := res.json()) != 1:
-            raise ValueError()
+            raise ApplyError()
 
         return data[0]["uuid"]
 
@@ -239,9 +259,10 @@ class SpecUser(UserSchema):
             case ApplyMode.destroy:
                 ...
             case _:
-                raise ValueError()
+                raise ApplyError()
 
 
+# NOTE: Singular naming has to be consistent with kind object.
 class Specs(enum.Enum):
     documents = SpecDocument
     collections = SpecCollection
@@ -254,29 +275,67 @@ T = TypeVar("T", SpecUser, SpecCollection, SpecDocument, SpecAssignment)
 
 
 # NOTE: Holy fuck, this is awesome.
-class ObjectSchema(GenericModel, Generic[T]):
+class ObjectSchema(BaseModel, Generic[T]):
     api_version: Annotated[str, Field(default=__version__)]
-    kind: Annotated[KindObject, Field()]
+    kind: Annotated[Plural, Field()]
     spec: Annotated[T, Field()]
 
-    @field_validator("spec", mode="before")
-    def validate_spec_type(cls, value, values) -> Spec:
+    model_config = ConfigDict()
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_spec_type(cls, values: Any) -> Any:
+        value = values.get("spec")
         if not isinstance(value, dict) and not isinstance(value, list):
             return value
 
-        kind = values["kind"]
-        if kind not in Specs:
-            raise ValueError(f"Unknown object kind `{kind}`.")
+        kind = values.get("kind")
+        if kind is None or isinstance(kind, Plural):
+            return values
+        if kind in Plural.__members__:
+            kind = Plural.__members__[kind]
+        elif kind in Plural._value2member_map_:
+            kind = Plural._value2member_map_[kind]
+        else:
+            msg = str(tuple(Plural.__members__))
+            msg = f"Unknown object kind `{kind}`. Expected any of `{msg}`."
+            raise ValueError(msg)
 
-        TT = Specs[kind]
-        return TT.value.model_validate(value)
+        TT = Specs[kind.value]
+        values.update(spec=TT.value.model_validate(value))
+        return values
 
-    async def __call__(self, state: ApplyState):
-        return await self.spec(state)
-
+    # NOTE: Do not raise `typer.Exit` here since writing this such that data
+    #       classes do not contain typer. For the typerized function see
+    #       `ApplyMixins.apply`.
     @classmethod
     def load(cls, filepath: flags.ArgFilePath) -> Self:
         with open(filepath, "r") as file:
             data = yaml.safe_load(file)
-        return ObjectSchema.model_validate(data)
-        return ObjectSchema.model_validate(data)
+
+        if not isinstance(data, dict):
+            raise ApplyError(f"`{filepath}` must deserialize to a dictionary.")
+        return cls.model_validate(data)
+
+    async def __call__(self, state: ApplyState):
+        return await self.spec(state)
+
+
+class ApplyMixins:
+    state: ApplyState | None
+
+    def load(self, filepath: flags.ArgFilePath) -> ObjectSchema:
+        try:
+            res = ObjectSchema.load(filepath)
+            CONSOLE.print_json(res := json.dumps(res.model_dump()))
+        except ApplyError as err:
+            CONSOLE.print(f"[red]{err}")
+            raise typer.Exit()
+        return res
+
+    async def apply(self, filepath: flags.ArgFilePath) -> Tuple[httpx.Response, ...]:
+        data = self.load(filepath)
+        return tuple()
+
+    async def destroy(self, filepath: flags.ArgFilePath) -> Tuple[httpx.Response, ...]:
+        return tuple()

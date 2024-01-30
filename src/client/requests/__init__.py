@@ -16,6 +16,8 @@ from .assignments import AssignmentRequests
 from .events import EventsRequests
 
 
+# NOTE: All enums pertaining to tables should use the plural table names as
+#       enum names.
 class RequestsEnum(enum.Enum):
     users = UserRequests
     collections = CollectionRequests
@@ -75,18 +77,6 @@ class Requests(BaseRequest):
 
         if self.handler is None:
             raise ValueError("Handler missing.")
-
-        self.state = ApplyState(
-            handler=self.handler,
-            mode=ApplyMode.apply,
-            requests=self,
-        )
-
-    def apply(self, filepath: flags.ArgFilePath) -> Tuple[httpx.Response, ...]:
-        ...
-
-    def destroy(self, filepath: flags.ArgFilePath) -> Tuple[httpx.Response, ...]:
-        ...
 
 
 __all__ = (

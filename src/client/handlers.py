@@ -1,35 +1,16 @@
-import re
-import asyncio
-import httpx
-from typing import (
-    Annotated,
-    Generic,
-    List,
-    Any,
-    Protocol,
-    Self,
-    Tuple,
-    TypeVar,
-    overload,
-)
 import json
-from typing import (
-    Any,
-    Dict,
-)
+from typing import Annotated, Any, Dict, Protocol, Tuple, overload
 
+import httpx
+import typer
+import yaml
 from pydantic import BaseModel, Field
 from rich.console import Console
-import typer
-from rich.syntax import Syntax, SyntaxTheme
-
-from typing import Callable, Optional
-
-import yaml
-from client import flags
-from client.flags import Output
+from rich.syntax import Syntax
 from rich.table import Table
 
+from client import flags
+from client.flags import Output
 
 # =========================================================================== #
 # Types and Constants
@@ -39,52 +20,51 @@ CONSOLE_THEME = "fruity"
 CONSOLE = Console()
 
 
+# NOTE: Need distinct error type to not use vegue value error or risky
+#       `typer.Exit`.
+class HandlerError(Exception): ...
+
+
 class Handler(Protocol):
     @overload
     async def __call__(
         self,
         res: httpx.Response,
         data: Any | None = None,
-    ) -> httpx.Response:
-        ...
+    ) -> httpx.Response: ...
 
     @overload
     async def __call__(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] | None = None,
-    ) -> httpx.Response:
-        ...
+    ) -> httpx.Response: ...
 
     async def __call__(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] | None = None,
-    ) -> httpx.Response:
-        ...
+    ) -> httpx.Response: ...
 
     @overload
     async def handle(
         self,
         res: httpx.Response,
         data: Any | None = None,
-    ) -> int:
-        ...
+    ) -> int: ...
 
     @overload
     async def handle(
         self,
         res: Tuple[httpx.Response, ...],
         data: Tuple[Any, ...] | None = None,
-    ) -> int:
-        ...
+    ) -> int: ...
 
     async def handle(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] | None = None,
-    ) -> int:
-        ...
+    ) -> int: ...
 
 
 # =========================================================================== #
@@ -115,13 +95,15 @@ class ConsoleHandler(BaseModel):
         data: Any | Tuple[Any, ...] = None,
     ) -> int:
         match [res, data]:
-            case [[*items], [*data]]:
-                items = zip(items, data)
-                return sum((self.handle_one(*item) for item in items))
-            case [httpx.Response, data]:
-                return self.handle_one(res, data)
+            case [[*items], [*_] | None as data]:
+                if data is None:
+                    data = [None for _ in range(len(items))]
+                zipped = zip(items, data)
+                return sum((self.handle_one(*item) for item in zipped))
+            case [httpx.Response(), _ as data]:
+                return self.handle_one(res, data)  # type: ignore
             case _:
-                raise ValueError()
+                raise HandlerError(f"Failed to match `{[res, data]=}`.")
 
     def handle_one(
         self,
@@ -240,7 +222,7 @@ class ConsoleHandler(BaseModel):
         if not isinstance(data, list):
             msg = "Results must be a coerced into a `list` "
             msg += f"(is `{type(data)}`)."
-            raise ValueError(msg)
+            raise HandlerError(msg)
 
         return data
 
