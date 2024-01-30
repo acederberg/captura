@@ -131,11 +131,10 @@ class ConsoleHandler(BaseModel):
                 return 1
 
     def print_err(self, res: httpx.Response, data=None) -> int:
-        CONSOLE.print(f"[red]Request failed with status `{res.status_code}`.")
-        if data:
-            CONSOLE.print("[red]" + json.dumps(data, indent=2))
-            return 1
-        return 0
+        msg = f"[red]Request failed with status `{res.status_code}`. "
+        msg += "Response JSON: " + json.dumps(data) if data else ""
+        CONSOLE.print(msg)
+        return 1
 
     def print_json(self, res: httpx.Response, data=None) -> int:
         data = res.json() or data
@@ -145,8 +144,8 @@ class ConsoleHandler(BaseModel):
             CONSOLE.print("[red]Failed to decode response JSON.")
             CONSOLE.print(f"[red]{str(err)}")
             return 1
-
-        CONSOLE.print(Syntax(stringified, "json", theme=CONSOLE_THEME))
+        s = Syntax(stringified, "json", theme=CONSOLE_THEME, word_wrap=True)
+        CONSOLE.print(s)
         return 0
 
     def print_yaml(self, res: httpx.Response, data=None) -> int:
@@ -159,7 +158,8 @@ class ConsoleHandler(BaseModel):
             return 1
 
         stringified = "# YAML Ouput\n---\n" + stringified
-        CONSOLE.print(Syntax(stringified, "yaml", theme=CONSOLE_THEME))
+        s = Syntax(stringified, "yaml", theme=CONSOLE_THEME, word_wrap=True)
+        CONSOLE.print(s)
         return 0
 
     def print_table(self, res: httpx.Response, data=None) -> int:

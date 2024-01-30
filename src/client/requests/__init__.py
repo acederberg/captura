@@ -1,19 +1,20 @@
-import httpx
-import typer
 import enum
-
-from client.handlers import CONSOLE
 from typing import Tuple
 
+import httpx
+import typer
 from client import flags
 from client.flags import Output
+from client.handlers import CONSOLE
+
+from .assignments import AssignmentRequests
 from .base import BaseRequest
-from .users import UserRequests
 from .collections import CollectionRequests
 from .documents import DocumentRequests
-from .grants import GrantRequests
-from .assignments import AssignmentRequests
 from .events import EventsRequests
+from .grants import GrantRequests
+from .tokens import TokenRequests
+from .users import UserRequests
 
 
 # NOTE: All enums pertaining to tables should use the plural table names as
@@ -25,6 +26,7 @@ class RequestsEnum(enum.Enum):
     grants = GrantRequests
     assignments = AssignmentRequests
     events = EventsRequests
+    tokens = TokenRequests
 
 
 class Requests(BaseRequest):
@@ -38,6 +40,7 @@ class Requests(BaseRequest):
     grants: GrantRequests
     assignments: AssignmentRequests
     events: EventsRequests
+    tokenss: TokenRequests
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

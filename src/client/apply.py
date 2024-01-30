@@ -1,13 +1,14 @@
 import asyncio
 import enum
 import json
+import secrets
 from typing import Annotated, Any, Dict, Generic, List, Self, Tuple, TypeVar
 
 import httpx
 import typer
 import yaml
 from app import __version__
-from app.models import ChildrenAssignment, Plural
+from app.models import ChildrenAssignment, ChildrenGrant, Plural
 from app.schemas import CollectionPostSchema, DocumentPostSchema, UserSchema
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -25,13 +26,17 @@ from .requests import Requests
 class ApplyError(Exception):
     @classmethod
     def bad_mode(cls, bad: Any) -> Self:
-        msg = f"Unknown mode {bad}, expected one of `apply` or `destroy`."
+        msg = "expected one of `read`, `apply`, or `destroy`"
+        msg = f"Unknown mode {bad}, {msg}."
         return cls(msg)
 
-    msg_vegue = ""
+    @classmethod
+    def cannot_match(cls, bad: Any) -> Self:
+        return cls(f"Cannot match `{bad}`.")
 
 
 class ApplyMode(enum.Enum):
+    read = "read"
     apply = "apply"
     destroy = "destroy"
 
@@ -47,7 +52,98 @@ class ApplyState:
         self.handler = handler
 
 
-class SpecAssignment(BaseModel):
+# class ApplyStatus(BaseModel):
+#     uuid_status: Annotated[
+#         str,
+#         Field(default_factory=lambda: secrets.token_urlsafe(4)),
+#     ]
+#     uuid_status_previous: Annotated[str, Field()]
+#     uuid_obj: Annotated[str | None, Field(None)]
+#
+#     @classmethod
+#     def load(self, filepath: flags.ArgFilePath) -> str: ...
+
+
+class BaseAssoc(BaseModel):
+    # Collection/Document information.
+    kind_source: Annotated[ChildrenAssignment | None, Field(default=None)]
+    uuid_source: Annotated[str | None, Field(default=None)]
+
+    # Fill in one of these
+    name: Annotated[str | None, Field(default=None)]
+    uuid: Annotated[str | None, Field(default=None)]
+
+    @model_validator(mode="after")
+    def uuid_or_name(self) -> Self:
+        if (self.uuid is None) == (self.name is None):
+            raise ApplyError(
+                "Specify exactly one of `uuid` and `name`. Got "
+                f"`{self.uuid}` and `{self.name}`."
+            )
+
+        return self
+
+
+# class SpecGrant(BaseAssoc):
+#     async def resolve_uuid(self, state: ApplyState) -> str:
+#         if (name := self.name) is None:
+#             return self.uuid_source  # type: ignore
+#
+#         match self.kind_source:
+#             case ChildrenAssignment.documents:
+#                 res = await state.requests.documents.search(name_like=name)
+#             case ChildrenAssignment.collections:
+#                 res = await state.requests.collections.search(name_like=name)
+#             case _:
+#                 raise ApplyError("Unknown `kind_obj` `ChildrenAssignment`.")
+#
+#         if status := await state.handler.handle(res):
+#             raise typer.Exit(status)
+#         elif len(data := res.json()) != 1:
+#             raise ApplyError(f"Name `{name}` specifies many results.")
+#
+#         return data[0]["uuid"]
+#
+#     async def __call__(self, state: ApplyState) -> httpx.Response:
+#         client = state.requests.assignments
+#         documents, collections = client.documents, client.collections
+#         uuid_obj = [await self.resolve_uuid(state)]
+#
+#         if self.kind_source is None or self.uuid_source is None:
+#             raise ApplyError(
+#                 "`SpecAssignment` must define `kind_owner` and `uuid_owner` "
+#                 "to continue. These should either be specified directly or by"
+#                 "adding them from another called."
+#             )
+#
+#         match [state.mode, self.kind_source]:
+#             case ["apply", ChildrenAssignment.collections]:
+#                 res = await collections.create(self.uuid_source, uuid_obj)
+#             case ["apply", ChildrenAssignment.documents]:
+#                 res = await users.create(self.uuid_source, uuid_obj)
+#             case ["destroy", ChildrenAssignment.collections]:
+#                 res = await collections.delete(self.uuid_source, uuid_obj)
+#             case ["destroy", ChildrenAssignment.documents]:
+#                 res = await users.delete(self.uuid_source, uuid_obj)
+#             case [
+#                 _ as bad_mode,
+#                 ChildrenGrant.users | ChildrenGrant.documents,
+#             ]:
+#                 raise ApplyError.bad_mode(bad_mode)
+#             case ["apply" | "destroy", _ as bad]:
+#                 raise ApplyError(
+#                     f"Unknown source kind `{bad}` ` (expected one of "
+#                     "`documents` or `collection`)."
+#                 )
+#             case _ as bad:
+#                 raise ApplyError(f"Cannot match `{bad}`.")
+#
+#         if status := await state.handler.handle(res):
+#             raise typer.Exit(status)
+#         return res
+
+
+class SpecAssignment(BaseAssoc):
     """For both :class:`CollectionApplySchema` and
     :class:`DocumentApplySchema`.
 
@@ -71,61 +167,6 @@ class SpecAssignment(BaseModel):
         Either this field or :attr:`uuid` is required.
     """
 
-    # Collection/Document information.
-    kind_source: Annotated[ChildrenAssignment | None, Field(default=None)]
-    uuid_source: Annotated[str | None, Field(default=None)]
-
-    # Fill in one of these
-    name: Annotated[str | None, Field(default=None)]
-    uuid: Annotated[str | None, Field(default=None)]
-
-    @model_validator(mode="after")
-    def uuid_or_name(self) -> Self:
-        if (self.uuid is None) == (self.name is None):
-            raise ApplyError(
-                "Specify exactly one of `uuid` and `name`. Got "
-                f"`{self.uuid}` and `{self.name}`."
-            )
-
-        return self
-
-    async def __call__(self, state: ApplyState) -> httpx.Response:
-        client = state.requests.assignments
-        documents, collections = client.documents, client.collections
-        uuid_obj = [await self.resolve_uuid(state)]
-
-        if self.kind_source is None or self.uuid_source is None:
-            raise ApplyError(
-                "`SpecAssignment` must define `kind_owner` and `uuid_owner` "
-                "to continue. These should either be specified directly or by"
-                "adding them from another called."
-            )
-
-        match [state.mode, self.kind_source]:
-            case ["apply", ChildrenAssignment.collections]:
-                res = await collections.create(self.uuid_source, uuid_obj)
-            case ["apply", ChildrenAssignment.documents]:
-                res = await documents.create(self.uuid_source, uuid_obj)
-            case ["destroy", ChildrenAssignment.collections]:
-                res = await collections.delete(self.uuid_source, uuid_obj)
-            case ["destroy", ChildrenAssignment.documents]:
-                res = await documents.delete(self.uuid_source, uuid_obj)
-            case [
-                _ as bad_mode,
-                ChildrenAssignment.collections | ChildrenAssignment.documents,
-            ]:
-                raise ApplyError.bad_mode(bad_mode)
-
-            case ["apply" | "destroy", _ as bad]:
-                raise ApplyError(
-                    f"Unknown source kind `{bad}` ` (expected one of "
-                    "`documents` or `collection`)."
-                )
-
-        if status := await state.handler.handle(res):
-            raise typer.Exit(status)
-        return res
-
     async def resolve_uuid(self, state: ApplyState) -> str:
         if (name := self.name) is None:
             return self.uuid_source  # type: ignore
@@ -145,6 +186,49 @@ class SpecAssignment(BaseModel):
 
         return data[0]["uuid"]
 
+    async def __call__(self, state: ApplyState) -> httpx.Response:
+        client = state.requests.assignments
+        documents, collections = client.documents, client.collections
+        uuid_obj = [await self.resolve_uuid(state)]
+
+        if self.kind_source is None or self.uuid_source is None:
+            raise ApplyError(
+                "`SpecAssignment` must define `kind_owner` and `uuid_owner` "
+                "to continue. These should either be specified directly or by"
+                "adding them from another called."
+            )
+
+        match [state.mode, self.kind_source]:
+            case [ApplyMode.read, ChildrenAssignment.collections]:
+                res = await collections.read(self.uuid_source, uuid_obj)
+            case [ApplyMode.read, ChildrenAssignment.documents]:
+                res = await documents.read(self.uuid_source, uuid_obj)
+            case [ApplyMode.apply, ChildrenAssignment.collections]:
+                res = await collections.create(self.uuid_source, uuid_obj)
+            case [ApplyMode.apply, ChildrenAssignment.documents]:
+                res = await documents.create(self.uuid_source, uuid_obj)
+            case [ApplyMode.destroy, ChildrenAssignment.collections]:
+                res = await collections.delete(self.uuid_source, uuid_obj)
+            case [ApplyMode.destroy, ChildrenAssignment.documents]:
+                res = await documents.delete(self.uuid_source, uuid_obj)
+            case [
+                _ as bad_mode,
+                ChildrenAssignment.collections | ChildrenAssignment.documents,
+            ]:
+                raise ApplyError.bad_mode(bad_mode)
+            case ["apply" | "destroy", _ as bad]:
+                raise ApplyError(
+                    f"Unknown source kind `{bad}` ` (expected one of "
+                    "`documents` or `collection`)."
+                )
+            case _ as bad:
+                raise ApplyError.cannot_match(bad)
+
+        await state.handler.handle(res)
+        if status := await state.handler.handle(res):
+            raise typer.Exit(status)
+        return res
+
 
 class SpecDocument(DocumentPostSchema):
     collections: Annotated[
@@ -159,7 +243,6 @@ class SpecDocument(DocumentPostSchema):
                 res = await state.requests.documents.create(post)
                 if status := await state.handler.handle(res):
                     raise typer.Exit(status)
-
                 if self.collections is not None:
                     res = await asyncio.gather(
                         collection(state) for collection in self.collections
@@ -167,7 +250,6 @@ class SpecDocument(DocumentPostSchema):
                     status = await state.handler.handle(res)
                     if status:
                         raise typer.Exit(status)
-
             case ApplyMode.destroy:
                 # NOTE: Deletion should destroy assignments (to collections)
                 uuid = await self.resolve_uuid(state)
@@ -184,7 +266,7 @@ class SpecDocument(DocumentPostSchema):
             raise typer.Exit(status)
 
         if len(data := res.json()) != 1:
-            raise ApplyError(f"Name `{name}` specifies many results.")
+            raise ApplyError(f"Name `{self.name}` specifies many results.")
 
         return data[0]["uuid"]
 
@@ -217,6 +299,8 @@ class SpecCollection(CollectionPostSchema):
                     raise typer.Exit(status)
             case _ as bad:
                 raise ApplyError(f"Unknown mode `{bad}`.")
+
+        return res
 
     async def resolve_uuid(self, state: ApplyState) -> str:
         # NOTE: Call only after `apply`.
@@ -271,7 +355,17 @@ class Specs(enum.Enum):
 
 
 Spec = SpecUser | SpecCollection | SpecDocument | SpecAssignment
-T = TypeVar("T", SpecUser, SpecCollection, SpecDocument, SpecAssignment)
+T = TypeVar(
+    "T",
+    SpecUser,
+    SpecCollection,
+    SpecDocument,
+    SpecAssignment,
+    List[SpecUser],
+    List[SpecCollection],
+    List[SpecDocument],
+    List[SpecAssignment],
+)
 
 
 # NOTE: Holy fuck, this is awesome.
@@ -289,8 +383,11 @@ class ObjectSchema(BaseModel, Generic[T]):
         if not isinstance(value, dict) and not isinstance(value, list):
             return value
 
-        kind = values.get("kind")
-        if kind is None or isinstance(kind, Plural):
+        if (
+            (kind := values.get("kind")) is None
+            or isinstance(kind, Plural)
+            or kind == "list"
+        ):
             return values
         if kind in Plural.__members__:
             kind = Plural.__members__[kind]
@@ -315,27 +412,63 @@ class ObjectSchema(BaseModel, Generic[T]):
 
         if not isinstance(data, dict):
             raise ApplyError(f"`{filepath}` must deserialize to a dictionary.")
+
         return cls.model_validate(data)
 
-    async def __call__(self, state: ApplyState):
-        return await self.spec(state)
+    async def __call__(
+        self, state: ApplyState
+    ) -> Tuple[httpx.Response, ...] | httpx.Response:
+        match self.spec:
+            case list() as items:
+                return await asyncio.gather(item(state) for item in items)
+            case (
+                SpecUser()
+                | SpecDocument()
+                | SpecCollection()
+                | SpecAssignment()
+                # | SpecGrant()
+            ):
+                return await self.spec(state)
+            case _:
+                raise ApplyError(f"No spec for `{type(self.spec)}`.")
 
 
 class ApplyMixins:
-    state: ApplyState | None
+    _state: ApplyState | None
+
+    @property
+    def state(self) -> ApplyState:
+        # SHOULD NOT EXIT GRACEFULLY. THIS HAPPENS WHEN BAD IMPL
+        if self._state is None:
+            raise ApplyError("State is missing.")
+        return self._state
 
     def load(self, filepath: flags.ArgFilePath) -> ObjectSchema:
-        try:
-            res = ObjectSchema.load(filepath)
-            CONSOLE.print_json(res := json.dumps(res.model_dump()))
-        except ApplyError as err:
-            CONSOLE.print(f"[red]{err}")
-            raise typer.Exit()
+        res = ObjectSchema.load(filepath)
         return res
 
-    async def apply(self, filepath: flags.ArgFilePath) -> Tuple[httpx.Response, ...]:
-        data = self.load(filepath)
-        return tuple()
+    async def read(
+        self,
+        filepath: flags.ArgFilePath,
+    ) -> Tuple[httpx.Response, ...]:
+        print(self._client)
+        raise typer.Exit(1)
+        data = ObjectSchema.load(filepath)
+        res = await data(self.state)
+        return res
 
-    async def destroy(self, filepath: flags.ArgFilePath) -> Tuple[httpx.Response, ...]:
+    async def apply(
+        self,
+        filepath: flags.ArgFilePath,
+    ) -> Tuple[httpx.Response, ...]:
+        data = self.load(filepath)
+        res = await data(self.state)
+        return res
+
+    async def destroy(
+        self,
+        filepath: flags.ArgFilePath,
+    ) -> Tuple[httpx.Response, ...]:
+        data = self.load(filepath)
+        res = await data
         return tuple()

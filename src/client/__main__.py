@@ -1,16 +1,16 @@
-from client.config import Config
 from client import flags
-from client.requests import Requests
-from client.apply import ApplyMode, ApplyState, ApplyMixins
+from client.apply import ApplyMixins, ApplyMode, ApplyState
+from client.config import Config
 from client.handlers import Output
+from client.requests import Requests
 
 
 class It(Requests, ApplyMixins):
-    commands = ("apply", "destroy")
+    commands = ("read", "apply", "destroy")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.state = None
+        self._state = None
 
     def callback(
         self,
@@ -22,7 +22,7 @@ class It(Requests, ApplyMixins):
     ) -> None:
         super().callback(output, columns, profile=profile, host=host)
         assert self.handler is not None
-        self.state = ApplyState(
+        self._state = ApplyState(
             handler=self.handler,
             mode=ApplyMode.apply,
             requests=self,
@@ -36,7 +36,7 @@ def test_it():
     sig = inspect.signature(It.callback)
     assert sig.return_annotation is None
 
-    assert It.commands == ("apply", "destroy")
+    assert It.commands == ("read", "apply", "destroy")
     assert (output := sig.parameters.get("output")) is not None
     assert (columns := sig.parameters.get("columns")) is not None
     assert (profile := sig.parameters.get("profile")) is not None

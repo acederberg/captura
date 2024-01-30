@@ -1,22 +1,27 @@
 import base64
 import json
 import re
-import secrets
 from os import path
-from typing import Any, Dict
+from typing import Annotated, Any, Dict, List, Self, Tuple, overload
 
-import jwt
 import httpx
+import jwt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicKey
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
 from app import util
 from app.config import Config
 
 # Do not touch this! This pattern will have to run against many requests.
 logger = util.get_logger(__name__)
+PATTERN_TOKEN: re.Pattern = re.compile(
+    "^(?P<token>(?P<header>[\\w_-]+).(?P<payload>[\\w_-]+).(?P<signature>[\\w_-]+))$",
+    flags=re.I,
+)
 PATTERN_BEARER: re.Pattern = re.compile(
     "^Bearer (?P<token>(?P<header>[\\w_-]+).(?P<payload>[\\w_-]+).(?P<signature>[\\w_-]+))$",
     flags=re.I,
@@ -35,6 +40,7 @@ class Auth:
     :attr public_keys: A set of public keys, probably from a JWKS.
     """
 
+    config: Config
     issuer: str
     audience: str
     private_key: None | _RSAPrivateKey
@@ -46,8 +52,11 @@ class Auth:
         public_keys: Dict[str, _RSAPublicKey],
         private_key: None | _RSAPrivateKey = None,
     ):
-        self.issuer = config.auth0.issuer
-        self.audience = config.auth0.api.audience
+        # `issuer` and `audience` will not notice changes in config. Should not
+        #  matter as config should be static.
+        self.config = config
+        self.issuer = self.config.auth0.issuer
+        self.audience = self.config.auth0.api.audience
         self.private_key = private_key
         self.public_keys = public_keys
 
@@ -112,7 +121,7 @@ class Auth:
         logger.debug("Done loading!")
         return cls(config, {PYTEST_KID: public_key}, private_key)  # type: ignore
 
-    def decode(self, raw: str) -> Dict[str, Any]:
+    def decode(self, raw: str, *, header: bool = True) -> Dict[str, Any]:
         """Get the key id from the JWT header and verify signature, audience,
         and issuer.
 
@@ -120,12 +129,19 @@ class Auth:
             include ``Bearer``.
         :returns: The decoded JWT payload.
         """
-        matched = PATTERN_BEARER.match(raw)
-        if matched is None:
+
+        p = PATTERN_BEARER if header else PATTERN_TOKEN
+
+        if (matched := p.match(raw)) is None:
             raise ValueError("Malformed JWT.")
-        header = base64.b64decode(matched.group("header") + "==")
-        header = json.loads(header)
-        kid = header["kid"]  # type: ignore
+
+        data_header_raw = matched.group("header") + "=="
+        data_header_decoded = base64.b64decode(data_header_raw)
+        data_header = json.loads(data_header_decoded)
+
+        if (kid := data_header.get("kid")) is None:  # type: ignore
+            raise ValueError("JWT header missing `kid`.")
+
         return jwt.decode(
             matched.group("token"),
             self.public_keys[kid],
@@ -149,3 +165,56 @@ class Auth:
         return jwt.encode(
             payload, self.private_key, algorithm="RS256", headers={"kid": kid}
         )
+
+
+# NOTE: Do not exit (via `HTTPException`) anywhere in this module besides in
+#       in `try` prefixed methods.
+def try_decode(
+    auth: Auth,
+    authorization: str,
+    *,
+    header: bool = True,
+) -> Tuple[Dict[str, str] | None, HTTPException | None]:
+    try:
+        return auth.decode(authorization, header=header), None
+    except jwt.DecodeError:
+        _msg = "Failed to decode bearer token."
+    except jwt.InvalidAudienceError:
+        _msg = "Invalid bearer token audience."
+    except jwt.InvalidIssuerError:
+        _msg = "Invalid bearer token issuer."
+    except jwt.InvalidTokenError:
+        _msg = "Invalid bearer token."
+    except ValueError as err:
+        _msg = err.args[0]
+        print(err)
+    return None, HTTPException(401, detail="Invalid Token: " + _msg)
+
+
+class Token(BaseModel):
+    """Only used in `POST /auth/tokens` until later."""
+
+    uuid: Annotated[str, Field()]
+    permissions: Annotated[List[str], Field(default=list())]
+
+    def encode(self, auth: Auth) -> str:
+        return auth.encode(self.model_dump())
+
+    def try_encode(self, auth: Auth) -> str:
+        if auth.config.auth0.use:
+            raise HTTPException(
+                409,
+                detail="Token minting is not available in auth0 mode.",
+            )
+        return auth.encode(self.model_dump())
+
+    @classmethod
+    def decode(cls, auth: Auth, data: str, *, header: bool = True) -> Self:
+        return cls.model_validate(auth.decode(data, header=header))
+
+    @classmethod
+    def try_decode(cls, auth: Auth, data: str, *, header: bool = True) -> Self:
+        decoded, err = try_decode(auth, data, header=header)
+        if err is not None:
+            raise err
+        return cls.model_validate(decoded)

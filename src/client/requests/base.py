@@ -1,30 +1,26 @@
-import functools
 import asyncio
-from app.views import AppView
-
-import httpx
+import functools
 from typing import (
-    Dict,
+    Any,
+    Awaitable,
+    Callable,
     ClassVar,
+    Concatenate,
+    Dict,
+    ParamSpec,
+    Tuple,
     Type,
     TypeVar,
-    Awaitable,
-    ParamSpec,
-    Callable,
-    Any,
-    Concatenate,
-    Tuple,
 )
-from typing_extensions import Self
 
+import httpx
 import typer
-
-
+from app.views import AppView
 from client import flags
-from client.flags import Output, Verbage
 from client.config import Config
+from client.flags import Output, Verbage
 from client.handlers import ConsoleHandler, Handler
-
+from typing_extensions import Self
 
 # =========================================================================== #
 # TYPES
@@ -164,11 +160,10 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
             async with httpx.AsyncClient(
                 base_url=self.config.host.host, app=app
             ) as client:
-                self.client = client
+                self._client = client
                 res = await fn(*args, **kwargs)
             return res
 
-        # Typer will not run async.
         @functools.wraps(fn)
         def wrappersync(
             *args: V.args,

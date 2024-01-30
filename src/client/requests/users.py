@@ -1,11 +1,10 @@
 import httpx
-import yaml
-from client import flags
-from client.requests.base import BaseRequest, params
-from client.handlers import CONSOLE
 import typer
+import yaml
 from app.models import ChildrenUser
-
+from client import flags
+from client.handlers import CONSOLE
+from client.requests.base import BaseRequest, params
 
 __all__ = ("UserRequests",)
 
@@ -31,6 +30,7 @@ class UserRequests(BaseRequest):
         child: flags.FlagChildrenUser = None,
         child_uuids: flags.FlagUUIDChildrenOptional = list(),
     ):
+        print(self.headers)
         params = dict()
         match [child, bool(len(child_uuids))]:
             case [None, False]:

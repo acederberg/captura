@@ -1,16 +1,17 @@
-import pathlib
-from app.models import KindEvent, KindObject
-import yaml
 import enum
+import pathlib
+from typing import Annotated, List, Optional, TypeAlias, TypeVar
+
 import typer
 from app.models import (
-    ChildrenUser,
     ChildrenCollection,
     ChildrenDocument,
-    LevelStr,
+    ChildrenUser,
+    KindEvent,
+    KindObject,
     KindRecurse,
+    LevelStr,
 )
-from typing import TypeVar, TypeAlias, Annotated, List, Optional
 
 
 class Verbage(str, enum.Enum):
@@ -176,4 +177,14 @@ FlagProfile: TypeAlias = Annotated[
 ArgFilePath: TypeAlias = Annotated[
     pathlib.Path,
     typer.Argument(help="Path to the apply file."),
+]
+
+# --------------------------------------------------------------------------- #
+# Token flags
+
+FlagTokenOptional: TypeAlias = Annotated[
+    Optional[str], typer.Option(help="Specifies the token to use for any request.")
+]
+ArgTokenPayload: TypeAlias = Annotated[
+    str, typer.Option(help="Data for token payload.")
 ]

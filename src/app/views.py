@@ -2,9 +2,7 @@
 This includes a metaclass so that undecorated functions may be tested.
 
 """
-from typing import Iterable, Sequence, overload
-from sqlalchemy.engine import Row
-from sqlalchemy.sql.expression import false
+
 from http import HTTPMethod
 from typing import (
     Annotated,
@@ -12,13 +10,16 @@ from typing import (
     ClassVar,
     Dict,
     Generator,
+    Iterable,
     List,
     Literal,
     Optional,
+    Sequence,
     Set,
     Tuple,
     TypeAlias,
     TypeVar,
+    overload,
 )
 
 from fastapi import (
@@ -33,10 +34,12 @@ from fastapi import (
 )
 from fastapi.routing import APIRoute
 from sqlalchemy import delete, literal_column, or_, select, union, update
+from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session, make_transient, sessionmaker
-from sqlalchemy.sql.expression import true
+from sqlalchemy.sql.expression import false, true
 
 from app import __version__, util
+from app.auth import Token, try_decode
 from app.depends import (
     DependsAsyncSessionMaker,
     DependsAuth,
@@ -54,9 +57,9 @@ from app.models import (
     Edit,
     Event,
     KindEvent,
+    KindObject,
     KindRecurse,
     Level,
-    KindObject,
     Tables,
     User,
 )
@@ -73,20 +76,20 @@ from app.schemas import (
     DocumentSearchSchema,
     EditMetadataSchema,
     EditSchema,
-    KindObjectMinimalSchema,
-    ObjectSchema,
-    UserSearchSchema,
+    EventActionSchema,
     EventBaseSchema,
     EventSchema,
     EventSearchSchema,
     EventWithRootSchema,
     GrantPostSchema,
     GrantSchema,
+    KindObjectMinimalSchema,
+    ObjectSchema,
     PostUserSchema,
     UserSchema,
+    UserSearchSchema,
     UserUpdateSchema,
 )
-from app.schemas import EventActionSchema
 
 logger = util.get_logger(__name__)
 QueryUUIDCollection: TypeAlias = Annotated[Set[str], Query(min_length=1)]
@@ -224,8 +227,7 @@ class ViewMeta(type):
         return T
 
 
-class BaseView(ViewMixins, metaclass=ViewMeta):
-    ...
+class BaseView(ViewMixins, metaclass=ViewMeta): ...
 
 
 # =========================================================================== #
@@ -287,8 +289,7 @@ class DocumentView(BaseView):
         token: DependsToken,
         makesession: DependsSessionMaker,
         uuid: PathUUIDUser,
-    ):
-        ...
+    ): ...
 
     # TODO: When integration tests are written, all CUD endpoints should
     #       test that the private CUD fields are approprietly set.
@@ -389,8 +390,7 @@ class DocumentView(BaseView):
         *,
         level: Level,
         exclude_deleted: bool = True,
-    ) -> Tuple[User, Document]:
-        ...
+    ) -> Tuple[User, Document]: ...
 
     @overload
     @classmethod
@@ -402,8 +402,7 @@ class DocumentView(BaseView):
         *,
         level: Level,
         exclude_deleted: bool = True,
-    ) -> Tuple[User, Tuple[Document, ...]]:
-        ...
+    ) -> Tuple[User, Tuple[Document, ...]]: ...
 
     @classmethod
     def verify_access(
@@ -465,8 +464,7 @@ class CollectionView(BaseView):
         uuid_collection: PathUUIDCollection | Collection,
         *,
         exclude_deleted: bool = True,
-    ) -> Tuple[User, Collection]:
-        ...
+    ) -> Tuple[User, Collection]: ...
 
     @overload
     @classmethod
@@ -477,18 +475,16 @@ class CollectionView(BaseView):
         uuid_collection: QueryUUIDCollection | Sequence[Collection],
         *,
         exclude_deleted: bool = True,
-    ) -> Tuple[User, Tuple[Collection, ...]]:
-        ...
+    ) -> Tuple[User, Tuple[Collection, ...]]: ...
 
     @classmethod
     def verify_access(
         cls,
         session: Session,
         token: DependsToken | User,
-        uuid_collection: PathUUIDCollection
-        | QueryUUIDCollection
-        | Collection
-        | Sequence[Collection],
+        uuid_collection: (
+            PathUUIDCollection | QueryUUIDCollection | Collection | Sequence[Collection]
+        ),
         *,
         exclude_deleted: bool = True,
     ) -> Tuple[User, Collection] | Tuple[User, Tuple[Collection, ...]]:
@@ -1587,13 +1583,14 @@ class UserView(BaseView):
 
         with makesession() as session:
             user = User.if_exists(session, uuid, 404)
+            print("JERE")
             if user.deleted:
                 raise HTTPException(404)
             elif user.public:
                 return user  # type: ignore
             # At this point reject bad tokens. A user should be able to read
             # their own account.
-            elif user != token["uuid"]:
+            elif user.uuid != token["uuid"]:
                 raise HTTPException(401)
 
             return user  # type: ignore
@@ -1903,12 +1900,14 @@ class UserView(BaseView):
 class AuthView(BaseView):
     """This is where routes to handle login and getting tokens will be."""
 
-    view_routes = {"post_token": "/token", "get_login": "/login"}
+    view_routes = dict(
+        post_token="/token",
+        get_login="/login",
+        get_token="/token",
+    )
 
     @classmethod
-    def post_token(
-        cls, config: DependsConfig, auth: DependsAuth, payload: Dict[str, Any]
-    ) -> str:
+    def post_token(cls, auth: DependsAuth, data: Token) -> str:
         """Use this to create a new token.
 
         This endpoint only works when authentication is in pytest mode, and
@@ -1918,14 +1917,11 @@ class AuthView(BaseView):
         with that particular users UUID).
         """
 
-        logger.warning("Minting token...")
+        return data.try_encode(auth)
 
-        if config.auth0.use:
-            raise HTTPException(
-                409,
-                detail="Token minting is not available in auth0 mode.",
-            )
-        return auth.encode(payload)
+    @classmethod
+    def get_token(cls, auth: DependsAuth, data: str) -> Token:
+        return Token.try_decode(auth, data, header=False)
 
     @classmethod
     def get_login(cls, config: DependsConfig):
@@ -2149,8 +2145,7 @@ class EventView(BaseView):
             )
 
     @classmethod
-    def patch_undo_object(cls):
-        ...
+    def patch_undo_object(cls): ...
 
 
 class AppView(BaseView):
@@ -2167,5 +2162,4 @@ class AppView(BaseView):
     }
 
     @classmethod
-    def get_index(cls, uuid: int, makesession: DependsSessionMaker) -> None:
-        ...
+    def get_index(cls, uuid: int, makesession: DependsSessionMaker) -> None: ...

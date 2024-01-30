@@ -6,22 +6,22 @@ instance `auth` or `config`, except in the case that it is dependency used to
 trap and transform api parameters. No exports (things in ``__all__``) should
 be wrapped in ``Depends``.
 """
+
 from datetime import datetime
 from functools import cache
-from typing import Annotated, Any, Callable, Dict, TypeAlias
+from typing import Annotated, Any, Callable, Dict, Tuple, TypeAlias
 
 import jwt
 from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
-from typing import Tuple
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.ext.asyncio.session import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import util
-from app.auth import Auth
+from app.auth import Auth, try_decode
 from app.config import Config
 from app.models import User
 
@@ -134,25 +134,6 @@ def auth(
 
 
 DependsAuth: TypeAlias = Annotated[Auth, Depends(auth, use_cache=False)]
-
-
-def try_decode(
-    auth,
-    authorization,
-) -> Tuple[Dict[str, str], HTTPException | None]:
-    try:
-        return auth.decode(authorization), None
-    except jwt.DecodeError:
-        _msg = "Failed to decode bearer token."
-    except jwt.InvalidAudienceError:
-        _msg = "Invalid bearer token audience."
-    except jwt.InvalidIssuerError:
-        _msg = "Invalid bearer token issuer."
-    except jwt.InvalidTokenError:
-        _msg = "Invalid bearer token."
-    except ValueError as err:
-        _msg = err.args[0]
-    return None, HTTPException(401, detail="Invalid Token: " + _msg)
 
 
 @cache
