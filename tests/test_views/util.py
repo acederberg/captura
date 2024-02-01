@@ -1,21 +1,20 @@
-from http import HTTPMethod
-from typing import Tuple
-import pytest
 import functools
 import json
-from typing import Dict, Any, Set, Callable, ParamSpec, Concatenate
-from app.schemas import EventSchema
-from app.models import KindEvent
-from app import __version__
-import pytest_asyncio
-import httpx
-from app.auth import Auth
-from app import util as u
-from client.requests import Requests
-from client.base import BaseRequest
-from ..conftest import PytestClientConfig
+from http import HTTPMethod
+from typing import Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple, Type
 
-from typing import Type
+import httpx
+import pytest
+import pytest_asyncio
+from app import __version__
+from app import util as u
+from app.auth import Auth
+from app.models import KindEvent
+from app.schemas import EventSchema
+from client.requests import Requests
+from client.requests.base import BaseRequest
+
+from ..conftest import PytestClientConfig
 
 DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
@@ -203,8 +202,7 @@ class BaseTestViews:
         return self.T(client_config, async_client, token=token)
 
     @pytest.fixture(scope="session", autouse=True)
-    def invoke_loader(self, load_tables, setup_cleanup):
-        ...
+    def invoke_loader(self, load_tables, setup_cleanup): ...
 
 
 class PytestHandler:

@@ -141,12 +141,37 @@ class RequestMeta(type):
 
 
 class BaseRequest(RequestMixins, metaclass=RequestMeta):
-    @functools.cached_property
+    @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
             msg = "Client has was not provided to constructor or set."
             raise ValueError(msg)
         return self._client
+
+    @client.setter
+    def client(self, v: httpx.AsyncClient):
+        self._client = v
+        for child in self.children_instances.values():
+            child.client = v
+
+    @property
+    def token(self):
+        if self._token is not None:
+            return self._token
+        return self.config.profile.token
+
+    @token.setter
+    def token(self, v: Dict[str, str]):
+        self._token = v
+        for item in self.children_instances:
+            item.token = v
+
+    @property
+    def headers(self):
+        h = dict(content_type="application/json")
+        if self.token:
+            h.update(authorization=f"bearer {self.token}")
+        return h
 
     def typerize(
         self, fn: Callable[Concatenate[V], Awaitable[httpx.Response]]
@@ -161,6 +186,10 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
                 base_url=self.config.host.host, app=app
             ) as client:
                 self._client = client
+                print(f"{self.client = }")
+                assert self.client
+                print(f"{self = }")
+                print(f"{fn = }")
                 res = await fn(*args, **kwargs)
             return res
 
@@ -193,19 +222,6 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
             t.add_typer(requester.typer, name=name)
 
         return t
-
-    @property
-    def token(self):
-        if self._token is not None:
-            return self._token
-        return self.config.profile.token
-
-    @property
-    def headers(self):
-        h = dict(content_type="application/json")
-        if self.token:
-            h.update(authorization=f"bearer {self.token}")
-        return h
 
     def callback(
         self,

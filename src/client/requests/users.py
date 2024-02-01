@@ -30,7 +30,6 @@ class UserRequests(BaseRequest):
         child: flags.FlagChildrenUser = None,
         child_uuids: flags.FlagUUIDChildrenOptional = list(),
     ):
-        print(self.headers)
         params = dict()
         match [child, bool(len(child_uuids))]:
             case [None, False]:
@@ -46,7 +45,7 @@ class UserRequests(BaseRequest):
                 params["uuid_document"] = child_uuids
             case _:
                 CONSOLE.print(
-                    "[red]Invalid combination of `--child` and `--uuid-child`.",
+                    "[red]Invalid combination of `--child` and `--uuid-child`."
                 )
                 raise typer.Exit(2)
 
@@ -98,10 +97,15 @@ class UserRequests(BaseRequest):
         )
 
     async def delete(
-        self, uuid_user: flags.ArgUUIDUser, force: flags.FlagForce = False
+        self,
+        uuid_user: flags.ArgUUIDUser,
+        force: flags.FlagForce = False,
     ) -> httpx.Response:
         return await self.client.delete(
             f"/users/{uuid_user}",
-            params=dict(uuid_user=uuid_user, force=force),
+            params=dict(
+                uuid_user=uuid_user,
+                force=force,
+            ),
             headers=self.headers,
         )

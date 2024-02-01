@@ -1,12 +1,8 @@
 # import abc
 import enum
-from sqlalchemy import BooleanClauseList, true
-from app import util
-from logging import warn
-from fastapi import HTTPException, status
 import secrets
-from sqlalchemy.orm import Session
 from datetime import datetime
+from logging import warn
 from typing import (
     Annotated,
     Any,
@@ -20,15 +16,15 @@ from typing import (
     Type,
 )
 
+from fastapi import HTTPException, status
 from sqlalchemy import (
     CTE,
+    BinaryExpression,
+    BooleanClauseList,
     Column,
     ColumnClause,
-    CompoundSelect,
-    union,
-    union_all,
-    BinaryExpression,
     ColumnElement,
+    CompoundSelect,
     Enum,
     ForeignKey,
     Select,
@@ -38,12 +34,16 @@ from sqlalchemy import (
     literal_column,
     select,
     text,
+    true,
+    union,
+    union_all,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
+    Session,
     backref,
     column_property,
     mapped_column,
@@ -53,7 +53,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
-from app import __version__
+from app import __version__, util
 
 # =========================================================================== #
 # CONSTANTS, ENUMS, ETC.
@@ -200,9 +200,11 @@ class Base(DeclarativeBase):
         m = session.execute(select(cls).where(cls.uuid == uuid)).scalar()
         if m is None:
             detail = dict(
-                msg=msg
-                if msg is not None
-                else f"{cls} with uuid `{uuid}` does not exist."
+                msg=(
+                    msg
+                    if msg is not None
+                    else f"{cls} with uuid `{uuid}` does not exist."
+                )
             )
             detail["uuid"] = uuid
             raise HTTPException(status, detail=detail)
@@ -243,8 +245,6 @@ class PrimaryTableMixins:
     uuid: Mapped[MappedColumnUUID]
     public: Mapped[bool] = mapped_column(default=True)
     deleted: Mapped[bool] = mapped_column(default=False)
-    name: Mapped[str]
-    description: Mapped[str]
 
     @classmethod
     def q_select_ids(cls, uuids: Set[str]) -> Select:
@@ -280,6 +280,11 @@ class PrimaryTableMixins:
     ) -> ColumnElement[bool]:
         conds = cls.public == true()
         return cls.q_conds(uuids, exclude_deleted, conds=conds)  # type: ignore
+
+
+class SearchableTableMixins(PrimaryTableMixins):
+    name: Mapped[str]
+    description: Mapped[str]
 
     @classmethod
     def q_select_public(
@@ -341,8 +346,7 @@ class PrimaryTableMixins:
         user_uuid: str,
         uuids: Set[str] | None,
         exclude_deleted: bool = True,
-    ) -> Select:
-        ...
+    ) -> Select: ...
 
 
 # =========================================================================== #
@@ -635,7 +639,7 @@ class AssocUserDocument(Base):
         return res
 
 
-class User(PrimaryTableMixins, Base):
+class User(SearchableTableMixins, Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(
@@ -831,8 +835,7 @@ class User(PrimaryTableMixins, Base):
 
         return self
 
-    def check_sole_owner_document(self, document: "Document") -> Self:
-        ...
+    def check_sole_owner_document(self, document: "Document") -> Self: ...
 
     def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
         if self.uuid != event.uuid_user:
@@ -843,7 +846,7 @@ class User(PrimaryTableMixins, Base):
         return self
 
 
-class Collection(PrimaryTableMixins, Base):
+class Collection(SearchableTableMixins, Base):
     __tablename__ = "collections"
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -931,7 +934,7 @@ class Collection(PrimaryTableMixins, Base):
         )
 
 
-class Document(PrimaryTableMixins, Base):
+class Document(SearchableTableMixins, Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

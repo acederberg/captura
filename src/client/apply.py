@@ -451,8 +451,8 @@ class ApplyMixins:
         self,
         filepath: flags.ArgFilePath,
     ) -> Tuple[httpx.Response, ...]:
+        self.state.mode = ApplyMode.read
         print(self._client)
-        raise typer.Exit(1)
         data = ObjectSchema.load(filepath)
         res = await data(self.state)
         return res

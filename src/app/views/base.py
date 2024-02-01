@@ -4,96 +4,23 @@ This includes a metaclass so that undecorated functions may be tested.
 """
 
 from http import HTTPMethod
+import logging
 from typing import (
-    Annotated,
     Any,
     ClassVar,
     Dict,
-    Generator,
-    Iterable,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    TypeAlias,
-    TypeVar,
-    overload,
 )
 
 from fastapi import (
     APIRouter,
-    Depends,
-    FastAPI,
-    HTTPException,
-    Path,
-    Query,
-    WebSocket,
-    status,
 )
 from fastapi.routing import APIRoute
-from sqlalchemy import delete, literal_column, or_, select, union, update
-from sqlalchemy.engine import Row
-from sqlalchemy.orm import Session, make_transient, sessionmaker
-from sqlalchemy.sql.expression import false, true
 
 from app import __version__, util
-from app.auth import Token, try_decode
-from app.depends import (
-    DependsAsyncSessionMaker,
-    DependsAuth,
-    DependsConfig,
-    DependsSessionMaker,
-    DependsToken,
-    DependsTokenOptional,
-)
-from app.models import (
-    AnyModel,
-    AssocCollectionDocument,
-    AssocUserDocument,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    KindEvent,
-    KindObject,
-    KindRecurse,
-    Level,
-    Tables,
-    User,
-)
-from app.schemas import (
-    UUID,
-    AssignmentSchema,
-    CollectionMetadataSchema,
-    CollectionPatchSchema,
-    CollectionPostSchema,
-    CollectionSchema,
-    CollectionSearchSchema,
-    DocumentMetadataSchema,
-    DocumentSchema,
-    DocumentSearchSchema,
-    EditMetadataSchema,
-    EditSchema,
-    EventActionSchema,
-    EventBaseSchema,
-    EventSchema,
-    EventSearchSchema,
-    EventWithRootSchema,
-    GrantPostSchema,
-    GrantSchema,
-    KindObjectMinimalSchema,
-    ObjectSchema,
-    PostUserSchema,
-    UserSchema,
-    UserSearchSchema,
-    UserUpdateSchema,
-)
 
 
-# =========================================================================== #
-# Base Views.
+logger = util.get_logger(__name__)
+logger.level = logging.INFO
 
 
 class ViewMixins:

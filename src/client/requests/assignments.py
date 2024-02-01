@@ -1,5 +1,6 @@
+from typing import Any, Dict
+
 import httpx
-from typing import Dict, Any
 from client import flags
 from client.requests.base import BaseRequest
 
@@ -13,6 +14,7 @@ class AssignmentCollectionRequests(BaseRequest):
         uuid_collection: flags.ArgUUIDCollection,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
     ) -> httpx.Response:
+        print("assign-collections-read", self.client)
         params: Dict[str, Any] = dict()
         if uuid_document:
             params.update(uuid_document=uuid_document)
@@ -55,6 +57,7 @@ class AssignmentDocumentRequests(BaseRequest):
         uuid_document: flags.ArgUUIDDocument,
         uuid_collection: flags.FlagUUIDCollectionsOptional = list(),
     ) -> httpx.Response:
+        print("assign-documents-read", self.client)
         params: Dict[str, Any] = dict()
         if uuid_collection:
             params.update(uuid_collection=uuid_collection)

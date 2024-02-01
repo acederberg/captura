@@ -1,35 +1,21 @@
 import asyncio
-
 import secrets
-from typing import (
-    Tuple,
-)
+from typing import Tuple
 
 import httpx
 import pytest
 from app import __version__, util
 from app.auth import Auth
-from app.models import (
-    Collection,
-    Document,
-    KindEvent,
-    KindObject,
-)
-from app.schemas import (
-    EventSchema,
-    UserSchema,
-)
-from client.requests import (
-    ChildrenUser,
-    UserRequests,
-)
+from app.models import ChildrenUser, Collection, Document, KindEvent, KindObject
+from app.schemas import EventSchema, UserSchema
+from client.requests import UserRequests
 from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import util
 
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import requests, BaseTestViews
+from .util import BaseTestViews, requests
 
 
 class TestUserViews(BaseTestViews):
@@ -91,7 +77,7 @@ class TestUserViews(BaseTestViews):
         token_init = client.token
         client.token = (token_secondary := auth.encode({"uuid": "99d-99d-99d"}))
         response = await client.read(util.DEFAULT_UUID)
-        if err := util.check_status(response, 401):
+        if err := util.check_status(response, 403):
             raise err
 
         # Back to initial user.
