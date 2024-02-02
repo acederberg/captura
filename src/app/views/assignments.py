@@ -4,6 +4,7 @@ from app import __version__, util
 from app.depends import DependsSessionMaker, DependsToken
 from app.models import (
     AssocCollectionDocument,
+    ChildrenAssignment,
     Collection,
     Document,
     Event,
@@ -16,6 +17,7 @@ from app.schemas import AssignmentSchema, EventSchema
 from app.views import args
 from app.views.access import Access
 from app.views.base import BaseView
+from app.views.delete import Delete
 from fastapi import HTTPException
 from sqlalchemy import delete, literal_column, select, update
 from sqlalchemy.orm import Session
@@ -34,24 +36,24 @@ class AssignmentView(BaseView):
         get_assignment_document="/documents/{uuid_document}",
     )
 
-    @classmethod
-    def split_assignments(
-        cls,
-        session: Session,
-        item,
-        uuid_values: Set[str],
-        uuid_column,
-    ) -> Tuple[Set[str], Set[str]]:
-        q = item.q_select_assignment(uuid_values, exclude_deleted=False)
-        exps = tuple(
-            select(uuid_column).select_from(
-                q.where(AssocCollectionDocument.deleted == bool_()).subquery()
-            )
-            for bool_ in (true, false)
-        )
-
-        out = tuple(set(session.execute(exp).scalars()) for exp in exps)
-        return out  # type: ignore
+    # @classmethod
+    # def split_assignments(
+    #     cls,
+    #     session: Session,
+    #     item,
+    #     uuid_values: Set[str],
+    #     uuid_column,
+    # ) -> Tuple[Set[str], Set[str]]:
+    #     q = item.q_select_assignment(uuid_values, exclude_deleted=False)
+    #     exps = tuple(
+    #         select(uuid_column).select_from(
+    #             q.where(AssocCollectionDocument.deleted == bool_()).subquery()
+    #         )
+    #         for bool_ in (true, false)
+    #     )
+    #
+    #     out = tuple(set(session.execute(exp).scalars()) for exp in exps)
+    #     return out  # type: ignore
 
     @classmethod
     def delete_assignment_document(
@@ -63,79 +65,84 @@ class AssignmentView(BaseView):
         force: args.QueryForce = False,
     ) -> EventSchema:
         with sessionmaker() as session:
-            user, (document,), _ = Access(session, token).assignment(
-                uuid_document={uuid_document},
-                uuid_collection=uuid_collection,
+            access = Access(session, token)
+            user, collection, documents = access.assignment_document(
+                uuid_document,
+                resolve_target=uuid_collection,
                 level=Level.own,
                 exclude_deleted=False,
             )
+            event = Delete(session, token, force=force).assignment_document(
+                collection, documents, resolve_user=user
+            )
+            return EventSchema.model_validate(event)
 
             # NOTE: Ignore entries that are already deletd.
-            uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
-                session, document, uuid_collection, literal_column("uuid")
-            )
-
-            if force:
-                detail = "Assignment force deleted."
-                uuid_assign_active |= uuid_assign_deleted
-                q_del = delete(AssocCollectionDocument).where(
-                    AssocCollectionDocument.uuid.in_(uuid_assign_active)
-                )
-            else:
-                detail = "Assignment deleted."
-                q_del = (
-                    update(AssocCollectionDocument)
-                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
-                    .values(deleted=True)
-                )
-
-            # DELETED ALREADY EXCLUDED IN NON FORCE CASE
-            uuid_collection_wassign_active = set(
-                session.execute(
-                    select(Collection.uuid)
-                    .join(AssocCollectionDocument)
-                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
-                ).scalars()
-            )
-            q_assocs = document.q_select_assignment(
-                uuid_collection_wassign_active,
-                exclude_deleted=False,
-            )
-            assocs = list(session.execute(q_assocs).scalars())
-
-            event_common: Dict[str, Any] = dict(
-                api_origin="DELETE /assignments/documents/<uuid>",
-                api_version=__version__,
-                detail=detail,
-                uuid_user=user.uuid,
-                kind=KindEvent.delete,
-            )
-
-            session.add(
-                event := Event(
-                    **event_common,
-                    kind_obj=KindObject.document,
-                    uuid_obj=document.uuid,
-                    children=[
-                        Event(
-                            **event_common,
-                            kind_obj=KindObject.collection,
-                            uuid_obj=assoc.uuid_collection,
-                            children=[
-                                Event(
-                                    **event_common,
-                                    kind_obj=KindObject.assignment,
-                                    uuid_obj=assoc.uuid,
-                                )
-                            ],
-                        )
-                        for assoc in assocs
-                    ],
-                )
-            )
-            session.execute(q_del)
-            session.commit()
-            session.refresh(event)
+            # uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
+            #     session, document, uuid_collection, literal_column("uuid")
+            # )
+            #
+            # if force:
+            #     detail = "Assignment force deleted."
+            #     uuid_assign_active |= uuid_assign_deleted
+            #     q_del = delete(AssocCollectionDocument).where(
+            #         AssocCollectionDocument.uuid.in_(uuid_assign_active)
+            #     )
+            # else:
+            #     detail = "Assignment deleted."
+            #     q_del = (
+            #         update(AssocCollectionDocument)
+            #         .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+            #         .values(deleted=True)
+            #     )
+            #
+            # # DELETED ALREADY EXCLUDED IN NON FORCE CASE
+            # uuid_collection_wassign_active = set(
+            #     session.execute(
+            #         select(Collection.uuid)
+            #         .join(AssocCollectionDocument)
+            #         .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+            #     ).scalars()
+            # )
+            # q_assocs = document.q_select_assignment(
+            #     uuid_collection_wassign_active,
+            #     exclude_deleted=False,
+            # )
+            # assocs = list(session.execute(q_assocs).scalars())
+            #
+            # event_common: Dict[str, Any] = dict(
+            #     api_origin="DELETE /assignments/documents/<uuid>",
+            #     api_version=__version__,
+            #     detail=detail,
+            #     uuid_user=user.uuid,
+            #     kind=KindEvent.delete,
+            # )
+            #
+            # session.add(
+            #     event := Event(
+            #         **event_common,
+            #         kind_obj=KindObject.document,
+            #         uuid_obj=document.uuid,
+            #         children=[
+            #             Event(
+            #                 **event_common,
+            #                 kind_obj=KindObject.collection,
+            #                 uuid_obj=assoc.uuid_collection,
+            #                 children=[
+            #                     Event(
+            #                         **event_common,
+            #                         kind_obj=KindObject.assignment,
+            #                         uuid_obj=assoc.uuid,
+            #                     )
+            #                 ],
+            #             )
+            #             for assoc in assocs
+            #         ],
+            #     )
+            # )
+            # session.execute(q_del)
+            # session.commit()
+            # session.refresh(event)
 
             return EventSchema.model_validate(event)
 
@@ -149,80 +156,88 @@ class AssignmentView(BaseView):
         force: args.QueryForce = False,
     ) -> EventSchema:
         with sessionmaker() as session:
-            print("========================================================")
-            user, _, (collection,) = Access(session, token).assignment(
-                uuid_collection={uuid_collection},
-                uuid_document=uuid_document,
-                level=Level.view,
+            # Users need to be able to access all for force deletion
+            access = Access(session, token)
+            user, documents, collections = access.assignment_collection(
+                uuid_collection,
+                resolve_target=uuid_document,
+                exclude_deleted=False,
             )
-            uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
-                session, collection, uuid_document, literal_column("uuid")
+            res = Delete(session, token).assignment_collection(
+                documents,
+                collections,
+                resolve_user=user,
             )
-            if force:
-                detail = "Assignment force deleted."
-                uuid_assign_active |= uuid_assign_deleted
-                q_del = delete(AssocCollectionDocument).where(
-                    AssocCollectionDocument.uuid.in_(uuid_assign_active)
-                )
-            else:
-                detail = "Assignment deleted."
-                q_del = (
-                    update(AssocCollectionDocument)
-                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
-                    .values(deleted=True)
-                )
+            return res
 
-            # NOTE: DO NOT EXCLUDED DELETED VALUES IN `q_select_assignment`.
-            #       DELETED VALUES MAY EXIST AND REQUIRE FORCE DELETION.
-            uuid_docs_active = set(
-                session.execute(
-                    select(Document.uuid)
-                    .join(AssocCollectionDocument)
-                    .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
-                ).scalars()
-            )
-            q_assocs = collection.q_select_assignment(
-                uuid_docs_active, exclude_deleted=False
-            )
-            util.sql(session, q_assocs)
-            assocs = list(session.execute(q_assocs).scalars())
-
-            # Create events
-            event_common = dict(
-                api_origin="DELETE /assignments/collections/<uuid>",
-                api_version=__version__,
-                kind=KindEvent.delete,
-                uuid_user=user.uuid,
-                detail=detail,
-            )
-            event = Event(
-                **event_common,
-                kind_obj=KindObject.collection,
-                uuid_obj=collection.uuid,
-                children=[
-                    session.refresh(assoc)
-                    or Event(
-                        **event_common,
-                        kind_obj=KindObject.document,
-                        uuid_obj=assoc.uuid_document,
-                        children=[
-                            Event(
-                                **event_common,
-                                kind_obj=KindObject.assignment,
-                                uuid_obj=assoc.uuid,
-                            )
-                        ],
-                    )
-                    for assoc in assocs
-                ],
-            )
-
-            session.add(event)
-            session.execute(q_del)
-            session.commit()
-            session.refresh(event)
-
-            return EventSchema.model_validate(event)
+            # uuid_assign_deleted, uuid_assign_active = cls.split_assignments(
+            #     session, collection, uuid_document, literal_column("uuid")
+            # )
+            # if force:
+            #     detail = "Assignment force deleted."
+            #     uuid_assign_active |= uuid_assign_deleted
+            #     q_del = delete(AssocCollectionDocument).where(
+            #         AssocCollectionDocument.uuid.in_(uuid_assign_active)
+            #     )
+            # else:
+            #     detail = "Assignment deleted."
+            #     q_del = (
+            #         update(AssocCollectionDocument)
+            #         .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+            #         .values(deleted=True)
+            #     )
+            #
+            # # NOTE: DO NOT EXCLUDED DELETED VALUES IN `q_select_assignment`.
+            # #       DELETED VALUES MAY EXIST AND REQUIRE FORCE DELETION.
+            # uuid_docs_active = set(
+            #     session.execute(
+            #         select(Document.uuid)
+            #         .join(AssocCollectionDocument)
+            #         .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
+            #     ).scalars()
+            # )
+            # q_assocs = collection.q_select_assignment(
+            #     uuid_docs_active, exclude_deleted=False
+            # )
+            # util.sql(session, q_assocs)
+            # assocs = list(session.execute(q_assocs).scalars())
+            #
+            # # Create events
+            # event_common = dict(
+            #     api_origin="DELETE /assignments/collections/<uuid>",
+            #     api_version=__version__,
+            #     kind=KindEvent.delete,
+            #     uuid_user=user.uuid,
+            #     detail=detail,
+            # )
+            # event = Event(
+            #     **event_common,
+            #     kind_obj=KindObject.collection,
+            #     uuid_obj=collection.uuid,
+            #     children=[
+            #         session.refresh(assoc)
+            #         or Event(
+            #             **event_common,
+            #             kind_obj=KindObject.document,
+            #             uuid_obj=assoc.uuid_document,
+            #             children=[
+            #                 Event(
+            #                     **event_common,
+            #                     kind_obj=KindObject.assignment,
+            #                     uuid_obj=assoc.uuid,
+            #                 )
+            #             ],
+            #         )
+            #         for assoc in assocs
+            #     ],
+            # )
+            #
+            # session.add(event)
+            # session.execute(q_del)
+            # session.commit()
+            # session.refresh(event)
+            #
+            # return EventSchema.model_validate(event)
 
     @classmethod
     def post_assignment_document(
@@ -411,7 +426,7 @@ class AssignmentView(BaseView):
         uuid_collection: args.QueryUUIDCollectionOptional = None,
     ) -> List[AssignmentSchema]:
         with sessionmaker() as session:
-            _, document = Access(session, token, uuid_document).document(
+            _, document = Access(session, token).document(
                 uuid_document, level=Level.view
             )
             q = document.q_select_assignment(

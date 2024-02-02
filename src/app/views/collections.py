@@ -22,7 +22,9 @@ from app.schemas import (
     EventSchema,
 )
 from app.views import args
+from app.views.access import Access
 from app.views.base import BaseView
+from app.views.delete import Delete
 from fastapi import Depends, HTTPException
 from sqlalchemy import delete, literal_column, select, union, update
 from sqlalchemy.orm import Session
@@ -104,80 +106,85 @@ class CollectionView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid_collection: args.PathUUIDCollection,
-        restore: bool = False,
-    ) -> None:  # EventSchema:
-        event_common = dict(
-            api_version=__version__,
-            api_origin="DELETE /collections/<uuid>",
-            kind=KindEvent.delete,
-            uuid_user=token["uuid"],
-            detail=f"Collection {'restored' if restore else 'deleted'}.",
-        )
+        force: bool = True,
+        # restore: bool = False,
+    ) -> EventSchema:
+        # event_common = dict(
+        #     api_version=__version__,
+        #     api_origin="DELETE /collections/<uuid>",
+        #     kind=KindEvent.delete,
+        #     uuid_user=token["uuid"],
+        #     detail=f"Collection {'restored' if restore else 'deleted'}.",
+        # )
         with sessionmaker() as session:
-            collection = Collection.if_exists(
-                session, uuid_collection
-            ).check_not_deleted()
-            user = (
-                User.if_exists(session, token["uuid"])
-                .check_not_deleted(410)
-                .check_can_access_collection(collection)
-            )
-            if user.id != collection.id_user:
-                raise HTTPException(
-                    403,
-                    detail=dict(
-                        msg="User can only delete their own collections.",
-                        uuid_user=token["uuid"],
-                        uuid_collection=uuid_collection,
-                    ),
-                )
-
-            collection.deleted = not restore
-            session.add(collection)
-            session.commit()
-
-            p = select(Document.uuid).join(AssocCollectionDocument)
-            p = p.where(AssocCollectionDocument.id_collection == collection.id)
-            q = select(literal_column("uuid"))
-            q = union(q.select_from(collection.q_select_documents()), p)
-            uuid_document = set(session.execute(q).scalars())
-
-        event_assign_uuid: str | None = None
-        if len(uuid_document):
-            event_assign_uuid = AssignmentView.delete_assignment(
-                sessionmaker,
-                token,
-                uuid_collection,
-                uuid_document,
-                restore=restore,
-            ).uuid
-
-        with sessionmaker() as session:
-            event = Event(
-                **event_common,
-                kind_obj=KindObject.collection,
-                uuid_obj=token["uuid"],
-            )
-
-            if event_assign_uuid is not None:
-                q = select(Event).where(Event.uuid == event_assign_uuid)
-                event_assignment = session.execute(q).scalar()
-                assert event_assignment is not None
-
-                detail = event_assignment.detail
-                detail = detail.replace(".", " (DELETE /collections/<uuid>).")
-                event_assignment.update(
-                    session,
-                    api_origin=event_common["api_origin"],
-                    detail=detail,
-                )
-                event.children.append(event_assignment)
-
-            session.add(event)
-            session.commit()
-            session.refresh(event)
-
+            user, collection = Access(session, token).collection(uuid_collection)
+            event = Delete(session, token, force=force).collection(collection)
             return EventSchema.model_validate(event)
+
+        #     collection = Collection.if_exists(
+        #         session, uuid_collection
+        #     ).check_not_deleted()
+        #     user = (
+        #         User.if_exists(session, token["uuid"])
+        #         .check_not_deleted(410)
+        #         .check_can_access_collection(collection)
+        #     )
+        #     if user.id != collection.id_user:
+        #         raise HTTPException(
+        #             403,
+        #             detail=dict(
+        #                 msg="User can only delete their own collections.",
+        #                 uuid_user=token["uuid"],
+        #                 uuid_collection=uuid_collection,
+        #             ),
+        #         )
+        #
+        #     collection.deleted = not restore
+        #     session.add(collection)
+        #     session.commit()
+        #
+        #     p = select(Document.uuid).join(AssocCollectionDocument)
+        #     p = p.where(AssocCollectionDocument.id_collection == collection.id)
+        #     q = select(literal_column("uuid"))
+        #     q = union(q.select_from(collection.q_select_documents()), p)
+        #     uuid_document = set(session.execute(q).scalars())
+        #
+        # event_assign_uuid: str | None = None
+        # if len(uuid_document):
+        #     event_assign_uuid = AssignmentView.delete_assignment(
+        #         sessionmaker,
+        #         token,
+        #         uuid_collection,
+        #         uuid_document,
+        #         restore=restore,
+        #     ).uuid
+        #
+        # with sessionmaker() as session:
+        #     event = Event(
+        #         **event_common,
+        #         kind_obj=KindObject.collection,
+        #         uuid_obj=token["uuid"],
+        #     )
+        #
+        #     if event_assign_uuid is not None:
+        #         q = select(Event).where(Event.uuid == event_assign_uuid)
+        #         event_assignment = session.execute(q).scalar()
+        #         assert event_assignment is not None
+        #
+        #         detail = event_assignment.detail
+        #         detail = detail.replace(".", " (DELETE /collections/<uuid>).")
+        #         event_assignment.update(
+        #             session,
+        #             api_origin=event_common["api_origin"],
+        #             detail=detail,
+        #         )
+        #         event.children.append(event_assignment)
+        #
+        #     session.add(event)
+        #     session.commit()
+        #     session.refresh(event)
+        #
+        #     return EventSchema.model_validate(event)
 
     @classmethod
     def patch_collection(

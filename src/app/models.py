@@ -9,11 +9,15 @@ from typing import (
     Callable,
     Dict,
     Generator,
+    Generic,
     List,
     Self,
     Set,
     Tuple,
     Type,
+    TypeAlias,
+    TypeVar,
+    overload,
 )
 
 from fastapi import HTTPException, status
@@ -174,25 +178,67 @@ MappedColumnUUID = Annotated[
     ),
 ]
 MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
+
 # =========================================================================== #
 # Models and Mixins
+
+# T = TypeVar(
+#     "T",
+#     "AssocUserDocument",
+#     "AssocCollectionDocument",
+#     "User",
+#     "Collection",
+#     "Document",
+#     "Edit",
+# )
+# ResolvableGenericSingular: TypeAlias = str | T
+# ResolvableGenericMany: TypeAlias = Set[str] | Tuple[T, ...]
+# ResolvableGeneric: TypeAlias = ResolvableGenericSingular | ResolvableGenericMany
+
+
+# @overload
+# def resolve(
+#     cls: T,
+#     session: Session,
+#     that: ResolvableGenericMany,
+# ) -> Tuple[T, ...]: ...
+#
+#
+# @overload
+# def resolve(
+#     cls: T,
+#     session: Session,
+#     that: ResolvableGenericSingular,
+# ) -> T: ...
+#
+#
+# def resolve(
+#     cls: T,
+#     session: Session,
+#     that: ResolvableGeneric,
+# ) -> T | Tuple[T, ...]:
+#     match that:
+#         case tuple():
+#             return that
+#         case cls():  # type: ignore
+#             return that
+#         case str():
+#             return cls.if_exists(session, that)
+#         case set():
+#             return cls.if_many(session, that)
+#         case _ as bad:
+#             raise ValueError(f"Invalid identifier `{bad}`.")
+#
 
 
 class Base(DeclarativeBase):
     uuid: Mapped[MappedColumnUUID]
-
-    def get_session(self) -> Session:
-        session = object_session(self)
-        if session is None:
-            detail = dict(
-                uuid=self.uuid,
-                kind=KindObject._value2member_map_[self.__tablename__].name,
-                msg="Could not find session.",
-            )
-            raise HTTPException(500, detail=detail)
-        return session
+    deleted: Mapped[MappedColumnDeleted]
 
     # NOTE: Only `classmethod`s should need session due to `object_session`.
+
+    # ----------------------------------------------------------------------- #
+    # Finders.
     @classmethod
     def if_exists(
         cls, session: Session, uuid: str, status: int = 404, msg=None
@@ -223,15 +269,101 @@ class Base(DeclarativeBase):
 
         return tuple(res)
 
+    # ----------------------------------------------------------------------- #
+    # Resolvers
+
+    ResolvableSelfSingular: TypeAlias = Self | str
+    ResolvableSelfMultiple: TypeAlias = Tuple[Self, ...] | Set[str]
+    ResolvableSelf: TypeAlias = ResolvableSelfSingular | ResolvableSelfMultiple
+
+    @overload
+    @classmethod
+    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self: ...
+
+    @overload
+    @classmethod
+    def resolve(
+        cls, session: Session, that: ResolvableSelfMultiple
+    ) -> Tuple[Self, ...]: ...
+
+    @classmethod
+    def resolve(cls, session: Session, that: ResolvableSelf) -> Self | Tuple[Self, ...]:
+        """Provided :param:`that` which is any reasonable representation of
+        a(n) instance(s), return the associated instance(s).
+        """
+        match that:
+            case tuple():
+                return that
+            case cls():  # type: ignore
+                return that
+            case str():
+                return cls.if_exists(session, that)
+            case set():
+                return cls.if_many(session, that)
+            case _ as bad:
+                raise ValueError(f"Invalid identifier `{bad}`.")
+
+    @overload
+    @classmethod
+    def resolve_uuid(
+        cls,
+        session: Session,
+        that: ResolvableSelfMultiple,
+    ) -> Set[str]: ...
+
+    @overload
+    @classmethod
+    def resolve_uuid(
+        cls,
+        session: Session,
+        that: ResolvableSelfSingular,
+    ) -> str: ...
+
+    @classmethod
+    def resolve_uuid(
+        cls,
+        session: Session,
+        that: ResolvableSelf,
+    ) -> str | Set[str]:
+
+        data: Self | Tuple[Self, ...]
+        match data := cls.resolve(session, that):
+            case Self():
+                return data.uuid
+            case list():
+                return set(item.uuid for item in data)
+            case set() | str():
+                return data
+            case _ as bad:
+                raise ValueError(f"Invalid identifier `{bad}`.")
+
+    # ----------------------------------------------------------------------- #
+    # Rest
+
     @classmethod
     def q_uuid(cls, uuids: set[str]):
         return select(cls).where(cls.uuid.in_(uuids))
 
-    def check_not_deleted(self, status_code: int = 410, deleted: bool = True) -> Self:
-        if not hasattr(self, "deleted"):
-            msg = f"`{self.__class__.__name__}` has no column `deleted`."
-            raise ValueError(msg)
-        if getattr(self, "deleted") is deleted:
+    def get_session(self) -> Session:
+        session = object_session(self)
+        if session is None:
+            detail = dict(
+                uuid=self.uuid,
+                kind=KindObject._value2member_map_[self.__tablename__].name,
+                msg="Could not find session.",
+            )
+            raise HTTPException(500, detail=detail)
+        return session
+
+    def check_not_deleted(
+        self,
+        status_code: int = 410,
+        # deleted: bool = True,
+    ) -> Self:
+        print(self)
+        print(self.deleted)
+        print(self.uuid)
+        if self.deleted:
             detail = dict(msg="Item is deleted.", uuid=self.uuid)
             raise HTTPException(status_code, detail=detail)
         return self
@@ -571,8 +703,8 @@ class AssocCollectionDocument(Base):
 
     # NOTE: Since this object supports soft deletion (for the deletion grace
     #       period that will later be implemented) deleted is included.
-    deleted: Mapped[MappedColumnDeleted]
-    uuid: Mapped[MappedColumnUUID]
+    # deleted: Mapped[MappedColumnDeleted]
+    # uuid: Mapped[MappedColumnUUID]
     id_document: Mapped[int] = mapped_column(
         ForeignKey("documents.id"),
         primary_key=True,
@@ -603,13 +735,49 @@ class AssocCollectionDocument(Base):
             raise ValueError("Inconcievable!")
         return res
 
+    @classmethod
+    def q_split(
+        cls,
+        uuids: Set[str],
+        item: "Collection | Document",
+    ) -> Tuple[Select, Select]:
+
+        # match item:
+        #     case Collection():
+        #         uuid_column = literal_column("uuid_collection")
+        #     case Document():
+        #         uuid_column = literal_column("uuid_document")
+        #     case _:
+        #         raise ValueError("Inconcievable!")
+
+        q = item.q_select_assignment(uuids, exclude_deleted=False)
+        return tuple(  # type: ignore
+            select(literal_column("uuid")).select_from(
+                q.where(AssocCollectionDocument.deleted == bool_()).subquery()
+            )
+            for bool_ in (true, false)
+        )
+
+    @classmethod
+    def split(
+        cls,
+        session: Session,
+        uuids: Set[str],
+        item: "ResolvableSingular[Collection] | ResolvableSingular[Document]",
+    ) -> Tuple[Set[str], Set[str]]:
+
+        item_resolved = resolve(session, item)
+        qs = cls.q_split(uuids, item_resolved)
+        res = tuple(set(session.execute(q).scalars()) for q in qs)
+        return res  # type: ignore
+
 
 # NOTE: Should be able to be passed directly into `GrantSchema`.
 class AssocUserDocument(Base):
     __tablename__ = "_assocs_users_documents"
 
-    deleted: Mapped[MappedColumnDeleted]
-    uuid: Mapped[MappedColumnUUID]
+    # deleted: Mapped[MappedColumnDeleted]
+    # uuid: Mapped[MappedColumnUUID]
     id_user: Mapped[int] = mapped_column(
         ForeignKey("users.id"),
         primary_key=True,
@@ -1113,10 +1281,26 @@ class Tables(enum.Enum):
     _assocs_collections_documents = AssocCollectionDocument
 
 
+Assignment = AssocCollectionDocument
+Grant = AssocUserDocument
 AnyModelBesidesEvent = (
     AssocUserDocument | AssocCollectionDocument | User | Collection | Document | Edit
 )
 AnyModel = Event | AnyModelBesidesEvent
+
+ResolvableT = TypeVar(
+    "ResolvableT",
+    AssocUserDocument,
+    AssocCollectionDocument,
+    User,
+    Collection,
+    Document,
+    Edit,
+)
+
+ResolvableSingular: TypeAlias = ResolvableT | str
+ResolvableMultiple: TypeAlias = Tuple[ResolvableT, ...] | Set[str]
+Resolvable: TypeAlias = ResolvableT | str | Tuple[ResolvableT, ...] | Set[str]
 
 
 __all__ = (

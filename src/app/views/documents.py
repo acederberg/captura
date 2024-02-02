@@ -1,3 +1,4 @@
+from http import HTTPMethod
 from typing import List, Tuple, overload
 
 from app import __version__
@@ -12,6 +13,7 @@ from app.models import (
 )
 from app.schemas import DocumentMetadataSchema, DocumentSchema, DocumentSearchSchema
 from app.views import args
+from app.views.access import Access
 from app.views.base import BaseView
 from fastapi import Depends, HTTPException
 from sqlalchemy import select
@@ -35,14 +37,14 @@ class DocumentView(BaseView):
         token: DependsTokenOptional = None,
     ) -> DocumentSchema:
         with makesession() as session:
-            document = Document.if_exists(session, uuid_document).check_not_deleted(410)
-            if not token:
-                if not document.public:
-                    msg = "User cannot access document."
-                    detail = dict(uuid_document=uuid_document, msg=msg)
-                    raise HTTPException(403, detail=detail)
-            else:
-                cls.verify_access(session, token, document, level=Level.view)
+            # if not token:
+            #     if not document.public:
+            #         msg = "User cannot access document."
+            #         detail = dict(uuid_document=uuid_document, msg=msg)
+            #         raise HTTPException(403, detail=detail)
+
+            access = Access(session, token, method=HTTPMethod.GET)
+            user, document = access.document(uuid_document, level=Level.view)
 
             return document  # type: ignore
 
