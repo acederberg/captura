@@ -11,6 +11,7 @@ from typing import (
     Generator,
     Generic,
     List,
+    Literal,
     Self,
     Set,
     Tuple,
@@ -87,6 +88,14 @@ class LevelStr(str, enum.Enum):
     view = "view"
     modify = "modify"
     own = "own"
+
+
+class LevelHTTP(enum.Enum):
+    DELETE = Level.own
+    PUT = Level.modify
+    POST = Level.modify
+    PATCH = Level.modify
+    GET = Level.view
 
 
 class KindEvent(str, enum.Enum):
@@ -738,38 +747,107 @@ class AssocCollectionDocument(Base):
     @classmethod
     def q_split(
         cls,
-        uuids: Set[str],
         item: "Collection | Document",
+        uuids: Set[str],
+        *,
+        select_parent_uuids: bool = False,
     ) -> Tuple[Select, Select]:
+        "Returns a select for assignment uuids."
 
-        # match item:
-        #     case Collection():
-        #         uuid_column = literal_column("uuid_collection")
-        #     case Document():
-        #         uuid_column = literal_column("uuid_document")
-        #     case _:
-        #         raise ValueError("Inconcievable!")
+        # NOTE: These queries should also have joins such that warning are not
+        #       raised by sqlalchemy.
+        match item:
+            case _ if not select_parent_uuids:
+                q = item.q_select_assignment(uuids, exclude_deleted=False)
+                s = literal_column("uuid")
+            case Collection() as collection:
+                q = collection.q_select_documents(uuids, exclude_deleted=False)
+                s = literal_column("uuid_document")
+            case Document() as document:
+                q = document.q_select_collections(uuids, exclude_deleted=False)
+                s = literal_column("uuid_document")
 
-        q = item.q_select_assignment(uuids, exclude_deleted=False)
         return tuple(  # type: ignore
-            select(literal_column("uuid")).select_from(
-                q.where(AssocCollectionDocument.deleted == bool_()).subquery()
-            )
+            select(s).select_from(q.where(Assignment.deleted == bool_()).subquery())
             for bool_ in (true, false)
         )
+
+    @classmethod
+    def q_projection(cls, selectable, uuid_assignment: Set[str]) -> Select:
+        return (
+            select(selectable)
+            .join(Assignment)
+            .where(Assignment.uuid.in_(uuid_assignment))
+        )
+
+    @overload
+    @classmethod
+    def split(
+        cls,
+        session: Session,
+        source: "Document",
+        resolvable_target: "ResolvableMultiple[Collection]",
+    ) -> Tuple[Set[str], Set[str]]: ...
+
+    @overload
+    @classmethod
+    def split(
+        cls,
+        session: Session,
+        source: "Collection",
+        resolvable_target: "ResolvableMultiple[Document]",
+    ) -> Tuple[Set[str], Set[str]]: ...
 
     @classmethod
     def split(
         cls,
         session: Session,
-        uuids: Set[str],
-        item: "ResolvableSingular[Collection] | ResolvableSingular[Document]",
+        source: "Collection | Document",
+        resolvable_target: "ResolvableMultiple[Collection] | ResolvableMultiple[Document]",
     ) -> Tuple[Set[str], Set[str]]:
 
-        item_resolved = resolve(session, item)
-        qs = cls.q_split(uuids, item_resolved)
+        match [source, resolvable_target]:
+            case [Document() as document, _ as resolvable_collections]:
+                uuid_collection = Collection.resolve_uuid(
+                    session,
+                    resolvable_collections,
+                )
+                qs = cls.q_split(document, uuid_collection)
+            case [Collection() as collection, _ as resolvable_documents]:
+                uuid_document = Document.resolve_uuid(
+                    session,
+                    resolvable_documents,
+                )
+                qs = cls.q_split(collection, uuid_document)
+            case _:
+                msg = f"Invalid source `{source}` of type `{type(source)}`. "
+                msg += "Must be an instnce of `Collection` or `Document`."
+                raise ValueError(msg)
+
+        # kind_target = cls.resolve_target_kind(source, resolvable_target)
+        # is_doc = kind_target == ChildrenAssignment.documents
+        # Target = Document if is_doc else Collection
+        # uuid_target = Target.resolve_uuid(session, resolvable_target)  # type: ignore
+        # qs = cls.q_split(uuid_document, collection)
+
         res = tuple(set(session.execute(q).scalars()) for q in qs)
         return res  # type: ignore
+
+    @classmethod
+    def resolve_target_kind(
+        cls,
+        source: "Collection | Document",
+        resolvable_target: "ResolvableMultiple[Collection] | ResolvableMultiple[Document]",
+    ) -> ChildrenAssignment:
+        match [source, resolvable_target]:
+            case [Document()]:
+                return ChildrenAssignment.collections
+            case [Collection()]:
+                return ChildrenAssignment.documents
+            case _:
+                msg = f"Invalid source `{source}` of type `{type(source)}`. "
+                msg += "Must be an instnce of `Collection` or `Document`."
+                raise ValueError(msg)
 
 
 # NOTE: Should be able to be passed directly into `GrantSchema`.
@@ -1230,6 +1308,18 @@ class Document(SearchableTableMixins, Base):
             .join(Collection)
         )
         q = q.where(self.q_conds_assignment(collection_uuids, exclude_deleted))
+        return q
+
+    def q_select_collections(
+        self,
+        collection_uuids: Set[str] | None = None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        q = (
+            select(Collection)
+            .join(Assignment)
+            .where(self.q_conds_assignment(collection_uuids, exclude_deleted))
+        )
         return q
 
     @classmethod

@@ -1,6 +1,7 @@
 from http import HTTPMethod
 from typing import Annotated, List, Sequence, Set, Tuple, TypeAlias, overload
 
+from app.auth import Token
 from app.depends import DependsToken
 from app.models import (
     AssocCollectionDocument,
@@ -8,99 +9,55 @@ from app.models import (
     ChildrenAssignment,
     Collection,
     Document,
+    Edit,
     Level,
+    LevelHTTP,
     Resolvable,
     ResolvableMultiple,
     ResolvableSingular,
     User,
 )
 from app.views import args
+from app.views.base import BaseController
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
-CollectionItemVerifyAccess = (
-    args.PathUUIDCollection
-    | args.QueryUUIDCollection
-    | Collection
-    | Sequence[Collection]
-)
-DocumentItemVerifyAccess = (
-    args.PathUUIDDocument | args.QueryUUIDDocument | Document | List[Document]
-)
 
-
-class Access:
-    token: DependsToken | None
-    session: Session
-    method: HTTPMethod
-
-    # exclude_public: bool = True
-    # exclude_deleted: bool = True
-
-    # NOTE: Will be constructed by depends. Do not add fn parameters here.
-    def __init__(
-        self,
-        session: Session,
-        token: DependsToken | None,
-        *,
-        method: HTTPMethod = HTTPMethod.POST,
-        # exclude_deleted: bool = True,
-    ):
-        self.session = session
-        self.token = token
-        self.method = method
-        # self.exclude_public = exclude_public
-        # self.exclude_deleted = exclude_deleted
+class Access(BaseController):
 
     # ----------------------------------------------------------------------- #
     # User
 
-    def get_user(
-        self,
-        resolve_user: ResolvableSingular[User] | None = None,
-    ) -> User:
-        resolve_final: ResolvableSingular[User]
-        match [self.token, resolve_user]:
-            case [None, None]:
-                raise HTTPException(401, detail="No user to resolve.")
-            case [None, matched] if matched is not None:
-                resolve_final = matched
-            case [matched, None] if matched is not None:
-                resolve_final = matched["uuid"]
-            case _:
-                raise ValueError("Inconcievable!")
+    def user(self, resolve_user: ResolvableSingular[User]) -> User:
+        """See if the token user can view another user.
 
-        user = User.resolve(self.session, resolve_final)
-        user = user.check_not_deleted(410)
+        Resolve the user and verify that is not deleted.
+        """
 
-        return user
+        user = self.token_user_or(resolve_user).check_not_deleted(410)
+        token = self.token
 
-    def user(
-        self,
-        uuid_user: ResolvableSingular[User] | None = None,
-    ) -> User:
+        if self.method != HTTPMethod.GET:
+            if user.uuid != token.uuid:
+                detail = dict(
+                    uuid_user=token.uuid,
+                    uuid_user_token=token.uuid,
+                    msg="Cannot modify other user.",
+                )
+                raise HTTPException(403, detail)
+            return user
 
-        user = self.get_user(uuid_user)
         # NOTE: When `GET` method, if the user is public, return. Otherwise
         #       always check for a token and check the token uuid.
-        if self.method == HTTPMethod.GET:
-            if not user.public:
+        token = self.token
+        match self.method:
+            case HTTPMethod.GET if not user.public:
                 detail = dict(uuid_user=user.uuid, msg="User is not public.")
                 raise HTTPException(403, detail=detail)
-            else:
+            case HTTPMethod.GET:
                 return user
-
-        if self.token is None:
-            msg = "User must login to access."
-            raise HTTPException(401, detail=dict(msg=msg))
-        elif user.uuid != self.token["uuid"]:
-            detail = dict(
-                uuid_user=uuid_user,
-                uuid_user_token=self.token["uuid"],
-                msg="Cannot modify other user.",
-            )
-            raise HTTPException(403, detail)
-        return user
+            case _ as bad:
+                raise ValueError(f"Cannot yet method `{bad}`.")
 
     # ----------------------------------------------------------------------- #
     # Collection
@@ -108,56 +65,51 @@ class Access:
     @overload
     def collection(
         self,
-        uuid_collection: ResolvableSingular[Collection],
+        resolve_collection: ResolvableSingular[Collection],
         *,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Collection]: ...
+    ) -> Collection: ...
 
     @overload
     def collection(
         self,
-        uuid_collection: ResolvableMultiple[Collection],
+        resolve_collection: ResolvableMultiple[Collection],
         *,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Tuple[Collection, ...]]: ...
+    ) -> Tuple[Collection, ...]: ...
 
     def collection(
         self,
-        uuid_collection: Resolvable[Collection],
+        resolve_collection: Resolvable[Collection],
         *,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Collection] | Tuple[User, Tuple[Collection, ...]]:
+    ) -> Collection | Tuple[Collection, ...]:
 
-        user = self.get_user(resolve_user)
-
+        # NOTE: `exclude_deleted` should only be ``True`` when a force
+        #       deletion is occuring.
         def check_one(collection: Collection) -> Collection:
-            # NOTE: `exclude_deleted` should only be ``True`` when a force
-            #       deletion is occuring.
             if exclude_deleted:
                 collection = collection.check_not_deleted(410)
-            user.check_can_access_collection(collection)
+            token_user.check_can_access_collection(collection)
             return collection
 
-        if isinstance(uuid_collection, str):
-            collections = Collection.if_exists(self.session, uuid_collection)
-            collections = check_one(collections)
-            return user, collections
-        elif isinstance(uuid_collection, set):
-            collections = Collection.if_many(
-                self.session,
-                uuid_collection,
-                check_one,
-            )
-            return user, collections
-        elif isinstance(uuid_collection, Collection):
-            return user, check_one(uuid_collection)
-        elif isinstance(uuid_collection, list):
-            return user, tuple(check_one(item) for item in uuid_collection)
-        else:
-            raise ValueError()
+        token_user = self.token_user_or(resolve_user)
+        collections: Collection | Tuple[Collection, ...]
+        collections = Collection.resolve(self.session, resolve_collection)
+
+        match collections:
+            case Collection():
+                return check_one(collections)
+            case list():
+                return tuple(map(check_one, collections))
+            case _ as bad:
+                raise ValueError(
+                    "`collections must be a `Collection` or `tuple` of "
+                    f"`Collection`s (got `{type(bad)}`)."
+                )
 
     # ----------------------------------------------------------------------- #
     # Documents
@@ -165,187 +117,111 @@ class Access:
     @overload
     def document(
         self,
-        uuid_document: ResolvableSingular[Document],
+        resolve_document: ResolvableSingular[Document],
         *,
-        level: Level,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Document]: ...
+        level: Level | None = None,
+    ) -> Document: ...
 
     @overload
     def document(
         self,
-        uuid_document: ResolvableMultiple[Document],
+        resolve_document: ResolvableMultiple[Document],
         *,
-        level: Level,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Tuple[Document, ...]]: ...
+        level: Level | None = None,
+    ) -> Tuple[Document, ...]: ...
 
     def document(
         self,
-        uuid_document: Resolvable[Document],
+        resolve_document: Resolvable[Document],
         *,
-        level: Level,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Document] | Tuple[User, Tuple[Document, ...]]:
+        level: Level | None = None,
+    ) -> Document | Tuple[Document, ...]:
 
-        user = self.get_user(resolve_user)
+        level = level if level is not None else self.level
+        token_user = self.token_user_or(resolve_user)
+        documents = Document.resolve(self.session, resolve_document)
 
+        # NOTE: Exclude deleted is only required for force deletion.
         def check_one(document: Document) -> Document:
-            # NOTE: Exclude deleted is only required for force deletion.
             if exclude_deleted:
                 print(document)
                 document = document.check_not_deleted(410)
-            user.check_can_access_document(document, level)
+            token_user.check_can_access_document(document, level)
             return document
 
-        if isinstance(uuid_document, str):
-            documents = Document.if_exists(self.session, uuid_document)
-            return user, check_one(documents)
-        elif isinstance(uuid_document, set):
-            documents = Document.if_many(self.session, uuid_document, check_one)
-            return user, documents
-        elif isinstance(uuid_document, Document):
-            return user, check_one(uuid_document)
-        elif isinstance(uuid_document, list):
-            return user, tuple(check_one(item) for item in uuid_document)
-        else:
-            msg = f"Unexpected input of type `{type(uuid_document)}`."
-            raise ValueError(msg)
+        match documents:
+            case tuple() as documents:
+                return tuple(map(check_one, documents))
+            case Document():
+                return check_one(documents)
+            case _ as bad:
+                msg = f"Unexpected input of type `{type(bad)}`."
+                raise ValueError(msg)
+
+    # ----------------------------------------------------------------------- #
+    def edit(
+        self,
+        resolve_edit: Resolvable[Edit],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user: ResolvableSingular[User] | None = None,
+    ): ...
 
     # ----------------------------------------------------------------------- #
     # Assignments
 
     def assignment_collection(
         self,
-        resolve_source: ResolvableSingular[Collection],
+        resolve_collection: ResolvableSingular[Collection],
+        resolve_documents: ResolvableMultiple[Document],
         *,
-        resolve_target: ResolvableMultiple[Document],
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Collection, Tuple[Document, ...]]:
+        level: Level | None = None,
+    ) -> Tuple[Collection, Tuple[Document, ...]]:
 
-        user = self.get_user(resolve_user)
-        user, collection = self.collection(
-            resolve_source,
+        # NOTE: Keep `token_user` here so that the user is checked.
+        token_user = self.token_user_or(resolve_user)
+        collection = self.collection(
+            resolve_collection,
             exclude_deleted=exclude_deleted,
-            resolve_user=user,
+            resolve_user=token_user,
         )
-        user, documents = self.document(
-            resolve_target,
-            level=Level.view,
+        documents = self.document(
+            resolve_documents,
+            level=level or self.level,
             exclude_deleted=exclude_deleted,
-            resolve_user=user,
+            resolve_user=token_user,
         )
-        return user, collection, documents
+        return collection, documents
 
     def assignment_document(
         self,
-        resolve_source: ResolvableSingular[Document],
+        resolve_document: ResolvableSingular[Document],
+        resolve_collections: ResolvableMultiple[Collection],
         *,
-        resolve_target: ResolvableMultiple[Collection],
-        level: Level,
         exclude_deleted: bool = True,
         resolve_user: ResolvableSingular[User] | None = None,
-    ) -> Tuple[User, Document, Tuple[Collection, ...]]:
+        level: Level | None = None,
+    ) -> Tuple[Document, Tuple[Collection, ...]]:
 
-        user = self.get_user(resolve_user)
-        user, document = self.document(
-            resolve_source,
-            level=level,
+        token_user = self.token_user_or(resolve_user)
+        document = self.document(
+            resolve_document,
+            level=level or self.level,
             exclude_deleted=exclude_deleted,
-            resolve_user=user,
+            resolve_user=token_user,
         )
-        user, collections = self.collection(
-            resolve_target,
+        collections = self.collection(
+            resolve_collections,
             exclude_deleted=exclude_deleted,
-            resolve_user=user,
+            resolve_user=token_user,
         )
 
-        return user, document, collections
-
-    # @overload
-    # def assignment(
-    #     self,
-    #     source_kind: ChildrenAssignment,
-    #     resolve_source: ResolvableSingular[Collection],
-    #     *,
-    #     resolve_target: ResolvableMultiple[Document],
-    #     level: Level,
-    #     exclude_deleted: bool = True,
-    #     resolve_user: ResolvableSingular[User] | None = None,
-    # ) -> Tuple[User, Tuple[Document, ...], Collection]: ...
-    #
-    # @overload
-    # def assignment(
-    #     self,
-    #     source_kind: ChildrenAssignment,
-    #     resolve_source: ResolvableSingular[Document],
-    #     *,
-    #     resolve_target: ResolvableMultiple[Collection],
-    #     level: Level,
-    #     exclude_deleted: bool = True,
-    #     resolve_user: ResolvableSingular[User] | None = None,
-    # ) -> Tuple[User, Document, Tuple[Collection, ...]]: ...
-    #
-    # def assignment(
-    #     self,
-    #     source_kind: ChildrenAssignment,
-    #     resolve_source: ResolvableSingular[Collection] | ResolvableSingular[Document],
-    #     *,
-    #     resolve_target: ResolvableMultiple[Document] | ResolvableMultiple[Collection],
-    #     level: Level,
-    #     exclude_deleted: bool = True,
-    #     resolve_user: ResolvableSingular[User] | None = None,
-    # ) -> (
-    #     Tuple[User, Document, Tuple[Collection, ...]]
-    #     | Tuple[User, Tuple[Document, ...], Collection]
-    # ):
-    #
-    #     # uuid_document: Resolvable[Document],
-    #     # *,
-    #     # level: Level,
-    #     # exclude_deleted: bool = True,
-    #     # resolve_user: ResolvableSingular[User] | None = None,
-    #     user = self.get_user(resolve_user)
-    #     match source_kind:
-    #         case ChildrenAssignment.documents:
-    #             user, document = self.document(  # type: ignore
-    #                 resolve_source,
-    #                 level,
-    #                 exclude_deleted=exclude_deleted,
-    #                 user=user,
-    #             )
-    #             user, collection = self.collection(  # type: ignore
-    #                 resolve_target,
-    #                 exclude_deleted=exclude_deleted,
-    #                 user=user,
-    #             )
-    #             return user, document, collection  # type: ignore
-    #
-    #         case Collection():
-    #             user, collection = self.collection(  # type: ignore
-    #                 resolve_source, exclude_deleted=exclude_deleted, user=user
-    #             )
-    #             user, document = self.document(  # type: ignore
-    #                 resolve_target,
-    #                 level=level,
-    #                 exclude_deleted=exclude_deleted,
-    #                 user=user,
-    #             )
-    #             return user, document, collection
-    #         case _:
-    #             raise ValueError("Inconcievable!")
-    #
-
-
-# def create_access(
-#     session: DependsSessionMaker,
-#     token: DependsToken,
-# ) -> Access:
-#     return Access(session, token)
-#
-#
-# DependsAccess: TypeAlias = Annotated[Access, Depends(create_access)]
+        return document, collections

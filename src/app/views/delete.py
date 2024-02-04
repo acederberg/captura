@@ -1,6 +1,8 @@
-from typing import Any, Dict, List, Set, Tuple
+from http import HTTPMethod
+from typing import Any, Dict, List, Set, Tuple, overload
 
 from app import __version__
+from app.auth import Token
 from app.depends import DependsToken
 from app.models import (
     Assignment,
@@ -16,32 +18,18 @@ from app.models import (
     User,
 )
 from app.schemas import EventSchema
+from app.views.base import BaseController, ForceController
 from sqlalchemy import delete, literal_column, select, union, update
 from sqlalchemy.orm import Session
 
 
-class Delete:
+class Delete(ForceController):
     """Perform deletions."""
-
-    token: DependsToken
-    session: Session
-    force: bool
-
-    def __init__(
-        self,
-        session: Session,
-        token: DependsToken,
-        *,
-        force: bool = False,
-    ):
-        self.session = session
-        self.token = token
-        self.force = force
 
     @property
     def event_common(self) -> Dict[str, Any]:
         return dict(
-            uuid_user=self.token["uuid"],
+            uuid_user=self.token.uuid,
             api_version=__version__,
             kind=KindEvent.delete,
         )
@@ -60,13 +48,13 @@ class Delete:
     ) -> Event:
 
         session = self.session
-        user = User.resolve(session, resolve_user or self.token["uuid"])
+        user = User.resolve(session, resolve_user or self.token.uuid)
         collection = Collection.resolve(session, resolve_collection)
         uuid_document: Set[str] = Document.resolve_uuid(session, resolve_document)
 
         # NOTE: Ignore entries that are already deletd.
         uuid_assign_deleted, uuid_assign_active = Assignment.split(
-            session, uuid_document, collection
+            session, collection, uuid_document
         )
         if self.force:
             detail = detail or "Assignment force deleted."
@@ -150,7 +138,7 @@ class Delete:
         #     resolve_collection,
         # )
         session = self.session
-        user = User.resolve(session, resolve_user or self.token["uuid"])
+        user = User.resolve(session, resolve_user or self.token.uuid)
         document: Document = Document.resolve(session, resolve_document)
         uuid_collection: Set[str] = Collection.resolve_uuid(
             session,
@@ -158,7 +146,7 @@ class Delete:
         )
 
         uuid_assign_deleted, uuid_assign_active = Assignment.split(
-            self.session, uuid_collection, document
+            self.session, document, uuid_collection
         )
 
         if self.force:
@@ -223,6 +211,54 @@ class Delete:
         session.refresh(event)
         return event
 
+    @overload
+    def assignment(
+        self,
+        resolve_source: ResolvableSingular[Document],
+        resolve_target: ResolvableMultiple[Collection],
+        *,
+        resolve_user: ResolvableSingular[User] | None = None,
+        api_origin: str | None = None,
+        detail: str | None = None,
+    ) -> Event: ...
+
+    @overload
+    def assignment(
+        self,
+        resolve_source: ResolvableSingular[Collection],
+        resolve_target: ResolvableMultiple[Document],
+        *,
+        resolve_user: ResolvableSingular[User] | None = None,
+        api_origin: str | None = None,
+        detail: str | None = None,
+    ) -> Event: ...
+
+    def assignment(
+        self,
+        resolve_source: ResolvableSingular[Collection] | ResolvableSingular[Document],
+        resolve_target: ResolvableMultiple[Document] | ResolvableMultiple[Collection],
+        *,
+        resolve_user: ResolvableSingular[User] | None = None,
+        api_origin: str | None = None,
+        detail: str | None = None,
+    ) -> Event:
+        kwargs: Dict[str, Any] = dict(
+            resolve_user=resolve_user,
+            api_origin=api_origin,
+            detail=detail,
+        )
+        match resolve_source:
+            case Collection():
+                return self.assignment_collection(
+                    resolve_source, resolve_target, **kwargs  # type: ignore
+                )
+            case Document():
+                return self.assignment_document(
+                    resolve_source, resolve_target, **kwargs  # type: ignore
+                )
+            case _:
+                raise ValueError("Invalid `resolve_source`.")
+
     def collection(
         self,
         resolve_collection: ResolvableSingular[Collection],
@@ -237,7 +273,7 @@ class Delete:
 
         session = self.session
         collection = Collection.resolve(session, resolve_collection)
-        user = User.resolve(session, resolve_user or self.token["uuid"])
+        user = User.resolve(session, resolve_user or self.token.uuid)
 
         # Find docs
         p = select(Document.uuid).join(AssocCollectionDocument)

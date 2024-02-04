@@ -1,3 +1,4 @@
+from http import HTTPMethod
 from typing import Any, Dict, List, Sequence, Set, Tuple, overload
 
 from app import __version__, util
@@ -117,7 +118,9 @@ class CollectionView(BaseView):
         #     detail=f"Collection {'restored' if restore else 'deleted'}.",
         # )
         with sessionmaker() as session:
-            user, collection = Access(session, token).collection(uuid_collection)
+            user, collection = Access(
+                session, token, method=HTTPMethod.DELETE
+            ).collection(uuid_collection)
             event = Delete(session, token, force=force).collection(collection)
             return EventSchema.model_validate(event)
 

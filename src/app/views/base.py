@@ -3,24 +3,151 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
-from http import HTTPMethod
 import logging
-from typing import (
-    Any,
-    ClassVar,
-    Dict,
-)
-
-from fastapi import (
-    APIRouter,
-)
-from fastapi.routing import APIRoute
+from functools import cached_property
+from http import HTTPMethod
+from typing import Any, ClassVar, Dict, Set, Tuple, Type, TypeVar
 
 from app import __version__, util
-
+from app.auth import Token
+from app.depends import DependsToken
+from app.models import (
+    AnyModel,
+    Assignment,
+    Collection,
+    Document,
+    Level,
+    LevelHTTP,
+    ResolvableSingular,
+    User,
+)
+from fastapi import APIRouter, HTTPException
+from fastapi.routing import APIRoute
+from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
 logger.level = logging.INFO
+
+# =========================================================================== #
+# Controllers
+
+T_BaseController = TypeVar("T_BaseController", bound="BaseController")
+
+
+class BaseController:
+    """This is going to be required.
+
+    :attr method: The ``http.HTTPMethod``. In some controllers this will be
+        constant. In the access controller this will be used to check the
+        levels of grants required to perform particular operations.
+    :attr session: A ``Session``.
+    :attr token: A ``_token``.
+    """
+
+    method: HTTPMethod
+    session: Session
+    _token: Token | None
+
+    @property
+    def level(self) -> Level:
+        return LevelHTTP(self.method).value
+
+    @cached_property
+    def token(self) -> Token:
+        if self._token is None:
+            raise HTTPException(401, detail="Token required.")
+        return self._token
+
+    @cached_property
+    def token_user(self) -> User:
+        return User.if_exists(self.session, self.token.uuid)
+
+    def then(self, type_: Type[T_BaseController], **kwargs) -> T_BaseController:
+        "For chainable controllers."
+        return type_(self.session, self._token, self.method, **kwargs)
+
+    def token_user_or(
+        self,
+        resolve_user: ResolvableSingular[User] | None = None,
+    ) -> User:
+        return (
+            User.resolve(self.session, resolve_user)
+            if resolve_user is not None
+            else self.token_user
+        )
+
+    def __init__(
+        self,
+        session: Session,
+        token: Token | Dict[str, Any] | None,
+        method: HTTPMethod | str,
+    ):
+        self.session = session
+        match method:
+            case str():
+                self.method = HTTPMethod(method)
+            case HTTPMethod():
+                self.method = method
+            case _:
+                raise ValueError(f"Invalid input `{method}` for method.")
+
+        match token:
+            case dict() | None as raw:
+                self._token = None if raw is None else Token.model_validate(raw)
+            case Token() as token:
+                self._token = token
+
+
+class ForceController(BaseController):
+
+    force: bool = True
+
+    def __init__(
+        self,
+        session: Session,
+        token: Token | Dict[str, Any] | None,
+        method: HTTPMethod | str,
+        *,
+        force: bool = True,
+    ):
+        super().__init__(session, token, method)
+        self.force = force
+
+    # NOTE: Will be needed by delete and upsert both.
+    def split_assignment_uuids(
+        self,
+        source: Collection | Document,
+        uuid_target: Set[str],
+    ) -> Tuple[Set[str], Set[str]]:
+        """If"""
+        kind_source = source.__class__.__tablename__
+        is_doc = kind_source == "documents"
+        kind_target = "collections" if is_doc else "documents"
+
+        uuid_deleted, uuid_active = Assignment.split(
+            self.session,
+            source,
+            uuid_target,
+        )
+
+        if uuid_deleted and not self.force:
+            raise HTTPException(
+                400,
+                detail=dict(
+                    uuid_user=self.token.uuid,
+                    kind_source=kind_source,
+                    uuid_source=source.uuid,
+                    kind_target=kind_target,
+                    uuid_target=uuid_target,
+                    msg="Assignments must be hard deleted to re-`POST`.",
+                ),
+            )
+
+        return uuid_deleted, uuid_active
+
+
+# =========================================================================== #
+# Views
 
 
 class ViewMixins:
@@ -120,5 +247,4 @@ class ViewMeta(type):
         return T
 
 
-class BaseView(ViewMixins, metaclass=ViewMeta):
-    ...
+class BaseView(ViewMixins, metaclass=ViewMeta): ...
