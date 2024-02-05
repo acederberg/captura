@@ -13,6 +13,8 @@ from app.models import (
     KindObject,
     ResolvableMultiple,
     ResolvableSingular,
+    ResolvableSourceAssignment,
+    ResolvableTargetAssignment,
     Tables,
     User,
 )
@@ -207,26 +209,6 @@ class Upsert(ForceController):
             collection, uuid_document, detail=detail, api_origin=api_origin
         )
 
-        # uuid_assign_deleted, uuid_assign_deleted = self.split_assignment_uuids(
-        #     collection, uuid_document
-        # )
-        #
-        # event_cleanup: Event | None = None
-        # if self.force:
-        #     q_uuid_col_del = (
-        #         select(Collection.uuid)
-        #         .join(Assignment)
-        #         .where(Assignment.uuid.in_(uuid_assign_deleted))
-        #     )
-        #     uuid_document = set(session.execute(q_uuid_col_del).scalars())
-        #     event_cleanup = self.delete.assignment_collection(
-        #         collection,
-        #         uuid_document,
-        #         resolve_user=self.token_user,
-        #         api_origin=api_origin,
-        #         detail=detail,
-        #     )
-
         # Create
         assocs = list(
             Assignment(
@@ -276,12 +258,8 @@ class Upsert(ForceController):
 
     def assignment(
         self,
-        resolvable_source: (
-            ResolvableSingular[Collection] | ResolvableSingular[Document]
-        ),
-        resolvable_target: (
-            ResolvableMultiple[Document] | ResolvableMultiple[Collection]
-        ),
+        resolvable_source: ResolvableSourceAssignment,
+        resolvable_target: ResolvableTargetAssignment,
         *,
         detail: str | None = None,
         api_origin: str | None = None,

@@ -44,7 +44,7 @@ class DocumentView(BaseView):
             #         raise HTTPException(403, detail=detail)
 
             access = Access(session, token, method=HTTPMethod.GET)
-            user, document = access.document(uuid_document, level=Level.view)
+            document = access.document(uuid_document, level=Level.view)
 
             return document  # type: ignore
 

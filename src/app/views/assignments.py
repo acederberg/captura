@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Set, Tuple
 from app import __version__, util
 from app.depends import DependsSessionMaker, DependsToken
 from app.models import (
+    Assignment,
     AssocCollectionDocument,
     ChildrenAssignment,
     Collection,
@@ -37,25 +38,6 @@ class AssignmentView(BaseView):
         post_assignment_document="/documents/{uuid_document}",
         get_assignment_document="/documents/{uuid_document}",
     )
-
-    # @classmethod
-    # def split_assignments(
-    #     cls,
-    #     session: Session,
-    #     item,
-    #     uuid_values: Set[str],
-    #     uuid_column,
-    # ) -> Tuple[Set[str], Set[str]]:
-    #     q = item.q_select_assignment(uuid_values, exclude_deleted=False)
-    #     exps = tuple(
-    #         select(uuid_column).select_from(
-    #             q.where(AssocCollectionDocument.deleted == bool_()).subquery()
-    #         )
-    #         for bool_ in (true, false)
-    #     )
-    #
-    #     out = tuple(set(session.execute(exp).scalars()) for exp in exps)
-    #     return out  # type: ignore
 
     @classmethod
     def delete_assignment_document(
@@ -259,7 +241,6 @@ class AssignmentView(BaseView):
                 uuid_document,
                 uuid_collection,
             )
-            access.assignment_document
 
             upsert = access.then(Upsert)
             event = upsert.assignment_document(document, collections)
@@ -338,75 +319,78 @@ class AssignmentView(BaseView):
     ) -> EventSchema:
         with sessionmaker() as session:
             access = Access(session, token, HTTPMethod.POST)
-            collection, documents = access.assignment_document(
+            collection, documents = access.assignment_collection(
                 uuid_collection,
                 uuid_document,
             )
 
-            uuid_doc_deleted, uuid_doc_active = cls.split_assignments(
-                session,
-                collection,
-                uuid_document,
-                literal_column("uuid_document"),
-            )
-            if uuid_doc_deleted:
-                raise HTTPException(
-                    400,
-                    detail=dict(
-                        uuid_user=user.uuid,
-                        uuid_document=list(uuid_doc_deleted),
-                        uuid_collection=collection.uuid,
-                        msg="Assignments must be hard deleted to re-`POST`.",
-                    ),
-                )
-
-            # Create
-            assocs = list(
-                AssocCollectionDocument(
-                    id_document=document.id,
-                    id_collection=collection.id,
-                )
-                for document in documents
-                if document.uuid not in uuid_doc_active
-            )
-            session.add_all(assocs)
-            session.commit()
-
-            # Create events
-            event_common = dict(
-                api_origin="POST /assignments/collections/<uuid>",
-                api_version=__version__,
-                kind=KindEvent.create,
-                uuid_user=token["uuid"],
-                detail="Assignment created.",
-            )
-            session.add(
-                event := Event(
-                    **event_common,
-                    kind_obj=KindObject.collection,
-                    uuid_obj=collection.uuid,
-                    children=[
-                        session.refresh(assoc)
-                        or Event(
-                            **event_common,
-                            kind_obj=KindObject.document,
-                            uuid_obj=assoc.uuid_document,
-                            children=[
-                                Event(
-                                    **event_common,
-                                    kind_obj=KindObject.assignment,
-                                    uuid_obj=assoc.uuid,
-                                )
-                            ],
-                        )
-                        for assoc in assocs
-                    ],
-                )
-            )
-            session.commit()
-            session.refresh(event)
-
+            upsert = access.then(Upsert)
+            event = upsert.assignment_collection(collection, documents)
             return EventSchema.model_validate(event)
+
+            # uuid_doc_deleted, uuid_doc_active = Assignment.split(
+            #     session,
+            #     collection,
+            #     uuid_document,
+            # )
+            # if uuid_doc_deleted:
+            #     raise HTTPException(
+            #         400,
+            #         detail=dict(
+            #             uuid_user=access.user.uuid,
+            #             uuid_document=list(uuid_doc_deleted),
+            #             uuid_collection=collection.uuid,
+            #             msg="Assignments must be hard deleted to re-`POST`.",
+            #         ),
+            #     )
+            #
+            # # Create
+            # assocs = list(
+            #     AssocCollectionDocument(
+            #         id_document=document.id,
+            #         id_collection=collection.id,
+            #     )
+            #     for document in documents
+            #     if document.uuid not in uuid_doc_active
+            # )
+            # session.add_all(assocs)
+            # session.commit()
+            #
+            # # Create events
+            # event_common = dict(
+            #     api_origin="POST /assignments/collections/<uuid>",
+            #     api_version=__version__,
+            #     kind=KindEvent.create,
+            #     uuid_user=token["uuid"],
+            #     detail="Assignment created.",
+            # )
+            # session.add(
+            #     event := Event(
+            #         **event_common,
+            #         kind_obj=KindObject.collection,
+            #         uuid_obj=collection.uuid,
+            #         children=[
+            #             session.refresh(assoc)
+            #             or Event(
+            #                 **event_common,
+            #                 kind_obj=KindObject.document,
+            #                 uuid_obj=assoc.uuid_document,
+            #                 children=[
+            #                     Event(
+            #                         **event_common,
+            #                         kind_obj=KindObject.assignment,
+            #                         uuid_obj=assoc.uuid,
+            #                     )
+            #                 ],
+            #             )
+            #             for assoc in assocs
+            #         ],
+            #     )
+            # )
+            # session.commit()
+            # session.refresh(event)
+            #
+            # return EventSchema.model_validate(event)
 
     @classmethod
     def get_assignment_collection(

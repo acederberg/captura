@@ -1,9 +1,10 @@
 import inspect
 from typing import Any, Self
-from client.base import BaseRequest
+
 import httpx
 from client.config import Config
 from client.handlers import ConsoleHandler, Handler
+from client.requests.base import BaseRequest
 
 
 def test_base_request(client_config: Config):

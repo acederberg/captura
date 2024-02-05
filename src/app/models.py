@@ -191,54 +191,6 @@ MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 # =========================================================================== #
 # Models and Mixins
 
-# T = TypeVar(
-#     "T",
-#     "AssocUserDocument",
-#     "AssocCollectionDocument",
-#     "User",
-#     "Collection",
-#     "Document",
-#     "Edit",
-# )
-# ResolvableGenericSingular: TypeAlias = str | T
-# ResolvableGenericMany: TypeAlias = Set[str] | Tuple[T, ...]
-# ResolvableGeneric: TypeAlias = ResolvableGenericSingular | ResolvableGenericMany
-
-
-# @overload
-# def resolve(
-#     cls: T,
-#     session: Session,
-#     that: ResolvableGenericMany,
-# ) -> Tuple[T, ...]: ...
-#
-#
-# @overload
-# def resolve(
-#     cls: T,
-#     session: Session,
-#     that: ResolvableGenericSingular,
-# ) -> T: ...
-#
-#
-# def resolve(
-#     cls: T,
-#     session: Session,
-#     that: ResolvableGeneric,
-# ) -> T | Tuple[T, ...]:
-#     match that:
-#         case tuple():
-#             return that
-#         case cls():  # type: ignore
-#             return that
-#         case str():
-#             return cls.if_exists(session, that)
-#         case set():
-#             return cls.if_many(session, that)
-#         case _ as bad:
-#             raise ValueError(f"Invalid identifier `{bad}`.")
-#
-
 
 class Base(DeclarativeBase):
     uuid: Mapped[MappedColumnUUID]
@@ -337,9 +289,9 @@ class Base(DeclarativeBase):
 
         data: Self | Tuple[Self, ...]
         match data := cls.resolve(session, that):
-            case Self():
+            case cls():
                 return data.uuid
-            case list():
+            case tuple():
                 return set(item.uuid for item in data)
             case set() | str():
                 return data
@@ -369,11 +321,12 @@ class Base(DeclarativeBase):
         status_code: int = 410,
         # deleted: bool = True,
     ) -> Self:
-        print(self)
-        print(self.deleted)
-        print(self.uuid)
         if self.deleted:
-            detail = dict(msg="Item is deleted.", uuid=self.uuid)
+            detail = dict(
+                msg="Item is deleted.",
+                uuid=self.uuid,
+                kind=KindObject[self.__tablename__].name,
+            )
             raise HTTPException(status_code, detail=detail)
         return self
 
@@ -1358,6 +1311,10 @@ class Edit(PrimaryTableMixins, Base):
     )
 
 
+# --------------------------------------------------------------------------- #
+# After the matter constants and types.
+
+
 class Tables(enum.Enum):
     assignments = AssocCollectionDocument
     grants = AssocUserDocument
@@ -1378,6 +1335,8 @@ AnyModelBesidesEvent = (
 )
 AnyModel = Event | AnyModelBesidesEvent
 
+# Resolvables
+
 ResolvableT = TypeVar(
     "ResolvableT",
     AssocUserDocument,
@@ -1391,6 +1350,19 @@ ResolvableT = TypeVar(
 ResolvableSingular: TypeAlias = ResolvableT | str
 ResolvableMultiple: TypeAlias = Tuple[ResolvableT, ...] | Set[str]
 Resolvable: TypeAlias = ResolvableT | str | Tuple[ResolvableT, ...] | Set[str]
+
+ResolvableSourceAssignment: TypeAlias = (
+    ResolvableSingular[Collection] | ResolvableSingular[Document]
+)
+ResolvableTargetAssignment: TypeAlias = (
+    ResolvableMultiple[Document] | ResolvableMultiple[Collection]
+)
+ResolvableSourceGrant: TypeAlias = (
+    ResolvableSingular[User] | ResolvableSingular[Collection]
+)
+ResolvableTargetGrant: TypeAlias = (
+    ResolvableMultiple[User] | ResolvableMultiple[Collection]
+)
 
 
 __all__ = (

@@ -1,10 +1,7 @@
 import asyncio
-from http import HTTPMethod
-
 import json
-from typing import (
-    List,
-)
+from http import HTTPMethod
+from typing import List
 
 import httpx
 import pytest
@@ -12,28 +9,21 @@ from app import __version__, util
 from app.models import (
     AssocCollectionDocument,
     ChildrenCollection,
+    ChildrenUser,
     Collection,
     KindEvent,
     KindObject,
     User,
 )
-from app.schemas import (
-    AssignmentSchema,
-    EventSchema,
-)
-from client.requests import (
-    AssignmentRequests,
-    ChildrenUser,
-    Requests,
-)
-from sqlalchemy import delete, select, update, and_
+from app.schemas import AssignmentSchema, EventSchema
+from client.requests import AssignmentRequests, Requests
+from sqlalchemy import and_, delete, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import util
 
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import requests, BaseTestViews
-
+from .util import BaseTestViews, requests
 
 logger = util.u.get_logger(__name__)
 

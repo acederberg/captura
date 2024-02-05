@@ -1,4 +1,4 @@
-from typing import Any, AnyStr, AsyncGenerator, Annotated, Dict
+from typing import Annotated, Any, AnyStr, AsyncGenerator, Dict
 
 import httpx
 import pytest
@@ -8,7 +8,8 @@ from app.auth import Auth
 from app.config import Config
 from app.models import Base
 from app.views import AppView
-from client.config import Config as ClientConfig, ProfileConfig
+from client.config import Config as ClientConfig
+from client.config import ProfileConfig
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Engine

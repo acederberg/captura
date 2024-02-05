@@ -193,6 +193,9 @@ class Access(BaseController):
             exclude_deleted=exclude_deleted,
             resolve_user=token_user,
         )
+        print(token_user)
+        print(collection)
+
         documents = self.document(
             resolve_documents,
             level=level or self.level,

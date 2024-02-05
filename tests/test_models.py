@@ -1,10 +1,9 @@
-from typing import Any, ClassVar, Dict, List, Self, Type
 import json
+from typing import Any, ClassVar, Dict, List, Self, Type
 
-from app import __version__
 import pytest
 import yaml
-from app import util
+from app import __version__, util
 from app.models import (
     AssocCollectionDocument,
     AssocUserDocument,
@@ -28,6 +27,24 @@ logger = util.get_logger(__name__)
 
 class ModelTestMeta(type):
     __children__: ClassVar[Dict[str, "BaseModelTest"]] = dict()
+
+    @classmethod
+    def load(cls, sessionmaker: sessionmaker[Session]):
+
+        with sessionmaker() as session:
+            backwards = list(Base.metadata.sorted_tables)
+            backwards.reverse()
+            for table in backwards:
+                logger.debug("Cleaning `%s`.", table.name)
+                M = ModelTestMeta.__children__.get(table.name)
+                M.clean(session)
+
+            for table in Base.metadata.sorted_tables:
+                M = ModelTestMeta.__children__.get(table.name)
+                if M is None:
+                    logger.debug("No dummies for `%s`.", table.name)
+                    continue
+                cls.load(session)
 
     def __new__(cls, name, bases, namespace):
         if name == "BaseModelTest":
@@ -93,8 +110,7 @@ class BaseModelTest(metaclass=ModelTestMeta):
         session.commit()
 
     @pytest.fixture(scope="session", autouse=True)
-    def invoke_loader(self, load_tables, setup_cleanup):
-        ...
+    def invoke_loader(self, load_tables, setup_cleanup): ...
 
 
 # NOTE: Test suites must be defined in appropraite order to ensure that

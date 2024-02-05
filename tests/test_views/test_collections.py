@@ -1,11 +1,7 @@
 import asyncio
-from .test_assignments import TestAssignmentView
-from http import HTTPMethod
-
 import secrets
-from typing import (
-    List,
-)
+from http import HTTPMethod
+from typing import List
 
 import httpx
 import pytest
@@ -15,30 +11,23 @@ from app.models import (
     AssocCollectionDocument,
     AssocUserDocument,
     ChildrenCollection,
+    ChildrenUser,
     Collection,
     Document,
     KindEvent,
     KindObject,
     User,
 )
-from app.schemas import (
-    CollectionMetadataSchema,
-    CollectionSchema,
-    EventSchema,
-)
-from client.requests import (
-    CollectionRequests,
-    ChildrenUser,
-    Requests,
-    UserRequests,
-)
+from app.schemas import CollectionMetadataSchema, CollectionSchema, EventSchema
+from client.requests import CollectionRequests, Requests, UserRequests
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import util
+from .test_assignments import TestAssignmentView
 
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import requests, BaseTestViews
+from .util import BaseTestViews, requests
 
 
 class TestCollectionView(BaseTestViews):
