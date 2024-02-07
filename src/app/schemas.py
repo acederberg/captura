@@ -13,9 +13,9 @@ From a mathmatical standpoint, this is 'good enough' because UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
+
 import enum
-from typing import Set
-from typing import Annotated, Any, List, Literal, Optional, Self
+from typing import Annotated, Any, List, Literal, Optional, Self, Set
 
 from pydantic import (
     BaseModel,
@@ -33,9 +33,9 @@ from app.models import (
     LENGTH_NAME,
     LENGTH_URL,
     KindEvent,
+    KindObject,
     KindRecurse,
     Level,
-    KindObject,
 )
 
 UUID = Annotated[
@@ -184,6 +184,7 @@ class GrantPostSchema(BaseModel):
 
 
 class GrantSchema(GrantPostSchema):
+    model_config = ConfigDict(from_attributes=True)
     uuid: UUID
     uuid_document: UUID
 

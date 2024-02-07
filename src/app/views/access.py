@@ -22,39 +22,51 @@ from app.views.base import BaseController
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
+H = HTTPMethod
+
 
 class Access(BaseController):
 
     # ----------------------------------------------------------------------- #
     # User
 
-    def user(self, resolve_user: ResolvableSingular[User]) -> User:
+    def user(
+        self,
+        resolve_user: ResolvableSingular[User],
+        resolve_user_token: ResolvableSingular[User] | None = None,
+    ) -> User:
         """See if the token user can view another user.
 
         Resolve the user and verify that is not deleted.
         """
 
         user = self.token_user_or(resolve_user).check_not_deleted(410)
-        token = self.token
-
-        if self.method != HTTPMethod.GET:
-            if user.uuid != token.uuid:
-                detail = dict(
-                    uuid_user=token.uuid,
-                    uuid_user_token=token.uuid,
-                    msg="Cannot modify other user.",
-                )
-                raise HTTPException(403, detail)
-            return user
+        user_token = self.token_user_or(resolve_user_token)
 
         # NOTE: When `GET` method, if the user is public, return. Otherwise
         #       always check for a token and check the token uuid.
-        token = self.token
         match self.method:
             case HTTPMethod.GET if not user.public:
-                detail = dict(uuid_user=user.uuid, msg="User is not public.")
-                raise HTTPException(403, detail=detail)
+                if self.token.uuid != user.uuid:
+                    detail = dict(
+                        uuid_user_token=user_token.uuid,
+                        uuid_user=user.uuid,
+                        msg="User is not public.",
+                    )
+                    raise HTTPException(403, detail=detail)
+                return user
             case HTTPMethod.GET:
+                return user
+            case (
+                HTTPMethod.POST | HTTPMethod.PATCH | HTTPMethod.PUT | HTTPMethod.DELETE
+            ):
+                if user.uuid != user_token.uuid:
+                    detail = dict(
+                        uuid_user=user.uuid,
+                        uuid_user_token=user_token.uuid,
+                        msg="Cannot modify other user.",
+                    )
+                    raise HTTPException(403, detail)
                 return user
             case _ as bad:
                 raise ValueError(f"Cannot yet method `{bad}`.")
@@ -68,7 +80,7 @@ class Access(BaseController):
         resolve_collection: ResolvableSingular[Collection],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
     ) -> Collection: ...
 
     @overload
@@ -77,7 +89,7 @@ class Access(BaseController):
         resolve_collection: ResolvableMultiple[Collection],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
     ) -> Tuple[Collection, ...]: ...
 
     def collection(
@@ -85,25 +97,45 @@ class Access(BaseController):
         resolve_collection: Resolvable[Collection],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
     ) -> Collection | Tuple[Collection, ...]:
 
         # NOTE: `exclude_deleted` should only be ``True`` when a force
         #       deletion is occuring.
         def check_one(collection: Collection) -> Collection:
+            token_user.check_can_access_collection(collection)
             if exclude_deleted:
                 collection = collection.check_not_deleted(410)
-            token_user.check_can_access_collection(collection)
-            return collection
 
-        token_user = self.token_user_or(resolve_user)
+            match self.method:
+                case H.GET:
+                    return collection
+                case H.POST | H.DELETE | H.PUT | H.PATCH:
+                    if token_user.id != collection.id_user:
+                        detail = dict(
+                            uuid_user_token=self.token.uuid,
+                            uuid_collection=collection.uuid,
+                            msg="User cannot access private collection.",
+                        )
+
+                        # Not sure how this happens on occasion.
+                        if collection.id_user is not None:
+                            detail.update(msg="Collection has no owner.")
+                            raise HTTPException(418, detail=detail)
+
+                        raise HTTPException(403, detail=detail)
+                    return collection
+                case _:
+                    raise ValueError(f"Cannot handle HTTPMethod `{self.method}`.")
+
+        token_user = self.token_user_or(resolve_user_token)
         collections: Collection | Tuple[Collection, ...]
         collections = Collection.resolve(self.session, resolve_collection)
 
         match collections:
             case Collection():
                 return check_one(collections)
-            case list():
+            case tuple():
                 return tuple(map(check_one, collections))
             case _ as bad:
                 raise ValueError(
@@ -120,7 +152,7 @@ class Access(BaseController):
         resolve_document: ResolvableSingular[Document],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
     ) -> Document: ...
 
@@ -130,7 +162,7 @@ class Access(BaseController):
         resolve_document: ResolvableMultiple[Document],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
     ) -> Tuple[Document, ...]: ...
 
@@ -139,20 +171,27 @@ class Access(BaseController):
         resolve_document: Resolvable[Document],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
     ) -> Document | Tuple[Document, ...]:
 
         level = level if level is not None else self.level
-        token_user = self.token_user_or(resolve_user)
+        token_user = self.token_user_or(resolve_user_token)
         documents = Document.resolve(self.session, resolve_document)
+        # print()
+        # print("========================================================")
+        # print("document")
+        # print()
+        # print(f"{level=}")
+        # print(f"{token_user.uuid=}")
+        # print(f"{documents=}")
+        # print()
 
         # NOTE: Exclude deleted is only required for force deletion.
         def check_one(document: Document) -> Document:
-            if exclude_deleted:
-                print(document)
-                document = document.check_not_deleted(410)
             token_user.check_can_access_document(document, level)
+            if exclude_deleted:
+                document = document.check_not_deleted(410)
             return document
 
         match documents:
@@ -170,7 +209,7 @@ class Access(BaseController):
         resolve_edit: Resolvable[Edit],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
     ): ...
 
     # ----------------------------------------------------------------------- #
@@ -182,25 +221,22 @@ class Access(BaseController):
         resolve_documents: ResolvableMultiple[Document],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
     ) -> Tuple[Collection, Tuple[Document, ...]]:
 
         # NOTE: Keep `token_user` here so that the user is checked.
-        token_user = self.token_user_or(resolve_user)
+        token_user = self.token_user_or(resolve_user_token)
         collection = self.collection(
             resolve_collection,
             exclude_deleted=exclude_deleted,
-            resolve_user=token_user,
+            resolve_user_token=token_user,
         )
-        print(token_user)
-        print(collection)
-
         documents = self.document(
             resolve_documents,
             level=level or self.level,
             exclude_deleted=exclude_deleted,
-            resolve_user=token_user,
+            resolve_user_token=token_user,
         )
         return collection, documents
 
@@ -210,21 +246,21 @@ class Access(BaseController):
         resolve_collections: ResolvableMultiple[Collection],
         *,
         exclude_deleted: bool = True,
-        resolve_user: ResolvableSingular[User] | None = None,
+        resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
     ) -> Tuple[Document, Tuple[Collection, ...]]:
 
-        token_user = self.token_user_or(resolve_user)
+        token_user = self.token_user_or(resolve_user_token)
         document = self.document(
             resolve_document,
             level=level or self.level,
             exclude_deleted=exclude_deleted,
-            resolve_user=token_user,
+            resolve_user_token=token_user,
         )
         collections = self.collection(
             resolve_collections,
             exclude_deleted=exclude_deleted,
-            resolve_user=token_user,
+            resolve_user_token=token_user,
         )
 
         return document, collections

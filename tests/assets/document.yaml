@@ -68,3 +68,22 @@
 
     Odio aenean sed adipiscing diam donec adipiscing tristique risus. Quis vel eros donec ac. In ornare quam viverra orci sagittis eu volutpat odio. Arcu risus quis varius quam quisque id diam vel quam. Nibh ipsum consequat nisl vel pretium. Elit duis tristique sollicitudin nibh sit amet commodo nulla facilisi. Nulla pellentesque dignissim enim sit amet venenatis. Gravida neque convallis a cras semper auctor. Id faucibus nisl tincidunt eget nullam. Nisi lacus sed viverra tellus. Turpis egestas sed tempus urna et.
 
+
+- name: Foo Document
+  id: 7
+  description: A document, foo.
+  format: md
+  content: |
+    \# Foo
+
+    It do what it do.
+    A new foo for you too, dude.
+    A breif foo haiku.
+
+    It is a dummy var,
+    often it is after bar,
+    seldom its too far.
+
+    Another day, another
+    filler. Some days are chill,
+    some days are chiller.

@@ -114,6 +114,13 @@ def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
     return _sessionmaker(engine)
 
 
+@pytest.fixture(scope="function")
+def session(sessionmaker):
+    logger.debug("`session` fixture called.")
+    with sessionmaker() as session:
+        yield session
+
+
 # --------------------------------------------------------------------------- #
 # Loading fixtures
 

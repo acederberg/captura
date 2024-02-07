@@ -47,6 +47,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
     DeclarativeBase,
+    InstrumentedAttribute,
     Mapped,
     Session,
     backref,
@@ -68,6 +69,7 @@ from app import __version__, util
 #
 
 
+UUIDSplit = Tuple[Set[str], Set[str]]
 LENGTH_NAME: int = 96
 LENGTH_TITLE: int = 128
 LENGTH_DESCRIPTION: int = 256
@@ -78,10 +80,10 @@ LENGTH_FORMAT: int = 8
 
 
 class Level(enum.Enum):
-    # NOTE: Must be consisten with sql
-    view = 0
-    modify = 1
-    own = 2
+    # NOTE: Must be consisten with sql, indexes start at 1
+    view = 1
+    modify = 2
+    own = 3
 
 
 class LevelStr(str, enum.Enum):
@@ -206,14 +208,9 @@ class Base(DeclarativeBase):
     ) -> Self:
         m = session.execute(select(cls).where(cls.uuid == uuid)).scalar()
         if m is None:
-            detail = dict(
-                msg=(
-                    msg
-                    if msg is not None
-                    else f"{cls} with uuid `{uuid}` does not exist."
-                )
-            )
-            detail["uuid"] = uuid
+            msg = msg if msg is not None else "Object does not exist."
+            kind = KindObject(cls.__tablename__).name
+            detail = dict(uuid_obj=uuid, msg=msg, kind_obj=kind)
             raise HTTPException(status, detail=detail)
         return m
 
@@ -323,9 +320,9 @@ class Base(DeclarativeBase):
     ) -> Self:
         if self.deleted:
             detail = dict(
-                msg="Item is deleted.",
-                uuid=self.uuid,
-                kind=KindObject[self.__tablename__].name,
+                msg="Object is deleted.",
+                uuid_obj=self.uuid,
+                kind_obj=KindObject(self.__tablename__).name,
             )
             raise HTTPException(status_code, detail=detail)
         return self
@@ -342,14 +339,17 @@ class PrimaryTableMixins:
 
     @classmethod
     def q_select_ids(cls, uuids: Set[str]) -> Select:
-        if (id := getattr(cls, "id", None)) is not None:
-            raise AttributeError(
-                f"Table `{cls.__name__}` must have an `id` `column` to use"
-                "`q_select_ids`."
-            )
-        elif not isinstance(id, Column):
-            raise ValueError("IDK what to do with an id column.")
-        return select(id).where(cls.uuid.in_(uuids))
+        match (id := getattr(cls, "id", None)):
+            case Column() | InstrumentedAttribute():
+                select(id).where(cls.uuid.in_(uuids))
+            case None:
+                raise AttributeError(
+                    f"Table `{cls.__name__}` must have an `id` `column` to use"
+                    "`q_select_ids`."
+                )
+            case _:
+                tt = type(id)
+                raise ValueError(f"`id` must be of type `Column`, got `{tt}`.")
 
     @classmethod
     def q_conds(
@@ -740,7 +740,7 @@ class AssocCollectionDocument(Base):
         session: Session,
         source: "Document",
         resolvable_target: "ResolvableMultiple[Collection]",
-    ) -> Tuple[Set[str], Set[str]]: ...
+    ) -> UUIDSplit: ...
 
     @overload
     @classmethod
@@ -749,7 +749,7 @@ class AssocCollectionDocument(Base):
         session: Session,
         source: "Collection",
         resolvable_target: "ResolvableMultiple[Document]",
-    ) -> Tuple[Set[str], Set[str]]: ...
+    ) -> UUIDSplit: ...
 
     @classmethod
     def split(
@@ -757,7 +757,7 @@ class AssocCollectionDocument(Base):
         session: Session,
         source: "Collection | Document",
         resolvable_target: "ResolvableMultiple[Collection] | ResolvableMultiple[Document]",
-    ) -> Tuple[Set[str], Set[str]]:
+    ) -> UUIDSplit:
 
         match [source, resolvable_target]:
             case [Document() as document, _ as resolvable_collections]:
@@ -1005,34 +1005,84 @@ class User(SearchableTableMixins, Base):
             )
         return self
 
-    def check_can_access_document(self, document: "Document", level: Level) -> Self:
+    def check_can_access_document(
+        self,
+        document: "Document",
+        level: Level,
+    ) -> Self:
         session = self.get_session()
 
-        q = self.q_select_grants({document.uuid}, level)
-        q_assoc_uuid = select(literal_column("uuid")).select_from(q)
-        q_assocs = select(AssocUserDocument).where(
-            AssocUserDocument.uuid.in_(q_assoc_uuid)
-        )
-        # print(q_assocs.compile(session.bind, compile_kwargs={"literal_binds": True}))
-        res = session.execute(q_assocs).scalars()
+        # Deleted and insufficient should be included for better feedback.
+        q = self.q_select_grants({document.uuid}, exclude_deleted=False)
+        q_uuid_grant = select(literal_column("uuid")).select_from(q)
+        q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
+        res = session.execute(q_grant).scalars()
         assocs: List[AssocUserDocument] = list(res)
-        # print(res)
+
+        # print()
+        # print("--------------------------------------------------------------")
+        # print("check_can_access_document")
+        # import json
+        #
+        # from app.schemas import GrantSchema
+        #
+        # print(f"{level=}")
+        # print(f"{document.uuid = }")
+        # print(f"{self.uuid = }")
+        # print()
+        # print("grants")
+        # print(
+        #     json.dumps(
+        #         [GrantSchema.model_validate(assoc).model_dump() for assoc in assocs],
+        #         default=str,
+        #         indent=2,
+        #     )
+        # )
+        # print()
+
+        # if not (n := len(assocs)):
+        #     detail.update( msg="Grant does not exist.", level_grant_required=level.name,
+        #     )
+        #     raise HTTPException(403, detail=detail)
+        # elif n != 1:
+        #     # Server is a teapot because this is unlikely to ever happen.
+        #     detail.update(msg="There should only be one grant.")
+        #     raise HTTPException(418, detail=detail)
+        # elif (grant := assocs[0]).level.value < level.value:
+        #     detail.update(
+        #         msg="Grant insufficient.",
+        #         uuid_grant=grant.uuid,
+        #         level_grant=grant.level.name,
+        #         level_grant_required=level.name,
+        #     )
+        #     raise HTTPException(403, detail=detail)
 
         detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
-        if not (n := len(assocs)):
-            detail.update(
-                msg=f"No grant for document with level `{level.name}`.",
-            )
-            raise HTTPException(403, detail=detail)
-        elif n != 1:
-            # Server is a teapot because this is unlikely to ever happen.
-            detail.update(msg="There should only be one grant.")
-            raise HTTPException(418, detail=detail)
-        elif assocs[0].level.value < level.value:
-            detail.update(msg=f"User must have grant of level `{level.name}`.")
-            raise HTTPException(403, detail=detail)
-
-        return self
+        match assocs:
+            case []:
+                print(assocs)
+                detail.update(
+                    msg="Grant does not exist.",
+                    level_grant_required=level.name,
+                )
+                raise HTTPException(403, detail=detail)
+            case [Grant(deleted=False) as grant]:
+                if grant.level.value < level.value:
+                    detail.update(
+                        msg="Grant insufficient.",
+                        uuid_grant=grant.uuid,
+                        level_grant=grant.level.name,
+                        level_grant_required=level.name,
+                    )
+                    raise HTTPException(403, detail=detail)
+                return self
+            case [Grant(deleted=True) as grant]:
+                detail.update(msg="Grant is deleted.", uuid_grant=grant.uuid)
+                raise HTTPException(410, detail=detail)
+            case _:
+                # Server is a teapot because this is unlikely to ever happen.
+                detail.update(msg="There should only be one grant.")
+                raise HTTPException(418, detail=detail)
 
     def check_sole_owner_document(self, document: "Document") -> Self: ...
 
@@ -1048,7 +1098,7 @@ class User(SearchableTableMixins, Base):
 class Collection(SearchableTableMixins, Base):
     __tablename__ = "collections"
 
-    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
+    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(LENGTH_NAME))
     description: Mapped[str] = mapped_column(

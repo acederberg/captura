@@ -50,7 +50,6 @@ class BaseController:
 
     @property
     def level(self) -> Level:
-        print(LevelHTTP._value2member_map_)
         return LevelHTTP[self.method.name].value
 
     @cached_property

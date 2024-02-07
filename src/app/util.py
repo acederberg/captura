@@ -1,6 +1,5 @@
 import logging
-from os import environ
-from os import path
+from os import environ, path
 
 from rich.console import Console
 from rich.syntax import Syntax
@@ -36,7 +35,7 @@ def sql(session, *qs) -> None:
         for q in qs
     )
     cmp = "\n\n".join(cmps)
-    highlighted = Syntax(cmp, "mysql", theme="fruity")
+    highlighted = Syntax(cmp, "mysql", theme="fruity", word_wrap=True)
     CONSOLE_APP.print(highlighted)
 
 
