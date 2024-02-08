@@ -1,6 +1,7 @@
 import secrets
+from collections import namedtuple
 from http import HTTPMethod
-from typing import Any, Dict, Set, Tuple
+from typing import Any, Dict, NamedTuple, Set, Tuple, Type
 
 import pytest
 from app import util
@@ -15,12 +16,16 @@ from app.models import (
     ResolvableSingular,
     User,
     UUIDSplit,
+    uuids,
 )
 from app.views.access import Access
 from fastapi import HTTPException
 from sqlalchemy import func, literal_column, select, update
 from sqlalchemy.orm import Session, make_transient
-from tests.test_controllers.util import check_exc, expect_exc
+from tests.test_controllers.util import check_exc, expect_exc, stringify
+
+# =========================================================================== #
+# Base
 
 logger = util.get_logger(__name__)
 httpcommon = (
@@ -31,10 +36,10 @@ httpcommon = (
     HTTPMethod.DELETE,
 )
 methods_required = {
-    "test_cannot_modify_not_owned",
-    "test_cannot_access_deleted",
-    "test_cannot_access_non_existing",
-    "test_cannot_access_private",
+    "test_modify",
+    "test_deleted",
+    "test_dne",
+    "test_private",
 }
 
 
@@ -70,10 +75,10 @@ class BaseTestAccess(metaclass=AccessTestMeta):
 
     .. code:: python
         class Test<Table>Access(BaseTestAccess):
-            def test_cannot_access_private(self, session: Session): ...
-            def test_cannot_modify_not_owned(self, session: Session): ...
-            def test_cannot_access_deleted(self, session: Session): ...
-            def test_cannot_access_non_existing(self, session: Session): ...
+            def test_private(self, session: Session): ...
+            def test_modify(self, session: Session): ...
+            def test_deleted(self, session: Session): ...
+            def test_dne(self, session: Session): ...
     """
 
     @pytest.fixture(autouse=True, scope="session")
@@ -90,9 +95,76 @@ class BaseTestAccess(metaclass=AccessTestMeta):
         return Access(session, token, method)
 
 
-class TestUserAccess(BaseTestAccess):
+def split_uuid_collection(session: Session) -> UUIDSplit:
+    # Find collection ids to work with.
+    q = select(Collection.uuid)
+    quser = q.join(User).where(User.uuid == "000-000-000")
+    uuid_collection_user = set(session.execute(quser).scalars())
 
-    def test_cannot_access_deleted(self, session: Session):
+    qother = q.where(Collection.uuid.not_in(uuid_collection_user))
+    uuid_collection_other = set(session.execute(qother).scalars())
+
+    assert len(uuid_collection_user), "Expected collections."
+    assert len(uuid_collection_other), "Expected collections."
+    return uuid_collection_user, uuid_collection_other
+
+
+def split_uuids_document(
+    session: Session,
+    level: Level,
+) -> UUIDSplit:
+    # Find collection ids to work with.
+
+    q_n_total = select(func.count()).select_from(select(Document.uuid).subquery())
+    n_total = session.execute(q_n_total).scalar()
+
+    quser = (
+        select(Document.uuid)
+        .select_from(Document)
+        .join(Grant)
+        .join(User)
+        .where(
+            User.uuid == "000-000-000",
+            Grant.level >= level.value,
+        )
+    )
+    uuid_granted = set(session.execute(quser).scalars())
+
+    qother = select(Document.uuid).where(Document.uuid.not_in(uuid_granted))
+    uuid_other = set(session.execute(qother).scalars())
+
+    if n_total != (n := len(uuid_granted)) + (m := len(uuid_other)):
+        raise AssertionError(
+            f"Expected a total of `{n_total}` results (got `{n + m}` "
+            f"entries, of which `{n}` belong to the user `000-000-000` "
+            f"and the  remaining `{m}` do not)."
+        )
+    elif len(bad := uuid_other & uuid_granted):
+        msg = "`uuid_other` and `uuid_granted` should not intersect."
+        msg += f"\n{uuid_other=},\n{uuid_granted=},\n{bad=}."
+        raise AssertionError(msg)
+    return uuid_granted, uuid_other
+
+
+class AssignmentSplit(NamedTuple):
+    collections: UUIDSplit
+    documents: UUIDSplit
+
+
+def split_uuid_assignment(session: Session, level: Level) -> AssignmentSplit:
+    return AssignmentSplit(
+        collections=split_uuid_collection(session),
+        documents=split_uuids_document(session, level),
+    )
+
+
+# =========================================================================== #
+# Tests
+
+
+class TestAccessUser(BaseTestAccess):
+
+    def test_deleted(self, session: Session):
 
         # Reject user reading self if user is deleted.
         user = User.if_exists(session, "000-000-000")
@@ -125,7 +197,7 @@ class TestUserAccess(BaseTestAccess):
         assert exc.status_code == 410
         assert exc.detail == detail
 
-    def test_cannot_modify_not_owned(self, session: Session):
+    def test_modify(self, session: Session):
 
         # User should not be able to access another user for any method besides
         # httpx.GET
@@ -163,93 +235,88 @@ class TestUserAccess(BaseTestAccess):
         assert user.uuid == "99d-99d-99d"
         assert access.token_user.uuid == "000-000-000"
 
-    def test_cannot_access_private(self, session: Session):
+    def test_private(self, session: Session):
 
         session.execute(update(User).values(deleted=False, public=False))
         session.commit()
 
-        # User can access self when private.
-        access = self.create_access(session, HTTPMethod.GET)
-        user = access.user("000-000-000")
-        assert user.uuid == access.token.uuid == "000-000-000"
+        for method in httpcommon:
+            # User can access self when private.
+            access = self.create_access(session, method)
+            user = access.user("000-000-000")
+            assert user.uuid == access.token.uuid == "000-000-000"
 
-        # User cannot access other user that is private
-        assert access.token_user.uuid == "000-000-000"
-        with pytest.raises(HTTPException) as err:
-            access.user("99d-99d-99d")
+            # User cannot access other user that is private
+            assert access.token_user.uuid == "000-000-000"
+            with pytest.raises(HTTPException) as err:
+                access.user("99d-99d-99d")
 
-        exc: HTTPException = err.value
-        assert exc.status_code == 403
-        assert exc.detail == dict(
-            uuid_user_token="000-000-000",
-            uuid_user="99d-99d-99d",
-            msg="User is not public.",
-        )
+            if err := check_exc(
+                err.value,
+                403,
+                uuid_user_token="000-000-000",
+                uuid_user="99d-99d-99d",
+                msg="Cannot access private user.",
+            ):
+                raise err
 
-    def test_cannot_access_non_existing(self, session: Session):
+    def test_dne(self, session: Session):
 
-        access = self.create_access(session, HTTPMethod.GET)
-        with pytest.raises(HTTPException) as err:
-            access.user(uuid_bad := secrets.token_urlsafe(9))
+        for method in httpcommon:
+            access = self.create_access(session, method)
+            with pytest.raises(HTTPException) as err:
+                access.user(uuid_bad := secrets.token_urlsafe(9))
 
-        exc = err.value
-        assert exc.status_code == 404
-        assert exc.detail == dict(
-            uuid_obj=uuid_bad,
-            kind_obj="user",
-            msg="Object does not exist.",
-        )
+            exc = err.value
+            assert exc.status_code == 404
+            assert exc.detail == dict(
+                uuid_obj=uuid_bad,
+                kind_obj="user",
+                msg="Object does not exist.",
+            )
 
 
-class TestCollection(BaseTestAccess):
-    @pytest.fixture
-    def split_uuid_collection(
+class TestAccessCollection(BaseTestAccess):
+    def split_uuid(
         self,
         session: Session,
     ) -> UUIDSplit:
-        # Find collection ids to work with.
-        q = select(Collection.uuid)
-        quser = q.join(User).where(User.uuid == "000-000-000").limit(5)
-        uuid_collection_user = set(session.execute(quser).scalars())
-        qother = q.where(Collection.uuid.not_in(uuid_collection_user)).limit(5)
-        uuid_collection_other = set(session.execute(qother).scalars())
+        return split_uuid_collection(session)
 
-        assert len(uuid_collection_user), "Expected collections."
-        assert len(uuid_collection_other), "Expected collections."
-        return uuid_collection_user, uuid_collection_other
-
-    def test_cannot_access_private(
-        self,
-        session: Session,
-        split_uuid_collection: UUIDSplit,
-    ):
+    def test_private(self, session: Session):
         session.execute(update(User).values(deleted=False, public=True))
         session.execute(update(Collection).values(deleted=False, public=False))
         session.commit()
 
-        (uuid_owned, *_), (uuid_other, *_) = split_uuid_collection
+        (uuid_owned, *_), (uuid_other, *_) = self.split_uuid(session)
 
-        # User cannot access the private collections of others.
-        access = self.create_access(session, HTTPMethod.GET)
-        with pytest.raises(HTTPException) as err:
-            access.collection(uuid_other)
+        for meth in httpcommon:
+            # User cannot access the private collections of others.
+            access = self.create_access(session, meth)
+            with pytest.raises(HTTPException) as err:
+                access.collection(uuid_other)
 
-        exc: HTTPException = err.value
-        assert exc.status_code == 403
+            if err := check_exc(
+                err.value,
+                403,
+                msg="Cannot access private collection.",
+                uuid_user="000-000-000",
+                uuid_collection=uuid_other,
+            ):
+                raise err
 
-        # User can access their own private collection
-        collection = access.collection(uuid_owned)
-        assert collection.id_user == access.token_user.id
+            # User can access their own private collection
+            collection = access.collection(uuid_owned)
+            assert collection.id_user == access.token_user.id
+            assert collection.uuid == uuid_owned
 
-        # NOTE: Private users cannot have public collections. How to resolve?
+            # NOTE: Private users cannot have public collections. How to resolve?
 
-    def test_cannot_access_deleted(
-        self, session: Session, split_uuid_collection: UUIDSplit
-    ):
+    def test_deleted(self, session: Session):
         session.execute(update(User).values(deleted=False, public=True))
-        session.execute(update(Collection).values(deleted=True, public=True))
+        session.execute(update(Collection).values(deleted=True, public=False))
 
-        (uuid_owned, *_), (uuid_other, *_) = split_uuid_collection
+        (uuid_owned, *_), (uuid_other, *_) = self.split_uuid(session)
 
         for meth in httpcommon:
             # User cannot read own deleted collection
@@ -257,33 +324,50 @@ class TestCollection(BaseTestAccess):
             with pytest.raises(HTTPException) as err:
                 access.collection(uuid_owned)
 
-            exc: HTTPException = err.value
-            assert exc.status_code == 410
+            if err := check_exc(
+                err.value,
+                410,
+                msg="Object is deleted.",
+                kind_obj="collection",
+                uuid_obj=uuid_owned,
+            ):
+                raise err
 
-            # User cannot read deleted collection of other
+            # NOTE: Lack of permission should supercede deletion.
             with pytest.raises(HTTPException) as err:
                 access.collection(uuid_other)
 
-            exc = err.value
-            assert exc.status_code == 410
+            if err := check_exc(
+                err.value,
+                403,
+                uuid_collection=uuid_other,
+                uuid_user="000-000-000",
+                msg="Cannot access private collection.",
+            ):
+                raise err
 
-    def test_cannot_access_non_existing(self, session: Session):
+    def test_dne(self, session: Session):
         # NOTE: Id should not exist 100% bc default uses `token_urlsafe(8)`.
-        access = self.create_access(session, HTTPMethod.GET)
-        with pytest.raises(HTTPException) as err:
-            access.collection(secrets.token_urlsafe(9))
+        for method in httpcommon:
+            access = self.create_access(session, method)
+            with pytest.raises(HTTPException) as err:
+                access.collection(uuid_obj := secrets.token_urlsafe(9))
 
-        exc: HTTPException = err.value
-        assert exc.status_code == 404
+            if err := check_exc(
+                err.value,
+                404,
+                msg="Object does not exist.",
+                uuid_obj=uuid_obj,
+                kind_obj="collection",
+            ):
+                raise err
 
-    def test_cannot_modify_not_owned(
-        self, session: Session, split_uuid_collection: UUIDSplit
-    ):
+    def test_modify(self, session: Session):
         session.execute(update(User).values(deleted=False, public=True))
         session.execute(update(Collection).values(deleted=False, public=True))
         session.commit()
 
-        (uuid_owned, *_), (uuid_other, *_) = split_uuid_collection
+        (uuid_owned, *_), (uuid_other, *_) = self.split_uuid(session)
 
         user_other = User.if_exists(session, "99d-99d-99d")
         for meth in httpcommon:
@@ -295,8 +379,14 @@ class TestCollection(BaseTestAccess):
             with pytest.raises(HTTPException) as err:
                 access.collection(uuid_other)
 
-            exc = err.value
-            assert exc.status_code == 403
+            if err := check_exc(
+                err.value,
+                403,
+                msg="Cannot modify collection.",
+                uuid_user="000-000-000",
+                uuid_collection=uuid_other,
+            ):
+                raise err
 
             # Can when owner, impersonate owner.
             collection = access.collection(
@@ -307,79 +397,25 @@ class TestCollection(BaseTestAccess):
             assert collection.id_user == user_other.id
 
 
-class TestDocumentAccess(BaseTestAccess):
-    def split_uuids(
-        self,
-        session: Session,
-        level: Level,
-        no_check=False,
-    ) -> UUIDSplit:
-        # Find collection ids to work with.
+class TestAccessDocument(BaseTestAccess):
 
-        q_n_total = select(func.count()).select_from(select(Document.uuid))
-        n_total = session.execute(q_n_total).scalar()
+    def split_uuids(self, session: Session, level: Level):
+        return split_uuids_document(session, level)
 
-        quser = (
-            select(Document.uuid)
-            .select_from(Document)
-            .join(Grant)
-            .join(User)
-            .where(
-                User.uuid == "000-000-000",
-                Grant.level >= level.value,
-            )
-        )
-        uuid_granted = set(session.execute(quser).scalars())
-
-        print("quser")
-        util.sql(session, quser)
-        print()
-
-        qother = select(Document.uuid).where(Document.uuid.not_in(uuid_granted))
-        uuid_other = set(session.execute(qother).scalars())
-
-        # print("qother")
-        # util.sql(session, qother)
-        # print()
-
-        if n_total != (n := len(uuid_granted)) + (m := len(uuid_other)):
-            raise AssertionError(
-                f"Expected a total of `{n_total}` results (got `{n + m}` "
-                f"entries, of which `{n}` belong to the user `000-000-000` "
-                f"and the  remaining `{m}` do not)."
-            )
-        elif len(bad := uuid_other & uuid_granted):
-            msg = "`uuid_other` and `uuid_granted` should not intersect."
-            msg += f"\n{uuid_other=},\n{uuid_granted=},\n{bad=}."
-            raise AssertionError(msg)
-        return uuid_granted, uuid_other
-
-    def test_cannot_access_private(self, session: Session):
+    def test_private(self, session: Session):
         session.execute(update(User).values(deleted=False, public=True))
         session.execute(update(Document).values(deleted=False, public=False))
 
         for method in httpcommon:
             # NOTE: Requires that grants exist. This does not overlap with
-            #       `test_cannot_modify_not_owned`.
+            #       `test_modify`.
             access = self.create_access(session, method)
             level = LevelHTTP[method.name].value
             level_next = None
             if level != Level.own:
                 level_next = Level(level.value + 1)
 
-            # print()
-            # print("########################################################")
-            # print("test_cannot_access_private")
-            # print()
-            #
-            uuid_granted, uuid_other = self.split_uuids(session, level, no_check=True)
-            #
-            # print(f"{uuid_granted=}")
-            # print(f"{uuid_other=}")
-            # print(f"{level=}")
-            # print(f"{level_next=}")
-            # print()
-
+            uuid_granted, uuid_other = self.split_uuids(session, level)
             if level_next:
                 # NOTE: Cannot access documents of others.
                 with pytest.raises(HTTPException) as err:
@@ -464,9 +500,6 @@ class TestDocumentAccess(BaseTestAccess):
                     level_grant_required=level_above.name,
                     uuid_grant=grant.uuid,
                 ):
-                    print(grant.deleted)
-                    print(grant.level)
-                    print(grant.uuid)
                     raise err
 
         # NOTE: Deleting the grant should result in an error raised. Grant
@@ -530,7 +563,7 @@ class TestDocumentAccess(BaseTestAccess):
 
         assert uuid_document in uuid_other
 
-    def test_cannot_modify_not_owned(self, session: Session):
+    def test_modify(self, session: Session):
         """Verify that:
 
         1. A user cannot use any mehtods besides `GET` on a document that they
@@ -568,26 +601,7 @@ class TestDocumentAccess(BaseTestAccess):
                 uuid_other=uuid_other,
             )
 
-            # Can access own documents with aribriary level.
-            # if level == Level.own:
-            #     documents = access.document(uuid_granted)
-            #     assert len(documents) == len(uuid_granted)
-            #     bad = tuple(
-            #         document.uuid
-            #         for document in documents
-            #         if document.uuid not in uuid_granted
-            #     )
-            #     if bad:
-            #         msg = f"Unxpected document with uuids "
-            #         raise AssertionError(msg + f"`{uuid_granted}` returned.")
-            # else:
-            #     tryaccess(
-            #         access,
-            #         uuid_granted,
-            #         resolve_user_token="000-000-000",
-            #     )
-
-    def test_cannot_access_deleted(self, session: Session):
+    def test_deleted(self, session: Session):
 
         session.execute(update(User).values(public=True, deleted=False))
         session.execute(update(Grant).values(deleted=True))
@@ -652,8 +666,6 @@ class TestDocumentAccess(BaseTestAccess):
                 kind_obj="document",
             )
             if err:
-                print(access.level)
-                print(method)
                 raise err
 
             assert isinstance(detail := httperr.detail, dict)
@@ -661,16 +673,7 @@ class TestDocumentAccess(BaseTestAccess):
             session.execute(update(Grant).values(deleted=True))
             session.commit()
 
-            # Lack of permission should supercede deletedness.
-            # err, httperr = expect_exc(
-            #     lambda: access.document(uuid_other, uuid_user_token="99d-99d-99d"),
-            #     403,
-            #     `
-            #
-            #
-            # )
-
-    def test_cannot_access_non_existing(self, session: Session):
+    def test_dne(self, session: Session):
 
         uuid_bs = secrets.token_urlsafe(9)
         for method in httpcommon:
@@ -686,15 +689,364 @@ class TestDocumentAccess(BaseTestAccess):
                 raise err
 
 
-class TestAssignmentAccess(BaseTestAccess):
-    def test_cannot_access_private(self, session: Session):
+class TestAccessAssignment(BaseTestAccess):
+    def split(self, session: Session, level: Level) -> AssignmentSplit:
+        return split_uuid_assignment(session, level)
+
+    def check_result(
+        self,
+        session: Session,
+        res: Tuple[Collection | Document, Tuple],
+        level: Level,
+        *,
+        uuid_t_expected: str,
+        uuid_s_expected: Set[str],
+        T_expected: Type,
+    ) -> Tuple[Tuple[Assignment, ...], AssertionError | None]:
+        match res:
+            case [Collection() as tt, tuple() as ss]:
+                T, S = Collection, Document
+            case [Document() as tt, tuple() as ss]:
+                T, S = Document, Collection
+            case _:
+                raise ValueError()
+
+        # Check tt.
+        msg: str = ""
+        if T != T_expected:
+            msg += f"Expected result to have `{T_expected}` as its first "
+            msg += "element."
+
+        assert isinstance(tt, T)
+        assert tt.uuid == uuid_t_expected
+
+        # Check ss.
+        assert len(ss) == len(uuid_s_expected)
+        uuid_s = uuids(ss)
+
+        if len(extra := uuid_s - uuid_s_expected):
+            msg += f"Results contains unexpected uuids `{extra}`.\n"
+            msg += f"Expected any of `{uuid_t_expected}`.\n"
+        if len(missing := uuid_s_expected - uuid_s):
+            msg += f"Results missing uuids `{missing}`.\n"
+            msg += f"Expected any of `{uuid_t_expected}`.\n"
+        if bad := tuple(ss for item in ss if not isinstance(item, S)):
+            msg += f"Incorrect item types in result tuple: `{bad}`."
+
+        # Check the assignments.
+        q = tt.q_select_assignment(uuid_s)
+        assignments = tuple(session.execute(q).scalars())
+
+        if bad := tuple(item for item in assignments if item.level < level):
+            msg += f"Expected assignments to have level `{level}`. "
+            msg += "The following assignments do not have the correct level:\n"
+            msg += stringify(assignments) + "\n"
+
+        return assignments, AssertionError(msg) if msg else None
+
+    def test_private(self, session: Session):
+        session.execute(update(Collection).values(deleted=False, public=False))
+        session.execute(update(Grant).values(deleted=False))
+        session.execute(update(Document).values(deleted=False, public=False))
+        session.commit()
+
+        _, (uuid_doc_ungranted,) = split_uuids_document(session, Level.view)
+        for method in httpcommon:
+            _d = self.split(session, LevelHTTP[method].value)
+            ((uuid_coll, uuid_coll_other), (uuid_doc, uuid_doc_other)) = _d
+            (uuid_doc_1st, *_), (uuid_coll_1st, *_) = (uuid_doc, uuid_coll)
+            (uuid_doc_1st_other, *_), (uuid_coll_1st_other, *_) = (
+                uuid_doc_other,
+                uuid_coll_other,
+            )
+            access = self.create_access(session, method)
+
+            # NOTE: User can access their own private assignments.
+            res = access.assignment_document(
+                uuid_doc_1st, uuid_coll, level=access.level
+            )
+            _, err = self.check_result(
+                session,
+                res,
+                level=LevelHTTP[method].value,
+                uuid_t_expected=uuid_doc_1st,
+                uuid_s_expected=uuid_coll,
+                T_expected=Document,
+            )
+            if err:
+                raise err
+
+            res = access.assignment_collection(
+                uuid_coll_1st, uuid_doc, level=access.level
+            )
+            _, err = self.check_result(
+                session,
+                res,
+                level=LevelHTTP[method].value,
+                uuid_t_expected=uuid_coll_1st,
+                uuid_s_expected=uuid_doc,
+                T_expected=Collection,
+            )
+            if err:
+                raise err
+
+            # NOTE: User cannot access the private assignments of others. Only
+            #       the second argument should be invalid.
+            with pytest.raises(HTTPException) as err:
+                access.assignment_document(
+                    uuid_doc_ungranted,
+                    uuid_coll,
+                    level=access.level,
+                )
+            if err := check_exc(
+                httperr := err.value,  # type: ignore
+                403,
+                check_length=False,
+                msg="Grant does not exist.",
+                uuid_user="000-000-000",
+            ):
+                raise err
+
+            detail = httperr.detail
+            assert detail["uuid_document"] == uuid_doc_ungranted
+
+            with pytest.raises(HTTPException) as err:
+                access.assignment_collection(
+                    uuid_coll_1st_other,
+                    uuid_doc,
+                    level=access.level,
+                )
+
+            if err := check_exc(
+                err.value,
+                403,
+                msg="Cannot access private collection.",
+                uuid_user="000-000-000",
+                uuid_collection=uuid_coll_1st_other,
+            ):
+                raise err
+
+    def test_modify(self, session: Session):
+        session.execute(update(Collection).values(deleted=False, public=True))
+        session.execute(update(Grant).values(deleted=False))
+        session.execute(update(Document).values(deleted=False, public=True))
+        session.commit()
+
+        _, (uuid_doc_ungranted,) = split_uuids_document(session, Level.view)
+        for method in httpcommon:
+            if method == HTTPMethod.GET:
+                continue
+
+            _d = self.split(session, LevelHTTP[method].value)
+            ((uuid_coll, uuid_coll_other), (uuid_doc, uuid_doc_other)) = _d
+            (uuid_doc_1st, *_), (uuid_coll_1st, *_) = (uuid_doc, uuid_coll)
+            (uuid_doc_1st_other, *_), (uuid_coll_1st_other, *_) = (
+                uuid_doc_other,
+                uuid_coll_other,
+            )
+            access = self.create_access(session, method)
+
+            # NOTE: Can modify when granted and collection is owned.
+            res = access.assignment_collection(uuid_coll_1st, uuid_doc)
+            _, err = self.check_result(
+                session,
+                res,
+                access.level,
+                uuid_t_expected=uuid_coll_1st,
+                uuid_s_expected=uuid_doc,
+                T_expected=Collection,
+            )
+            if err:
+                raise err
+
+            # NOTE: Cannot modify ungranted.
+            with pytest.raises(HTTPException) as err:
+                access.assignment_document(
+                    uuid_doc_ungranted,
+                    uuid_coll,
+                    level=access.level,
+                )
+            if err := check_exc(
+                err.value,  # type: ignore
+                403,
+                check_length=False,
+                msg="Grant does not exist.",
+                uuid_user="000-000-000",
+            ):
+                raise err
+
+            # NOTE: Cannot modify collection not owned.
+            with pytest.raises(HTTPException) as exc:
+                access.assignment_collection(uuid_coll_1st_other, uuid_doc)
+
+            if err := check_exc(
+                exc.value,
+                403,
+                check_length=False,
+                msg="Cannot modify collection.",
+                uuid_user=access.token_user.uuid,
+            ):
+                raise err
+
+            assert exc.value.detail["uuid_collection"] in uuid_coll_other
+
+            # NOTE: Insufficient grant case. Only possible when modify or >
+            #       Try to modify a document with insufficient access.
+            if access.level.name == "view":
+                continue
+
+            q = (
+                select(Grant.level, Grant.uuid, Document.uuid)
+                .join(Grant)
+                .join(User)
+                .where(
+                    Grant.level < access.level.value,
+                    Document.uuid.in_(uuid_doc_other),
+                    User.uuid == access.token_user.uuid,
+                )
+            )
+            res = session.execute(q).first()
+            if res is None:
+                Document.__bases__
+                d = Document(
+                    title="TestAccessAssignment.test_private",
+                    format="md",
+                    content="# TestAccessAssignment.test_private Placeholder",
+                )
+                _ = session.add(d) or session.commit() or session.refresh(d)
+                uuid_document_insufficient = d.uuid
+                level_insufficient = Level(access.level.value - 1)
+                g = Grant(
+                    id_document=d.id,
+                    id_user=access.token_user.id,
+                    level=level_insufficient,
+                )
+                _ = session.add(g) or session.commit() or session.refresh(g)
+                uuid_grant_insufficient = g.uuid
+            else:
+                (
+                    level_insufficient,
+                    uuid_grant_insufficient,
+                    uuid_document_insufficient,
+                ) = res
+
+            with pytest.raises(HTTPException) as err:
+                access.assignment_document(
+                    uuid_document_insufficient, uuid_coll, level=access.level
+                )
+
+            detail_expected: Dict[str, Any] = dict(
+                msg="Grant insufficient.",
+                uuid_user="000-000-000",
+                uuid_document=uuid_document_insufficient,
+                uuid_grant=uuid_grant_insufficient,
+                level_grant_required=access.level.name,
+                level_grant=level_insufficient.name,
+            )
+            if err := check_exc(err.value, 403, **detail_expected):
+                raise err
+
+            with pytest.raises(HTTPException) as err:
+                access.assignment_collection(
+                    uuid_coll_1st,
+                    {uuid_document_insufficient},
+                    level=access.level,
+                )
+
+            if err := check_exc(err.value, 403, **detail_expected):
+                raise err
+
+    def test_deleted(self, session: Session):
+        session.execute(update(Collection).values(deleted=True, public=True))
+        session.execute(update(Grant).values(deleted=False))
+        session.execute(update(Document).values(deleted=True, public=True))
+        session.commit()
+
+        _, (uuid_doc_ungranted,) = split_uuids_document(session, Level.view)
+        for method in httpcommon:
+            if method == HTTPMethod.GET:
+                continue
+
+            _d = self.split(session, LevelHTTP[method].value)
+            ((uuid_coll, uuid_coll_other), (uuid_doc, uuid_doc_other)) = _d
+            (uuid_doc_1st, *_), (uuid_coll_1st, *_) = (uuid_doc, uuid_coll)
+            (uuid_doc_1st_other, *_), (uuid_coll_1st_other, *_) = (
+                uuid_doc_other,
+                uuid_coll_other,
+            )
+            access = self.create_access(session, method)
+
+            # NOTE: Should say that the document is deleted when accessing own.
+            err, httperr = expect_exc(
+                lambda: access.assignment_document(uuid_doc_1st, uuid_coll),
+                410,
+                msg="Object is deleted.",
+                uuid_obj=uuid_doc_1st,
+                kind_obj="document",
+            )
+            if err:
+                raise err
+
+            # NOTE: Lack of permission supercedes deletedness.
+            err, httperr = expect_exc(
+                lambda: access.assignment_document(uuid_doc_ungranted, uuid_coll),
+                403,
+                msg="Grant does not exist.",
+                uuid_document=uuid_doc_ungranted,
+                uuid_user=access.token_user.uuid,
+                level_grant_required=access.level.name,
+            )
+            if err:
+                raise err
+
+            # NOTE: Public collection should tell anyone it is deleted.
+            err, httperr = expect_exc(
+                lambda: access.assignment_collection(uuid_coll_1st_other, uuid_doc),
+                410,
+                msg="Object is deleted.",
+                uuid_obj=uuid_coll_1st_other,
+                kind_obj="collection",
+            )
+            if err:
+                raise err
+
+    def test_dne(self, session: Session):
+        uuid_bs = secrets.token_urlsafe(9)
+        uuid_bs_set = {secrets.token_urlsafe(7) for _ in range(10)}
+
+        for method in httpcommon:
+            access = self.create_access(session, method)
+
+            err, httperr = expect_exc(
+                lambda: access.assignment_collection(uuid_bs, uuid_bs_set),
+                404,
+                msg="Object does not exist.",
+                uuid_obj=uuid_bs,
+                kind_obj="collection",
+            )
+            if err:
+                raise err
+
+            err, httperr = expect_exc(
+                lambda: access.assignment_document(uuid_bs, uuid_bs_set),
+                404,
+                msg="Object does not exist.",
+                uuid_obj=uuid_bs,
+                kind_obj="document",
+            )
+            if err:
+                raise err
+
+
+class TestAccessGrant(BaseTestAccess):
+    def test_private(self, session: Session):
         assert False
 
-    def test_cannot_modify_not_owned(self, session: Session):
+    def test_modify(self, session: Session):
         assert False
 
-    def test_cannot_access_deleted(self, session: Session):
+    def test_deleted(self, session: Session):
         assert False
 
-    def test_cannot_access_non_existing(self, session: Session):
+    def test_dne(self, session: Session):
         assert False

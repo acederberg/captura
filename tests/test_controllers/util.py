@@ -1,7 +1,11 @@
-from typing import Any, Callable, Dict, Tuple, TypeAlias, TypeVar
+import json
+from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias, TypeVar
 
 import pytest
+from app.models import Assignment, Collection, Document, Grant, User
+from app.schemas import CollectionSchema, DocumentSchema, GrantSchema, UserSchema
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 
 def check_exc(
@@ -77,3 +81,27 @@ def expect_exc(
     )
 
     return err, httperr
+
+
+def pre_stringify(data: Any) -> Any:
+    """Do not use this outside of error feedback!"""
+    match data:
+        case Iterable():
+            return [pre_stringify(item) for item in data]
+        case User() as user:
+            return UserSchema.model_validate(user).model_dump()
+        case Collection() as collection:
+            return CollectionSchema.model_validate(collection).model_dump()
+        case Document() as document:
+            return DocumentSchema.model_validate(document).model_dump()
+        case Grant() as grant:
+            return GrantSchema.model_validate(grant).model_dump()
+        case Assignment() as assignment:
+            return Assignment.model_validate(assignment).model_dump()
+        case BaseModel() as other:
+            return other.model_dump()
+
+
+def stringify(data: Any) -> Any:
+    cleaned = pre_stringify(data)
+    return json.dumps(cleaned, default=str, indent=2)

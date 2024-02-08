@@ -341,7 +341,7 @@ class PrimaryTableMixins:
     def q_select_ids(cls, uuids: Set[str]) -> Select:
         match (id := getattr(cls, "id", None)):
             case Column() | InstrumentedAttribute():
-                select(id).where(cls.uuid.in_(uuids))
+                return select(id).where(cls.uuid.in_(uuids))
             case None:
                 raise AttributeError(
                     f"Table `{cls.__name__}` must have an `id` `column` to use"
@@ -998,7 +998,7 @@ class User(SearchableTableMixins, Base):
             raise HTTPException(
                 403,
                 detail=dict(
-                    msg="User cannot access this collection.",
+                    msg="Cannot access private collection.",
                     uuid_user=self.uuid,
                     uuid_collection=collection.uuid,
                 ),
@@ -1014,53 +1014,14 @@ class User(SearchableTableMixins, Base):
 
         # Deleted and insufficient should be included for better feedback.
         q = self.q_select_grants({document.uuid}, exclude_deleted=False)
-        q_uuid_grant = select(literal_column("uuid")).select_from(q)
+        q_uuid_grant = select(literal_column("uuid")).select_from(q.subquery())
         q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
         res = session.execute(q_grant).scalars()
         assocs: List[AssocUserDocument] = list(res)
 
-        # print()
-        # print("--------------------------------------------------------------")
-        # print("check_can_access_document")
-        # import json
-        #
-        # from app.schemas import GrantSchema
-        #
-        # print(f"{level=}")
-        # print(f"{document.uuid = }")
-        # print(f"{self.uuid = }")
-        # print()
-        # print("grants")
-        # print(
-        #     json.dumps(
-        #         [GrantSchema.model_validate(assoc).model_dump() for assoc in assocs],
-        #         default=str,
-        #         indent=2,
-        #     )
-        # )
-        # print()
-
-        # if not (n := len(assocs)):
-        #     detail.update( msg="Grant does not exist.", level_grant_required=level.name,
-        #     )
-        #     raise HTTPException(403, detail=detail)
-        # elif n != 1:
-        #     # Server is a teapot because this is unlikely to ever happen.
-        #     detail.update(msg="There should only be one grant.")
-        #     raise HTTPException(418, detail=detail)
-        # elif (grant := assocs[0]).level.value < level.value:
-        #     detail.update(
-        #         msg="Grant insufficient.",
-        #         uuid_grant=grant.uuid,
-        #         level_grant=grant.level.name,
-        #         level_grant_required=level.name,
-        #     )
-        #     raise HTTPException(403, detail=detail)
-
         detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
         match assocs:
             case []:
-                print(assocs)
                 detail.update(
                     msg="Grant does not exist.",
                     level_grant_required=level.name,
@@ -1413,6 +1374,18 @@ ResolvableSourceGrant: TypeAlias = (
 ResolvableTargetGrant: TypeAlias = (
     ResolvableMultiple[User] | ResolvableMultiple[Collection]
 )
+
+
+def uuids(vs: Resolvable[ResolvableT]) -> Set[str]:
+    match vs:
+        case tuple():
+            return {vv.uuid for vv in vs}
+        case set():
+            return vs
+        case str():
+            return {vs}
+        case _ as item:
+            return {item.uuid}
 
 
 __all__ = (

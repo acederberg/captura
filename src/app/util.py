@@ -1,5 +1,6 @@
 import logging
 from os import environ, path
+from typing import Any, Iterable
 
 from rich.console import Console
 from rich.syntax import Syntax
@@ -38,6 +39,15 @@ def sql(session, *qs) -> None:
     highlighted = Syntax(cmp, "mysql", theme="fruity", word_wrap=True)
     CONSOLE_APP.print(highlighted)
 
+
+# def pre_stringify(data: Any) -> Any:
+#     match data:
+#         case other if hasattr(other, ""):
+#             return
+#         case Iterable():
+#             return [pre_stringify(item) for item in data]
+#             ...
+#
 
 # =========================================================================== #
 # PATH STUFF

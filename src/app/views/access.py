@@ -23,6 +23,9 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 H = HTTPMethod
+AccessAssignmentResult = (
+    Tuple[Collection, Tuple[Document, ...]] | Tuple[Document, Tuple[Collection, ...]]
+)
 
 
 class Access(BaseController):
@@ -46,20 +49,18 @@ class Access(BaseController):
         # NOTE: When `GET` method, if the user is public, return. Otherwise
         #       always check for a token and check the token uuid.
         match self.method:
-            case HTTPMethod.GET if not user.public:
+            case _ if not user.public:
                 if self.token.uuid != user.uuid:
                     detail = dict(
                         uuid_user_token=user_token.uuid,
                         uuid_user=user.uuid,
-                        msg="User is not public.",
+                        msg="Cannot access private user.",
                     )
                     raise HTTPException(403, detail=detail)
                 return user
-            case HTTPMethod.GET:
+            case H.GET:
                 return user
-            case (
-                HTTPMethod.POST | HTTPMethod.PATCH | HTTPMethod.PUT | HTTPMethod.DELETE
-            ):
+            case H.POST | H.PATCH | H.PUT | H.DELETE:
                 if user.uuid != user_token.uuid:
                     detail = dict(
                         uuid_user=user.uuid,
@@ -113,13 +114,13 @@ class Access(BaseController):
                 case H.POST | H.DELETE | H.PUT | H.PATCH:
                     if token_user.id != collection.id_user:
                         detail = dict(
-                            uuid_user_token=self.token.uuid,
+                            uuid_user=token_user.uuid,
                             uuid_collection=collection.uuid,
-                            msg="User cannot access private collection.",
+                            msg="Cannot modify collection.",
                         )
 
                         # Not sure how this happens on occasion.
-                        if collection.id_user is not None:
+                        if collection.id_user is None:
                             detail.update(msg="Collection has no owner.")
                             raise HTTPException(418, detail=detail)
 
@@ -178,14 +179,6 @@ class Access(BaseController):
         level = level if level is not None else self.level
         token_user = self.token_user_or(resolve_user_token)
         documents = Document.resolve(self.session, resolve_document)
-        # print()
-        # print("========================================================")
-        # print("document")
-        # print()
-        # print(f"{level=}")
-        # print(f"{token_user.uuid=}")
-        # print(f"{documents=}")
-        # print()
 
         # NOTE: Exclude deleted is only required for force deletion.
         def check_one(document: Document) -> Document:
@@ -264,3 +257,13 @@ class Access(BaseController):
         )
 
         return document, collections
+
+    # def assignment(self,
+    #    t: Document | Collection,
+    #    resolve_t: Resolvable[Collection] | Resolvable[Document],
+    #     *,
+    #     exclude_deleted: bool = True,
+    #     resolve_user_token: ResolvableSingular[User] | None = None,
+    #     level: Level | None = None,
+    #     ) -> AccessAssignmentResult:
+    #     ...
