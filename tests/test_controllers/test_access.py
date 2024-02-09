@@ -13,6 +13,7 @@ from app.models import (
     Grant,
     Level,
     LevelHTTP,
+    PendingFrom,
     ResolvableSingular,
     User,
     UUIDSplit,
@@ -20,7 +21,7 @@ from app.models import (
 )
 from app.views.access import Access
 from fastapi import HTTPException
-from sqlalchemy import func, literal_column, select, update
+from sqlalchemy import false, func, literal_column, select, update
 from sqlalchemy.orm import Session, make_transient
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
@@ -121,8 +122,8 @@ def split_uuids_document(
     quser = (
         select(Document.uuid)
         .select_from(Document)
-        .join(Grant)
-        .join(User)
+        .join(Grant, onclause=Grant.id_document == Document.id)
+        .join(User, onclause=User.id == Grant.id_user)
         .where(
             User.uuid == "000-000-000",
             Grant.level >= level.value,
@@ -151,11 +152,22 @@ class AssignmentSplit(NamedTuple):
     documents: UUIDSplit
 
 
+class GrantSplit(NamedTuple):
+    users: UUIDSplit
+    documents: UUIDSplit
+
+
 def split_uuid_assignment(session: Session, level: Level) -> AssignmentSplit:
     return AssignmentSplit(
         collections=split_uuid_collection(session),
         documents=split_uuids_document(session, level),
     )
+
+
+# def split_uuid_grant(session: Session, level: Level) -> GrantSplit:
+#     return GrantSplit(
+#         users=split_uuid_user(session), documents=split_uuids_document(session, level)
+#     )
 
 
 # =========================================================================== #
@@ -445,12 +457,19 @@ class TestAccessDocument(BaseTestAccess):
             select(Grant).where(
                 Grant.id_user == user.id,
                 Grant.id_document == document.id,
+                Grant.pending == false(),
             )
         ).scalar()
 
         match grant:
             case None:
-                grant = Grant(id_user=user.id, id_document=document.id)
+                grant = Grant(
+                    id_user=user.id,
+                    id_document=document.id,
+                    level=Level.view,
+                    pending=False,
+                    pending_from=PendingFrom.granter,
+                )
             case Grant():
                 pass
             case _ as bad:
@@ -458,7 +477,44 @@ class TestAccessDocument(BaseTestAccess):
                 raise AssertionError(f"Unexpected type `{T}` for grant.")
 
         grant.deleted = False
+        grant.pending = True
+        grant.pending_from = PendingFrom.granter
         init_level = grant.level
+        session.add(grant)
+        session.commit()
+
+        # Pending grant should not allow access on private doc
+        detail_common = dict(
+            uuid_user="000-000-000",
+            uuid_document="aaa-aaa-aaa",
+        )
+        with pytest.raises(HTTPException) as err:
+            user.check_can_access_document(document, Level.view)
+
+        if err := check_exc(
+            err.value,
+            403,
+            msg="Grant is pending. User must accept invitation.",
+            **detail_common,  # type: ignore
+        ):
+            raise err
+
+        grant.pending_from = PendingFrom.grantee
+        session.add(grant)
+        session.commit()
+
+        with pytest.raises(HTTPException) as err:
+            user.check_can_access_document(document, Level.view)
+
+        if err := check_exc(
+            err.value,
+            403,
+            msg="Grant is pending. Document owner must approve request for access.",
+            **detail_common,  # type: ignore
+        ):
+            raise err
+
+        grant.pending = False
         session.add(grant)
         session.commit()
 
@@ -466,10 +522,6 @@ class TestAccessDocument(BaseTestAccess):
         assert grant.uuid_user == user.uuid
         assert not grant.deleted
 
-        detail_common = dict(
-            uuid_user="000-000-000",
-            uuid_document="aaa-aaa-aaa",
-        )
         for level, level_next in (
             (Level.view, Level.modify),
             (Level.modify, Level.own),
@@ -603,9 +655,11 @@ class TestAccessDocument(BaseTestAccess):
 
     def test_deleted(self, session: Session):
 
+        # NOTE: Documents being private simplifies loop (bc public doc will
+        #       just tell you it is deleted.
         session.execute(update(User).values(public=True, deleted=False))
         session.execute(update(Grant).values(deleted=True))
-        session.execute(update(Document).values(public=True, deleted=True))
+        session.execute(update(Document).values(public=False, deleted=True))
         session.commit()
 
         uuid_exists, uuid_exists_not = self.split_uuids(session, Level.view)
@@ -735,13 +789,7 @@ class TestAccessAssignment(BaseTestAccess):
 
         # Check the assignments.
         q = tt.q_select_assignment(uuid_s)
-        assignments = tuple(session.execute(q).scalars())
-
-        if bad := tuple(item for item in assignments if item.level < level):
-            msg += f"Expected assignments to have level `{level}`. "
-            msg += "The following assignments do not have the correct level:\n"
-            msg += stringify(assignments) + "\n"
-
+        assignments: Tuple[Assignment, ...] = tuple(session.execute(q).scalars())
         return assignments, AssertionError(msg) if msg else None
 
     def test_private(self, session: Session):
@@ -898,7 +946,7 @@ class TestAccessAssignment(BaseTestAccess):
             q = (
                 select(Grant.level, Grant.uuid, Document.uuid)
                 .join(Grant)
-                .join(User)
+                .join(User, onclause=User.id == Grant.id_user)
                 .where(
                     Grant.level < access.level.value,
                     Document.uuid.in_(uuid_doc_other),
@@ -1039,8 +1087,78 @@ class TestAccessAssignment(BaseTestAccess):
 
 
 class TestAccessGrant(BaseTestAccess):
+
+    def check_result(
+        self,
+        session: Session,
+        res: Tuple[User | Document, Tuple],
+        level: Level,
+        *,
+        uuid_t_expected: str,
+        uuid_s_expected: Set[str],
+        T_expected: Type,
+    ) -> Tuple[Tuple[Grant, ...], AssertionError | None]:
+
+        match res:
+            case [User() as tt, tuple() as ss]:
+                T, S = User, Document
+            case [Document() as tt, tuple() as ss]:
+                T, S = Document, User
+            case _:
+                raise ValueError()
+
+        # Check tt.
+        msg: str = ""
+        if T != T_expected:
+            msg += f"Expected result to have `{T_expected}` as its first "
+            msg += "element."
+
+        assert isinstance(tt, T)
+        assert tt.uuid == uuid_t_expected
+
+        # Check ss.
+        assert len(ss) == len(uuid_s_expected)
+        uuid_s = uuids(ss)
+
+        if len(extra := uuid_s - uuid_s_expected):
+            msg += f"Results contains unexpected uuids `{extra}`.\n"
+            msg += f"Expected any of `{uuid_t_expected}`.\n"
+        if len(missing := uuid_s_expected - uuid_s):
+            msg += f"Results missing uuids `{missing}`.\n"
+            msg += f"Expected any of `{uuid_t_expected}`.\n"
+        if bad := tuple(ss for item in ss if not isinstance(item, S)):
+            msg += f"Incorrect item types in result tuple: `{bad}`."
+
+        # Check grants
+        q = tt.q_select_grants(uuid_s)
+        grants: Tuple[Grant, ...] = tuple(session.execute(q).scalars())
+
+        if bad := tuple(item for item in grants if item.level.value < level.value):
+            msg += f"Expected assignments to have level `{level}`. "
+            msg += "The following assignments do not have the correct level:\n"
+            msg += stringify(grants) + "\n"
+
+        return grants, AssertionError(msg) if msg else None
+
     def test_private(self, session: Session):
-        assert False
+        session.execute(update(User).values(private=True, deleted=False))
+        session.execute(update(Document).values(private=True, deleted=False))
+        session.commit()
+        uuid_user, uuid_user_other = "000-000-000", "99d-99d-99d"
+        uuid_granted, uuid_doc_ungranted = split_uuids_document(
+            session,
+            Level.view,
+        )
+
+        for method in httpcommon:
+            access = self.create_access(session, method)
+
+            res = access.grant_user(uuid_user, uuid_granted)
+            if err := self.check_result(res):
+                raise err
+
+            res = access.grant_document(uuid_document)
+            self.check_result(res)
 
     def test_modify(self, session: Session):
         assert False

@@ -1,5 +1,5 @@
 import json
-from typing import Any, ClassVar, Dict, List, Self, Type
+from typing import Any, ClassVar, Dict, List, Self, Tuple, Type
 
 import pytest
 import yaml
@@ -12,6 +12,7 @@ from app.models import (
     Document,
     Edit,
     Event,
+    Grant,
     KindEvent,
     KindObject,
     Level,
@@ -674,6 +675,19 @@ class TestEdit(BaseModelTest):
 
 class TestAssocUserDocument(BaseModelTest):
     M = AssocUserDocument
+
+    @classmethod
+    def load(cls, session: Session, start: int = 0, stop: int | None = None) -> None:
+        logger.debug("Adding %s dummies from `%s`.", cls.M, cls.dummies_file)
+        items: Dict[str, Grant] = {
+            item["uuid"]: cls.preload(Grant(**item)) for item in cls.dummies[start:stop]
+        }
+        roots = (item for item in items.values() if item.uuid_parent is None)
+        others = (item for item in items.values() if item.uuid_parent is not None)
+        session.add_all(roots)
+        session.commit()
+        session.add_all(others)
+        session.commit()
 
 
 class TestAssocCollectionDocument(BaseModelTest):
