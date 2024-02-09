@@ -1141,27 +1141,132 @@ class TestAccessGrant(BaseTestAccess):
         return grants, AssertionError(msg) if msg else None
 
     def test_private(self, session: Session):
+        """This test does not apply since `grants` cannot be private.
+
+        User Case (Only `POST /grants/users/<uuid>`)
+        -----------------------------------------------------------------------
+
+        Requesting access to a private/public document is the only thing to
+        test for the user scoped requests here since the it only really matters
+        for grant creation. If a user `GET`s or `DELETE`s grants for some
+        documents every such document will require that they have access
+
+        This is why `POST` is the only method tested here.
+
+        1.
+
+        Document Case
+        -----------------------------------------------------------------------
+
+        1. Users without grants should not be able to access grants for
+           documents in any way regardless of its visibility.
+
+        """
         session.execute(update(User).values(private=True, deleted=False))
         session.execute(update(Document).values(private=True, deleted=False))
         session.commit()
-        uuid_user, uuid_user_other = "000-000-000", "99d-99d-99d"
-        uuid_granted, uuid_doc_ungranted = split_uuids_document(
-            session,
-            Level.view,
-        )
 
+        user = User.if_exists(session, "000-000-000")
+
+        document_owned = Document.if_exists(session, "draculaflow")
+        document_view = Document.if_exists(session, "foobar-spam")
+        document_nogrant = Document.if_exists(session, "0---0---0")
+
+        grants = Grant.resolve_from_target(
+            session, user, (document_owned, document_view, document_nogrant)
+        )
+        assert len(grants) == 2
+
+        (grant_owned, grant_view) = grants
+        assert grant_owned.uuid_document == document_owned.uuid
+        assert grant_view.uuid_document == document_view.uuid
+
+        grant_owned.pending, grant_view.pending = False, False
+        session.add_all(grants)
+        session.commit()
+
+        for method in httpcommon:
+            # NOTE: User can request access in post but nowhere else on public
+            #       doc.
+            ...
+
+            # NOTE: User cannot request access to public doc
+
+    def test_modify(self, session: Session):
+
+        session.execute(update(User).values(private=True, deleted=False))
+        session.execute(update(Document).values(private=True, deleted=False))
+        session.commit()
+
+        user = User.if_exists(session, "000-000-000")
+        document_owned = Document.if_exists(session, "draculaflow")
+        document_view = Document.if_exists(session, "foobar-spam")
+        document_nogrant = Document.if_exists(session, "0---0---0")
+
+        grants = Grant.resolve_from_target(
+            session, user, (document_owned, document_view, document_nogrant)
+        )
+        assert len(grants) == 2
+
+        (grant_owned, grant_view) = grants
+        assert grant_owned.uuid_document == document_owned.uuid
+        assert grant_view.uuid_document == document_view.uuid
+        init_levels = tuple(gg.level for gg in grants)
+
+        grant_owned.pending, grant_view.pending = False, False
+        session.add_all(grants)
+
+        # NOTE: Level is constant.
         for method in httpcommon:
             access = self.create_access(session, method)
 
-            res = access.grant_user(uuid_user, uuid_granted)
-            if err := self.check_result(res):
+            # NOTE: Should be able to access by user so long as documents have
+            #       level `view`.
+            res = access.grant_user(
+                user.uuid,
+                {document_view.uuid, document_view.uuid},
+            )
+            _, err = self.check_result(
+                session,
+                res,
+                level=access.level,
+                uuid_t_expected=user.uuid,
+                uuid_s_expected={document_owned.uuid},
+                T_expected=User,
+            )
+            if err:
                 raise err
 
-            res = access.grant_document(uuid_document)
-            self.check_result(res)
+            # NOTE: Should be able to access documents with level `own`.
+            #       Access grants for a document.
+            res = access.grant_document(document_owned.uuid, {user.uuid})
+            _, err = self.check_result(
+                session,
+                res,
+                level=access.level,
+                uuid_t_expected=user.uuid,
+                uuid_s_expected={document_owned.uuid},
+                T_expected=Document,
+            )
+            if err:
+                raise err
 
-    def test_modify(self, session: Session):
-        assert False
+            # NOTE: Should not be able to access grants of others.
+            err, httperr = expect_exc(
+                lambda: access.grant_user("99d-99d-99d", {document_view.uuid}),
+                403,
+                msg="User can only access own grants.",
+                uuid_user="99d-99d-99d",
+                uuid_user_token=access.token.uuid,
+            )
+            if err:
+                raise err
+
+            # NOTE: Should not be able to access grants of documents not owned.
+            err, httperr = expect_exc(
+                lambda: access.grant_document(user.uuid, {document_nogrant.uuid}),
+                403,
+            )
 
     def test_deleted(self, session: Session):
         assert False

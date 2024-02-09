@@ -1,4 +1,6 @@
 # --------------------------------------------------------------------------- #
+# Document 1 (---0---0---)
+
 - uuid: 1-111-111-1
   id_user: 1
   id_document: 1
@@ -10,12 +12,15 @@
   uuid_parent: 1-111-111-1
   id_user: 2
   id_document: 1
-  level: modify
+  level: view
   pending: False
   pending_from: granter
 
 
 # --------------------------------------------------------------------------- #
+# Document 2 (-0---0---0-)
+# NOTE: User 000-000-000 should have no grant!
+
 - uuid: 2-222-222-2
   id_user: 1
   id_document: 2
@@ -23,15 +28,18 @@
   pending: False
   pending_from: created
 
-- uuid: b-bbb-bbb-b
-  uuid_parent: 2-222-222-2
-  id_user: 2
-  id_document: 2
-  level: modify
-  pending: False
-  pending_from: grantee
+# - uuid: b-bbb-bbb-b
+#   uuid_parent: 2-222-222-2
+#   id_user: 2
+#   id_document: 2
+#   level: modify
+#   pending: False
+#   pending_from: grantee
+
 
 # --------------------------------------------------------------------------- #
+# Document 3
+
 - uuid: 3-333-333-3
   id_user: 1
   id_document: 3
@@ -47,7 +55,10 @@
   pending: False
   pending_from: granter
 
+
 # --------------------------------------------------------------------------- #
+# Document 4 (ex-parrot)
+
 - uuid: 4-444-444-4
   id_user: 1
   id_document: 4
@@ -63,7 +74,10 @@
   pending: False
   pending_from: grantee
 
+
 # --------------------------------------------------------------------------- #
+# Document 5 (aaa-aaa-aaa)
+
 - uuid: 5-555-555-5
   id_user: 1
   id_document: 5
@@ -81,17 +95,48 @@
 
 
 # --------------------------------------------------------------------------- #
+# Document 6 (petshoppe--)
+
 - uuid: 6-666-666-6
-  id_user: 1
+  id_user: 2
   id_document: 6
   level: own
   pending: False
-  pending_from: created
+  pending_from: create
 
 - uuid: f-fff-fff-f
   uuid_parent: 6-666-666-6
-  id_user: 2
+  id_user: 1
   id_document: 6
-  level: view
+  level: modify
   pending: False
   pending_from: grantee
+
+
+# --------------------------------------------------------------------------- #
+# Document 7 (foobar-spam)
+
+- uuid: 7-777-777-7
+  id_user: 2
+  id_document: 6
+  level: own
+  pending: False
+  pending_from: create
+
+- uuid: g-ggg-ggg-g
+  uuid_parent: 7-777-777-7
+  id_user: 2
+  id_document: 6
+  level: own
+  pending: False
+  pending_from: granter
+
+# --------------------------------------------------------------------------- #
+# Document 8 (draculaflow)
+
+- uuid: 888-888-888
+  id_user: 2
+  id_document: 6
+  level: own
+  pending: False
+  pending_from: create

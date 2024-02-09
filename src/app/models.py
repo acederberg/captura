@@ -909,6 +909,43 @@ class AssocUserDocument(Base):
             raise ValueError("Inconcievable!")
         return res
 
+    @overload
+    @classmethod
+    def resolve_from_target(
+        cls,
+        session: Session,
+        target: "User",
+        resolvable_source: "ResolvableMultiple[Document]",
+    ): ...
+
+    @overload
+    @classmethod
+    def resolve_from_target(
+        cls,
+        session: Session,
+        target: "Document",
+        resolvable_source: "ResolvableMultiple[User] ",
+    ): ...
+
+    @classmethod
+    def resolve_from_target(
+        cls,
+        session: Session,
+        target: "User | Document",
+        resolvable_source: "ResolvableMultiple[Document] | ResolvableMultiple[User]",
+    ) -> Tuple[Self, ...]:
+        q = select(cls).join(User).join(Document)
+        match (target, resolvable_source):
+            case (User(uuid=uuid_user), tuple() as uuid_docs):
+                conds = (User.uuid == uuid_user, Document.uuid.in_(uuid_docs))
+            case (Document(uuid=uuid_doc), tuple() as uuid_users):
+                conds = (Document.uuid == uuid_doc, User.uuid.in_(uuid_users))
+            case _:
+                raise HTTPException(500, detail="Cannot resolve.")
+
+        q = q.where(*conds)
+        return tuple(session.execute(q).scalars())
+
 
 class User(SearchableTableMixins, Base):
     __tablename__ = "users"
