@@ -482,9 +482,9 @@ class Event(Base):
     undo: Mapped["Event"] = relationship("Event", foreign_keys=uuid_undo)
 
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
-    uuid_obj: Mapped[MappedColumnUUID]
     user: Mapped["User"] = relationship()
 
+    uuid_obj: Mapped[MappedColumnUUID]
     api_origin: Mapped[str] = mapped_column(String(64))
     api_version: Mapped[str] = mapped_column(String(16), default=__version__)
     kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))

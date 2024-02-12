@@ -1,16 +1,21 @@
+import functools
+import inspect
 import secrets
 from collections import namedtuple
 from http import HTTPMethod
-from typing import Any, Dict, NamedTuple, Set, Tuple, Type
+from typing import Any, ClassVar, Dict, NamedTuple, Set, Tuple, Type
 
 import pytest
 from app import util
-from app.auth import Token
+from app.auth import Auth, Token
 from app.models import (
     Assignment,
     Collection,
     Document,
+    Event,
     Grant,
+    KindEvent,
+    KindObject,
     Level,
     LevelHTTP,
     PendingFrom,
@@ -19,13 +24,14 @@ from app.models import (
     UUIDSplit,
     uuids,
 )
-from app.views.access import Access
+from app.views.access import Access, WithAccess, with_access
 from app.views.base import (
     Data,
     ResolvedAssignmentCollection,
     ResolvedAssignmentDocument,
     ResolvedCollection,
     ResolvedDocument,
+    ResolvedUser,
 )
 from fastapi import HTTPException
 from sqlalchemy import false, func, literal_column, select, update
@@ -49,6 +55,7 @@ methods_required = {
     "test_deleted",
     "test_dne",
     "test_private",
+    "test_d_fn",
 }
 
 
@@ -89,7 +96,10 @@ class BaseTestAccess(metaclass=AccessTestMeta):
             def test_deleted(self, session: Session): ...
             def test_dne(self, session: Session): ...
             def test_overloads(self, session: Session): ...
+            def test_d_fn(self, session: Session): ...
     """
+
+    fn_access_name: ClassVar[str]
 
     @pytest.fixture(autouse=True, scope="session")
     def fixtures(self, load_tables) -> None:
@@ -103,6 +113,79 @@ class BaseTestAccess(metaclass=AccessTestMeta):
     ) -> Access:
         token = Token(uuid=uuid, permissions=[])
         return Access(session, token, method)
+
+    def test_d_fn(self):
+
+        # Check fn
+        fn_access_names: Tuple[str, ...]
+        match getattr(self, "fn_access_name", None):
+            case tuple() as fn_access_names:
+                if not len(fn_access_names):
+                    raise AssertionError("`fn_access_name` must be non-empty.")
+            case str() as fn_access_name:
+                fn_access_names = (fn_access_name,)
+            case bad:
+                clsname = self.__class__.__name__
+                msg = f"`fn_access_name` should be defined for `{clsname}` "
+                msg += "and must be a `tuple` of strings or a string (got "
+                msg += f"type `{type(bad)}`)."
+                raise AttributeError(msg)
+
+        for fn_access_name in fn_access_names:
+            if (fn_access := getattr(Access, fn_access_name, None)) is None:
+                msg = f"Failed to find method `{fn_access_name=}`."
+                raise AssertionError(msg)
+            elif not callable(fn_access):
+                msg = f"`Access.{self.fn_access_name}` must be callable."
+                raise AssertionError(msg)
+
+            # Check fn access
+            if (
+                fn_access_data := getattr(
+                    Access,
+                    fn_access_data_name := f"d_{fn_access_name}",
+                    None,
+                )
+            ) is None:
+                msg = f"`Access.{fn_access_data_name}` should have a "
+                msg += f"corresponding method `Access.{fn_access_data_name}`."
+                raise AssertionError(msg)
+            elif not callable(fn_access_data):
+                msg = f"`Access.{fn_access_data_name}` must be callable. "
+                msg += f"Got `{fn_access_data}`."
+                raise AssertionError(msg)
+
+            sig, sig_d = (
+                inspect.signature(fn_access),
+                inspect.signature(fn_access_data),
+            )
+            # Check params
+            assert len(sig.parameters) - 1 == len(sig_d.parameters)
+            assert "return_data" in sig.parameters
+            assert (
+                "return_data" not in sig_d.parameters
+            ), f"Expected signature of `{fn_access}` to not contain `return_data`."
+
+            if missing_params := tuple(
+                k
+                for k, v in sig.parameters.items()
+                if k not in sig_d.parameters and k != "return_data"
+            ):
+                msg = f"`Access.{fn_access_name}` missing parameters from "
+                msg += f"`Access.{fn_access_data_name}`: {missing_params}"
+                raise AssertionError(msg)
+            elif params_bad := tuple(
+                f"- `{k} -> {v} (expected {sig_d.parameters})`"
+                for k, v in sig.parameters.items()
+                if k != "return_data" and sig.parameters[k] == sig_d.parameters
+            ):
+                msg = f"`Access.{fn_access_name}` parameters annotations"
+                msg += f"inconcistant with `Access.{fn_access_data_name}`: "
+                msg += "\n".join(params_bad)
+                raise AssertionError(msg)
+
+            # Check returns
+            assert sig_d.return_annotation == Data
 
 
 def split_uuid_collection(session: Session) -> UUIDSplit:
@@ -184,6 +267,8 @@ def split_uuid_assignment(session: Session, level: Level) -> AssignmentSplit:
 
 
 class TestAccessUser(BaseTestAccess):
+    fn_access_name = "user"
+
     def test_overloads(self, session: Session):
         # When a single user uuid is supplied, a single user is returned.
         session.execute(update(User).values(public=True, deleted=False))
@@ -314,6 +399,8 @@ class TestAccessUser(BaseTestAccess):
 
 
 class TestAccessCollection(BaseTestAccess):
+    fn_access_name = "collection"
+
     def split_uuid(
         self,
         session: Session,
@@ -455,6 +542,7 @@ class TestAccessCollection(BaseTestAccess):
 
 
 class TestAccessDocument(BaseTestAccess):
+    fn_access_name = "document"
 
     def split_uuids(self, session: Session, level: Level):
         return split_uuids_document(session, level)
@@ -807,6 +895,8 @@ class TestAccessDocument(BaseTestAccess):
 
 
 class TestAccessAssignment(BaseTestAccess):
+    fn_access_name = ("assignment_collection", "assignment_collection")
+
     def split(self, session: Session, level: Level) -> AssignmentSplit:
         return split_uuid_assignment(session, level)
 
@@ -1222,6 +1312,7 @@ class TestAccessAssignment(BaseTestAccess):
 
 
 class TestAccessGrant(BaseTestAccess):
+    fn_access_name = ("grant_user", "grant_document")
 
     def test_overloads(self, session: Session): ...
     def check_result(
@@ -1409,3 +1500,49 @@ class TestAccessGrant(BaseTestAccess):
 
     def test_dne(self, session: Session):
         assert False
+
+
+def test_with_access(session: Session, auth: Auth):
+    """Test the intended functionality of `with_access`."""
+
+    class Barf(WithAccess):
+
+        @with_access(Access.d_user)
+        def user(self, data: Data) -> Data:
+            # Tack on an event when chained.
+            print(data)
+            data.event = Event(
+                **self.event_common,
+                kind=KindEvent.update,
+                kind_obj=KindObject.user,
+                uuid_obj=data.data.user.uuid,
+            )
+            session.add(data.event)
+            session.commit()
+            session.refresh(data.event)
+
+            return data
+
+    b = Barf(
+        session,
+        {"uuid": "000-000-000"},
+        HTTPMethod.PATCH,
+        detail="From `test_with_access`.",
+        api_origin="tests",
+    )
+
+    assert b.access is not None
+    assert isinstance(b.access, Access)
+    assert callable(b.user)
+
+    data = b.user("000-000-000", resolve_user_token=b.token_user)
+    assert data.event is not None
+    assert data.event.uuid is not None
+
+    sig_access = inspect.signature(Access.d_user)
+    sig_barf = inspect.signature(Barf.user)
+
+    assert "return_data" not in sig_access.parameters
+    assert "return_data" not in sig_barf.parameters
+    assert len(sig_access.parameters) == len(sig_barf.parameters)
+    assert sig_barf.return_annotation == Data

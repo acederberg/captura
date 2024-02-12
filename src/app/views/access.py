@@ -11,17 +11,22 @@ from typing import (
     List,
     Literal,
     ParamSpec,
+    Protocol,
+    Self,
     Sequence,
     Set,
     Tuple,
+    Type,
     TypeAlias,
     TypeVar,
     overload,
 )
 
+from app import __version__
 from app.auth import Token
 from app.depends import DependsToken
 from app.models import (
+    Assignment,
     AssocCollectionDocument,
     AssocUserDocument,
     ChildrenAssignment,
@@ -48,7 +53,6 @@ from app.views.base import (
     ResolvedEdit,
     ResolvedGrantDocument,
     ResolvedGrantUser,
-    WithForceController,
 )
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -64,7 +68,7 @@ class Access(BaseController):
     # ----------------------------------------------------------------------- #
     # User
     @overload
-    def user(
+    def user(  # type: ignore[overload-overlap]
         self,
         resolve_user: ResolvableMultiple[User],
         resolve_user_token: ResolvableSingular[User] | None = None,
@@ -90,7 +94,7 @@ class Access(BaseController):
         return_data: Literal[True] = True,
     ) -> Data: ...
 
-    def user(
+    def user(  # type: ignore
         self,
         resolve_user: Resolvable[User],
         resolve_user_token: ResolvableSingular[User] | None = None,
@@ -144,8 +148,18 @@ class Access(BaseController):
             return Data(
                 data=dict(user=res, kind="user"),  # type: ignore
                 token_user=user_token,
+                event=None,
             )
         return res
+
+    # NOTE: Tried partials. Makes typing hell worse. Easier just to write out.
+    #       Tried many other solutions, just do this for now.
+    def d_user(
+        self,
+        resolve_user: Resolvable[User],
+        resolve_user_token: ResolvableSingular[User] | None = None,
+    ) -> Data:
+        return self.user(resolve_user, resolve_user_token, return_data=True)
 
     # ----------------------------------------------------------------------- #
     # Collection
@@ -215,12 +229,14 @@ class Access(BaseController):
                         raise HTTPException(403, detail=detail)
                     return collection
                 case _:
-                    raise ValueError(f"Cannot handle HTTPMethod `{self.method}`.")
+                    msg = f"Cannot handle HTTPMethod `{self.method}`."
+                    raise ValueError(msg)
 
         token_user = self.token_user_or(resolve_user_token)
         collections: Collection | Tuple[Collection, ...]
         collections = Collection.resolve(self.session, resolve_collection)
 
+        res: Collection | Tuple[Collection, ...]
         match collections:
             case Collection():
                 res = check_one(collections)
@@ -236,8 +252,23 @@ class Access(BaseController):
             return Data(
                 data=ResolvedCollection(collection=res, kind="collection"),
                 token_user=token_user,
+                event=None,
             )
         return res
+
+    def d_collection(
+        self,
+        resolve_collection: Resolvable[Collection],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+    ) -> Data:
+        return self.collection(
+            resolve_collection,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            return_data=True,
+        )
 
     # ----------------------------------------------------------------------- #
     # Documents
@@ -309,8 +340,25 @@ class Access(BaseController):
             return Data(
                 data=ResolvedDocument(document=res, kind="document"),
                 token_user=token_user,
+                event=None,
             )
         return res
+
+    def d_document(
+        self,
+        resolve_document: ResolvableMultiple[Document],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        level: Level | None = None,
+    ) -> Data:
+        return self.document(
+            resolve_document,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            level=level,
+            return_data=True,
+        )
 
     # def check_document(
     #     self,
@@ -336,7 +384,7 @@ class Access(BaseController):
     ) -> Edit: ...
 
     @overload
-    def edit(
+    def edit(  # type: ignore[overload-overlap]
         self,
         resolve_edit: ResolvableMultiple[Edit],
         *,
@@ -348,7 +396,7 @@ class Access(BaseController):
     @overload
     def edit(
         self,
-        resolve_edit: ResolvableMultiple[Edit],
+        resolve_edit: Resolvable[Edit],
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
@@ -385,14 +433,29 @@ class Access(BaseController):
                     kind="edit",
                 ),
                 token_user=user_token,
+                event=None,
             )
 
         return resolved
 
+    def d_edit(
+        self,
+        resolve_edit: Resolvable[Edit],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+    ) -> Data:
+        return self.edit(
+            resolve_edit,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            return_data=True,
+        )
+
     # ----------------------------------------------------------------------- #
     # grants
     @overload
-    def grant_user(
+    def grant_user(  # type: ignore[overload-overlap]
         self,
         resolve_user: ResolvableSingular[User],
         resolve_documents: ResolvableMultiple[Document],
@@ -464,11 +527,30 @@ class Access(BaseController):
                     kind="grant_user",
                 ),
                 token_user=user_token,
+                event=None,
             )
         return user, documents
 
+    def d_grant_user(
+        self,
+        resolve_user: ResolvableSingular[User],
+        resolve_documents: ResolvableMultiple[Document],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular | None = None,
+        level: Level | None = None,
+    ) -> Data:
+        return self.grant_user(
+            resolve_user,
+            resolve_documents,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            level=level,
+            return_data=True,
+        )
+
     @overload
-    def grant_document(
+    def grant_document(  # type: ignore[overload-overlap]
         self,
         resolve_document: ResolvableSingular[Document],
         resolve_users: ResolvableMultiple[User],
@@ -518,19 +600,40 @@ class Access(BaseController):
                 if return_data:
                     return Data(
                         data=ResolvedGrantDocument(
-                            document=document, users=users, kind="grant_document"
+                            document=document,
+                            users=users,
+                            kind="grant_document",
                         ),
                         token_user=user_token,
+                        event=None,
                     )
                 return document, users
             case _:
                 raise HTTPException(405)
 
+    def d_grant_document(
+        self,
+        resolve_document: ResolvableSingular[Document],
+        resolve_users: ResolvableMultiple[User],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular | None = None,
+        level: Level | None = None,
+    ) -> Data:
+        return self.grant_document(
+            resolve_document,
+            resolve_users,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            level=level,
+            return_data=True,
+        )
+
     # ----------------------------------------------------------------------- #
     # Assignments
 
     @overload
-    def assignment_collection(
+    def assignment_collection(  # type: ignore[overload-overlap]
         self,
         resolve_collection: ResolvableSingular[Collection],
         resolve_documents: ResolvableMultiple[Document],
@@ -585,11 +688,30 @@ class Access(BaseController):
                     documents=documents,
                 ),
                 token_user=token_user,
+                event=None,
             )
         return collection, documents
 
+    def d_assignment_collection(
+        self,
+        resolve_collection: ResolvableSingular[Collection],
+        resolve_documents: ResolvableMultiple[Document],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        level: Level | None = None,
+    ) -> Data:
+        return self.assignment_collection(
+            resolve_collection,
+            resolve_documents,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            level=level,
+            return_data=True,
+        )
+
     @overload
-    def assignment_document(
+    def assignment_document(  # type: ignore[overload-overlap]
         self,
         resolve_document: ResolvableSingular[Document],
         resolve_collections: ResolvableMultiple[Collection],
@@ -643,9 +765,28 @@ class Access(BaseController):
                     collections=collections,
                 ),
                 token_user=token_user,
+                event=None,
             )
 
         return document, collections
+
+    def d_assignment_document(
+        self,
+        resolve_document: ResolvableSingular[Document],
+        resolve_collections: ResolvableMultiple[Collection],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        level: Level | None = None,
+    ) -> Data:
+        return self.assignment_document(
+            resolve_document,
+            resolve_collections,
+            exclude_deleted=exclude_deleted,
+            resolve_user_token=resolve_user_token,
+            level=level,
+            return_data=True,
+        )
 
     def assignment(
         self,
@@ -655,147 +796,114 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
-    ) -> AccessAssignmentResult | Data:
-        kwargs: Dict[str, Any] = dict(
-            exclude_deleted=exclude_deleted,
-            resolve_user_token=resolve_user_token,
-            level=level,
-        )
+    ) -> Data:
         match [source, resolve_target]:
             case [Document() as document, set() | tuple() as targets]:
-                return self.assignment_document(document, targets, **kwargs)
+                return self.assignment_document(
+                    document,
+                    targets,
+                    exclude_deleted=exclude_deleted,
+                    resolve_user_token=resolve_user_token,
+                    level=level,
+                    return_data=True,
+                )
             case [Collection() as collection, set() | tuple() as targets]:
-                return self.assignment_collection(collection, targets, **kwargs)
+                return self.assignment_collection(
+                    collection,
+                    targets,
+                    exclude_deleted=exclude_deleted,
+                    resolve_user_token=resolve_user_token,
+                    level=level,
+                    return_data=True,
+                )
             case _ as bad:
                 raise ValueError(f"Unexpected source `{bad}`.")
 
-    def __call__(
-        self,
-        data: Data,
-        exclude_deleted: bool = True,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
-    ) -> Data:
 
-        # match data.__ne__:
-        #     case Document | Document
-        #     case Collection | (Collection(), *_):
-        #         ...
-        return data
-
-
-T_WithAccess = TypeVar("T_WithAccess")
+# NOTE: While it is possible to write out callabels with aliases, the LSP
+#       feedback is garbage (event though they have correct signatures).
+T_WithAccess = TypeVar("T_WithAccess", bound="WithAccess")
 P_WithAccess = ParamSpec("P_WithAccess")
-CallableAccess: TypeAlias = Callable[
-    Concatenate[Access, P_WithAccess],
-    T_WithAccess,
-]
-CallableWithAccess: TypeAlias = Callable[
-    Concatenate["WithAccess", P_WithAccess],
-    T_WithAccess,
-]
 
 
-class with_access:
-    _fn_access: CallableAccess | None
-    fn: CallableWithAccess | None
+def with_access(
+    fn_access: Callable[
+        Concatenate[Access, P_WithAccess],
+        Data,
+    ],
+) -> Callable[
+    [Callable[[T_WithAccess, Data], Data]],
+    Callable[Concatenate[Access, P_WithAccess], Data],
+]:
+    """Chain together :param:`method` with the appropriate access method.
 
-    def __init__(self, fn_access: CallableAccess | None = None):
-        self._fn_access = fn_access
-        self.fn = None
+    The intended result is to avoid having to write this so often:
 
-    # def inspect_signature(self, fn: CallableWithAccess, fn_access: CallableAccess):
-    #     sig = inspect.signature(fn)
-    #     sig_access = inspect.signature(fn_access)
-    #     if (sig.parameters) != (sig_access.parameters):
-    #         raise ValueError(
-    #             f"Invalid parameters For `{fn.__name__}`.\n"
-    #             f"Expected `{sig_access}`.\n"
-    #             f"Recieved `{sig}`."
-    #         )
+    .. code:: python
 
-    def fn_access(self) -> CallableAccess:
-        if self._fn_access is not None:
-            return self._fn_access
-        elif (fn := self.fn) is None:
-            raise AttributeError("`fn` must be set.")
-
-        res = getattr(Access, name := fn.__name__, None)
-        if res is None:
-            raise ValueError(f"No such method `{name}` of `Access`.")
-        elif not callable(res):
-            raise ValueError(
-                f"Attribute `{name}` must be callable and match the "
-                f"signature of `Access.{name}`."
+        def doit(
+            resolvable_collection: ResolvableSingular[Collection],
+            resolvable_documents: ResolvableMultiple[Document],
+        ):
+            access = Access(session, token, method)
+            collection, documents = access.assignment(
+                resolvable_collection,
+                resolvable_documents
             )
+            delete = access.then(Delete)
+            event = delete(collection, documents)
 
-        return res
+    when the access controller was not included in deleted. This MUST be
+    used in combination with `WithAccess` so that the access controller is
+    available from `self`.
 
-    def __call__(self, fn: CallableWithAccess) -> CallableWithAccess:
-        """Chain together :param:`method` with the appropriate access method.
+    :param fn: Callable to decorate.
+    """
 
-        The intended result is to avoid having to write this so often:
+    def __call__(
+        fn: Callable[[T_WithAccess, Data], Data]
+    ) -> Callable[Concatenate[Access, P_WithAccess], Data]:
 
-        .. code:: python
-
-            def doit(
-                resolvable_collection: ResolvableSingular[Collection],
-                resolvable_documents: ResolvableMultiple[Document],
-            ):
-                access = Access(session, token, method)
-                collection, documents = access.assignment(
-                    resolvable_collection,
-                    resolvable_documents
-                )
-                delete = access.then(Delete)
-                event = delete(collection, documents)
-
-        when the access controller was not included in deleted. This MUST be
-        used in combination with `WithAccess` so that the access controller is
-        available from `self`.
-
-        :param fn: Callable to decorate.
-        """
-
-        self.fn = fn
-        fn_access: CallableAccess = self.fn_access()
-
-        @functools.wraps(fn)
+        @functools.wraps(fn_access)
         def wrapper(
-            self: WithAccess,
+            self,
             *args: P_WithAccess.args,
             **kwargs: P_WithAccess.kwargs,
-        ):
-
+        ) -> Data:
             # NOTE: `data` should be resolved resolvables. This is why the
             #       signatures must match, and further, the output and input
             #       of all controller methods will resolavble data and resolved
             #       outputs.
-            args = fn_access(self.access, *args, **kwargs)
-            return fn(*args, **kwargs)
+            data = fn_access(
+                self.access,
+                *args,
+                **kwargs,
+            )
+            print(fn_access)
+            print(args, kwargs)
+            print(data)
+            return fn(self, data)
 
         return wrapper
 
-
-class WithAccessMeta(type):
-
-    def __new__(cls, name, bases, namespace):
-        for kind in KindData:
-            fn_name = kind.name
-            fn = namespace.get(fn_name, None)
-            match fn:
-                case with_access() | None:
-                    pass
-                case _:
-                    namespace[fn_name] = with_access()(fn)
-
-        T = super().__new__(cls, name, bases, namespace)
-        return T
+    return __call__
 
 
-class WithAccess(WithForceController, metaclass=WithAccessMeta):
+class WithAccess(BaseController):  # , metaclass=WithAccessMeta):
 
     access: Access
+    detail: str
+    api_origin: str
+    force: bool = True
+
+    @property
+    def event_common(self) -> Dict[str, Any]:
+        return dict(
+            detail=self.detail,
+            uuid_user=self.token.uuid,
+            api_origin=self.api_origin,
+            api_version=__version__,
+        )
 
     def __init__(
         self,
@@ -808,12 +916,40 @@ class WithAccess(WithForceController, metaclass=WithAccessMeta):
         force: bool = True,
         access: Access | None = None,
     ):
-        super().__init__(
-            session,
-            token,
-            method,
-            detail=detail,
-            api_origin=api_origin,
-            force=force,
-        )
+        super().__init__(session, token, method)
+        self.force = force
+        self.detail = detail
+        self.api_origin = api_origin
         self.access = access if access is not None else self.then(Access)
+
+    # NOTE: Will be needed by delete and upsert both.
+    def split_assignment_uuids(
+        self,
+        source: Collection | Document,
+        uuid_target: Set[str],
+    ) -> Tuple[Set[str], Set[str]]:
+        """If"""
+        kind_source = source.__class__.__tablename__
+        is_doc = kind_source == "documents"
+        kind_target = "collections" if is_doc else "documents"
+
+        uuid_deleted, uuid_active = Assignment.split(
+            self.session,
+            source,
+            uuid_target,
+        )
+
+        if uuid_deleted and not self.force:
+            raise HTTPException(
+                400,
+                detail=dict(
+                    uuid_user=self.token.uuid,
+                    kind_source=kind_source,
+                    uuid_source=source.uuid,
+                    kind_target=kind_target,
+                    uuid_target=uuid_target,
+                    msg="Assignments must be hard deleted to re-`POST`.",
+                ),
+            )
+
+        return uuid_deleted, uuid_active

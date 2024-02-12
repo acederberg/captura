@@ -30,6 +30,9 @@ def update(session: Session, token: Token):
 #             collection,
 #             uuid_documents
 #         )
-
-
-class TestDeleteAssignmentCollection: ...
+#
+#
+#
+#
+# class TestDeleteAssignmentCollection: ...
+#

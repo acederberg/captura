@@ -33,6 +33,7 @@ from app.models import (
     Collection,
     Document,
     Edit,
+    Event,
     KindEvent,
     Level,
     LevelHTTP,
@@ -129,70 +130,55 @@ class BaseController:
                 self._token = token
 
 
-class WithForceController(BaseController):
-
-    detail: str
-    api_origin: str
-    force: bool = True
-
-    @property
-    def event_common(self) -> Dict[str, Any]:
-        return dict(
-            detail=self.detail,
-            api_origin=self.api_origin,
-            uuid_user=self.token.uuid,
-            api_version=__version__,
-            kind=KindEvent.delete,
-        )
-
-    def __init__(
-        self,
-        session: Session,
-        token: Token | Dict[str, Any] | None,
-        method: HTTPMethod | str,
-        *,
-        detail: str,
-        api_origin: str,
-        force: bool = True,
-    ):
-        super().__init__(session, token, method)
-        self.force = force
-        self.detail = detail
-        self.api_origin = api_origin
-
-    # NOTE: Will be needed by delete and upsert both.
-    def split_assignment_uuids(
-        self,
-        source: Collection | Document,
-        uuid_target: Set[str],
-    ) -> Tuple[Set[str], Set[str]]:
-        """If"""
-        kind_source = source.__class__.__tablename__
-        is_doc = kind_source == "documents"
-        kind_target = "collections" if is_doc else "documents"
-
-        uuid_deleted, uuid_active = Assignment.split(
-            self.session,
-            source,
-            uuid_target,
-        )
-
-        if uuid_deleted and not self.force:
-            raise HTTPException(
-                400,
-                detail=dict(
-                    uuid_user=self.token.uuid,
-                    kind_source=kind_source,
-                    uuid_source=source.uuid,
-                    kind_target=kind_target,
-                    uuid_target=uuid_target,
-                    msg="Assignments must be hard deleted to re-`POST`.",
-                ),
-            )
-
-        return uuid_deleted, uuid_active
-
-
+# class WithForceController(BaseController):
+#
+#     def __init__(
+#         self,
+#         session: Session,
+#         token: Token | Dict[str, Any] | None,
+#         method: HTTPMethod | str,
+#         *,
+#         detail: str,
+#         api_origin: str,
+#         force: bool = True,
+#     ):
+#         super().__init__(session, token, method)
+#         self.force = force
+#         self.detail = detail
+#         self.api_origin = api_origin
+#
+#     # NOTE: Will be needed by delete and upsert both.
+#     def split_assignment_uuids(
+#         self,
+#         source: Collection | Document,
+#         uuid_target: Set[str],
+#     ) -> Tuple[Set[str], Set[str]]:
+#         """If"""
+#         kind_source = source.__class__.__tablename__
+#         is_doc = kind_source == "documents"
+#         kind_target = "collections" if is_doc else "documents"
+#
+#         uuid_deleted, uuid_active = Assignment.split(
+#             self.session,
+#             source,
+#             uuid_target,
+#         )
+#
+#         if uuid_deleted and not self.force:
+#             raise HTTPException(
+#                 400,
+#                 detail=dict(
+#                     uuid_user=self.token.uuid,
+#                     kind_source=kind_source,
+#                     uuid_source=source.uuid,
+#                     kind_target=kind_target,
+#                     uuid_target=uuid_target,
+#                     msg="Assignments must be hard deleted to re-`POST`.",
+#                 ),
+#             )
+#
+#         return uuid_deleted, uuid_active
+#
 # NOTE: While an abstract base class or metaclass could check for these methods,
 #       I think it will be less of a pain to just test that controllers have
 #       these methods with pytest instead. This is mostly used by
@@ -327,8 +313,10 @@ class Data(BaseModel):
 
     :class:`Access` will resolve arguments which will be put into here. The
     other controller will then pass the data around so that signatures are
-    not so nasty as `Access`, which will take in data and return `Events`
-    or `Data`. This will allow any additional controllers to be sandwiched
+    not so nasty as `Access`, which will take in data, modify it appropriately
+    (by performing CRUD and adding events to `Data` and return `Data`.
+
+    This will allow any additional controllers to be sandwiched
     between with the sole requirement being that they match the following
     signature:
 
@@ -343,6 +331,7 @@ class Data(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     data: ResolvedAny
+    event: Annotated[Event | None, Field(default=None)]
     token_user: Annotated[User | None, Field(default=None)]
 
     @field_validator("data", mode="before")
