@@ -20,6 +20,13 @@ from app.models import (
     uuids,
 )
 from app.views.access import Access
+from app.views.base import (
+    Data,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+)
 from fastapi import HTTPException
 from sqlalchemy import false, func, literal_column, select, update
 from sqlalchemy.orm import Session, make_transient
@@ -37,6 +44,7 @@ httpcommon = (
     HTTPMethod.DELETE,
 )
 methods_required = {
+    "test_overloads",
     "test_modify",
     "test_deleted",
     "test_dne",
@@ -80,6 +88,7 @@ class BaseTestAccess(metaclass=AccessTestMeta):
             def test_modify(self, session: Session): ...
             def test_deleted(self, session: Session): ...
             def test_dne(self, session: Session): ...
+            def test_overloads(self, session: Session): ...
     """
 
     @pytest.fixture(autouse=True, scope="session")
@@ -175,6 +184,22 @@ def split_uuid_assignment(session: Session, level: Level) -> AssignmentSplit:
 
 
 class TestAccessUser(BaseTestAccess):
+    def test_overloads(self, session: Session):
+        # When a single user uuid is supplied, a single user is returned.
+        session.execute(update(User).values(public=True, deleted=False))
+        access = self.create_access(session, HTTPMethod.GET)
+
+        res = access.user({"000-000-000", "99d-99d-99d"})
+        assert isinstance(res, tuple)
+        assert len(res) == 2
+        assert all(isinstance(user, User) for user in res)
+
+        res = access.user("000-000-000")
+        assert isinstance(res, User)
+        assert res.uuid == "000-000-000"
+
+        res = access.user({"000-000-000", "99d-99d-99d"}, return_data=True)
+        assert isinstance(res, Data)
 
     def test_deleted(self, session: Session):
 
@@ -295,6 +320,26 @@ class TestAccessCollection(BaseTestAccess):
     ) -> UUIDSplit:
         return split_uuid_collection(session)
 
+    def test_overloads(self, session: Session):
+
+        access = self.create_access(session, HTTPMethod.DELETE)
+
+        # NOTE: Set in -> Tuple out
+        res = access.collection({"eee-eee-eee", "foo-ooo-ool"})
+        assert isinstance(res, tuple)
+        assert len(res) == 2
+        assert all(isinstance(item, Collection) for item in res)
+
+        # NOTE: uuid in, collection out
+        res = access.collection("eee-eee-eee")
+        assert isinstance(res, Collection)
+        assert res.uuid == "eee-eee-eee"
+
+        res = access.collection("eee-eee-eee", return_data=True)
+        assert isinstance(res, Data)
+        assert res.data.kind == "collection"
+        assert isinstance(res.data, ResolvedCollection)
+
     def test_private(self, session: Session):
         session.execute(update(User).values(deleted=False, public=True))
         session.execute(update(Collection).values(deleted=False, public=False))
@@ -413,6 +458,24 @@ class TestAccessDocument(BaseTestAccess):
 
     def split_uuids(self, session: Session, level: Level):
         return split_uuids_document(session, level)
+
+    def test_overloads(self, session: Session):
+
+        access = self.create_access(session, HTTPMethod.DELETE)
+        res = access.document({"aaa-aaa-aaa", "draculaflow"})
+        assert isinstance(res, tuple)
+        assert len(res) == 2
+        assert all(isinstance(item, Document) for item in res)
+
+        res = access.document("aaa-aaa-aaa")
+        assert isinstance(res, Document)
+        assert res.uuid == "aaa-aaa-aaa"
+
+        res = access.document({"aaa-aaa-aaa", "draculaflow"}, return_data=True)
+        assert isinstance(res, Data)
+        assert isinstance(res.data, ResolvedDocument)
+        assert isinstance(res_collection := res.data.document, tuple)
+        assert all(isinstance(item, Document) for item in res_collection)
 
     def test_private(self, session: Session):
         session.execute(update(User).values(deleted=False, public=True))
@@ -746,6 +809,78 @@ class TestAccessDocument(BaseTestAccess):
 class TestAccessAssignment(BaseTestAccess):
     def split(self, session: Session, level: Level) -> AssignmentSplit:
         return split_uuid_assignment(session, level)
+
+    def test_overloads(self, session: Session):
+        access = self.create_access(session, HTTPMethod.DELETE)
+
+        def check_res(res, T_source_expected: Type, T_res_expected: Type):
+
+            SS: Type
+            TT: Type
+            match res:
+                case (Document(), tuple()):
+                    SS, TT = Document, Collection
+                    ss, tt = res
+                case (Collection(), tuple()):
+                    SS, TT = Collection, Document
+                    ss, tt = res
+                case Data(data=ResolvedAssignmentCollection() as data):
+                    SS, TT = Collection, Document
+                    ss, tt = data.collection, data.documents
+                case Data(data=ResolvedAssignmentDocument() as data):
+                    SS, TT = Document, Collection
+                    ss, tt = data.document, data.collections
+                case _:
+                    raise ValueError("Results invalid.")
+
+            assert isinstance(res, T_res_expected)
+            assert SS == T_source_expected
+
+            assert isinstance(ss, SS)
+
+            assert isinstance(tt, tuple)
+            assert len(tt) == 2
+            assert all(isinstance(item, TT) for item in tt)
+
+        session.execute(update(User).values(deleted=False, public=True))
+        session.execute(update(Grant).values(deleted=False))
+        session.execute(update(Document).values(deleted=False, public=True))
+        session.commit()
+
+        # For assignment document.
+        res = access.assignment_document(
+            "aaa-aaa-aaa",
+            {"foo-ooo-ool", "eee-eee-eee"},
+        )
+        check_res(res, Document, tuple)
+
+        res_data: Data = access.assignment_document(
+            "aaa-aaa-aaa",
+            {"foo-ooo-ool", "eee-eee-eee"},
+            return_data=True,
+        )
+        check_res(res_data, Document, Data)
+
+        assert isinstance(res_data.data, ResolvedAssignmentDocument)
+        assert res_data.data.document == res[0]
+        assert res_data.data.collections == res[1]
+
+        # For assignment collection.
+        res = access.assignment_collection(
+            "foo-ooo-ool", {"aaa-aaa-aaa", "draculaflow"}
+        )
+        check_res(res, Collection, tuple)
+
+        res_data = access.assignment_collection(
+            "foo-ooo-ool",
+            {"aaa-aaa-aaa", "draculaflow"},
+            return_data=True,
+        )
+        check_res(res_data, Collection, Data)
+
+        assert isinstance(res_data.data, ResolvedAssignmentCollection)
+        assert res_data.data.collection == res[0]
+        assert res_data.data.documents == res[1]
 
     def check_result(
         self,
@@ -1088,6 +1223,7 @@ class TestAccessAssignment(BaseTestAccess):
 
 class TestAccessGrant(BaseTestAccess):
 
+    def test_overloads(self, session: Session): ...
     def check_result(
         self,
         session: Session,

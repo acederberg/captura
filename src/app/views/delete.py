@@ -10,29 +10,24 @@ from app.models import (
     ChildrenAssignment,
     Collection,
     Document,
+    Edit,
     Event,
     KindEvent,
     KindObject,
+    Resolvable,
     ResolvableMultiple,
     ResolvableSingular,
     User,
 )
 from app.schemas import EventSchema
-from app.views.base import BaseController, ForceController
+from app.views.access import WithAccess
+from app.views.base import Data
 from sqlalchemy import delete, literal_column, select, union, update
 from sqlalchemy.orm import Session
 
 
-class Delete(ForceController):
+class Delete(WithAccess):
     """Perform deletions."""
-
-    @property
-    def event_common(self) -> Dict[str, Any]:
-        return dict(
-            uuid_user=self.token.uuid,
-            api_version=__version__,
-            kind=KindEvent.delete,
-        )
 
     # ----------------------------------------------------------------------- #
     # Assignments
@@ -43,8 +38,6 @@ class Delete(ForceController):
         resolve_document: ResolvableMultiple[Document],
         *,
         resolve_user: User | str | None = None,
-        api_origin: str | None = None,
-        detail: str | None = None,
     ) -> Event:
 
         session = self.session
@@ -57,13 +50,13 @@ class Delete(ForceController):
             session, collection, uuid_document
         )
         if self.force:
-            detail = detail or "Assignment force deleted."
+            # detail = detail or "Assignment force deleted."
             uuid_assign_active |= uuid_assign_deleted
             q_del = delete(AssocCollectionDocument).where(
                 AssocCollectionDocument.uuid.in_(uuid_assign_active)
             )
         else:
-            detail = detail or "Assignment deleted."
+            # detail = detail or "Assignment deleted."
             q_del = (
                 update(AssocCollectionDocument)
                 .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
@@ -85,13 +78,10 @@ class Delete(ForceController):
         assocs = list(session.execute(q_assocs).scalars())
 
         # Create events
-        origin = api_origin or "DELETE /assignments/collections/<uuid>"
         event_common = dict(
-            api_origin=origin,
             api_version=__version__,
             kind=KindEvent.delete,
             uuid_user=user.uuid,
-            detail=detail,
         )
         event = Event(
             **event_common,
@@ -128,8 +118,9 @@ class Delete(ForceController):
         resolve_collection: ResolvableMultiple[Collection],
         *,
         resolve_user: User | str | None = None,
-        api_origin: str | None = None,
-        detail: str | None = None,
+        # data: Data[ResolvableAssignmentDocument],
+        # api_origin: str | None = None,
+        # detail: str | None = None,
     ) -> Event:
 
         # document: Document = Document.resolve(session, resolve_document)
@@ -150,13 +141,13 @@ class Delete(ForceController):
         )
 
         if self.force:
-            detail = detail or "Assignment force deleted."
+            # detail = detail or "Assignment force deleted."
             uuid_assign_active |= uuid_assign_deleted
             q_del = delete(AssocCollectionDocument).where(
                 AssocCollectionDocument.uuid.in_(uuid_assign_active)
             )
         else:
-            detail = detail or "Assignment deleted."
+            # detail = detail or "Assignment deleted."
             q_del = (
                 update(AssocCollectionDocument)
                 .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
@@ -177,13 +168,7 @@ class Delete(ForceController):
         )
         assocs = list(session.execute(q_assocs).scalars())
 
-        origin = api_origin or "DELETE /assignments/documents/<uuid>"
-        event_common: Dict[str, Any] = dict(
-            api_origin=origin,
-            detail=detail,
-            **self.event_common,
-        )
-
+        event_common: Dict[str, Any] = self.event_common
         session.add(
             event := Event(
                 **event_common,
@@ -211,109 +196,142 @@ class Delete(ForceController):
         session.refresh(event)
         return event
 
-    @overload
-    def assignment(
-        self,
-        resolve_source: ResolvableSingular[Document],
-        resolve_target: ResolvableMultiple[Collection],
-        *,
-        resolve_user: ResolvableSingular[User] | None = None,
-        api_origin: str | None = None,
-        detail: str | None = None,
-    ) -> Event: ...
-
-    @overload
-    def assignment(
-        self,
-        resolve_source: ResolvableSingular[Collection],
-        resolve_target: ResolvableMultiple[Document],
-        *,
-        resolve_user: ResolvableSingular[User] | None = None,
-        api_origin: str | None = None,
-        detail: str | None = None,
-    ) -> Event: ...
-
-    def assignment(
-        self,
-        resolve_source: ResolvableSingular[Collection] | ResolvableSingular[Document],
-        resolve_target: ResolvableMultiple[Document] | ResolvableMultiple[Collection],
-        *,
-        resolve_user: ResolvableSingular[User] | None = None,
-        api_origin: str | None = None,
-        detail: str | None = None,
-    ) -> Event:
-        kwargs: Dict[str, Any] = dict(
-            resolve_user=resolve_user,
-            api_origin=api_origin,
-            detail=detail,
-        )
-        match resolve_source:
-            case Collection():
-                return self.assignment_collection(
-                    resolve_source, resolve_target, **kwargs  # type: ignore
-                )
-            case Document():
-                return self.assignment_document(
-                    resolve_source, resolve_target, **kwargs  # type: ignore
-                )
-            case _:
-                raise ValueError("Invalid `resolve_source`.")
-
-    def collection(
-        self,
-        resolve_collection: ResolvableSingular[Collection],
-        *,
-        resolve_user: ResolvableSingular[User] | None = None,
-        api_origin: str | None = None,
-        detail: str | None = None,
-    ) -> Event:
-        api_origin = api_origin or "DELETE /collections/<uuid>"
-        if detail is None:
-            detail = f"Collection {'force ' if self.force else ''}deleted."
-
-        session = self.session
-        collection = Collection.resolve(session, resolve_collection)
-        user = User.resolve(session, resolve_user or self.token.uuid)
-
-        # Find docs
-        p = select(Document.uuid).join(AssocCollectionDocument)
-        p = p.where(AssocCollectionDocument.id_collection == collection.id)
-        q = select(literal_column("uuid"))
-        q = union(q.select_from(collection.q_select_documents()), p)
-        uuid_document = set(session.execute(q).scalars())
-
-        # Delete assigns and get events before deletion.
-        event_assign = self.assignment_collection(
-            collection,
-            uuid_document,
-            resolve_user=user,
-            api_origin=api_origin,
-            detail=detail,
-        )
-
-        if self.force:
-            session.delete(collection)
-        else:
-            collection.deleted = True
-            session.add(collection)
-
-        # Create event
-        session.add(
-            event := Event(
-                **self.event_common,
-                api_origin=api_origin,
-                kind_obj=KindObject.collection,
-                uuid_obj=collection.uuid,
-                children=[event_assign],
-                detail=detail,
-            )
-        )
-        session.commit()
-        session.refresh(event)
-        return event
-
-    def document(self) -> Event: ...
-
-    def user(self) -> Event: ...
-
-    def edit(self) -> Event: ...
+    # @overload
+    # def assignment(
+    #     self,
+    #     resolve_source: ResolvableSingular[Document],
+    #     resolve_target: ResolvableMultiple[Collection],
+    #     *,
+    #     resolve_user: ResolvableSingular[User] | None = None,
+    # ) -> Event: ...
+    #
+    # @overload
+    # def assignment(
+    #     self,
+    #     resolve_source: ResolvableSingular[Collection],
+    #     resolve_target: ResolvableMultiple[Document],
+    #     *,
+    #     resolve_user: ResolvableSingular[User] | None = None,
+    # ) -> Event: ...
+    #
+    # def assignment(
+    #     self,
+    #     resolve_source: ResolvableSingular[Collection] | ResolvableSingular[Document],
+    #     resolve_target: ResolvableMultiple[Document] | ResolvableMultiple[Collection],
+    #     *,
+    #     resolve_user: ResolvableSingular[User] | None = None,
+    # ) -> Event:
+    #     kwargs: Dict[str, Any] = dict(resolve_user=resolve_user)
+    #     match resolve_source:
+    #         case Collection() as collection:
+    #             return self.assignment_collection(
+    #                 collection, resolve_target, **kwargs  # type: ignore
+    #             )
+    #         case Document() as document:
+    #             return self.assignment_document(
+    #                 document, resolve_target, **kwargs  # type: ignore
+    #             )
+    #         case _:
+    #             raise ValueError("Invalid `resolve_source`.")
+    #
+    # def collection(
+    #     self,
+    #     resolve_collection: ResolvableSingular[Collection],
+    #     *,
+    #     resolve_user: ResolvableSingular[User] | None = None,
+    # ) -> Event:
+    #
+    #     session = self.session
+    #     collection = Collection.resolve(session, resolve_collection)
+    #     user = User.resolve(session, resolve_user or self.token.uuid)
+    #
+    #     # Find docs
+    #     p = select(Document.uuid).join(AssocCollectionDocument)
+    #     p = p.where(AssocCollectionDocument.id_collection == collection.id)
+    #     q = select(literal_column("uuid"))
+    #     q = union(q.select_from(collection.q_select_documents()), p)
+    #     uuid_document = set(session.execute(q).scalars())
+    #
+    #     # Delete assigns and get events before deletion.
+    #     event_assign = self.assignment_collection(
+    #         collection,
+    #         uuid_document,
+    #         resolve_user=user,
+    #     )
+    #
+    #     if self.force:
+    #         session.delete(collection)
+    #     else:
+    #         collection.deleted = True
+    #         session.add(collection)
+    #
+    #     # Create event
+    #     session.add(
+    #         event := Event(
+    #             **self.event_common,
+    #             uuid_obj=collection.uuid,
+    #             children=[event_assign],
+    #             # detail=detail,
+    #         )
+    #     )
+    #     session.commit()
+    #     session.refresh(event)
+    #     return event
+    #
+    # # ----------------------------------------------------------------------- #
+    # # Grants
+    # def grant_user(
+    #     self,
+    #     resolve_user: ResolvableSingular[User],
+    #     resolve_documents: ResolvableMultiple[Document],
+    #     *,
+    #     token_user: ResolvableSingular[User],
+    # ) -> Event: ...
+    #
+    # def grant_document(
+    #     self,
+    #     resolve_document: ResolvableSingular[Document],
+    #     resolve_users: ResolvableMultiple[User],
+    #     *,
+    #     token_user: ResolvableSingular[User] | None = None,
+    # ) -> Event: ...
+    #
+    # def grant(
+    #     self,
+    #     resolve_target: ResolvableSingular[Document] | ResolvableSingular[User],
+    #     resolve_source: ResolvableMultiple[User] | ResolvableMultiple[Document],
+    #     *,
+    #     token_user: ResolvableSingular[User] | None = None,
+    # ) -> Event: ...
+    #
+    # # ----------------------------------------------------------------------- #
+    # # Collections
+    #
+    # def document(
+    #     self,
+    #     resolvable_document: Resolvable[Document],
+    #     *,
+    #     token_user: ResolvableSingular[User] | None = None,
+    # ) -> Event: ...
+    #
+    # # ----------------------------------------------------------------------- #
+    # # Edits
+    # #
+    #
+    # def edit(
+    #     self,
+    #     resolvable_edit: Resolvable[Edit],
+    #     *,
+    #     token_user: ResolvableSingular[User] | None = None,
+    # ) -> Event: ...
+    #
+    # # ----------------------------------------------------------------------- #
+    # # Users
+    # def user(
+    #     self,
+    #     resolvable_user: Resolvable[Document],
+    #     *,
+    #     token_user: ResolvableSingular[User],
+    # ) -> Event: ...
+    #
+    # # ----------------------------------------------------------------------- #

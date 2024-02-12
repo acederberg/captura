@@ -6,6 +6,18 @@ from app.models import Assignment, Collection, Document, Grant, User
 from app.schemas import CollectionSchema, DocumentSchema, GrantSchema, UserSchema
 from fastapi import HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+LeveledDocuments = Tuple[Document, Document, Document]
+
+
+@pytest.fixture
+def leveled_documents(session: Session) -> LeveledDocuments:
+    return (
+        Document.if_exists(session, "draculaflow"),
+        Document.if_exists(session, "foobar-spam"),
+        Document.if_exists(session, "-0---0---0-"),
+    )
 
 
 def check_exc(

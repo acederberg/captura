@@ -27,14 +27,14 @@ from app.schemas import (
     PostUserSchema,
     UserUpdateSchema,
 )
-from app.views.base import BaseController, ForceController
+from app.views.access import WithAccess, with_access
 from app.views.delete import Delete
 from fastapi import HTTPException
 from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
 
 
-class Upsert(ForceController):
+class Upsert(WithAccess):
 
     _delete: Delete | None
 
@@ -83,6 +83,7 @@ class Upsert(ForceController):
         data: CollectionPatchSchema | CollectionPostSchema,
     ) -> Event: ...
 
+    @with_access
     def assignment_try_force(
         self,
         source: Collection | Document,
@@ -114,6 +115,7 @@ class Upsert(ForceController):
         return event, uuid_target_active
 
     # NOTE: No Patch
+    @with_access
     def assignment_document(
         self,
         resolvable_document: ResolvableSingular[Document],

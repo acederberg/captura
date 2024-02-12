@@ -102,7 +102,7 @@
   id_document: 6
   level: own
   pending: False
-  pending_from: create
+  pending_from: created
 
 - uuid: f-fff-fff-f
   uuid_parent: 6-666-666-6
@@ -117,16 +117,16 @@
 # Document 7 (foobar-spam)
 
 - uuid: 7-777-777-7
-  id_user: 2
-  id_document: 6
+  id_user: 1
+  id_document: 7
   level: own
   pending: False
-  pending_from: create
+  pending_from: created
 
 - uuid: g-ggg-ggg-g
   uuid_parent: 7-777-777-7
   id_user: 2
-  id_document: 6
+  id_document: 7
   level: own
   pending: False
   pending_from: granter
@@ -136,7 +136,7 @@
 
 - uuid: 888-888-888
   id_user: 2
-  id_document: 6
+  id_document: 8
   level: own
   pending: False
-  pending_from: create
+  pending_from: created

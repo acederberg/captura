@@ -111,9 +111,9 @@ class KindEvent(str, enum.Enum):
 
 
 class PendingFrom(str, enum.Enum):
-    created = "created"
-    grantee = "grantee"
-    granter = "granter"
+    created = 3
+    granter = 2
+    grantee = 1
 
 
 # NOTE: This maps table names to their corresponding API names. It is important
@@ -1478,8 +1478,8 @@ AnyModel = Event | AnyModelBesidesEvent
 
 # Resolvables
 
-ResolvableT = TypeVar(
-    "ResolvableT",
+T_Resolvable = TypeVar(
+    "T_Resolvable",
     AssocUserDocument,
     AssocCollectionDocument,
     User,
@@ -1488,9 +1488,9 @@ ResolvableT = TypeVar(
     Edit,
 )
 
-ResolvableSingular: TypeAlias = ResolvableT | str
-ResolvableMultiple: TypeAlias = Tuple[ResolvableT, ...] | Set[str]
-Resolvable: TypeAlias = ResolvableT | str | Tuple[ResolvableT, ...] | Set[str]
+ResolvableSingular: TypeAlias = T_Resolvable | str
+ResolvableMultiple: TypeAlias = Tuple[T_Resolvable, ...] | Set[str]
+Resolvable: TypeAlias = T_Resolvable | str | Tuple[T_Resolvable, ...] | Set[str]
 
 ResolvableSourceAssignment: TypeAlias = (
     ResolvableSingular[Collection] | ResolvableSingular[Document]
@@ -1506,7 +1506,32 @@ ResolvableTargetGrant: TypeAlias = (
 )
 
 
-def uuids(vs: Resolvable[ResolvableT]) -> Set[str]:
+# Resolved result.
+ResolvedRaw = Tuple[T_Resolvable] | Resolvable
+ResolvedRawUser = ResolvedRaw[User]
+ResolvedRawCollection = ResolvedRaw[Collection]
+ResolvedRawDocument = ResolvedRaw[Document]
+ResolvedRawEdit = ResolvedRaw[Edit]
+
+ResolvedRawAssignmentDocument = Tuple[Document, Tuple[Collection, ...]]
+ResolvedRawAssignmentCollection = Tuple[Collection, Tuple[Document, ...]]
+ResolvedRawAssignment = ResolvedRawAssignmentDocument | ResolvedRawAssignmentCollection
+
+ResolvedRawGrantUser = Tuple[User, Tuple[Document, ...]]
+ResolvedRawGrantDocument = Tuple[Document, Tuple[User, ...]]
+ResolvedRawGrant = ResolvedRawGrantUser | ResolvedRawGrantDocument
+
+ResolvedRawAny = (
+    ResolvedRawCollection
+    | ResolvedRawUser
+    | ResolvedRawDocument
+    | ResolvedRawEdit
+    | ResolvedRawAssignment
+    | ResolvedRawGrant
+)
+
+
+def uuids(vs: Resolvable[T_Resolvable]) -> Set[str]:
     match vs:
         case tuple():
             return {vv.uuid for vv in vs}

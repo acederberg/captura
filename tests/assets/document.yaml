@@ -15,7 +15,7 @@
     cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id 
     est laborum.
 
-- uuid: 0---0---0--
+- uuid: -0---0---0-
   name: Lorm ipsum 2
   id: 2
   description: Lorem ipsum 2
@@ -98,6 +98,7 @@
   name: Objectively a Banger
   id: 8
   description: A masterpiece.
+  format: md
   content: |
     We straight gassin', cuttin' straight to the bricks, haha
     This shit ain't nothin' to me, man

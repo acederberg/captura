@@ -3,26 +3,57 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
+import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from typing import Any, ClassVar, Dict, Set, Tuple, Type, TypeVar
+from os import walk
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Literal,
+    Set,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypeVar,
+    Union,
+)
 
 from app import __version__, util
 from app.auth import Token
+from app.config import Config
 from app.depends import DependsToken
 from app.models import (
     AnyModel,
     Assignment,
     Collection,
     Document,
+    Edit,
+    KindEvent,
     Level,
     LevelHTTP,
+    Resolvable,
+    ResolvableMultiple,
     ResolvableSingular,
+    ResolvedRawAny,
+    Singular,
     User,
 )
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    RootModel,
+    Tag,
+    field_validator,
+)
 from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
@@ -98,9 +129,21 @@ class BaseController:
                 self._token = token
 
 
-class ForceController(BaseController):
+class WithForceController(BaseController):
 
+    detail: str
+    api_origin: str
     force: bool = True
+
+    @property
+    def event_common(self) -> Dict[str, Any]:
+        return dict(
+            detail=self.detail,
+            api_origin=self.api_origin,
+            uuid_user=self.token.uuid,
+            api_version=__version__,
+            kind=KindEvent.delete,
+        )
 
     def __init__(
         self,
@@ -108,10 +151,14 @@ class ForceController(BaseController):
         token: Token | Dict[str, Any] | None,
         method: HTTPMethod | str,
         *,
+        detail: str,
+        api_origin: str,
         force: bool = True,
     ):
         super().__init__(session, token, method)
         self.force = force
+        self.detail = detail
+        self.api_origin = api_origin
 
     # NOTE: Will be needed by delete and upsert both.
     def split_assignment_uuids(
@@ -144,6 +191,169 @@ class ForceController(BaseController):
             )
 
         return uuid_deleted, uuid_active
+
+
+# NOTE: While an abstract base class or metaclass could check for these methods,
+#       I think it will be less of a pain to just test that controllers have
+#       these methods with pytest instead. This is mostly used by
+#       :class:`AccessMeta` so that other controllers can verify access on
+#       resolvable inputs.
+
+
+class BaseData(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class ResolvedCollection(BaseData):
+    kind: Annotated[Literal["collection"], Field(default="collection")]
+    collection: Collection | Tuple[Collection, ...]
+
+
+class ResolvedDocument(BaseData):
+    kind: Annotated[Literal["document"], Field(default="document")]
+    document: Document | Tuple[Document, ...]
+
+
+class ResolvedEdit(BaseData):
+    kind: Annotated[Literal["edit"], Field(default="edit")]
+    edit: Edit | Tuple[Edit, ...]
+
+
+class ResolvedUser(BaseData):
+    kind: Annotated[Literal["user"], Field(default="user")]
+    user: User | Tuple[User, ...]
+
+
+class ResolvedGrantUser(BaseData):
+    kind: Annotated[Literal["grant_user"], Field(default="grant_user")]
+    user: User
+    documents: Tuple[Document, ...]
+
+
+class ResolvedGrantDocument(BaseData):
+    kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
+    document: Document
+    users: Tuple[User, ...]
+
+
+class ResolvedAssignmentCollection(BaseData):
+    kind: Annotated[
+        Literal["assignment_collection"],
+        Field(default="assignment_collection"),
+    ]
+    collection: Collection
+    documents: Tuple[Document, ...]
+
+
+class ResolvedAssignmentDocument(BaseData):
+    kind: Annotated[
+        Literal["assignment_document"],
+        Field(default="assignment_document"),
+    ]
+    document: Document
+    collections: Tuple[Collection, ...]
+
+
+class KindData(enum.Enum):
+    user: User
+    collection: ResolvedCollection
+    document: ResolvedDocument
+    edit: ResolvedEdit
+    grant_user: ResolvedGrantUser
+    grant_document: ResolvedGrantDocument
+    assignment_collection: ResolvedAssignmentCollection
+    assignment_document: ResolvedAssignmentDocument
+
+    # Resolve the tag for any data. Tags should match corresponding functions for
+    # types.
+    @classmethod
+    def discriminate_raw(cls, v: ResolvedRawAny) -> str | None:
+        match v:
+            case Collection() | Document() | User() | Edit() as row:
+                # Map tablename to singular name.
+                return Singular[row.__tablename__].value
+            # Check assignments
+            case (Collection(), (Document(), *_)):
+                return "assingment_collection"
+            case (Document(), (Collection(), *_)):
+                return "assignment_document"
+            # Check grants
+            case (Document(), (User(), *_)):
+                return "grant_user"
+            case (User(), (Document(), *_)):
+                return "grant_document"
+            # If tuple not matching above, look at items inside.
+            case (_ as item, *_):
+                return cls.discriminate_raw(item)
+            case _:
+                return None
+
+    # @classmethod
+    # def objectify(cls, v: ResolvedRawAny):
+    #     """Take raw resolved data,
+    #     kind_data_name = cls.discriminate_raw(v)
+    #     kind_data = cls(kind_data_name)
+    #     match kind_data:
+    #         case cls.user | cls.collection | cls.document | cls.edit:
+    #             return kind_data.value.model_validate(
+    #                 {
+    #                     "kind": kind_data_name,
+    #                     Singular(kind_data_name).name: v
+    #
+    #                 }
+    #             )
+    #         case _:
+    #             ...
+
+
+ResolvedAny: TypeAlias = Annotated[
+    Union[
+        Annotated[ResolvedCollection, Tag("collection")],
+        Annotated[ResolvedDocument, Tag("document")],
+        Annotated[ResolvedEdit, Tag("edit")],
+        Annotated[ResolvedUser, Tag("user")],
+        Annotated[ResolvedAssignmentCollection, Tag("assignment_collection")],
+        Annotated[ResolvedAssignmentDocument, Tag("assignment_document")],
+        Annotated[ResolvedGrantUser, Tag("grant_user")],
+        Annotated[ResolvedGrantDocument, Tag("grant_document")],
+    ],
+    Discriminator("kind"),
+]
+
+
+class Data(BaseModel):
+    """Because writing out complicated arguments is hard and composition will
+    be simplified.
+
+    :class:`Access` will resolve arguments which will be put into here. The
+    other controller will then pass the data around so that signatures are
+    not so nasty as `Access`, which will take in data and return `Events`
+    or `Data`. This will allow any additional controllers to be sandwiched
+    between with the sole requirement being that they match the following
+    signature:
+
+    .. code:: text
+
+        (self, data: Data) -> Data
+
+    For documentation of tagged unions, see
+    https://docs.pydantic.dev/latest/concepts/unions/#discriminated-unions-with-callable-discriminator
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    data: ResolvedAny
+    token_user: Annotated[User | None, Field(default=None)]
+
+    @field_validator("data", mode="before")
+    def validate_raw(cls, v):
+        return v
+
+
+# resolve_collection = ResolvedCollection(collection=Collection())
+# print(resolve_collection)
+#
+# print(Data(data=resolve_collection))
 
 
 # =========================================================================== #
