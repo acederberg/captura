@@ -415,6 +415,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: bool = False,
     ) -> Edit | Tuple[Edit, ...] | Data[ResolvedEdit]:
+        # NOTE: I do not know if this was mmoved to acccess.
         user_token = self.token_user_or(resolve_user_token)
         match (resolved := Edit.resolve(self.session, resolve_edit)):
             case Edit() as edit:
@@ -598,6 +599,23 @@ class Access(BaseController):
             level=Level.own,
         )
         users = self.user(resolve_users)
+
+        # Select owner uuids
+        session = self.session
+        q = document.q_select_grants(
+            uuid_user := User.resolve_uuid(session, users),
+            level=Level.own,
+            exclude_deleted=exclude_deleted,
+        )
+        uuid_owners: Set[str] = set(session.execute(q).scalars())
+        if len(uuid_owners):
+            detail = dict(
+                msg="Owner cannot reject grants of other owners.",
+                uuid_user_revoker=self.token.uuid,
+                uuid_user_revokees=uuid_user,
+                uuid_document=Document.resolve_uuid(session, resolve_document),
+            )
+            raise HTTPException(403, detail=detail)
 
         match self.method:
             case H.GET | H.POST | H.DELETE | H.PUT:
@@ -1010,11 +1028,7 @@ class WithAccess(BaseController, abc.ABC):
 
     def grant(self, data: DataResolvedGrant) -> DataResolvedGrant:
 
-        meth = (
-            self.assignment_collection
-            if data.kind == "assignment_collection"
-            else self.assignment_document
-        )
+        meth = self.grant_user if data.kind == "grant_user" else self.grant_document
         return meth(data)  # type: ignore
 
     # ----------------------------------------------------------------------- #

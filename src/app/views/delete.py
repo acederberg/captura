@@ -18,6 +18,7 @@ from app.models import (
     Resolvable,
     ResolvableMultiple,
     ResolvableSingular,
+    Singular,
     User,
 )
 from app.schemas import EventSchema
@@ -65,6 +66,9 @@ class Delete(WithAccess):
 
     # ----------------------------------------------------------------------- #
     # Helpers for force deletion/PUT
+    # Looks nasty, but prevents having to maintain four instances of the same
+    # code.
+
     def split_assocs(
         self,
         T_assoc: Type[Grant] | Type[Assignment],
@@ -73,7 +77,7 @@ class Delete(WithAccess):
     ) -> AssocData:
 
         q_assoc: Select
-        match (kind_obj := KindObject(T_assoc.__tablename__), source):
+        match (KindObject(T_assoc.__tablename__), source):
             case (KindObject.grant, User() as user):
                 q_assoc = user.q_select_grants(
                     uuid_target,
@@ -103,29 +107,14 @@ class Delete(WithAccess):
                 raise ValueError(msg)
 
         def one(bool_) -> Tuple[Set[str], Set[str]]:
-            """returns
-
-            1. Uuids of (in)active assignments.
-            2. Uuids of (in)active targets.
+            """Returns a tuple of a set of uuids of inactive assignments and
+            uuids of active targets.
             """
             q = q_assoc.where(T_assoc.deleted == bool_())
-            print("==========================================================")
-            print()
-            util.sql(self.session, q)
-            print()
             items = tuple(self.session.execute(q).scalars())
-            print("----------------------------------------------------------")
-            print()
-            print("items", items)
-            print()
             items = tuple(
                 (item.uuid, getattr(item, uuid_target_attr)) for item in items
             )
-            print("----------------------------------------------------------")
-            print()
-            print("items", items)
-            print("not items", not items)
-            print()
             if not items:
                 return (set(), set())
             return tuple(set(item) for item in zip(*items))
@@ -143,45 +132,54 @@ class Delete(WithAccess):
         T_assoc: Type[Grant] | Type[Assignment],
         source: Any,
         uuid_target: Set[str],
-    ) -> Tuple[Set[str], sqaDelete | Update]:
+    ) -> Tuple[AssocData, Set[str], sqaDelete | Update]:
         """Helper for `try_force`. Find active target uuids and build the query
         to (hard/soft) delete.
 
         :returns: The active target uuids with active assignments or grants.
         """
-        # uuid_assoc_deleted, uuid_assoc_active = T_assoc.split(
-        #     session,
-        #     source,
-        #     uuid_target,
-        # )
-        # _, uuid_target_active = T_assoc.split(
-        #     session,
-        #     source,
-        #     uuid_target,
-        #     select_parent_uuids=True,
-        # )
-        res = self.split_assocs(T_assoc, source, uuid_target)
-        (
-            (uuid_assoc_deleted, uuid_assoc_active),
-            (uuid_target_deleted, uuid_target_active),
-        ) = res
+        assoc_data = self.split_assocs(T_assoc, source, uuid_target)
+        uuid_assoc_rm = assoc_data.uuid_assoc_active.copy()
 
         if self.force:
-            # All assocs should be deleted when force
-            uuid_assoc_active |= uuid_assoc_deleted
-            q = delete(T_assoc).where(T_assoc.uuid.in_(uuid_assoc_active))
+            uuid_assoc_rm |= assoc_data.uuid_assoc_deleted
+            q_del = delete(T_assoc).where(T_assoc.uuid.in_(uuid_assoc_rm))
         else:
-            q = (
+            q_del = (
                 update(T_assoc)
-                .where(T_assoc.uuid.in_(uuid_assoc_active))
+                .where(T_assoc.uuid.in_(uuid_assoc_rm))
                 .values(deleted=True)
             )
-        return uuid_target_active, q
+        return assoc_data, uuid_assoc_rm, q_del
+
+    @overload
+    def try_force(
+        self,
+        data: DataResolvedGrant,
+    ) -> Tuple[
+        AssocData,
+        Tuple[Grant, ...],
+        Update[Grant] | sqaDelete[Grant],
+    ]: ...
+
+    @overload
+    def try_force(
+        self,
+        data: DataResolvedAssignment,
+    ) -> Tuple[
+        AssocData,
+        Tuple[Assignment, ...],
+        Update[Assignment] | sqaDelete[Assignment],
+    ]: ...
 
     def try_force(
         self,
         data: DataResolvedGrant | DataResolvedAssignment,
-    ) -> Tuple[Tuple[Assignment, ...] | Tuple[Grant, ...], Update | sqaDelete]:
+    ) -> Tuple[
+        AssocData,
+        Tuple[Assignment, ...] | Tuple[Grant, ...],
+        Update[Assignment] | sqaDelete[Grant],
+    ]:
 
         uuid_target: Set[str]
         match data.data:
@@ -192,32 +190,98 @@ class Delete(WithAccess):
                 document=source,
                 uuid_users=uuid_target,
             ):
-                uuid_target_active, q_del = self._try_force(
-                    Grant, source, uuid_target
-                )  # noQA[501]
-                q_assocs = source.q_select_grants(
-                    uuid_target_active, exclude_deleted=False
+                assoc_data, uuid_assoc_rm, q_del = self._try_force(
+                    T_assoc := Grant, source, uuid_target
                 )
-            case ResolvedAssignmentCollection(
-                collection=source,
-                uuid_documents=uuid_target,
-            ) | ResolvedAssignmentCollection(
+            case ResolvedAssignmentDocument(
                 document=source,
                 uuid_collections=uuid_target,
+            ) | ResolvedAssignmentCollection(
+                collection=source,
+                uuid_documents=uuid_target,
             ):
-                uuid_target_active, q_del = self._try_force(
-                    Assignment, source, uuid_target
-                )
-                q_assocs = source.q_select_assignment(
-                    uuid_target_active, exclude_deleted=False
+                assoc_data, uuid_assoc_rm, q_del = self._try_force(
+                    T_assoc := Assignment, source, uuid_target
                 )
             case bad:
                 msg = f"Invalid data of kind `{data.kind}` if `{bad}`."
                 raise ValueError(msg)
 
-        assocs: Tuple[Assignment, ...] | Tuple[Grant, ...]
+        q_assocs = T_assoc.q_uuid(uuid_assoc_rm)
         assocs = tuple(self.session.execute(q_assocs).scalars())
-        return assocs, q_del
+        return assoc_data, assocs, q_del
+
+    # FINALLY!
+    @overload
+    def assoc(
+        self,
+        data: Data[ResolvedGrantDocument],
+    ) -> Data[ResolvedGrantDocument]: ...
+
+    @overload
+    def assoc(
+        self,
+        data: Data[ResolvedAssignmentDocument],
+    ) -> Data[ResolvedAssignmentDocument]: ...
+
+    @overload
+    def assoc(
+        self,
+        data: Data[ResolvedGrantUser],
+    ) -> Data[ResolvedGrantUser]: ...
+
+    @overload
+    def assoc(
+        self,
+        data: Data[ResolvedAssignmentCollection],
+    ) -> Data[ResolvedAssignmentCollection]: ...
+
+    def assoc(
+        self, data: DataResolvedAssignment | DataResolvedGrant
+    ) -> DataResolvedAssignment | DataResolvedGrant:
+        session = self.session
+        _, assocs, q_del = self.try_force(data)
+        target_attr_name = data.data.kind_target.name
+        uuid_target_attr_name = f"uuid_{target_attr_name}"
+
+        # NOTE: Base event indicates the document, secondary event
+        #       indicates the users for which permissions were revoked.
+        #       Tertiary event indicates information about the association
+        #       object. The shape of the tree is based off of the shape of
+        #       the url on which this function can be called, where the
+        #       document is first, the users are second, and the grants
+        #       exist only as JSON.
+        event_common = self.event_common
+        data.event = Event(
+            **event_common,
+            uuid_obj=data.data.uuid_source,
+            kind_obj=data.data.kind_source,
+            children=[
+                Event(
+                    **event_common,
+                    kind_obj=data.data.kind_target,
+                    uuid_obj=getattr(assoc, uuid_target_attr_name),
+                    children=[
+                        Event(
+                            **event_common,
+                            kind_obj=data.data.kind_assoc,
+                            uuid_obj=assoc.uuid,
+                        )
+                    ],
+                )
+                for assoc in assocs
+            ],
+        )
+        session.add(data.event)
+        session.execute(q_del)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
+
+    @property
+    def event_common(self) -> Dict[str, Any]:
+        return dict(**super().event_common, kind=KindEvent.delete)
 
     # ----------------------------------------------------------------------- #
 
@@ -228,143 +292,6 @@ class Delete(WithAccess):
         data: Data[ResolvedCollection],
     ) -> Data[ResolvedCollection]: ...
 
-    # NOTE:
-    def document(
-        self,
-        data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]: ...
-
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]: ...
-
-    # ----------------------------------------------------------------------- #
-    # Assignments
-
-    def assignment_try_force(
-        self,
-        data: DataResolvedAssignment,
-    ) -> Tuple[Tuple[Assignment, ...], sqaDelete | Update]:
-        """Symetrically generate  deletion query and search for assignments as
-        specified by :attr:`force`.
-
-        When `force` is ``True``, all assignments for the source are returned
-        and the deletetion statement (locally ``q_del``) will be a hard delete.
-        Otherwise, only active assignments are returned and the deletion
-        statement will only update the ``delete`` column to be ``False``.
-
-        :returns: The :class:`Assignment`s to be deleted along with the deletion
-            statement.
-        """
-
-        session = self.session
-        source: Document | Collection = data.data.source  # type: ignore[reportGeneralTypeIssues]
-        uuid_target: Set[str] = data.data.uuid_target  # type: ignore[reportGeneralTypeIssues]
-        uuid_assign_deleted, uuid_assign_active = Assignment.split(
-            session, source, uuid_target
-        )
-        _, uuid_target_active = Assignment.split(
-            session, source, uuid_target, select_parent_uuids=True
-        )
-
-        # Force == hard delete. Otherwise soft delete.
-        if self.force:
-            uuid_assign_active |= uuid_assign_deleted
-            q_del = delete(AssocCollectionDocument).where(
-                AssocCollectionDocument.uuid.in_(uuid_assign_active)
-            )
-        else:
-            q_del = (
-                update(AssocCollectionDocument)
-                .where(AssocCollectionDocument.uuid.in_(uuid_assign_active))
-                .values(deleted=True)
-            )
-
-        q_assocs = source.q_select_assignment(uuid_target_active, exclude_deleted=False)
-        assocs = tuple(session.execute(q_assocs).scalars())
-        return assocs, q_del
-
-    def assignment_collection(
-        self,
-        data: Data[ResolvedAssignmentCollection],
-    ) -> Data[ResolvedAssignmentCollection]:
-        session = self.session
-        collection = data.data.collection
-        assocs, q_del = self.assignment_try_force(data)
-
-        # Create events
-        event_common = dict(kind=KindEvent.delete, **self.event_common)
-        data.event = Event(
-            **event_common,
-            kind_obj=KindObject.collection,
-            uuid_obj=collection.uuid,
-            children=[
-                session.refresh(assoc)
-                or Event(
-                    **event_common,
-                    kind_obj=KindObject.document,
-                    uuid_obj=assoc.uuid_document,
-                    children=[
-                        Event(
-                            **event_common,
-                            kind_obj=KindObject.assignment,
-                            uuid_obj=assoc.uuid,
-                        )
-                    ],
-                )
-                for assoc in assocs
-            ],
-        )
-
-        session.execute(q_del)
-        session.add(data.event)
-        session.commit()
-        session.refresh(data.event)
-
-        return data
-
-    def assignment_document(
-        self, data: Data[ResolvedAssignmentDocument]
-    ) -> Data[ResolvedAssignmentDocument]:
-        session = self.session
-        document = data.data.document
-        assocs, q_del = self.assignment_try_force(data)
-
-        event_common: Dict[str, Any] = self.event_common
-        data.event = Event(
-            **event_common,
-            kind_obj=KindObject.document,
-            uuid_obj=document.uuid,
-            children=[
-                Event(
-                    **event_common,
-                    kind_obj=KindObject.collection,
-                    uuid_obj=assoc.uuid_collection,
-                    children=[
-                        Event(
-                            **event_common,
-                            kind_obj=KindObject.assignment,
-                            uuid_obj=assoc.uuid,
-                        )
-                    ],
-                )
-                for assoc in assocs
-            ],
-        )
-        session.add(data.event)
-        session.execute(q_del)
-        session.commit()
-        session.refresh(data.event)
-        return data
-
-    a_access_document = with_access(Access.d_assignment_document)
-    a_access_collection = with_access(Access.d_assignment_collection)
-
-    # def collection(
-    #     self,
-    #     resolve_collection: ResolvableSingular[Collection],
-    #     *,
-    #     resolve_user: ResolvableSingular[User] | None = None,
-    # ) -> Event:
-    #
     #     session = self.session
     #     collection = Collection.resolve(session, resolve_collection)
     #     user = User.resolve(session, resolve_user or self.token.uuid)
@@ -402,83 +329,52 @@ class Delete(WithAccess):
     #     session.refresh(event)
     #     return event
     #
+
+    # NOTE:
+    def document(
+        self,
+        data: Data[ResolvedDocument],
+    ) -> Data[ResolvedDocument]: ...
+
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]: ...
+
+    # ----------------------------------------------------------------------- #
+
+    def assignment_collection(
+        self,
+        data: Data[ResolvedAssignmentCollection],
+    ) -> Data[ResolvedAssignmentCollection]:
+        self.assoc(data)
+        return data
+
+    def assignment_document(
+        self, data: Data[ResolvedAssignmentDocument]
+    ) -> Data[ResolvedAssignmentDocument]:
+        self.assoc(data)
+        return data
+
+    a_assignment_document = with_access(Access.d_assignment_document)
+    a_assignment_collection = with_access(Access.d_assignment_collection)
+
     # # ----------------------------------------------------------------------- #
     # # Grants
 
     def grant_user(
         self,
         data: Data[ResolvedGrantUser],
-    ) -> Data[ResolvedGrantUser]: ...
+    ) -> Data[ResolvedGrantUser]:
+        data = self.assoc(data)
+        return data
 
     def grant_document(
         self, data: Data[ResolvedGrantDocument]
     ) -> Data[ResolvedGrantDocument]:
 
-        # NOTE: Since owners cannot reject the ownership of other owners.
-        # logger.debug("Verifying revokee permissions.")
-        # q_select_grants = document.q_select_grants(uuid_user)
-        # uuid_owners: Set[str] = set(
-        #     session.execute(
-        #         select(literal_column("uuid_user"))
-        #         .select_from(q_select_grants)  # type: ignore
-        #         .where(literal_column("level") == Level.own)
-        #     ).scalars()
-        # )
-        # if len(uuid_owners):
-        #     detail = dict(
-        #         msg="Owner cannot reject grants of other owners.",
-        #         uuid_user_revoker=uuid_revoker,
-        #         uuid_user_revokees=uuid_owners,
-        #         uuid_documents=uuid_document,
-        #     )
-        #     raise HTTPException(403, detail=detail)
+        data = self.assoc(data)
+        return data
 
-        # NOTE: Base event indicates the document, secondary event
-        #       indicates the users for which permissions were revoked.
-        #       Tertiary event indicates information about the association
-        #       object. The shape of the tree is based off of the shape of
-        #       the url on which this function can be called, where the
-        #       document is first, the users are second, and the grants
-        #       exist only as JSON.
-        grants = list(session.execute(q_select_grants))
-        event_common = dict(
-            api_origin="DELETE /grants/documents/<uuid>",
-            uuid_user=uuid_revoker,
-            kind=KindEvent.grant,
-        )
-        event = Event(
-            **event_common,
-            uuid_obj=uuid_document,
-            kind_obj=KindObject.document,
-            detail="Grants revoked.",
-            children=[
-                Event(
-                    **event_common,
-                    kind_obj=KindObject.user,
-                    uuid_obj=uuid_user,
-                    detail=f"Grant `{grant.level.name}` revoked.",
-                    children=[
-                        Event(
-                            **event_common,
-                            kind_obj=KindObject.grant,
-                            uuid_obj=grant.uuid,
-                            detail=f"Grant `{grant.level.name}` revoked.",
-                        )
-                    ],
-                )
-                for grant in grants
-            ],
-        )
-        session.add(event)
-        session.execute(
-            update(AssocUserDocument)
-            .where(document.q_conds_grants(uuid_user))
-            .values(deleted=True)
-        )
-        session.commit()
-        session.refresh(event)
-
-        return EventSchema.model_validate(event)  # type: ignore
+    a_grant_document = with_access(Access.d_grant_document)
+    a_grant_user = with_access(Access.d_grant_user)
 
     # # ----------------------------------------------------------------------- #
     # # Collections

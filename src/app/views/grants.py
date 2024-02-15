@@ -1,22 +1,7 @@
-from typing import (
-    List,
-    Set,
-)
+from typing import List, Set
 
-from fastapi import (
-    HTTPException,
-)
-from sqlalchemy import literal_column, select, update
-from sqlalchemy.orm import Session
-from sqlalchemy.sql.expression import false, true
-
-from app.views.base import BaseView
-from app.views import args
 from app import __version__
-from app.depends import (
-    DependsSessionMaker,
-    DependsToken,
-)
+from app.depends import DependsSessionMaker, DependsToken
 from app.models import (
     AssocUserDocument,
     Document,
@@ -26,11 +11,13 @@ from app.models import (
     Level,
     User,
 )
-from app.schemas import (
-    EventSchema,
-    GrantPostSchema,
-    GrantSchema,
-)
+from app.schemas import EventSchema, GrantPostSchema, GrantSchema
+from app.views import args
+from app.views.base import BaseView
+from fastapi import HTTPException
+from sqlalchemy import literal_column, select, update
+from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import false, true
 
 
 class GrantView(BaseView):

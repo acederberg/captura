@@ -36,6 +36,7 @@ from app.models import (
     Edit,
     Event,
     KindEvent,
+    KindObject,
     Level,
     LevelHTTP,
     Resolvable,
@@ -175,6 +176,28 @@ class BaseData(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+class BaseDataAssoc(BaseData):
+    kind_source: Any
+    kind_target: Any
+    kind_assoc: Any
+
+    @computed_field
+    def source(self) -> Document:
+        return getattr(self, self.kind_source.name)
+
+    @computed_field
+    def target(self) -> Tuple[Collection, ...]:
+        return getattr(self, self.kind_target.name)
+
+    @computed_field
+    def uuid_source(self) -> str:
+        return getattr(self, "uuid_" + self.kind_source.name)
+
+    @computed_field
+    def uuid_target(self) -> Set[str]:
+        return getattr(self, "uuid_" + self.kind_target.name)
+
+
 class ResolvedCollection(BaseData):
     kind: Annotated[Literal["collection"], Field(default="collection")]
     collection: Collection | Tuple[Collection, ...]
@@ -199,74 +222,96 @@ class ResolvedUser(BaseData):
     uuid_user: UuidSetFromModel
 
 
-class ResolvedGrantUser(BaseData):
+class ResolvedGrantUser(BaseDataAssoc):
     kind: Annotated[Literal["grant_user"], Field(default="grant_user")]
+    kind_source: Annotated[
+        Literal[KindObject.user],
+        Field(default=KindObject.user),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.grant],
+        Field(default=KindObject.grant),
+    ]
+
     user: User
     documents: Tuple[Document, ...]
-    uuid_users: UuidSetFromModel
-    uuid_document: UuidFromModel
+    uuid_user: UuidFromModel
+    uuid_documents: UuidSetFromModel
 
 
-class ResolvedGrantDocument(BaseData):
+class ResolvedGrantDocument(BaseDataAssoc):
     kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
+    kind_source: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.user],
+        Field(default=KindObject.user),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.grant],
+        Field(default=KindObject.grant),
+    ]
+
     document: Document
     users: Tuple[User, ...]
     uuid_document: UuidFromModel
     uuid_users: UuidSetFromModel
 
 
-class ResolvedAssignmentCollection(BaseData):
+class ResolvedAssignmentCollection(BaseDataAssoc):
     kind: Annotated[
         Literal["assignment_collection"],
         Field(default="assignment_collection"),
     ]
+    kind_source: Annotated[
+        Literal[KindObject.collection],
+        Field(default=KindObject.collection),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.grant],
+        Field(default=KindObject.grant),
+    ]
+
     collection: Collection
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
     uuid_documents: UuidSetFromModel
 
-    @computed_field
-    def source(self) -> Collection:
-        return self.collection
-
-    @computed_field
-    def target(self) -> Tuple[Document, ...]:
-        return self.documents
-
-    @computed_field
-    def uuid_source(self) -> str:
-        return self.uuid_collection
-
-    @computed_field
-    def uuid_target(self) -> Set[str]:
-        return self.uuid_documents
+    # These are very helpful for handling cases in general
 
 
-class ResolvedAssignmentDocument(BaseData):
+class ResolvedAssignmentDocument(BaseDataAssoc):
     kind: Annotated[
         Literal["assignment_document"],
         Field(default="assignment_document"),
     ]
+    kind_source: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.collection],
+        Field(default=KindObject.collection),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.grant],
+        Field(default=KindObject.grant),
+    ]
+
     document: Document
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
     uuid_collections: UuidSetFromModel
-
-    @computed_field
-    def source(self) -> Document:
-        return self.document
-
-    @computed_field
-    def target(self) -> Tuple[Collection, ...]:
-        return self.collections
-
-    @computed_field
-    def uuid_source(self) -> str:
-        return self.uuid_document
-
-    @computed_field
-    def uuid_target(self) -> Set[str]:
-        return self.uuid_collections
 
 
 class KindData(enum.Enum):
