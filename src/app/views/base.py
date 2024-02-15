@@ -30,6 +30,7 @@ from app.depends import DependsToken
 from app.models import (
     AnyModel,
     Assignment,
+    Base,
     Collection,
     Document,
     Edit,
@@ -43,18 +44,23 @@ from app.models import (
     ResolvedRawAny,
     Singular,
     User,
+    uuids,
 )
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Discriminator,
     Field,
     RootModel,
     Tag,
+    ValidationInfo,
+    computed_field,
     field_validator,
 )
+from pydantic_core.core_schema import FieldValidationInfo
 from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
@@ -130,60 +136,39 @@ class BaseController:
                 self._token = token
 
 
-# class WithForceController(BaseController):
-#
-#     def __init__(
-#         self,
-#         session: Session,
-#         token: Token | Dict[str, Any] | None,
-#         method: HTTPMethod | str,
-#         *,
-#         detail: str,
-#         api_origin: str,
-#         force: bool = True,
-#     ):
-#         super().__init__(session, token, method)
-#         self.force = force
-#         self.detail = detail
-#         self.api_origin = api_origin
-#
-#     # NOTE: Will be needed by delete and upsert both.
-#     def split_assignment_uuids(
-#         self,
-#         source: Collection | Document,
-#         uuid_target: Set[str],
-#     ) -> Tuple[Set[str], Set[str]]:
-#         """If"""
-#         kind_source = source.__class__.__tablename__
-#         is_doc = kind_source == "documents"
-#         kind_target = "collections" if is_doc else "documents"
-#
-#         uuid_deleted, uuid_active = Assignment.split(
-#             self.session,
-#             source,
-#             uuid_target,
-#         )
-#
-#         if uuid_deleted and not self.force:
-#             raise HTTPException(
-#                 400,
-#                 detail=dict(
-#                     uuid_user=self.token.uuid,
-#                     kind_source=kind_source,
-#                     uuid_source=source.uuid,
-#                     kind_target=kind_target,
-#                     uuid_target=uuid_target,
-#                     msg="Assignments must be hard deleted to re-`POST`.",
-#                 ),
-#             )
-#
-#         return uuid_deleted, uuid_active
-#
-# NOTE: While an abstract base class or metaclass could check for these methods,
-#       I think it will be less of a pain to just test that controllers have
-#       these methods with pytest instead. This is mostly used by
-#       :class:`AccessMeta` so that other controllers can verify access on
-#       resolvable inputs.
+def uuid_set_from_model(data: Any, info: ValidationInfo) -> Set[str]:
+    if data is not None:
+        return data
+
+    data_key = info.field_name
+    if data_key is None:
+        raise ValueError("WTF")
+
+    data_key_source = data_key.replace("uuid_", "")
+    if data_key_source not in info.data:
+        raise ValueError(f"Invalid source `{data_key_source}` for uuids.")
+    data_source = info.data[data_key_source]
+    res = uuids(data_source)
+    return res
+
+
+def uuid_from_model(data: Any, info: ValidationInfo) -> str:
+    if data is not None:
+        return data
+    res = uuid_set_from_model(data, info)
+    return res.pop()
+
+
+UuidSetFromModel = Annotated[
+    Set[str],
+    Field(default=None, validate_default=True),
+    BeforeValidator(uuid_set_from_model),
+]
+UuidFromModel = Annotated[
+    str,
+    Field(default=None, validate_default=True),
+    BeforeValidator(uuid_from_model),
+]
 
 
 class BaseData(BaseModel):
@@ -193,33 +178,41 @@ class BaseData(BaseModel):
 class ResolvedCollection(BaseData):
     kind: Annotated[Literal["collection"], Field(default="collection")]
     collection: Collection | Tuple[Collection, ...]
+    uuid_collection: UuidSetFromModel
 
 
 class ResolvedDocument(BaseData):
     kind: Annotated[Literal["document"], Field(default="document")]
     document: Document | Tuple[Document, ...]
+    uuid_document: UuidSetFromModel
 
 
 class ResolvedEdit(BaseData):
     kind: Annotated[Literal["edit"], Field(default="edit")]
     edit: Edit | Tuple[Edit, ...]
+    uuid_edit: UuidSetFromModel
 
 
 class ResolvedUser(BaseData):
     kind: Annotated[Literal["user"], Field(default="user")]
     user: User | Tuple[User, ...]
+    uuid_user: UuidSetFromModel
 
 
 class ResolvedGrantUser(BaseData):
     kind: Annotated[Literal["grant_user"], Field(default="grant_user")]
     user: User
     documents: Tuple[Document, ...]
+    uuid_users: UuidSetFromModel
+    uuid_document: UuidFromModel
 
 
 class ResolvedGrantDocument(BaseData):
     kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
     document: Document
     users: Tuple[User, ...]
+    uuid_document: UuidFromModel
+    uuid_users: UuidSetFromModel
 
 
 class ResolvedAssignmentCollection(BaseData):
@@ -229,6 +222,24 @@ class ResolvedAssignmentCollection(BaseData):
     ]
     collection: Collection
     documents: Tuple[Document, ...]
+    uuid_collection: UuidFromModel
+    uuid_documents: UuidSetFromModel
+
+    @computed_field
+    def source(self) -> Collection:
+        return self.collection
+
+    @computed_field
+    def target(self) -> Tuple[Document, ...]:
+        return self.documents
+
+    @computed_field
+    def uuid_source(self) -> str:
+        return self.uuid_collection
+
+    @computed_field
+    def uuid_target(self) -> Set[str]:
+        return self.uuid_documents
 
 
 class ResolvedAssignmentDocument(BaseData):
@@ -238,6 +249,24 @@ class ResolvedAssignmentDocument(BaseData):
     ]
     document: Document
     collections: Tuple[Collection, ...]
+    uuid_document: UuidFromModel
+    uuid_collections: UuidSetFromModel
+
+    @computed_field
+    def source(self) -> Document:
+        return self.document
+
+    @computed_field
+    def target(self) -> Tuple[Collection, ...]:
+        return self.collections
+
+    @computed_field
+    def uuid_source(self) -> str:
+        return self.uuid_document
+
+    @computed_field
+    def uuid_target(self) -> Set[str]:
+        return self.uuid_collections
 
 
 class KindData(enum.Enum):
@@ -274,47 +303,39 @@ class KindData(enum.Enum):
             case _:
                 return None
 
-    # @classmethod
-    # def objectify(cls, v: ResolvedRawAny):
-    #     """Take raw resolved data,
-    #     kind_data_name = cls.discriminate_raw(v)
-    #     kind_data = cls(kind_data_name)
-    #     match kind_data:
-    #         case cls.user | cls.collection | cls.document | cls.edit:
-    #             return kind_data.value.model_validate(
-    #                 {
-    #                     "kind": kind_data_name,
-    #                     Singular(kind_data_name).name: v
-    #
-    #                 }
-    #             )
-    #         case _:
-    #             ...
+
+T_Data = TypeVar(
+    "T_Data",
+    Annotated[ResolvedCollection, Tag("collection")],
+    Annotated[ResolvedDocument, Tag("document")],
+    Annotated[ResolvedEdit, Tag("edit")],
+    Annotated[ResolvedUser, Tag("user")],
+    Annotated[ResolvedAssignmentCollection, Tag("assignment_collection")],
+    Annotated[ResolvedAssignmentDocument, Tag("assignment_document")],
+    Annotated[ResolvedGrantUser, Tag("grant_user")],
+    Annotated[ResolvedGrantDocument, Tag("grant_document")],
+)
+
+kind_type_map = dict(
+    user=User,
+    collection=Collection,
+    document=Document,
+    edit=Edit,
+    grant_user=(User, Document),
+    grant_document=(Document, User),
+    assignment_collection=(Collection, Document),
+    assignment_document=(Document, Collection),
+)
 
 
-ResolvedAny: TypeAlias = Annotated[
-    Union[
-        Annotated[ResolvedCollection, Tag("collection")],
-        Annotated[ResolvedDocument, Tag("document")],
-        Annotated[ResolvedEdit, Tag("edit")],
-        Annotated[ResolvedUser, Tag("user")],
-        Annotated[ResolvedAssignmentCollection, Tag("assignment_collection")],
-        Annotated[ResolvedAssignmentDocument, Tag("assignment_document")],
-        Annotated[ResolvedGrantUser, Tag("grant_user")],
-        Annotated[ResolvedGrantDocument, Tag("grant_document")],
-    ],
-    Discriminator("kind"),
-]
-
-
-class Data(BaseModel):
+class Data(BaseModel, Generic[T_Data]):
     """Because writing out complicated arguments is hard and composition will
     be simplified.
 
     :class:`Access` will resolve arguments which will be put into here. The
     other controller will then pass the data around so that signatures are
     not so nasty as `Access`, which will take in data, modify it appropriately
-    (by performing CRUD and adding events to `Data` and return `Data`.
+    (by performing CRUD and adding events to `Data` and return `Data`).
 
     This will allow any additional controllers to be sandwiched
     between with the sole requirement being that they match the following
@@ -330,7 +351,7 @@ class Data(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    data: ResolvedAny
+    data: T_Data
     event: Annotated[Event | None, Field(default=None)]
     token_user: Annotated[User | None, Field(default=None)]
 
@@ -338,11 +359,18 @@ class Data(BaseModel):
     def validate_raw(cls, v):
         return v
 
+    @computed_field
+    def kind(self) -> str:
+        return self.data.kind
 
-# resolve_collection = ResolvedCollection(collection=Collection())
-# print(resolve_collection)
-#
-# print(Data(data=resolve_collection))
+    def types(self) -> Any:
+        return kind_type_map[self.kind]  # type: ignore[return-type]
+
+
+DataResolvedAssignment = (
+    Data[ResolvedAssignmentCollection] | Data[ResolvedAssignmentDocument]
+)
+DataResolvedGrant = Data[ResolvedGrantUser] | Data[ResolvedGrantDocument]
 
 
 # =========================================================================== #

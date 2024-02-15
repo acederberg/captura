@@ -2,24 +2,29 @@
   id: 1
   name: foofoo
   description: The foofoo collection
+
 - id_user: 1
   id: 2
   name: Bar.
   description: The bar collection.
+
 - id_user: 1
   id: 3
   name: Spam and Etc.
   description: A collection about processed meat products.
+
 - id_user: 2
   id: 4
   name: Chicharon.
   description: A collection about New Mexican food.
   uuid: 'eee-eee-eee'
+
 - id_user: 2
   id: 5
   name: Adovada and Chicharon.
   description: A collection about New Mexican food.
   uuid: 'foo-ooo-ool'
+
 - id_user: 2
   id: 6
   name: Mole and Tacos.

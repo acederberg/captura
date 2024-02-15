@@ -678,7 +678,6 @@ class AssocCollectionDocument(Base):
     # NOTE: Since this object supports soft deletion (for the deletion grace
     #       period that will later be implemented) deleted is included.
     # deleted: Mapped[MappedColumnDeleted]
-    # uuid: Mapped[MappedColumnUUID]
     id_document: Mapped[int] = mapped_column(
         ForeignKey("documents.id"),
         primary_key=True,
@@ -709,94 +708,117 @@ class AssocCollectionDocument(Base):
             raise ValueError("Inconcievable!")
         return res
 
-    @classmethod
-    def q_split(
-        cls,
-        item: "Collection | Document",
-        uuids: Set[str],
-        *,
-        select_parent_uuids: bool = False,
-    ) -> Tuple[Select, Select]:
-        "Returns a select for assignment uuids."
-
-        # NOTE: These queries should also have joins such that warning are not
-        #       raised by sqlalchemy.
-        match item:
-            case _ if not select_parent_uuids:
-                q = item.q_select_assignment(uuids, exclude_deleted=False)
-                s = literal_column("uuid")
-            case Collection() as collection:
-                q = collection.q_select_documents(uuids, exclude_deleted=False)
-                s = literal_column("uuid_document")
-            case Document() as document:
-                q = document.q_select_collections(uuids, exclude_deleted=False)
-                s = literal_column("uuid_document")
-
-        return tuple(  # type: ignore
-            select(s).select_from(q.where(Assignment.deleted == bool_()).subquery())
-            for bool_ in (true, false)
-        )
-
-    @classmethod
-    def q_projection(cls, selectable, uuid_assignment: Set[str]) -> Select:
-        return (
-            select(selectable)
-            .join(Assignment)
-            .where(Assignment.uuid.in_(uuid_assignment))
-        )
-
-    @overload
-    @classmethod
-    def split(
-        cls,
-        session: Session,
-        source: "Document",
-        resolvable_target: "ResolvableMultiple[Collection]",
-    ) -> UUIDSplit: ...
-
-    @overload
-    @classmethod
-    def split(
-        cls,
-        session: Session,
-        source: "Collection",
-        resolvable_target: "ResolvableMultiple[Document]",
-    ) -> UUIDSplit: ...
-
-    @classmethod
-    def split(
-        cls,
-        session: Session,
-        source: "Collection | Document",
-        resolvable_target: "ResolvableMultiple[Collection] | ResolvableMultiple[Document]",
-    ) -> UUIDSplit:
-
-        match [source, resolvable_target]:
-            case [Document() as document, _ as resolvable_collections]:
-                uuid_collection = Collection.resolve_uuid(
-                    session,
-                    resolvable_collections,
-                )
-                qs = cls.q_split(document, uuid_collection)
-            case [Collection() as collection, _ as resolvable_documents]:
-                uuid_document = Document.resolve_uuid(
-                    session,
-                    resolvable_documents,
-                )
-                qs = cls.q_split(collection, uuid_document)
-            case _:
-                msg = f"Invalid source `{source}` of type `{type(source)}`. "
-                msg += "Must be an instnce of `Collection` or `Document`."
-                raise ValueError(msg)
-
-        # kind_target = cls.resolve_target_kind(source, resolvable_target)
-        # is_doc = kind_target == ChildrenAssignment.documents
-        # Target = Document if is_doc else Collection
-        # uuid_target = Target.resolve_uuid(session, resolvable_target)  # type: ignore
-        # qs = cls.q_split(uuid_document, collection)
-
-        res = tuple(set(session.execute(q).scalars()) for q in qs)
-        return res  # type: ignore
+    # @classmethod
+    # def q_split(
+    #     cls,
+    #     source: "Collection | Document",
+    #     uuid_targets: Set[str],
+    #     *,
+    #     select_parent_uuids: bool = False,
+    # ) -> Tuple[Select, Select]:
+    #     "Returns a select for assignment uuids."
+    #
+    #     # NOTE: These queries should also have joins such that warning are not
+    #     #       raised by sqlalchemy.
+    #     match source:
+    #         case _ if not select_parent_uuids:
+    #             q = source.q_select_assignment(
+    #                 uuid_targets,
+    #                 exclude_deleted=False,
+    #             )
+    #             s = literal_column("uuid")
+    #         case Collection() as collection:
+    #             q = collection.q_select_documents(
+    #                 uuid_targets,
+    #                 exclude_deleted=False,
+    #             )
+    #             s = literal_column("uuid_collection")
+    #         case Document() as document:
+    #             q = document.q_select_collections(
+    #                 uuid_targets,
+    #                 exclude_deleted=False,
+    #             )
+    #             s = literal_column("uuid_document")
+    #
+    #     return tuple(  # type: ignore
+    #         select(s).select_from(q.where(Assignment.deleted == bool_()).subquery())
+    #         for bool_ in (true, false)
+    #     )
+    #
+    # @classmethod
+    # def q_projection(cls, selectable, uuid_assignment: Set[str]) -> Select:
+    #     return (
+    #         select(selectable)
+    #         .join(Assignment)
+    #         .where(Assignment.uuid.in_(uuid_assignment))
+    #     )
+    #
+    # @overload
+    # @classmethod
+    # def split(
+    #     cls,
+    #     session: Session,
+    #     source: "Document",
+    #     resolvable_target: "ResolvableMultiple[Collection]",
+    #     *,
+    #     select_parent_uuids: bool = False,
+    # ) -> UUIDSplit: ...
+    #
+    # @overload
+    # @classmethod
+    # def split(
+    #     cls,
+    #     session: Session,
+    #     source: "Collection",
+    #     resolvable_target: "ResolvableMultiple[Document]",
+    #     *,
+    #     select_parent_uuids: bool = False,
+    # ) -> UUIDSplit: ...
+    #
+    # @classmethod
+    # def split(
+    #     cls,
+    #     session: Session,
+    #     source: "Collection | Document",
+    #     resolvable_target: "ResolvableMultiple[Collection] | ResolvableMultiple[Document]",
+    #     *,
+    #     select_parent_uuids: bool = False,
+    # ) -> UUIDSplit:
+    #
+    #     match [source, resolvable_target]:
+    #         case [Document() as document, _ as resolvable_collections]:
+    #             uuid_collection = Collection.resolve_uuid(
+    #                 session,
+    #                 resolvable_collections,
+    #             )
+    #             qs = cls.q_split(
+    #                 document,
+    #                 uuid_collection,
+    #                 select_parent_uuids=select_parent_uuids,
+    #             )
+    #         case [Collection() as collection, _ as resolvable_documents]:
+    #             uuid_document = Document.resolve_uuid(
+    #                 session,
+    #                 resolvable_documents,
+    #             )
+    #             qs = cls.q_split(
+    #                 collection,
+    #                 uuid_document,
+    #                 select_parent_uuids=select_parent_uuids,
+    #             )
+    #         case _:
+    #             msg = f"Invalid source `{source}` of type `{type(source)}`. "
+    #             msg += "Must be an instnce of `Collection` or `Document`."
+    #             raise ValueError(msg)
+    #
+    #     # kind_target = cls.resolve_target_kind(source, resolvable_target)
+    #     # is_doc = kind_target == ChildrenAssignment.documents
+    #     # Target = Document if is_doc else Collection
+    #     # uuid_target = Target.resolve_uuid(session, resolvable_target)  # type: ignore
+    #     # qs = cls.q_split(uuid_document, collection)
+    #
+    #     res = tuple(set(session.execute(q).scalars()) for q in qs)
+    #     return res  # type: ignore
 
     @classmethod
     def resolve_target_kind(
@@ -909,42 +931,92 @@ class AssocUserDocument(Base):
             raise ValueError("Inconcievable!")
         return res
 
-    @overload
     @classmethod
     def resolve_from_target(
-        cls,
-        session: Session,
-        target: "User",
-        resolvable_source: "ResolvableMultiple[Document]",
-    ): ...
-
-    @overload
-    @classmethod
-    def resolve_from_target(
-        cls,
-        session: Session,
-        target: "Document",
-        resolvable_source: "ResolvableMultiple[User] ",
-    ): ...
-
-    @classmethod
-    def resolve_from_target(
-        cls,
-        session: Session,
-        target: "User | Document",
-        resolvable_source: "ResolvableMultiple[Document] | ResolvableMultiple[User]",
+        cls, session: Session, source: "User | Document", uuid_target: Set[str]
     ) -> Tuple[Self, ...]:
         q = select(cls).join(User).join(Document)
-        match (target, resolvable_source):
-            case (User(uuid=uuid_user), tuple() as uuid_docs):
-                conds = (User.uuid == uuid_user, Document.uuid.in_(uuid_docs))
-            case (Document(uuid=uuid_doc), tuple() as uuid_users):
-                conds = (Document.uuid == uuid_doc, User.uuid.in_(uuid_users))
+        match source:
+            case User(uuid=uuid_user):
+                conds = (User.uuid == uuid_user, Document.uuid.in_(uuid_target))
+            case Document(uuid=uuid_doc):
+                conds = (Document.uuid == uuid_doc, User.uuid.in_(uuid_target))
             case _:
                 raise HTTPException(500, detail="Cannot resolve.")
 
         q = q.where(*conds)
         return tuple(session.execute(q).scalars())
+
+    # ----------------------------------------------------------------------- #
+    # Eventually to merged with the corresponding methods of `Assignment`
+
+    @classmethod
+    def q_split(
+        cls,
+        source: "User | Document",
+        target_uuids: Set[str],
+        *,
+        select_parent_uuids: bool = False,
+    ) -> Tuple[Select, Select]:
+        "Returns a select for assignment uuids."
+
+        # NOTE: These queries should also have joins such that warning are not
+        #       raised by sqlalchemy.
+        match source:
+            case _ if not select_parent_uuids:
+                q = source.q_select_grants(target_uuids, exclude_deleted=False)
+                s = literal_column("uuid")
+            case User() as user:
+                q = user.q_select_documents(target_uuids, exclude_deleted=False)
+                s = literal_column("uuid_user")
+            case Document() as document:
+                q = document.q_select_users(target_uuids, exclude_deleted=False)
+                s = literal_column("uuid_document")
+
+        return tuple(  # type: ignore
+            select(s).select_from(q.where(Grant.deleted == bool_()).subquery())
+            for bool_ in (true, false)
+        )
+
+    # @overload
+    # @classmethod
+    # def split(
+    #     cls,
+    #     session: Session,
+    #     source: "Document",
+    #     resolvable_target: "ResolvableMultiple[User]",
+    #     *,
+    #     select_parent_uuids: bool = False,
+    # ) -> UUIDSplit: ...
+    #
+    # @overload
+    # @classmethod
+    # def split(
+    #     cls,
+    #     session: Session,
+    #     source: "User",
+    #     resolvable_target: "ResolvableMultiple[Document]",
+    #     *,
+    #     select_parent_uuids: bool = False,
+    # ) -> UUIDSplit: ...
+
+    @classmethod
+    def split(
+        cls,
+        session: Session,
+        source: "User | Document",
+        uuid_target: Set[str],
+        *,
+        select_parent_uuids: bool = False,
+    ) -> UUIDSplit:
+
+        qs = cls.q_split(
+            source,
+            uuid_target,
+            select_parent_uuids=select_parent_uuids,
+        )
+        res = tuple(set(session.execute(q).scalars()) for q in qs)
+        return res  # type: ignore
 
 
 class User(SearchableTableMixins, Base):
@@ -1033,17 +1105,7 @@ class User(SearchableTableMixins, Base):
         #               ON _assocs_user_documents.id_user=users.id
         #          JOIN documents
         #               ON _assocs_user_documents.id_document = documents.id;
-        q = (
-            select(
-                User.uuid.label("uuid_user"),
-                Document.uuid.label("uuid_document"),
-                AssocUserDocument.uuid.label("uuid"),
-                AssocUserDocument.level.label("level"),
-            )
-            .select_from(User)
-            .join(AssocUserDocument)
-            .join(Document)
-        )
+        q = select(Grant).select_from(User).join(AssocUserDocument).join(Document)
         conds = self.q_conds_grants(document_uuids, level, exclude_deleted)
         q = q.where(conds)
         return q
@@ -1221,12 +1283,12 @@ class Collection(SearchableTableMixins, Base):
         # NOTE: To add the conditions for document select (like level) use
         #       `q_conds_assoc`.
         cond = and_(AssocCollectionDocument.id_collection == self.id)
-        # if exclude_deleted:
-        #     cond = and_(cond, AssocCollectionDocument.deleted == false())
-        # if document_uuids is not None:
-        #     document_ids = Document.q_select_ids(document_uuids)
-        #     cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
-        cond = and_(cond, self.q_conds(document_uuids, exclude_deleted))
+        if exclude_deleted:
+            cond = and_(cond, AssocCollectionDocument.deleted == false())
+        if document_uuids is not None:
+            document_ids = Document.q_select_ids(document_uuids)
+            cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
+        # cond = and_(cond, self.q_conds(document_uuids, exclude_deleted))
 
         return cond
 
@@ -1341,16 +1403,10 @@ class Document(SearchableTableMixins, Base):
         :param user_uuids: The uuids of the users to select for.
         :param level: The minimal level to select joined entries from.
         """
-        return (
-            select(AssocUserDocument)
-            .join(Document)
-            .join(User)
-            .where(
-                self.q_conds_grants(
-                    user_uuids=user_uuids, level=level, exclude_deleted=exclude_deleted
-                )
-            )
+        conds = self.q_conds_grants(
+            user_uuids=user_uuids, level=level, exclude_deleted=exclude_deleted
         )
+        return select(Grant).join(Document).join(User).where(conds)
 
     def q_select_users(
         self,

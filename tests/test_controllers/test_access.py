@@ -31,9 +31,12 @@ from app.views.base import (
     ResolvedAssignmentDocument,
     ResolvedCollection,
     ResolvedDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
     ResolvedUser,
 )
 from fastapi import HTTPException
+from pydantic import BaseModel
 from sqlalchemy import false, func, literal_column, select, update
 from sqlalchemy.orm import Session, make_transient
 from tests.test_controllers.util import check_exc, expect_exc, stringify
@@ -62,25 +65,44 @@ methods_required = {
 # Checks that the required methods are included. Generates warnings when
 class AccessTestMeta(type):
 
+    fn_access_types: Dict[str, Type]
     allow_missing: bool = False
 
     def __new__(cls, name, bases, namespace):
         T = super().__new__(cls, name, bases, namespace)
-        if T.allow_missing:
-            logger.warning("Not checking that `%s` has all required methods.", name)
+        # NOTE: `allow_missing` and `BaseTestAccess` cases.
+        if name == "BaseTestAccess":
             return T
-        elif name == "BaseTestAccess":
-            return T
-
-        methods = {meth: getattr(T, meth, None) for meth in methods_required}
-        if len(bad := tuple(mm for mm, value in methods.items() if value is None)):
-            raise ValueError(f"`{name}` missing methods `{bad}`.")
-        elif len(
-            bad := tuple(name for name, value in methods.items() if not callable(value))
-        ):
-            raise ValueError(f"`{name}` has attributes `{bad}` that are not callable.")
-
+        if not T.allow_missing:
+            cls.check_missing(T)
         return T
+
+    @classmethod
+    def check_fn_access_types(cls, T):
+        if (data := getattr(T, "fn_access_types", None)) is not None:
+            msg = f"`{T.__name__}.fn_access_types` must be set."
+            raise ValueError(msg)
+        elif not isinstance(data, dict):
+            msg = f"`{T.__name__}.fn_access_types` must be a dictionary."
+            raise ValueError(msg)
+
+    @classmethod
+    def check_missing(cls, T):
+        methods = {meth: getattr(T, meth, None) for meth in methods_required}
+        name = T.__name__
+
+        if bad := tuple(
+            method_name for method_name, method in methods.items() if method is None
+        ):
+            msg = f"`{name}` missing methods `{bad}`."
+            raise ValueError(msg)
+        elif bad := tuple(
+            method_name
+            for method_name, method in methods.items()
+            if not callable(method)
+        ):
+            msg = f"`{name}` has attributes `{bad}` that are not callable."
+            raise ValueError(msg)
 
 
 class BaseTestAccess(metaclass=AccessTestMeta):
@@ -99,7 +121,8 @@ class BaseTestAccess(metaclass=AccessTestMeta):
             def test_d_fn(self, session: Session): ...
     """
 
-    fn_access_name: ClassVar[str]
+    fn_access_types: ClassVar[Dict[str, Type]]
+    allow_missing: ClassVar[bool] = False
 
     @pytest.fixture(autouse=True, scope="session")
     def fixtures(self, load_tables) -> None:
@@ -114,16 +137,14 @@ class BaseTestAccess(metaclass=AccessTestMeta):
         token = Token(uuid=uuid, permissions=[])
         return Access(session, token, method)
 
-    def test_d_fn(self):
+    def test_d_fn(self) -> None:
 
         # Check fn
-        fn_access_names: Tuple[str, ...]
-        match getattr(self, "fn_access_name", None):
-            case tuple() as fn_access_names:
-                if not len(fn_access_names):
+        fn_access_types: Dict[str, Type] = self.fn_access_types
+        match fn_access_types:
+            case dict() as fn_access_types:
+                if not len(fn_access_types):
                     raise AssertionError("`fn_access_name` must be non-empty.")
-            case str() as fn_access_name:
-                fn_access_names = (fn_access_name,)
             case bad:
                 clsname = self.__class__.__name__
                 msg = f"`fn_access_name` should be defined for `{clsname}` "
@@ -131,7 +152,7 @@ class BaseTestAccess(metaclass=AccessTestMeta):
                 msg += f"type `{type(bad)}`)."
                 raise AttributeError(msg)
 
-        for fn_access_name in fn_access_names:
+        for fn_access_name, fn_access_T in fn_access_types.items():
             if (fn_access := getattr(Access, fn_access_name, None)) is None:
                 msg = f"Failed to find method `{fn_access_name=}`."
                 raise AssertionError(msg)
@@ -185,7 +206,7 @@ class BaseTestAccess(metaclass=AccessTestMeta):
                 raise AssertionError(msg)
 
             # Check returns
-            assert sig_d.return_annotation == Data
+            assert sig_d.return_annotation == fn_access_T
 
 
 def split_uuid_collection(session: Session) -> UUIDSplit:
@@ -267,7 +288,7 @@ def split_uuid_assignment(session: Session, level: Level) -> AssignmentSplit:
 
 
 class TestAccessUser(BaseTestAccess):
-    fn_access_name = "user"
+    fn_access_types = dict(user=Data[ResolvedUser])
 
     def test_overloads(self, session: Session):
         # When a single user uuid is supplied, a single user is returned.
@@ -399,7 +420,7 @@ class TestAccessUser(BaseTestAccess):
 
 
 class TestAccessCollection(BaseTestAccess):
-    fn_access_name = "collection"
+    fn_access_types = dict(collection=Data[ResolvedCollection])
 
     def split_uuid(
         self,
@@ -542,7 +563,7 @@ class TestAccessCollection(BaseTestAccess):
 
 
 class TestAccessDocument(BaseTestAccess):
-    fn_access_name = "document"
+    fn_access_types = dict(document=Data[ResolvedDocument])
 
     def split_uuids(self, session: Session, level: Level):
         return split_uuids_document(session, level)
@@ -895,7 +916,10 @@ class TestAccessDocument(BaseTestAccess):
 
 
 class TestAccessAssignment(BaseTestAccess):
-    fn_access_name = ("assignment_collection", "assignment_collection")
+    fn_access_types = dict(
+        assignment_collection=Data[ResolvedAssignmentCollection],
+        assignment_document=Data[ResolvedAssignmentDocument],
+    )
 
     def split(self, session: Session, level: Level) -> AssignmentSplit:
         return split_uuid_assignment(session, level)
@@ -1312,7 +1336,10 @@ class TestAccessAssignment(BaseTestAccess):
 
 
 class TestAccessGrant(BaseTestAccess):
-    fn_access_name = ("grant_user", "grant_document")
+    fn_access_types = dict(
+        grant_user=Data[ResolvedGrantUser],
+        grant_document=Data[ResolvedGrantDocument],
+    )
 
     def test_overloads(self, session: Session): ...
     def check_result(
