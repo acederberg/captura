@@ -15,8 +15,8 @@ from app.models import (
 )
 from app.schemas import (
     AssignmentSchema,
-    CollectionPatchSchema,
-    CollectionPostSchema,
+    CollectionUpdateSchema,
+    CollectionCreateSchema,
     CollectionSchema,
     CollectionSearchSchema,
     DocumentMetadataSchema,
@@ -195,7 +195,7 @@ class CollectionView(BaseView):
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
         uuid_collection: args.PathUUIDCollection,
-        updates: CollectionPatchSchema = Depends(),
+        updates: CollectionUpdateSchema = Depends(),
     ):
         """Update collection details or transfer ownership of collection. To
         assign new documents, please `PUT /assign/document/<uuid>."""
@@ -268,7 +268,7 @@ class CollectionView(BaseView):
         cls,
         sessionmaker: DependsSessionMaker,
         token: DependsToken,
-        data: CollectionPostSchema,
+        data: CollectionCreateSchema,
         uuid_document: args.QueryUUIDDocumentOptional = None,
     ) -> EventSchema:
         event_common = dict(

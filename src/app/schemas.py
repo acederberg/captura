@@ -15,16 +15,19 @@ foreign keys it is not necessary to specify multiple values).
 """
 
 import enum
-from typing import Annotated, Any, List, Literal, Optional, Self, Set
+from copy import deepcopy
+from typing import Annotated, Any, List, Literal, Optional, Self, Set, Tuple, Type
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    create_model,
     field_serializer,
     field_validator,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 
 from app.models import (
     LENGTH_CONTENT,
@@ -67,16 +70,56 @@ class BaseSearchSchema(BaseModel):
     all_: Annotated[bool, Field(default=True)]
 
 
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(use_enum_values=False, from_attributes=True)
+
+
+class BasePrimarySchema(BaseSchema):
+    public: bool = True
+
+
+class BaseSecondarySchema(BaseSchema): ...
+
+
+def optional(model: Type[BaseModel]) -> Type[BaseModel]:
+
+    def make_field_optional(
+        field: FieldInfo,
+        default: Any = None,
+    ) -> Tuple[Any, FieldInfo]:
+
+        new = deepcopy(field)
+        new.default = default
+        new.annotation = Optional[field.annotation]  # type: ignore
+        return new.annotation, new
+
+    return create_model(
+        model.__name__,
+        __base__=model,
+        __module__=model.__module__,
+        # __cls_kwargs__={
+        #     field_name: make_field_optional(field_info)
+        #     for field_name, field_info in model.model_fields.items()
+        # },
+    )
+
+
 # =========================================================================== #
 # User schemas
 
 
-class UserUpdateSchema(BaseModel):
-    public: bool | None = None
-    name: Name | None = None
-    description: Description | None = None
-    url_image: Url = None
-    url: Url = None
+class UserBaseSchema(BasePrimarySchema):
+    name: Name
+    description: Description
+    url_image: Url
+    url: Url
+
+
+class UserCreateSchema(UserBaseSchema): ...
+
+
+@optional
+class UserUpdateSchema(UserCreateSchema): ...
 
 
 class UserSchema(BaseModel):
@@ -96,28 +139,24 @@ class UserSearchSchema(BaseSearchSchema):
 # Collection and Assignment Schema
 
 
-class CollectionBaseSchema(BaseModel):
+class CollectionBaseSchema(BasePrimarySchema):
     name: Name
     description: Description
 
 
-class CollectionPostSchema(CollectionBaseSchema):
-    public: bool = True
+class CollectionCreateSchema(CollectionBaseSchema): ...
 
 
-class CollectionPatchSchema(BaseModel):
-    name: Name | None = None
-    description: Description | None = None
-    uuid_user: UUID = None
-    public: bool | None = None
+@optional
+class CollectionUpdateSchema(CollectionCreateSchema):
+    uuid_user: UUID
 
 
 class CollectionMetadataSchema(CollectionBaseSchema):
-    uuid: UUID = None
-    uuid_user: UUID = None
+    uuid: UUID
 
 
-class CollectionSchema(CollectionPostSchema):
+class CollectionSchema(CollectionUpdateSchema):
     model_config = ConfigDict(from_attributes=True)
     uuid: UUID
 
@@ -126,30 +165,47 @@ class CollectionSearchSchema(BaseSearchSchema):
     uuid_collection: UUIDS
 
 
-class AssignmentPostSchema(BaseModel):
-    uuid_document: UUID
-    uuid_collection: UUID
+# =========================================================================== #
+# Assignments
 
 
-class AssignmentSchema(AssignmentPostSchema):
+class AssignmentBaseSchema(BaseSecondarySchema): ...
+
+
+# NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
+class AssignmentCreateSchema(AssignmentBaseSchema): ...
+
+
+class AssignmentSchema(AssignmentBaseSchema):
     model_config = ConfigDict(from_attributes=True)
     uuid: UUID
     deleted: bool
 
 
 # =========================================================================== #
-# Docoment and Grant Schemas
+# Documents
 
 
-class DocumentMetadataSchema(BaseModel):
+class DocumentBaseSchema(BasePrimarySchema):
     # uuid was initially excluded bc metadata is labeld by it.
     # But returning dictionaries sucks so it will be removed soon.
     model_config = ConfigDict(from_attributes=True)
 
-    uuid: UUID
     name: Name
     description: Description
     format: Format
+
+
+class DocumentCreateSchema(DocumentBaseSchema):
+    content: Content
+
+
+@optional
+class DocumentUpdateSchema(DocumentCreateSchema): ...
+
+
+class DocumentMetadataSchema(DocumentUpdateSchema):
+    uuid: UUID
 
 
 class DocumentSchema(DocumentMetadataSchema):
@@ -158,19 +214,18 @@ class DocumentSchema(DocumentMetadataSchema):
     public: bool = True
 
 
-class DocumentPostSchema(BaseModel):
-    public: bool = True
-
-
 class DocumentSearchSchema(BaseSearchSchema):
     uuid_document: UUIDS
 
 
-class GrantPostSchema(BaseModel):
+# =========================================================================== #
+# Grants
+
+
+class GrantBaseSchema(BaseSecondarySchema):
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
-    model_config = ConfigDict(use_enum_values=False)
-    uuid_user: UUID
+    # uuid_user: UUID
     level: Annotated[Level, Field()]
 
     @field_validator("level", mode="before")
@@ -183,7 +238,11 @@ class GrantPostSchema(BaseModel):
             return v
 
 
-class GrantSchema(GrantPostSchema):
+# NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
+class GrantCreateSchema(GrantBaseSchema): ...
+
+
+class GrantSchema(GrantBaseSchema):
     model_config = ConfigDict(from_attributes=True)
     uuid: UUID
     uuid_document: UUID
@@ -193,13 +252,20 @@ class GrantSchema(GrantPostSchema):
 # Edits Schema
 
 
-class EditMetadataSchema(BaseModel):
-    uuid: UUID = None
-
-
-class EditSchema(BaseModel):
+class EditBaseSchema(BaseSchema):
     content: Content
     message: Message
+
+
+# NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED.
+class EditCreateSchema(EditBaseSchema): ...
+
+
+class EditMetadataSchema(EditBaseSchema): ...
+
+
+# =========================================================================== #
+# Events Schema
 
 
 class EventBaseSchema(BaseModel):
@@ -285,5 +351,5 @@ class EventActionSchema(BaseModel):
 
 
 class PostUserSchema(UserSchema):
-    collections: Annotated[List[CollectionPostSchema], Field(default=list())]
+    collections: Annotated[List[CollectionCreateSchema], Field(default=list())]
     documents: Annotated[List[DocumentSchema], Field(default=list())]

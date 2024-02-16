@@ -1,28 +1,18 @@
 import inspect
 from http import HTTPMethod
-from typing import Set, Tuple, Type, TypedDict
+from typing import Callable, Set, Tuple, Type
 
 import pytest
 from app import util
-from app.auth import Auth, Token
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Grant,
-    KindObject,
-    Plural,
-    Singular,
-    User,
-)
+from app.models import (Assignment, AssocUserDocument, Collection, Document,
+                        Grant, KindObject, Singular, User)
 from app.schemas import EventSchema
-from app.views.access import Access
 from app.views.base import Data, DataResolvedAssignment, DataResolvedGrant
 from app.views.create import Upsert
 from app.views.delete import AssocData, Delete
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, make_transient
 from sqlalchemy.orm.attributes import Event
 from tests.test_views import util
 
@@ -41,84 +31,85 @@ def delete(session: Session) -> Delete:
     )
 
 
-# class TFParams(TypedDict):
-#     source: Type
-#     target: Type
-#     uuid_source: Set[str]
-#     uuid_target: Set[str]
-#
-#
-# tfparams = list(
-#     TFParams(
-#         source=User,
-#         target=Document,
-#         uuid_source={"000-000-000"},
-#         uuid_target={"aaa-aaa-aaa", ""},
-#     ),
-#     TFParams(
-#
-#     ),
-#
-#
-# )
-#
+def as_data(
+    delete: Delete | Upsert,
+    T_source: Type,
+    uuid_source: str,
+    T_target: Type,
+    uuid_target: Set[str],
+    T_assoc: Type,
+    uuid_assoc: Set[str],
+) -> Data:
+
+    source = T_source.if_exists(delete.session, uuid_source)
+    targets = T_target.if_many(delete.session, uuid_target)
+    name_source = KindObject(T_source.__tablename__).name
+    name_target = KindObject(T_target.__tablename__).name
+    name_assignment = KindObject(T_assoc.__tablename__).name
+    data_resolved = {
+        name_source: source,
+        Singular(name_target).name: targets,
+        "kind": f"{name_assignment}_{name_source}",
+    }
+    data = Data(data=data_resolved)  # type: ignore[generalType]
+    return data
 
 
-@pytest.mark.parametrize(
-    "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
-    [
-        (
-            None,
-            User,
-            "000-000-000",
-            Document,
-            {"aaa-aaa-aaa", "draculaflow"},
-            Grant,
-            {"e-eee-eee-e", "888-888-888"},
-        ),
-        (
-            None,
-            Document,
+CASES_ASSOCS = [
+    (
+        None,
+        User,
+        "000-000-000",
+        Document,
+        {"aaa-aaa-aaa", "draculaflow"},
+        Grant,
+        {"e-eee-eee-e", "888-888-888"},
+    ),
+    (
+        None,
+        Document,
+        "aaa-aaa-aaa",
+        User,
+        {"000-000-000", "99d-99d-99d"},
+        Grant,
+        {"5-555-555-5", "e-eee-eee-e"},
+    ),
+    (
+        None,
+        Document,
+        "aaa-aaa-aaa",
+        Collection,
+        {"eee-eee-eee", "foo-ooo-ool"},
+        Assignment,
+        {"aaa-aaa-eee", "aaa-foo-ool"},
+    ),
+    (
+        None,
+        Collection,
+        "foo-ooo-ool",
+        Document,
+        {
+            "ex-parrot",
             "aaa-aaa-aaa",
-            User,
-            {"000-000-000", "99d-99d-99d"},
-            Grant,
-            {"5-555-555-5", "e-eee-eee-e"},
-        ),
-        (
-            None,
-            Document,
-            "aaa-aaa-aaa",
-            Collection,
-            {"eee-eee-eee", "foo-ooo-ool"},
-            Assignment,
-            {"aaa-aaa-eee", "aaa-foo-ool"},
-        ),
-        (
-            None,
-            Collection,
-            "foo-ooo-ool",
-            Document,
-            {
-                "ex-parrot",
-                "aaa-aaa-aaa",
-                "petshoppe--",
-                "foobar-spam",
-                "draculaflow",
-            },
-            Assignment,
-            {
-                "ex--foo-ool",
-                "aaa-foo-ool",
-                "petshopfool",
-                "barspamfool",
-                "draculafool",
-            },
-        ),
-    ],
-    indirect=["delete"],
-)
-class TestTryForce:
+            "petshoppe--",
+            "foobar-spam",
+            "draculaflow",
+        },
+        Assignment,
+        {
+            "ex--foo-ool",
+            "aaa-foo-ool",
+            "petshopfool",
+            "barspamfool",
+            "draculafool",
+        },
+    ),
+]
+
+class BaseTestAssoc:
+    # ----------------------------------------------------------------------- #
+    # Fixtures
+
     @pytest.fixture(autouse=True)
     def before_all(self, session, load_tables):
         self.restore_state(session)
@@ -131,6 +122,81 @@ class TestTryForce:
         session.execute(update(Assignment).values(deleted=False))
         session.commit()
 
+    def check_event(
+        self,
+        delete: Delete | Upsert,
+        assoc_data: AssocData,
+        data: DataResolvedAssignment | DataResolvedGrant,
+    ) -> EventSchema:
+        assert data.event is not None
+        expect_common = delete.event_common
+        event = EventSchema.model_validate(data.event)
+
+        util.event_compare(event, expect_common)
+        assert event.kind_obj == data.data.kind_source
+        assert event.uuid_obj == data.data.uuid_source
+
+        for item in event.children:
+            util.event_compare(item, expect_common)
+            assert len(item.children) == 1
+            assert item.kind_obj == data.data.kind_target
+            assert item.uuid_obj in assoc_data.uuid_target_active
+
+            subitem, *_ = item.children
+            util.event_compare(subitem, expect_common)
+            assert len(subitem.children) == 0
+            assert subitem.kind_obj == data.data.kind_assoc
+            assert subitem.uuid_obj in assoc_data.uuid_assoc_active
+
+        return event
+
+    def check_mthd(self, delete: Delete | Upsert, data: DataResolvedAssignment | DataResolvedGrant,) -> Callable[
+        [Data], 
+        Tuple[
+            DataResolvedGrant | DataResolvedAssignment,
+            AssocData,
+            Update[Assignment] | sqaDelete[Assignment],
+            Type[Assignment],
+        ]
+    ]:
+
+        # Get method (name should match data kind).
+        if (mthd := getattr(delete, data.kind, None)) is None:
+            msg = f"Expected attribute `{data.kind}` of `Delete`."
+            raise AssertionError(msg)
+        elif not callable(mthd):
+            msg = f"`Delete.{data.kind}` must be callable."
+            raise AssertionError(msg)
+
+        sig = inspect.signature(mthd)
+        if sig.parameters.get("data") is None:
+            raise AssertionError("Missing parameter `data`.")
+        elif len(sig.parameters) == 2 and "self" not in sig.parameters:
+            msg = "Expected exactly two parameters, `self` and `data`."
+            raise AssertionError(msg)
+        elif (return_t := sig.return_annotation) == Data:
+            msg = f"Expect return annotation to be `Data`, got `{return_t}`."
+            raise AssertionError(msg)
+
+        # Make sure that the corresponding method exists.
+        a_mthd = getattr(delete, f"a_{data.kind}")
+        if not callable(a_mthd):
+            msg = f"`Delete.{data.kind}`s signature should match signature of "
+            msg += f"`Access.{data.kind}`."
+            raise AssertionError(msg)
+
+        return mthd
+
+@pytest.mark.parametrize(
+    "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
+    CASES_ASSOCS,
+    indirect=["delete"],
+)
+class TestDeleteAssoc(BaseTestAssoc):
+
+    # ----------------------------------------------------------------------- #
+    # Tests
+
     def test_split_assoc(
         self,
         delete: Delete,
@@ -141,8 +207,8 @@ class TestTryForce:
         T_assoc: Type,
         uuid_assoc: Set[str],
     ) -> None:
-        print(uuid_source, uuid_target, uuid_assoc)
-        print(T_source, T_target, T_assoc)
+        # print(uuid_source, uuid_target, uuid_assoc)
+        # print(T_source, T_target, T_assoc)
         session = delete.session
         source = T_source.if_exists(session, uuid_source)
         targets = T_target.if_many(session, uuid_target)
@@ -179,6 +245,7 @@ class TestTryForce:
         assert len(res.uuid_target_deleted) == 1
         assert len(res.uuid_assoc_deleted) == 1
 
+    @pytest.mark.parametrize("force", [True, False])
     def test_try_force(
         self,
         delete: Delete,
@@ -188,9 +255,11 @@ class TestTryForce:
         uuid_target: Set[str],
         T_assoc: Type,
         uuid_assoc: Set[str],
+        force: bool
     ) -> None:
 
         session = delete.session
+        delete.force = force
 
         assocs = T_assoc.resolve(session, uuid_assoc)
         assoc1, *_ = assocs
@@ -199,15 +268,16 @@ class TestTryForce:
         session.commit()
 
         # data = Data(data=data_resolved)  # type: ignore[generalType]
-        data = self.as_data(
+        data = as_data(
             delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
         )
         res = delete.try_force(data)
 
-        assert len(res) == 3
-        assoc_data, assoc_rm, q_del = res
+        assert len(res) == 4
+        assoc_data, assoc_rm, q_del, T_assoc_returned = res
+        assert T_assoc == T_assoc_returned
 
-        uuid_assoc_rm = T_assoc.resolve_uuid(session, assoc_rm)
+        uuid_assoc_rm: Set[str] = T_assoc.resolve_uuid(session, assoc_rm)
 
         assert isinstance(assoc_data, AssocData)
         assert all(uuid in uuid_assoc for uuid in assoc_data.uuid_assoc_active)
@@ -216,38 +286,15 @@ class TestTryForce:
         assert len(assoc_data.uuid_assoc_deleted) == 1
 
         assert isinstance(assoc_rm, tuple)
-        assert len(assoc_rm) == 2
-
-        if delete.force:
+        if force:
             assert uuid_assoc_rm == uuid_assoc
             assert isinstance(q_del, sqaDelete)
+            assert len(assoc_rm) == len(uuid_assoc)
         else:
-            assert uuid_assoc_rm == uuid_assoc - assoc1.uuid
+            assert uuid_assoc_rm.issubset(uuid_assoc)
+            assert assoc1.uuid not in uuid_assoc_rm
             assert isinstance(q_del, Update)
-
-    def as_data(
-        self,
-        delete: Delete,
-        T_source: Type,
-        uuid_source: str,
-        T_target: Type,
-        uuid_target: Set[str],
-        T_assoc: Type,
-        uuid_assoc: Set[str],
-    ) -> Data:
-
-        source = T_source.if_exists(delete.session, uuid_source)
-        targets = T_target.if_many(delete.session, uuid_target)
-        name_source = KindObject(T_source.__tablename__).name
-        name_target = KindObject(T_target.__tablename__).name
-        name_assignment = KindObject(T_assoc.__tablename__).name
-        data_resolved = {
-            name_source: source,
-            Singular(name_target).name: targets,
-            "kind": f"{name_assignment}_{name_source}",
-        }
-        data = Data(data=data_resolved)  # type: ignore[generalType]
-        return data
+            assert len(assoc_rm) == len(uuid_assoc) - 1
 
     def test_many_many(
         self,
@@ -259,67 +306,39 @@ class TestTryForce:
         T_assoc: Type,
         uuid_assoc: Set[str],
     ):
-        data = self.as_data(
+        data = as_data(
             delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
         )
+        session = delete.session
+        assocs_init = T_assoc.resolve(session, uuid_assoc)
+        mthd = self.check_mthd(delete, data)
 
-        # Get method (name should match data kind).
-        if (mthd := getattr(delete, data.kind, None)) is None:
-            msg = f"Expected attribute `{data.kind}` of `Delete`."
-            raise AssertionError(msg)
-        elif not callable(mthd):
-            msg = f"`Delete.{data.kind}` must be callable."
-            raise AssertionError(msg)
-
-        sig = inspect.signature(mthd)
-        if sig.parameters.get("data") is None:
-            raise AssertionError("Missing parameter `data`.")
-        elif len(sig.parameters) == 2 and "self" not in sig.parameters:
-            msg = "Expected exactly two parameters, `self` and `data`."
-            raise AssertionError(msg)
-        elif (return_t := sig.return_annotation) == Data:
-            msg = f"Expect return annotation to be `Data`, got `{return_t}`."
-            raise AssertionError(msg)
-
-        # Make sure that the corresponding method exists.
-        a_mthd = getattr(delete, f"a_{data.kind}")
-        if not callable(a_mthd):
-            msg = f"`Delete.{data.kind}`s signature should match signature of "
-            msg += f"`Access.{data.kind}`."
-            raise AssertionError(msg)
-
-        # Run the method.
+        # Run the method without force
         assert data.event is None
-        assoc_data, *_ = delete.try_force(data)
+        assert delete.force is False
+        assoc_data, *_, T_assoc_recieved = delete.try_force(data)
         _ = mthd(data)
+        assert T_assoc_recieved == T_assoc
         self.check_event(delete, assoc_data, data)
 
-        # Check the changes in the database.
+        # Check the changes in the database. Assocs should be removed.
+        assocs_found = T_assoc.resolve(session, uuid_assoc)
+        uuid_assocs_found = T_assoc.resolve_uuid(session, assocs_found)
 
-    def check_event(
-        self,
-        delete: Delete,
-        assoc_data: AssocData,
-        data: DataResolvedAssignment | DataResolvedGrant,
-    ) -> Event:
-        assert data.event is not None
-        expect_common = delete.event_common
-        event = EventSchema.model_validate(data.event)
+        bad = tuple(uu for uu in uuid_assoc if uu not in uuid_assocs_found)
+        if bad:
+            msg = f"The following assocs could not be found: `{bad}`."
+            raise AssertionError(msg)
+        elif bad := tuple(assoc.uuid for assoc in assocs_found if not assoc.deleted):
+            msg = f"The following assocs are not deleted: `{bad}`."
+            raise AssertionError(msg)
 
-        util.event_compare(event, expect_common)
-        assert event.kind_obj == data.data.kind_source
-        assert event.uuid_obj == data.data.uuid_source
+        # Run the method with force
+        delete.force = True
+        _ = mthd(data)
+        self.check_event(delete, assoc_data, data)
+        assocs = T_assoc.resolve(session, uuid_assoc)
+        assert not len(assocs)
 
-        for item in event.children:
-            util.event_compare(item, expect_common)
-            assert len(item.children) == 1
-            assert item.kind_obj == data.data.kind_target
-            assert item.uuid_obj in assoc_data.uuid_target_active
-
-            subitem, *_ = item.children
-            util.event_compare(subitem, expect_common)
-            assert len(subitem.children) == 0
-            assert subitem.kind_obj == data.data.kind_assoc
-            assert subitem.uuid_obj in assoc_data.uuid_assoc_active
-
-        return event
+        session.add_all(make_transient(item) or item for item in assocs_init)
+        session.commit()

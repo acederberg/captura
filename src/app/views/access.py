@@ -2,62 +2,25 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    Concatenate,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    ParamSpec,
-    Protocol,
-    Self,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    overload,
-)
+from typing import (Annotated, Any, Callable, Concatenate, Dict, Generic, List,
+                    Literal, ParamSpec, Protocol, Self, Sequence, Set, Tuple,
+                    Type, TypeAlias, TypeVar, overload)
 
 from app import __version__
 from app.auth import Token
 from app.depends import DependsToken
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    AssocUserDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Edit,
-    Grant,
-    Level,
-    LevelHTTP,
-    Resolvable,
-    ResolvableMultiple,
-    ResolvableSingular,
-    User,
-)
+from app.models import (Assignment, AssocCollectionDocument, AssocUserDocument,
+                        ChildrenAssignment, Collection, Document, Edit, Grant,
+                        Level, LevelHTTP, Resolvable, ResolvableMultiple,
+                        ResolvableSingular, User)
 from app.views import args
-from app.views.base import (
-    BaseController,
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
+from app.views.base import (BaseController, Data, DataResolvedAssignment,
+                            DataResolvedGrant, KindData,
+                            ResolvedAssignmentCollection,
+                            ResolvedAssignmentDocument, ResolvedCollection,
+                            ResolvedDocument, ResolvedEdit,
+                            ResolvedGrantDocument, ResolvedGrantUser,
+                            ResolvedUser)
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -930,7 +893,7 @@ class WithAccess(BaseController, abc.ABC):
         *,
         detail: str,
         api_origin: str,
-        force: bool = True,
+        force: bool = False,
         access: Access | None = None,
     ):
         super().__init__(session, token, method)

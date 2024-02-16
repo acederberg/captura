@@ -4,52 +4,22 @@ from typing import Any, Callable, Dict, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.depends import DependsToken
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Resolvable,
-    ResolvableMultiple,
-    ResolvableSingular,
-    Singular,
-    User,
-)
+from app.models import (Assignment, AssocCollectionDocument,
+                        ChildrenAssignment, Collection, Document, Edit, Event,
+                        Grant, KindEvent, KindObject, Resolvable,
+                        ResolvableMultiple, ResolvableSingular, Singular, User)
 from app.schemas import EventSchema
 from app.views.access import Access, WithAccess, with_access
-from app.views.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
+from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
+                            KindData, ResolvedAssignmentCollection,
+                            ResolvedAssignmentDocument, ResolvedCollection,
+                            ResolvedDocument, ResolvedEdit,
+                            ResolvedGrantDocument, ResolvedGrantUser,
+                            ResolvedUser)
 from pydantic import BaseModel
 from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import (
-    Select,
-    Update,
-    delete,
-    false,
-    literal_column,
-    select,
-    true,
-    union,
-    update,
-)
+from sqlalchemy import (Select, Update, delete, false, literal_column, select,
+                        true, union, update)
 from sqlalchemy.orm import Session
 
 
@@ -132,6 +102,7 @@ class Delete(WithAccess):
         T_assoc: Type[Grant] | Type[Assignment],
         source: Any,
         uuid_target: Set[str],
+        force: bool | None = None,
     ) -> Tuple[AssocData, Set[str], sqaDelete | Update]:
         """Helper for `try_force`. Find active target uuids and build the query
         to (hard/soft) delete.
@@ -141,7 +112,8 @@ class Delete(WithAccess):
         assoc_data = self.split_assocs(T_assoc, source, uuid_target)
         uuid_assoc_rm = assoc_data.uuid_assoc_active.copy()
 
-        if self.force:
+        force = self.force if force is None else force
+        if force:
             uuid_assoc_rm |= assoc_data.uuid_assoc_deleted
             q_del = delete(T_assoc).where(T_assoc.uuid.in_(uuid_assoc_rm))
         else:
@@ -156,29 +128,35 @@ class Delete(WithAccess):
     def try_force(
         self,
         data: DataResolvedGrant,
+        force: bool | None = None,
     ) -> Tuple[
         AssocData,
         Tuple[Grant, ...],
         Update[Grant] | sqaDelete[Grant],
+        Type[Grant] | Type[Assignment],
     ]: ...
 
     @overload
     def try_force(
         self,
         data: DataResolvedAssignment,
+        force: bool | None = None,
     ) -> Tuple[
         AssocData,
         Tuple[Assignment, ...],
         Update[Assignment] | sqaDelete[Assignment],
+        Type[Grant] | Type[Assignment],
     ]: ...
 
     def try_force(
         self,
-        data: DataResolvedGrant | DataResolvedAssignment,
+        data: Data,
+        force: bool | None = None,
     ) -> Tuple[
         AssocData,
         Tuple[Assignment, ...] | Tuple[Grant, ...],
-        Update[Assignment] | sqaDelete[Grant],
+        sqaDelete | Update,
+        Type[Grant] | Type[Assignment],
     ]:
 
         uuid_target: Set[str]
@@ -191,7 +169,7 @@ class Delete(WithAccess):
                 uuid_users=uuid_target,
             ):
                 assoc_data, uuid_assoc_rm, q_del = self._try_force(
-                    T_assoc := Grant, source, uuid_target
+                    T_assoc := Grant, source, uuid_target, force=force
                 )
             case ResolvedAssignmentDocument(
                 document=source,
@@ -201,7 +179,7 @@ class Delete(WithAccess):
                 uuid_documents=uuid_target,
             ):
                 assoc_data, uuid_assoc_rm, q_del = self._try_force(
-                    T_assoc := Assignment, source, uuid_target
+                    T_assoc := Assignment, source, uuid_target, force=force
                 )
             case bad:
                 msg = f"Invalid data of kind `{data.kind}` if `{bad}`."
@@ -209,38 +187,61 @@ class Delete(WithAccess):
 
         q_assocs = T_assoc.q_uuid(uuid_assoc_rm)
         assocs = tuple(self.session.execute(q_assocs).scalars())
-        return assoc_data, assocs, q_del
+        return assoc_data, assocs, q_del, T_assoc
 
     # FINALLY!
     @overload
     def assoc(
         self,
+        data: Data[ResolvedGrantUser],
+    ) -> Tuple[
+        Data[ResolvedGrantUser],
+        AssocData,
+        Update[Assignment] | sqaDelete[Assignment],
+        Type[Assignment],
+    ]: ...
+
+    @overload
+    def assoc(
+        self,
         data: Data[ResolvedGrantDocument],
-    ) -> Data[ResolvedGrantDocument]: ...
+    ) -> Tuple[
+        Data[ResolvedGrantDocument],
+        AssocData,
+        Update[Assignment] | sqaDelete[Assignment],
+        Type[Assignment],
+    ]: ...
 
     @overload
     def assoc(
         self,
         data: Data[ResolvedAssignmentDocument],
-    ) -> Data[ResolvedAssignmentDocument]: ...
-
-    @overload
-    def assoc(
-        self,
-        data: Data[ResolvedGrantUser],
-    ) -> Data[ResolvedGrantUser]: ...
+    ) -> Tuple[
+        Data[ResolvedAssignmentDocument],
+        AssocData,
+        Update[Assignment] | sqaDelete[Assignment],
+        Type[Assignment],
+    ]: ...
 
     @overload
     def assoc(
         self,
         data: Data[ResolvedAssignmentCollection],
-    ) -> Data[ResolvedAssignmentCollection]: ...
+    ) -> Tuple[
+        Data[ResolvedAssignmentCollection],
+        AssocData,
+        Update[Assignment] | sqaDelete[Assignment],
+        Type[Assignment],
+    ]: ...
 
-    def assoc(
-        self, data: DataResolvedAssignment | DataResolvedGrant
-    ) -> DataResolvedAssignment | DataResolvedGrant:
+    def assoc(self, data: DataResolvedAssignment | DataResolvedGrant) -> Tuple[
+        DataResolvedAssignment | DataResolvedGrant,
+        AssocData,
+        Update[Assignment] | sqaDelete[Grant],
+        Type[Assignment] | Type[Grant],
+    ]:
         session = self.session
-        _, assocs, q_del = self.try_force(data)
+        assoc_data, assocs, q_del, T_assoc = self.try_force(data)
         target_attr_name = data.data.kind_target.name
         uuid_target_attr_name = f"uuid_{target_attr_name}"
 
@@ -277,7 +278,7 @@ class Delete(WithAccess):
         session.commit()
         session.refresh(data.event)
 
-        return data
+        return data, assoc_data, q_del, T_assoc
 
     @property
     def event_common(self) -> Dict[str, Any]:
@@ -344,41 +345,41 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedAssignmentCollection],
     ) -> Data[ResolvedAssignmentCollection]:
-        self.assoc(data)
+        data, *_ = self.assoc(data)
         return data
 
     def assignment_document(
         self, data: Data[ResolvedAssignmentDocument]
     ) -> Data[ResolvedAssignmentDocument]:
-        self.assoc(data)
+        data, *_ = self.assoc(data)
         return data
 
-    a_assignment_document = with_access(Access.d_assignment_document)
-    a_assignment_collection = with_access(Access.d_assignment_collection)
+    a_assignment_document = with_access(Access.assignment_document)
+    a_assignment_collection = with_access(Access.assignment_collection)
 
-    # # ----------------------------------------------------------------------- #
-    # # Grants
+    # ----------------------------------------------------------------------- #
+    # Grants
 
     def grant_user(
         self,
         data: Data[ResolvedGrantUser],
     ) -> Data[ResolvedGrantUser]:
-        data = self.assoc(data)
+        data, *_ = self.assoc(data)
         return data
 
     def grant_document(
         self, data: Data[ResolvedGrantDocument]
     ) -> Data[ResolvedGrantDocument]:
 
-        data = self.assoc(data)
+        data, *_ = self.assoc(data)
         return data
 
-    a_grant_document = with_access(Access.d_grant_document)
-    a_grant_user = with_access(Access.d_grant_user)
+    a_grant_document = with_access(Access.grant_document)
+    a_grant_user = with_access(Access.grant_user)
 
-    # # ----------------------------------------------------------------------- #
-    # # Collections
-    #
+    # ----------------------------------------------------------------------- #
+    # Collections
+
     # def document(
     #     self,
     #     resolvable_document: Resolvable[Document],

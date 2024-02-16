@@ -11,7 +11,7 @@ from app.models import (
     Level,
     User,
 )
-from app.schemas import EventSchema, GrantPostSchema, GrantSchema
+from app.schemas import EventSchema, GrantCreateSchema, GrantSchema
 from app.views import args
 from app.views.base import BaseView
 from fastapi import HTTPException
@@ -222,7 +222,7 @@ class GrantView(BaseView):
         makesession: DependsSessionMaker,
         token: DependsToken,
         uuid_document: args.PathUUIDDocument,
-        grants: List[GrantPostSchema],
+        grants: List[GrantCreateSchema],
     ) -> EventSchema:
         """This endpoint can be used to share a document with another user.
 

@@ -3,61 +3,21 @@ import enum
 import secrets
 from datetime import datetime
 from logging import warn
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    Generic,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    overload,
-)
+from typing import (Annotated, Any, Callable, Dict, Generator, Generic, List,
+                    Literal, Self, Set, Tuple, Type, TypeAlias, TypeVar,
+                    overload)
 
 from fastapi import HTTPException, status
-from sqlalchemy import (
-    CTE,
-    BinaryExpression,
-    BooleanClauseList,
-    Column,
-    ColumnClause,
-    ColumnElement,
-    CompoundSelect,
-    Enum,
-    ForeignKey,
-    Index,
-    Select,
-    String,
-    UniqueConstraint,
-    and_,
-    func,
-    literal_column,
-    select,
-    text,
-    true,
-    union,
-    union_all,
-)
+from sqlalchemy import (CTE, BinaryExpression, BooleanClauseList, Column,
+                        ColumnClause, ColumnElement, CompoundSelect, Enum,
+                        ForeignKey, Index, Select, String, UniqueConstraint,
+                        and_, func, literal_column, select, text, true, union,
+                        union_all)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    InstrumentedAttribute,
-    Mapped,
-    Session,
-    backref,
-    column_property,
-    mapped_column,
-    object_session,
-    relationship,
-)
+from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
+                            Session, backref, column_property, mapped_column,
+                            object_session, relationship)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
@@ -877,14 +837,16 @@ class AssocUserDocument(Base):
 
     __tablename__ = "_assocs_users_documents"
 
+    # https://stackoverflow.com/questions/28843254/deleting-from-self-referential-inherited-objects-does-not-cascade-in-sqlalchemy
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
-        ForeignKey("_assocs_users_documents.uuid"),
+        ForeignKey("_assocs_users_documents.uuid", ondelete="CASCADE"),
         nullable=True,
     )
     children: Mapped[List["AssocUserDocument"]] = relationship(
         "AssocUserDocument",
         foreign_keys=uuid_parent,
+        cascade="all, delete",
     )
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), key="a")
