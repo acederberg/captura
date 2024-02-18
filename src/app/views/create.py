@@ -123,7 +123,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         data: Data[ResolvedGrantDocument],
         assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
         *,
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedGrantDocument],
         AssocData,
@@ -137,7 +137,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         data: Data[ResolvedAssignmentDocument],
         assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
         *,
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedAssignmentDocument],
         AssocData,
@@ -151,7 +151,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         data: Data[ResolvedAssignmentCollection],
         assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
         *,
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedAssignmentCollection],
         AssocData,
@@ -165,7 +165,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         data: DataResolvedGrant | DataResolvedAssignment, 
         assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
         *,
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         DataResolvedGrant | DataResolvedAssignment,
         AssocData,
@@ -190,25 +190,15 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         """
         session = self.session
         force = force if force is not None else self.force
-        print("====================================================")
-        print("force", force)
-        print("self.force", self.force)
 
         # NOTE: No actual deletion here. Deletion occurs in SPM.
         rm_assoc_data, rm_assocs, rm_q, T_assoc = self.delete.try_force(data, force=force)
         uuid_target_create: Set[str]
         uuid_target_create = data.data.uuid_target.copy()  # type: ignore
-        uuid_target_create -= rm_assoc_data.uuid_target_active
 
-        print('uuid_target_active', rm_assoc_data.uuid_target_active)
-        print('uuid_target_deleted', rm_assoc_data.uuid_target_deleted)
-        print('uuid_assoc_active', rm_assoc_data.uuid_assoc_active)
-        print('uuid_assoc_deleted', rm_assoc_data.uuid_assoc_deleted)
-
-
+        event_rm : Event | None = None
         match self.method:
             case H.POST if not force:
-                # print(H.POST, self.force)
                 if rm_assoc_data.uuid_assoc_deleted:
                     msg = "Some targets have existing assignments awaiting "
                     msg += "cleanup. Try this request again with `force=true` "
@@ -225,22 +215,16 @@ class Upsert(WithDelete, Generic[T_Upsert]):
                             uuid_assoc=list(rm_assoc_data.uuid_assoc_deleted),
                         ),
                     )
-            # NOTE: Delete existing, add deleted to created.
+                uuid_target_create -= rm_assoc_data.uuid_target_active
+            # NOTE: Delete ALL existing, add deleted to created. DO NOT UPDATE 
+            #       `rm_assoc_data`.
             case H.POST | H.PUT:
-                data.event = self.delete.assoc_event(data, rm_assocs)
-                print("rm_q", "---------------------------------------------")
-                util.sql(session, rm_q)
-                # input(1)
-
-                session.add(data.event)
+                event_rm = self.delete.assoc_event(data, rm_assocs)
+                session.add(event_rm)
                 session.execute(rm_q)
                 session.commit()
-                # input(2)
-                print('uuid_target_create', uuid_target_create)
-                print('rm_assoc_data.uuid_target_deleted', rm_assoc_data.uuid_target_deleted)
-                uuid_target_create |= rm_assoc_data.uuid_target_deleted
-                print('uuid_target_create', uuid_target_create)
-                data, rm_assoc_data, rm_q, T_assoc = self.delete.assoc(data, force=force)
+
+                data, _, rm_q, T_assoc = self.delete.assoc(data, force=force)
             case _:
                 raise HTTPException(405)
 
@@ -251,9 +235,6 @@ class Upsert(WithDelete, Generic[T_Upsert]):
 
         id_source_value = data.data.source.id # type: ignore
         targets: Tuple = data.data.target  # Type: ignore
-        print("--------------------")
-        print(self.upsert_data)
-        print("--------------------")
         assocs = {
             target.uuid: T_assoc(
                 **assoc_args_callback({
@@ -270,18 +251,21 @@ class Upsert(WithDelete, Generic[T_Upsert]):
 
         # NOTE: Create event.
         event_common = self.event_common
-        event = Event(
+        event_create = Event(
             **event_common,
+            uuid=secrets.token_urlsafe(8),
             uuid_obj=data.data.uuid_source,
             kind_obj=data.data.kind_source,
             children=[
                 Event(
                     **event_common,
+                    uuid=secrets.token_urlsafe(8),
                     kind_obj=data.data.kind_target,
                     uuid_obj=target_uuid,
                     children=[
                         Event(
                             **event_common,
+                            uuid=secrets.token_urlsafe(8),
                             kind_obj=data.data.kind_assoc,
                             uuid_obj=assoc.uuid,
                         )
@@ -290,17 +274,23 @@ class Upsert(WithDelete, Generic[T_Upsert]):
                 for target_uuid, assoc in assocs.items()
             ],
         )
-        session.add(event)
-        if data.event is not None:
-            event_rm, data.event = data.event, None
-            event.children.insert(0, event_rm)
+        if event_rm is not None:
+            event = Event(
+                **event_common,
+                uuid_obj=data.data.uuid_source,
+                kind_obj=data.data.kind_source,
+                children=[event_rm, event_create]
+            )
+            event.kind = KindEvent.upsert
             data.event = event
         else:
-            data.event = event
+            event = event_create
 
-        # input(3)
+        session.add(event)
         session.commit()
+        session.refresh(event)
 
+        data.event = event
         return data, rm_assoc_data, rm_q, T_assoc
 
     # ----------------------------------------------------------------------- #

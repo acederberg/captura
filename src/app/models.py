@@ -64,6 +64,7 @@ class LevelHTTP(enum.Enum):
 
 class KindEvent(str, enum.Enum):
     create = "create"
+    upsert = "upsert"
     update = "update"
     delete = "delete"
     grant = "grant"

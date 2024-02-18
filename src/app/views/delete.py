@@ -75,6 +75,9 @@ class Delete(WithAccess):
         source: Any,
         uuid_target: Set[str],
     ) -> AssocData:
+        if not len(uuid_target):
+            raise ValueError("`uuid_target` must not be empty.")
+
         q_assoc: Select
         match (KindObject(T_assoc.__tablename__), source):
             case (KindObject.grant, User() as user):
@@ -110,6 +113,7 @@ class Delete(WithAccess):
             uuids of active targets.
             """
             q = q_assoc.where(T_assoc.deleted == bool_())
+            util.sql(self.session, q)
             items = tuple(self.session.execute(q).scalars())
             items = tuple(
                 (item.uuid, getattr(item, uuid_target_attr)) for item in items
@@ -141,9 +145,7 @@ class Delete(WithAccess):
         assoc_data = self.split_assocs(T_assoc, source, uuid_target)
         uuid_assoc_rm = assoc_data.uuid_assoc_active.copy()
 
-        # print("_try_force", self.force)
         force = self.force if force is None else force
-        # print("final force", force)
         if force:
             uuid_assoc_rm |= assoc_data.uuid_assoc_deleted
             q_del = delete(T_assoc).where(T_assoc.uuid.in_(uuid_assoc_rm))
@@ -153,7 +155,6 @@ class Delete(WithAccess):
                 .where(T_assoc.uuid.in_(uuid_assoc_rm))
                 .values(deleted=True)
             )
-        # print(q_del)
         return assoc_data, uuid_assoc_rm, q_del
 
     @overload
@@ -192,7 +193,6 @@ class Delete(WithAccess):
         sqaDelete | Update,
         Type[Grant] | Type[Assignment],
     ]:
-        # print("try_force", self.force)
         uuid_target: Set[str]
         match data.data:
             case ResolvedGrantUser(
@@ -228,7 +228,7 @@ class Delete(WithAccess):
     def assoc(
         self,
         data: Data[ResolvedGrantUser],
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedGrantUser],
         AssocData,
@@ -241,7 +241,7 @@ class Delete(WithAccess):
     def assoc(
         self,
         data: Data[ResolvedGrantDocument],
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedGrantDocument],
         AssocData,
@@ -254,7 +254,7 @@ class Delete(WithAccess):
     def assoc(
         self,
         data: Data[ResolvedAssignmentDocument],
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedAssignmentDocument],
         AssocData,
@@ -267,7 +267,7 @@ class Delete(WithAccess):
     def assoc(
         self,
         data: Data[ResolvedAssignmentCollection],
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedAssignmentCollection],
         AssocData,
@@ -279,14 +279,13 @@ class Delete(WithAccess):
     def assoc(
         self,
         data: DataResolvedAssignment | DataResolvedGrant,
-        force: bool = False,
+        force: bool | None = None,
     ) -> Tuple[
         DataResolvedAssignment | DataResolvedGrant,
         AssocData,
         Update[Assignment] | sqaDelete[Grant],
         Type[Assignment] | Type[Grant],
     ]:
-        # print("assoc", self.force)
         session = self.session
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
         data.event = self.assoc_event(data, assocs)

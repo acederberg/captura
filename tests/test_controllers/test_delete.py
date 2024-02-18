@@ -127,33 +127,31 @@ class BaseTestAssoc:
         delete: Delete | Upsert,
         assoc_data: AssocData,
         data: DataResolvedAssignment | DataResolvedGrant,
+        _event: Event | None = None
     ) -> EventSchema:
         assert data.event is not None
         expect_common = delete.event_common
-        print(expect_common)
-        event = EventSchema.model_validate(data.event)
+        event = EventSchema.model_validate(data.event if _event is None else _event)
 
         util.event_compare(event, expect_common)
         assert event.kind_obj == data.data.kind_source
         assert event.uuid_obj == data.data.uuid_source
 
         match delete:
-            case Upsert():
-                uuid_target_expected = data.data.uuid_target - assoc_data.uuid_target_active
+            case Upsert(force=force):
+                uuid_target_expected = data.data.uuid_target.copy()
+                if not force:
+                    uuid_target_expected -= assoc_data.uuid_target_active
                 uuid_assoc_expected = None
-            case Delete():
-                uuid_target_expected = assoc_data.uuid_target_active
-                uuid_assoc_expected = assoc_data.uuid_assoc_active
+            case Delete(force=force):
+                uuid_target_expected = assoc_data.uuid_target_active.copy()
+                uuid_assoc_expected = assoc_data.uuid_assoc_active.copy()
+                if force:
+                    uuid_target_expected |= assoc_data.uuid_target_deleted 
+                    uuid_assoc_expected |= assoc_data.uuid_assoc_deleted
             case bad:
                 raise ValueError(f"Invalid value `{bad}` for `delete`.")
 
-        if delete.force:
-            if uuid_assoc_expected is not None:
-                uuid_assoc_expected |= assoc_data.uuid_assoc_deleted
-            else:
-                assert isinstance(delete, Upsert)
-                
-            uuid_target_expected |= assoc_data.uuid_assoc_deleted
 
         for item in event.children:
             util.event_compare(item, expect_common)
@@ -227,8 +225,6 @@ class TestDeleteAssoc(BaseTestAssoc):
         T_assoc: Type,
         uuid_assoc: Set[str],
     ) -> None:
-        # print(uuid_source, uuid_target, uuid_assoc)
-        # print(T_source, T_target, T_assoc)
         session = delete.session
         source = T_source.if_exists(session, uuid_source)
         targets = T_target.if_many(session, uuid_target)

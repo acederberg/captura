@@ -1,11 +1,12 @@
 from http import HTTPMethod
+import json
 from typing import Set, Type
 from app.views.base import Data
 
 import pytest
 from app.auth import Auth, Token
-from app.models import KindObject, Level, PendingFrom
-from app.schemas import AssignmentCreateSchema, GrantCreateSchema
+from app.models import KindEvent, KindObject, Level, PendingFrom
+from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
 from app.views.access import H
 from app.views.create import Upsert
 from app.views.delete import AssocData, Delete
@@ -58,17 +59,17 @@ class TestAssoc(BaseTestAssoc):
         data = as_data(
             upsert, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
         )
+        assert data.data.uuid_source == uuid_source
+        assert data.data.uuid_target == uuid_target
         session = upsert.session
         assocs_init = T_assoc.resolve(session, uuid_assoc)
         _ = self.check_mthd(upsert, data)
 
         match data.data.kind_assoc:
             case KindObject.grant:
-                print("isgrant")
                 upsert.upsert_data = self.grant_data
                 assoc_args = lambda vv: dict(**vv, pending_from=PendingFrom.granter)
             case KindObject.assignment:
-                print("isassignment")
                 upsert.upsert_data = self.assignment_data
                 assoc_args = lambda vv: vv
             case kind_assoc:
@@ -80,12 +81,17 @@ class TestAssoc(BaseTestAssoc):
         assert upsert.force is False
         assert upsert.delete.force is False
         assert upsert.method == H.POST
+        assert data.data.uuid_source == uuid_source
+        assert data.data.uuid_target == uuid_target
 
-        upsert.assoc
         res = upsert.assoc(data, assoc_args)
         assert len(res) == 4
         assert isinstance(res[0], Data)
         assert isinstance(assoc_data := res[1], AssocData)
+        assert len(assoc_data.uuid_assoc_active) == len(uuid_assoc)
+        assert len(assoc_data.uuid_target_active) == len(uuid_target)
+        assert not len(assoc_data.uuid_target_deleted)
+        assert not len(assoc_data.uuid_assoc_deleted)
         assert res[3] == T_assoc
         match res[2]:
             case Delete() | Update():
@@ -96,23 +102,33 @@ class TestAssoc(BaseTestAssoc):
 
         event = self.check_event(upsert, assoc_data, data)
         assert len(event.children) == 0
+        assert data.data.uuid_source == uuid_source
+        assert data.data.uuid_target == uuid_target
 
-        # NOTE: Delete one and try to recreate. This should raise an error
-        #       asking to force.
+        # NOTE: Try to post over existing.
         uuid_assoc_deleted, *_ = uuid_assoc
         assoc_deleted = T_assoc.resolve(session, uuid_assoc_deleted)
         assoc_deleted.deleted = True
         session.add(assoc_deleted)
         session.commit()
 
-        uuid_target_name = f"uuid_{data.data.kind_target.name}"
+        # This is called with `assocs` as some output is bad.
+        assert data.data.uuid_source == uuid_source
+        assert data.data.uuid_target == uuid_target
 
-        assert data.event is not None
+        rm_assoc_data, *_ = upsert.delete.try_force(data)
+        assert isinstance(rm_assoc_data, AssocData)
+        assert len(rm_assoc_data.uuid_assoc_active) == len(uuid_assoc) - 1
+        assert len(rm_assoc_data.uuid_target_active) == len(uuid_target) - 1
+        assert len(rm_assoc_data.uuid_target_deleted) == 1
+        assert len(rm_assoc_data.uuid_assoc_deleted) == 1
+
         data.event = None
         with pytest.raises(HTTPException) as exc:
             upsert.assoc(data, assoc_args)
 
         err: HTTPException = exc.value
+        uuid_target_name = f"uuid_{data.data.kind_target.name}"
         assert err.status_code == 400
         assert err.detail == dict(
             kind_source=data.data.kind_source.name,
@@ -130,9 +146,32 @@ class TestAssoc(BaseTestAssoc):
         assert data.event is None
 
         # NOTE: Force create. This should remove the existing uuids and replace
-        #       them.
-        # upsert.method = H.PUT
-        assoc_data, _, _, T_assoc_recieved = upsert.assoc(data, assoc_args, force=True)
+        #       them. The event returned for create without upsert is wrapped 
+        #       in an additional layer that will point to the deletion event.
+        upsert.force = True
+        upsert.delete.force = True
+        data, assoc_data, _, T_assoc_recieved = upsert.assoc(data, assoc_args)
+        assert isinstance(data, Data)
+        assert isinstance(assoc_data, AssocData)
+        assert len(assoc_data.uuid_assoc_active) == len(uuid_assoc) - 1
+        assert len(assoc_data.uuid_target_active) == len(uuid_target) - 1
+        assert all(uuid in uuid_assoc for uuid in assoc_data.uuid_assoc_active)
+        assert all(uuid in uuid_target for uuid in assoc_data.uuid_target_active)
+        assert len(assoc_data.uuid_target_deleted) == 1
+        assert len(assoc_data.uuid_assoc_deleted) == 1
+
+        event = data.event
+        assert event is not None
+        assert len(event.children) == 2, str(event.children)
+        event_del, event_create = event.children
+        if event_del.kind == KindEvent.create:
+            event_del, event_create = event_create, event_del
+
+        assert event.kind.name == "upsert"
+        assert len(event_del.children) == len(uuid_target), str(event_del.children)
+        assert len(event_create.children) == len(uuid_target), str(event_create.children)
+        self.check_event(upsert.delete, assoc_data, data, _event=event_del)
+        self.check_event(upsert, assoc_data, data, _event=event_create)
 
         assocs_old = T_assoc.resolve(session, uuid_assoc)
         assert not len(assocs_old)
@@ -147,25 +186,31 @@ class TestAssoc(BaseTestAssoc):
             )
         )
         assocs_new = tuple(session.execute(q_assocs_new).scalars())
-        assert len(assocs_new) == 1
+        assert len(assocs_new) == len(assocs_init)
         assert all(not item.deleted for item in assocs_new)
 
         uuid_assoc_new = T_assoc.resolve_uuid(session, assocs_new)
         assert not len(uuid_assoc_new & uuid_assoc)
 
         # NOTE: Delete the new items. Create without force.
-        upsert.force = False
         for item in assocs_new:
             session.delete(item)
         session.commit()
-
         upsert.force = False
-        assoc_data, _, _, T_assoc_recieved = upsert.assoc(data, assoc_args)
+        upsert.delete.force = False
+
+        _, assoc_data_final, _, T_assoc_recieved = upsert.assoc(data, assoc_args)
+        assert not len(assoc_data_final.uuid_target_deleted)
+        assert not len(assoc_data_final.uuid_assoc_deleted)
+        assert not len(assoc_data_final.uuid_target_active)
+        assert not len(assoc_data_final.uuid_assoc_active)
 
         assocs_new = tuple(session.execute(q_assocs_new).scalars())
         assert len(assocs_new) == len(uuid_target)
         assert all(not item.deleted for item in assocs_new)
         assert not len(T_assoc.resolve_uuid(session, assocs_new) & uuid_assoc)
+
+        self.check_event(upsert, assoc_data_final, data)
 
         # Restore.
         for item in assocs_new:
@@ -173,8 +218,6 @@ class TestAssoc(BaseTestAssoc):
         session.commit()
 
         for item in assocs_init:
-            print(item.uuid)
             make_transient(item)
             session.add(item)
-            session.commit()
         session.commit()
