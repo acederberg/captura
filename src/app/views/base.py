@@ -187,7 +187,7 @@ class BaseDataAssoc(BaseData):
 
     @computed_field
     def target(self) -> Tuple[Collection, ...]:
-        return getattr(self, self.kind_target.name)
+        return getattr(self, Singular(self.kind_target.name).name)
 
     @computed_field
     def uuid_source(self) -> str:
@@ -195,7 +195,7 @@ class BaseDataAssoc(BaseData):
 
     @computed_field
     def uuid_target(self) -> Set[str]:
-        return getattr(self, "uuid_" + self.kind_target.name)
+        return getattr(self, "uuid_" + Singular(self.kind_target.name).name)
 
 
 class ResolvedCollection(BaseData):
@@ -278,8 +278,8 @@ class ResolvedAssignmentCollection(BaseDataAssoc):
         Field(default=KindObject.document),
     ]
     kind_assoc: Annotated[
-        Literal[KindObject.grant],
-        Field(default=KindObject.grant),
+        Literal[KindObject.assignment],
+        Field(default=KindObject.assignment),
     ]
 
     collection: Collection
@@ -304,8 +304,8 @@ class ResolvedAssignmentDocument(BaseDataAssoc):
         Field(default=KindObject.collection),
     ]
     kind_assoc: Annotated[
-        Literal[KindObject.grant],
-        Field(default=KindObject.grant),
+        Literal[KindObject.assignment],
+        Field(default=KindObject.assignment),
     ]
 
     document: Document

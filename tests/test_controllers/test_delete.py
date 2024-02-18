@@ -5,7 +5,7 @@ from typing import Callable, Set, Tuple, Type
 import pytest
 from app import util
 from app.models import (Assignment, AssocUserDocument, Collection, Document,
-                        Grant, KindObject, Singular, User)
+                        Grant, KindEvent, KindObject, Singular, User)
 from app.schemas import EventSchema
 from app.views.base import Data, DataResolvedAssignment, DataResolvedGrant
 from app.views.create import Upsert
@@ -130,23 +130,43 @@ class BaseTestAssoc:
     ) -> EventSchema:
         assert data.event is not None
         expect_common = delete.event_common
+        print(expect_common)
         event = EventSchema.model_validate(data.event)
 
         util.event_compare(event, expect_common)
         assert event.kind_obj == data.data.kind_source
         assert event.uuid_obj == data.data.uuid_source
 
+        match delete:
+            case Upsert():
+                uuid_target_expected = data.data.uuid_target - assoc_data.uuid_target_active
+                uuid_assoc_expected = None
+            case Delete():
+                uuid_target_expected = assoc_data.uuid_target_active
+                uuid_assoc_expected = assoc_data.uuid_assoc_active
+            case bad:
+                raise ValueError(f"Invalid value `{bad}` for `delete`.")
+
+        if delete.force:
+            if uuid_assoc_expected is not None:
+                uuid_assoc_expected |= assoc_data.uuid_assoc_deleted
+            else:
+                assert isinstance(delete, Upsert)
+                
+            uuid_target_expected |= assoc_data.uuid_assoc_deleted
+
         for item in event.children:
             util.event_compare(item, expect_common)
             assert len(item.children) == 1
             assert item.kind_obj == data.data.kind_target
-            assert item.uuid_obj in assoc_data.uuid_target_active
+            assert item.uuid_obj in uuid_target_expected
 
             subitem, *_ = item.children
             util.event_compare(subitem, expect_common)
             assert len(subitem.children) == 0
             assert subitem.kind_obj == data.data.kind_assoc
-            assert subitem.uuid_obj in assoc_data.uuid_assoc_active
+            if uuid_assoc_expected:
+                assert subitem.uuid_obj in uuid_assoc_expected
 
         return event
 

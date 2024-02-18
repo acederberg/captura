@@ -4,22 +4,52 @@ from typing import Any, Callable, Dict, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.depends import DependsToken
-from app.models import (Assignment, AssocCollectionDocument,
-                        ChildrenAssignment, Collection, Document, Edit, Event,
-                        Grant, KindEvent, KindObject, Resolvable,
-                        ResolvableMultiple, ResolvableSingular, Singular, User)
+from app.models import (
+    Assignment,
+    AssocCollectionDocument,
+    ChildrenAssignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Resolvable,
+    ResolvableMultiple,
+    ResolvableSingular,
+    Singular,
+    User,
+)
 from app.schemas import EventSchema
 from app.views.access import Access, WithAccess, with_access
-from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
-                            KindData, ResolvedAssignmentCollection,
-                            ResolvedAssignmentDocument, ResolvedCollection,
-                            ResolvedDocument, ResolvedEdit,
-                            ResolvedGrantDocument, ResolvedGrantUser,
-                            ResolvedUser)
+from app.views.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    KindData,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
 from pydantic import BaseModel
 from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import (Select, Update, delete, false, literal_column, select,
-                        true, union, update)
+from sqlalchemy import (
+    Select,
+    Update,
+    delete,
+    false,
+    literal_column,
+    select,
+    true,
+    union,
+    update,
+)
 from sqlalchemy.orm import Session
 
 
@@ -45,7 +75,6 @@ class Delete(WithAccess):
         source: Any,
         uuid_target: Set[str],
     ) -> AssocData:
-
         q_assoc: Select
         match (KindObject(T_assoc.__tablename__), source):
             case (KindObject.grant, User() as user):
@@ -112,7 +141,9 @@ class Delete(WithAccess):
         assoc_data = self.split_assocs(T_assoc, source, uuid_target)
         uuid_assoc_rm = assoc_data.uuid_assoc_active.copy()
 
+        # print("_try_force", self.force)
         force = self.force if force is None else force
+        # print("final force", force)
         if force:
             uuid_assoc_rm |= assoc_data.uuid_assoc_deleted
             q_del = delete(T_assoc).where(T_assoc.uuid.in_(uuid_assoc_rm))
@@ -122,6 +153,7 @@ class Delete(WithAccess):
                 .where(T_assoc.uuid.in_(uuid_assoc_rm))
                 .values(deleted=True)
             )
+        # print(q_del)
         return assoc_data, uuid_assoc_rm, q_del
 
     @overload
@@ -134,7 +166,8 @@ class Delete(WithAccess):
         Tuple[Grant, ...],
         Update[Grant] | sqaDelete[Grant],
         Type[Grant] | Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def try_force(
@@ -146,7 +179,8 @@ class Delete(WithAccess):
         Tuple[Assignment, ...],
         Update[Assignment] | sqaDelete[Assignment],
         Type[Grant] | Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     def try_force(
         self,
@@ -158,7 +192,7 @@ class Delete(WithAccess):
         sqaDelete | Update,
         Type[Grant] | Type[Assignment],
     ]:
-
+        # print("try_force", self.force)
         uuid_target: Set[str]
         match data.data:
             case ResolvedGrantUser(
@@ -194,56 +228,103 @@ class Delete(WithAccess):
     def assoc(
         self,
         data: Data[ResolvedGrantUser],
+        force: bool = False,
     ) -> Tuple[
         Data[ResolvedGrantUser],
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def assoc(
         self,
         data: Data[ResolvedGrantDocument],
+        force: bool = False,
     ) -> Tuple[
         Data[ResolvedGrantDocument],
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def assoc(
         self,
         data: Data[ResolvedAssignmentDocument],
+        force: bool = False,
     ) -> Tuple[
         Data[ResolvedAssignmentDocument],
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def assoc(
         self,
         data: Data[ResolvedAssignmentCollection],
+        force: bool = False,
     ) -> Tuple[
         Data[ResolvedAssignmentCollection],
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
-    def assoc(self, data: DataResolvedAssignment | DataResolvedGrant) -> Tuple[
+    def assoc(
+        self,
+        data: DataResolvedAssignment | DataResolvedGrant,
+        force: bool = False,
+    ) -> Tuple[
         DataResolvedAssignment | DataResolvedGrant,
         AssocData,
         Update[Assignment] | sqaDelete[Grant],
         Type[Assignment] | Type[Grant],
     ]:
+        # print("assoc", self.force)
         session = self.session
-        assoc_data, assocs, q_del, T_assoc = self.try_force(data)
-        target_attr_name = data.data.kind_target.name
-        uuid_target_attr_name = f"uuid_{target_attr_name}"
+        assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
+        data.event = self.assoc_event(data, assocs)
+        # target_attr_name = data.data.kind_target.name
+        # uuid_target_attr_name = f"uuid_{target_attr_name}"
+        # event_common = self.event_common
+        # data.event = Event(
+        #     **event_common,
+        #     uuid_obj=data.data.uuid_source,
+        #     kind_obj=data.data.kind_source,
+        #     children=[
+        #         Event(
+        #             **event_common,
+        #             kind_obj=data.data.kind_target,
+        #             uuid_obj=getattr(assoc, uuid_target_attr_name),
+        #             children=[
+        #                 Event(
+        #                     **event_common,
+        #                     kind_obj=data.data.kind_assoc,
+        #                     uuid_obj=assoc.uuid,
+        #                 )
+        #             ],
+        #         )
+        #         for assoc in assocs
+        #     ],
+        # )
+        session.add(data.event)
+        session.execute(q_del)
+        session.commit()
+        session.refresh(data.event)
+
+        return data, assoc_data, q_del, T_assoc
+
+    @property
+    def event_common(self) -> Dict[str, Any]:
+        return dict(**super().event_common, kind=KindEvent.delete)
+
+    def assoc_event(self, data: DataResolvedGrant | DataResolvedAssignment, assocs: Tuple[Grant, ...] | Tuple[Assignment, ...],) -> Event:
 
         # NOTE: Base event indicates the document, secondary event
         #       indicates the users for which permissions were revoked.
@@ -253,7 +334,10 @@ class Delete(WithAccess):
         #       document is first, the users are second, and the grants
         #       exist only as JSON.
         event_common = self.event_common
-        data.event = Event(
+        target_attr_name = data.data.kind_target.name
+        uuid_target_attr_name = f"uuid_{target_attr_name}"
+
+        return Event(
             **event_common,
             uuid_obj=data.data.uuid_source,
             kind_obj=data.data.kind_source,
@@ -273,25 +357,17 @@ class Delete(WithAccess):
                 for assoc in assocs
             ],
         )
-        session.add(data.event)
-        session.execute(q_del)
-        session.commit()
-        session.refresh(data.event)
-
-        return data, assoc_data, q_del, T_assoc
-
-    @property
-    def event_common(self) -> Dict[str, Any]:
-        return dict(**super().event_common, kind=KindEvent.delete)
 
     # ----------------------------------------------------------------------- #
 
-    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]: ...
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
+        ...
 
     def collection(
         self,
         data: Data[ResolvedCollection],
-    ) -> Data[ResolvedCollection]: ...
+    ) -> Data[ResolvedCollection]:
+        ...
 
     #     session = self.session
     #     collection = Collection.resolve(session, resolve_collection)
@@ -335,9 +411,11 @@ class Delete(WithAccess):
     def document(
         self,
         data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]: ...
+    ) -> Data[ResolvedDocument]:
+        ...
 
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]: ...
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
+        ...
 
     # ----------------------------------------------------------------------- #
 
@@ -354,8 +432,10 @@ class Delete(WithAccess):
         data, *_ = self.assoc(data)
         return data
 
-    a_assignment_document = with_access(Access.assignment_document)
-    a_assignment_collection = with_access(Access.assignment_collection)
+    a_assignment_document = with_access(Access.assignment_document)(assignment_document)
+    a_assignment_collection = with_access(Access.assignment_collection)(
+        assignment_collection
+    )
 
     # ----------------------------------------------------------------------- #
     # Grants
@@ -370,12 +450,11 @@ class Delete(WithAccess):
     def grant_document(
         self, data: Data[ResolvedGrantDocument]
     ) -> Data[ResolvedGrantDocument]:
-
         data, *_ = self.assoc(data)
         return data
 
-    a_grant_document = with_access(Access.grant_document)
-    a_grant_user = with_access(Access.grant_user)
+    a_grant_document = with_access(Access.grant_document)(grant_user)
+    a_grant_user = with_access(Access.grant_user)(grant_document)
 
     # ----------------------------------------------------------------------- #
     # Collections
@@ -411,7 +490,6 @@ class Delete(WithAccess):
 
 
 class WithDelete(WithAccess):
-
     delete: Delete
 
     def __init__(
@@ -422,7 +500,7 @@ class WithDelete(WithAccess):
         *,
         detail: str,
         api_origin: str,
-        force: bool = True,
+        force: bool = False,
         access: Access | None = None,
         delete: Delete | None = None,
     ):
