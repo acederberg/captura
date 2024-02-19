@@ -105,7 +105,7 @@ class Singular(str, enum.Enum):
     collections = "collection"
     edits = "edit"
     assignments = "assignment"
-    grants = "gant"
+    grants = "grant"
 
 
 class KindRecurse(str, enum.Enum):
@@ -1143,6 +1143,9 @@ class User(SearchableTableMixins, Base):
         self,
         document: "Document",
         level: Level,
+        *,
+        grants: Dict[str, "Grant"] | None = None,
+        grants_index: Literal["uuid_document", "uuid_user"] ="uuid_document",
     ) -> Self:
         # If the document is public and the level is view, then don't check.
         if document.public and level == Level.view:
@@ -1191,6 +1194,8 @@ class User(SearchableTableMixins, Base):
                         level_grant_required=level.name,
                     )
                     raise HTTPException(403, detail=detail)
+                if grants is not None:
+                    grants[getattr(grant, grants_index)] = grant
                 return self
             case [Grant(deleted=True) as grant]:
                 detail.update(msg="Grant is deleted.", uuid_grant=grant.uuid)

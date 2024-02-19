@@ -35,6 +35,7 @@ from app.models import (
     Document,
     Edit,
     Event,
+    Grant,
     KindEvent,
     KindObject,
     Level,
@@ -207,12 +208,14 @@ class ResolvedCollection(BaseData):
 class ResolvedDocument(BaseData):
     kind: Annotated[Literal["document"], Field(default="document")]
     document: Document | Tuple[Document, ...]
+    grants: Dict[str, Grant]
     uuid_document: UuidSetFromModel
 
 
 class ResolvedEdit(BaseData):
     kind: Annotated[Literal["edit"], Field(default="edit")]
     edit: Edit | Tuple[Edit, ...]
+    grants: Dict[str, Grant]
     uuid_edit: UuidSetFromModel
 
 
@@ -225,8 +228,7 @@ class ResolvedUser(BaseData):
 class ResolvedGrantUser(BaseDataAssoc):
     kind: Annotated[Literal["grant_user"], Field(default="grant_user")]
     kind_source: Annotated[
-        Literal[KindObject.user],
-        Field(default=KindObject.user),
+        Literal[KindObject.user], Field(default=KindObject.user)
     ]
     kind_target: Annotated[
         Literal[KindObject.document],
@@ -238,6 +240,7 @@ class ResolvedGrantUser(BaseDataAssoc):
     ]
 
     user: User
+    grants: Dict[str, Grant]
     documents: Tuple[Document, ...]
     uuid_user: UuidFromModel
     uuid_documents: UuidSetFromModel
@@ -259,6 +262,7 @@ class ResolvedGrantDocument(BaseDataAssoc):
     ]
 
     document: Document
+    grants: Dict[str, Grant]
     users: Tuple[User, ...]
     uuid_document: UuidFromModel
     uuid_users: UuidSetFromModel
@@ -283,6 +287,7 @@ class ResolvedAssignmentCollection(BaseDataAssoc):
     ]
 
     collection: Collection
+    assignments: Dict[str, Assignment]
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
     uuid_documents: UuidSetFromModel
@@ -309,6 +314,7 @@ class ResolvedAssignmentDocument(BaseDataAssoc):
     ]
 
     document: Document
+    # assignments: Dict[str, Assignment]
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
     uuid_collections: UuidSetFromModel

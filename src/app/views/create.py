@@ -40,7 +40,7 @@ T_Upsert = TypeVar(
     GrantCreateSchema,
     EditCreateSchema,
 )
-
+CallableAssocCallback = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 class Upsert(WithDelete, Generic[T_Upsert]):
 
@@ -90,24 +90,11 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         kind = KindEvent.create if self.method == H.POST else KindEvent.update
         return dict(**super().event_common, kind=kind)
 
-    # @overload
-    # def assoc(self, data: Data[ResolvedAssignmentCollection]) -> Data[ResolvedAssignmentCollection]: ...  # type: ignore
-    #
-    # @overload
-    # def assoc(self, data: Data[ResolvedAssignmentDocument]) -> Data[ResolvedAssignmentDocument]: ...  # type: ignore
-    #
-    # @overload
-    # def assoc(self, data: Data[ResolvedGrantUser]) -> Data[ResolvedGrantUser]: ...
-    #
-    # @overload
-    # def assoc(
-    #     self, data: Data[ResolvedGrantDocument]
-    # ) -> Data[ResolvedGrantDocument]: ...
     @overload
     def assoc(
         self,
         data: Data[ResolvedGrantUser],
-        assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
+        assoc_args_callback: CallableAssocCallback = lambda v: v,
         *,
         force: bool = False,
     ) -> Tuple[
@@ -121,7 +108,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
     def assoc(
         self,
         data: Data[ResolvedGrantDocument],
-        assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
+        assoc_args_callback: CallableAssocCallback = lambda v: v,
         *,
         force: bool | None = None,
     ) -> Tuple[
@@ -135,7 +122,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
     def assoc(
         self,
         data: Data[ResolvedAssignmentDocument],
-        assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
+        assoc_args_callback: CallableAssocCallback = lambda v: v,
         *,
         force: bool | None = None,
     ) -> Tuple[
@@ -149,7 +136,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
     def assoc(
         self,
         data: Data[ResolvedAssignmentCollection],
-        assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
+        assoc_args_callback: CallableAssocCallback = lambda v: v,
         *,
         force: bool | None = None,
     ) -> Tuple[
@@ -163,7 +150,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
     def assoc(
         self, 
         data: DataResolvedGrant | DataResolvedAssignment, 
-        assoc_args_callback: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda v: v,
+        assoc_args_callback: CallableAssocCallback = lambda v: v,
         *,
         force: bool | None = None,
     ) -> Tuple[

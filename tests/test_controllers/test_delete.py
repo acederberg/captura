@@ -5,9 +5,9 @@ from typing import Callable, Set, Tuple, Type
 import pytest
 from app import util
 from app.models import (Assignment, AssocUserDocument, Collection, Document,
-                        Grant, KindEvent, KindObject, Singular, User)
+                        Grant, KindEvent, KindObject, Plural, Singular, User)
 from app.schemas import EventSchema
-from app.views.base import Data, DataResolvedAssignment, DataResolvedGrant
+from app.views.base import Data, DataResolvedAssignment, DataResolvedGrant, ResolvedAssignmentCollection, ResolvedAssignmentDocument, ResolvedGrantDocument, ResolvedGrantUser
 from app.views.create import Upsert
 from app.views.delete import AssocData, Delete
 from sqlalchemy import Delete as sqaDelete
@@ -43,15 +43,35 @@ def as_data(
 
     source = T_source.if_exists(delete.session, uuid_source)
     targets = T_target.if_many(delete.session, uuid_target)
-    name_source = KindObject(T_source.__tablename__).name
-    name_target = KindObject(T_target.__tablename__).name
-    name_assignment = KindObject(T_assoc.__tablename__).name
-    data_resolved = {
-        name_source: source,
-        Singular(name_target).name: targets,
-        "kind": f"{name_assignment}_{name_source}",
+    kind_source = KindObject(T_source.__tablename__)
+    kind_target = KindObject(T_target.__tablename__)
+    kind_assignment = KindObject(T_assoc.__tablename__)
+    assocs = {
+        getattr(assoc, f"uuid_{kind_target.name}"): assoc
+        for assoc in T_assoc.if_many(delete.session, uuid_assoc)
     }
-    data = Data(data=data_resolved)  # type: ignore[generalType]
+    data_resolved = {
+        kind_source.name: source,
+        Singular(kind_target.name).name: targets,
+        "kind": (kind := f"{kind_assignment.name}_{kind_source.name}"),
+        "kind_target": kind_target,
+        "kind_source": kind_source,
+        "kind_assignment": kind_assignment,
+        Singular(kind_assignment.name).name: assocs
+    }
+    match kind:
+        case "assignment_document":
+            res = ResolvedAssignmentDocument(**data_resolved)
+        case "assignment_collection":
+            res = ResolvedAssignmentCollection(**data_resolved)
+        case "grant_document":
+            res = ResolvedGrantDocument(**data_resolved)
+        case "grant_user":
+            res = ResolvedGrantUser(**data_resolved)
+        case bad:
+            raise ValueError(bad)
+
+    data = Data(data=res)  # type: ignore[generalType]
     return data
 
 

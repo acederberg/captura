@@ -64,7 +64,6 @@ methods_required = {
 
 # Checks that the required methods are included. Generates warnings when
 class AccessTestMeta(type):
-
     fn_access_types: Dict[str, Type]
     allow_missing: bool = False
 
@@ -121,6 +120,7 @@ class BaseTestAccess(metaclass=AccessTestMeta):
             def test_d_fn(self, session: Session): ...
     """
 
+    fn_access_ignored_params: ClassVar[Set[str]] = set()
     fn_access_types: ClassVar[Dict[str, Type]]
     allow_missing: ClassVar[bool] = False
 
@@ -138,7 +138,6 @@ class BaseTestAccess(metaclass=AccessTestMeta):
         return Access(session, token, method)
 
     def test_d_fn(self) -> None:
-
         # Check fn
         fn_access_types: Dict[str, Type] = self.fn_access_types
         match fn_access_types:
@@ -181,16 +180,26 @@ class BaseTestAccess(metaclass=AccessTestMeta):
                 inspect.signature(fn_access_data),
             )
             # Check params
-            assert len(sig.parameters) - 1 == len(sig_d.parameters)
+            assert len(sig.parameters) > len(sig_d.parameters)
             assert "return_data" in sig.parameters
             assert (
                 "return_data" not in sig_d.parameters
             ), f"Expected signature of `{fn_access}` to not contain `return_data`."
 
+            print(self.fn_access_ignored_params)
             if missing_params := tuple(
-                k
+                print(
+                    "======================",
+                    f"{k=}",
+                    f"{k not in sig_d.parameters}",
+                    f"{k not in self.fn_access_ignored_params}",
+                    sep="\n",
+                )
+                or k
                 for k, v in sig.parameters.items()
-                if k not in sig_d.parameters and k != "return_data"
+                if k not in sig_d.parameters
+                and k != "return_data"
+                and k not in self.fn_access_ignored_params
             ):
                 msg = f"`Access.{fn_access_name}` missing parameters from "
                 msg += f"`Access.{fn_access_data_name}`: {missing_params}"
@@ -308,7 +317,6 @@ class TestAccessUser(BaseTestAccess):
         assert isinstance(res, Data)
 
     def test_deleted(self, session: Session):
-
         # Reject user reading self if user is deleted.
         user = User.if_exists(session, "000-000-000")
         user.deleted = True
@@ -341,7 +349,6 @@ class TestAccessUser(BaseTestAccess):
         assert exc.detail == detail
 
     def test_modify(self, session: Session):
-
         # User should not be able to access another user for any method besides
         # httpx.GET
         session.execute(update(User).values(deleted=False, public=True))
@@ -379,7 +386,6 @@ class TestAccessUser(BaseTestAccess):
         assert access.token_user.uuid == "000-000-000"
 
     def test_private(self, session: Session):
-
         session.execute(update(User).values(deleted=False, public=False))
         session.commit()
 
@@ -404,7 +410,6 @@ class TestAccessUser(BaseTestAccess):
                 raise err
 
     def test_dne(self, session: Session):
-
         for method in httpcommon:
             access = self.create_access(session, method)
             with pytest.raises(HTTPException) as err:
@@ -429,7 +434,6 @@ class TestAccessCollection(BaseTestAccess):
         return split_uuid_collection(session)
 
     def test_overloads(self, session: Session):
-
         access = self.create_access(session, HTTPMethod.DELETE)
 
         # NOTE: Set in -> Tuple out
@@ -564,12 +568,12 @@ class TestAccessCollection(BaseTestAccess):
 
 class TestAccessDocument(BaseTestAccess):
     fn_access_types = dict(document=Data[ResolvedDocument])
+    fn_access_ignored_params: ClassVar[Set[str]] = {"grants", "grants_index"}
 
     def split_uuids(self, session: Session, level: Level):
         return split_uuids_document(session, level)
 
     def test_overloads(self, session: Session):
-
         access = self.create_access(session, HTTPMethod.DELETE)
         res = access.document({"aaa-aaa-aaa", "draculaflow"})
         assert isinstance(res, tuple)
@@ -826,7 +830,6 @@ class TestAccessDocument(BaseTestAccess):
             )
 
     def test_deleted(self, session: Session):
-
         # NOTE: Documents being private simplifies loop (bc public doc will
         #       just tell you it is deleted.
         session.execute(update(User).values(public=True, deleted=False))
@@ -836,7 +839,6 @@ class TestAccessDocument(BaseTestAccess):
 
         uuid_exists, uuid_exists_not = self.split_uuids(session, Level.view)
         for method in httpcommon:
-
             # NOTE: Should not be able to access own deleted documents.
             access = self.create_access(session, method)
             uuid_granted, uuid_other = self.split_uuids(session, access.level)
@@ -900,7 +902,6 @@ class TestAccessDocument(BaseTestAccess):
             session.commit()
 
     def test_dne(self, session: Session):
-
         uuid_bs = secrets.token_urlsafe(9)
         for method in httpcommon:
             access = self.create_access(session, method)
@@ -928,7 +929,6 @@ class TestAccessAssignment(BaseTestAccess):
         access = self.create_access(session, HTTPMethod.DELETE)
 
         def check_res(res, T_source_expected: Type, T_res_expected: Type):
-
             SS: Type
             TT: Type
             match res:
@@ -1341,7 +1341,9 @@ class TestAccessGrant(BaseTestAccess):
         grant_document=Data[ResolvedGrantDocument],
     )
 
-    def test_overloads(self, session: Session): ...
+    def test_overloads(self, session: Session):
+        ...
+
     def check_result(
         self,
         session: Session,
@@ -1352,7 +1354,6 @@ class TestAccessGrant(BaseTestAccess):
         uuid_s_expected: Set[str],
         T_expected: Type,
     ) -> Tuple[Tuple[Grant, ...], AssertionError | None]:
-
         match res:
             case [User() as tt, tuple() as ss]:
                 T, S = User, Document
@@ -1416,8 +1417,8 @@ class TestAccessGrant(BaseTestAccess):
            documents in any way regardless of its visibility.
 
         """
-        session.execute(update(User).values(private=True, deleted=False))
-        session.execute(update(Document).values(private=True, deleted=False))
+        session.execute(update(User).values(public=False, deleted=False))
+        session.execute(update(Document).values(public=False, deleted=False))
         session.commit()
 
         user = User.if_exists(session, "000-000-000")
@@ -1447,9 +1448,8 @@ class TestAccessGrant(BaseTestAccess):
             # NOTE: User cannot request access to public doc
 
     def test_modify(self, session: Session):
-
-        session.execute(update(User).values(private=True, deleted=False))
-        session.execute(update(Document).values(private=True, deleted=False))
+        session.execute(update(User).values(public=False, deleted=False))
+        session.execute(update(Document).values(public=False, deleted=False))
         session.commit()
 
         user = User.if_exists(session, "000-000-000")
@@ -1533,7 +1533,6 @@ def test_with_access(session: Session, auth: Auth):
     """Test the intended functionality of `with_access`."""
 
     class Barf(WithAccess):
-
         @with_access(Access.d_user)
         def user(self, data: Data) -> Data:
             # Tack on an event when chained.
