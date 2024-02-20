@@ -908,6 +908,7 @@ class AssocUserDocument(Base):
                 raise HTTPException(500, detail="Cannot resolve.")
 
         q = q.where(*conds)
+        util.sql(session, q)
         return tuple(session.execute(q).scalars())
 
     # ----------------------------------------------------------------------- #

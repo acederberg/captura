@@ -12,3 +12,17 @@
   url: github.com/acederberg
   url_image: https://avatars.githubusercontent.com/u/77076023?v=4
 
+- uuid: 777-777-777
+  id: 3
+  name: Brian Cohen
+  description: Member of the \"People's Front of Judea\".
+  url: https://en.wikipedia.org/wiki/Monty_Python's_Life_of_Brian
+  url_image: null
+
+- uuid: -0123456789 
+  id: 4
+  name: Sum dood
+  description: Whatever
+  url: null
+  url_image: null
+

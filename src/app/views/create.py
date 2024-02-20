@@ -252,13 +252,26 @@ class Upsert(WithDelete, Generic[T_Upsert]):
                 uuid_target_create -= rm_assoc_data.uuid_target_active
             # NOTE: Delete ALL existing, add deleted to created. DO NOT UPDATE
             #       `rm_assoc_data`.
+            # NOTE: This should not delete grants belonging to the token holder
+            #       otherwise integrity errors will show up later, thus the
+            #       re-addition of token holder grants.
             case H.POST | H.PUT:
+                if (
+                    self.token.uuid == data.data.source.uuid  # type: ignore
+                    or self.token.uuid in data.data.uuid_target # type: ignore
+                ):
+                    msg = (
+                        "This request results in user deleting own grants. "
+                        "This can only be done by directly deleting these "
+                        "grants."
+                    )
+                    raise HTTPException(400, detail=dict(msg=msg))
                 event_rm = self.delete.assoc_event(data, rm_assocs)
                 session.add(event_rm)
                 session.execute(rm_q)
                 session.commit()
 
-                data, _, rm_q, T_assoc = self.delete.assoc(data, force=force)
+                # data, _, rm_q, T_assoc = self.delete.assoc(data, force=force)
             case _:
                 raise HTTPException(405)
 
@@ -382,23 +395,38 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         # NOTE: Grants should be indexed by uuids of documents.
         match data.data.kind_source:
             case KindObject.user:
-                grant_parent = data.data.grants.get(target.uuid)
+                # NOTE: Permission of granter since they are inviting a user in
+                #       this case. This means that the invitor (a user who 
+                #       already owns the document) will be the one responsible
+                #       for the grants creation.
+                grant_parent = Grant.resolve_from_target(
+                    self.session,
+                    data.token_user or self.token_user,
+                    {target.uuid}
+                )
+                if not (n:=len(grant_parent)):
+                    detail = dict(
+                        msg="No such grant.",
+                        uuid_target=target.uuid,
+                        uuid_source=data.data.source.uuid,
+                        kind_target=data.data.kind_target,
+                        kind_source=data.data.kind_source,
+                    )
+                    raise HTTPException(403, detail=detail)
+                elif n > 1:
+                    raise HTTPException(500, detail="Granter has too many grants.")
+
+                grant_parent_uuid = grant_parent[0].uuid
                 pending_from = PendingFrom.grantee
             case KindObject.document:
-                grant_parent = data.data.grants.get(target.uuid)
+                grant_parent_uuid = None
+                # ^^^^^^^^^^^^^^^^^ Assigned later by granter who accepts the 
+                #                   request. Grant of the granter to remove 
+                #                   this from pending state will be created 
+                #                   later.
                 pending_from = PendingFrom.granter
             case bad:
                 raise ValueError(f"Invalid source `{bad}`.")
-
-        if grant_parent is None:
-            detail = dict(
-                msg="No such grant.",
-                uuid_target=target.uuid,
-                uuid_source=data.data.source.uuid,
-                kind_target=data.data.kind_target,
-                kind_source=data.data.kind_source,
-            )
-            raise HTTPException(403, detail=detail)
 
         id_source_name = f"id_{data.data.kind_source.name}"
         id_target_name = f"id_{data.data.kind_target.name}"
@@ -406,13 +434,13 @@ class Upsert(WithDelete, Generic[T_Upsert]):
 
         kwargs = {
             "uuid": secrets.token_urlsafe(8),
-            "uuid_parent": grant_parent.uuid,
+            "uuid_parent": grant_parent_uuid,
             "pending_from": pending_from,
             "pending": True,
             id_source_name: id_source_value,
             id_target_name: target.id,
         }
-        return Grant(**kwargs)
+        return Grant(**kwargs, **self.upsert_data.model_dump())
 
     def grant_user(
         self,
@@ -437,3 +465,24 @@ class Upsert(WithDelete, Generic[T_Upsert]):
 
     # ----------------------------------------------------------------------- #
     # Others
+
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
+        ...
+
+    def collection(
+        self,
+        data: Data[ResolvedCollection],
+    ) -> Data[ResolvedCollection]:
+        ...
+
+
+    def document(
+        self,
+        data: Data[ResolvedDocument],
+    ) -> Data[ResolvedDocument]:
+        ...
+
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
+        ...
+
+

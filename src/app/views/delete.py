@@ -4,52 +4,22 @@ from typing import Any, Callable, Dict, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.depends import DependsToken
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Resolvable,
-    ResolvableMultiple,
-    ResolvableSingular,
-    Singular,
-    User,
-)
+from app.models import (Assignment, AssocCollectionDocument,
+                        ChildrenAssignment, Collection, Document, Edit, Event,
+                        Grant, KindEvent, KindObject, Resolvable,
+                        ResolvableMultiple, ResolvableSingular, Singular, User)
 from app.schemas import EventSchema
 from app.views.access import Access, WithAccess, with_access
-from app.views.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
+from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
+                            KindData, ResolvedAssignmentCollection,
+                            ResolvedAssignmentDocument, ResolvedCollection,
+                            ResolvedDocument, ResolvedEdit,
+                            ResolvedGrantDocument, ResolvedGrantUser,
+                            ResolvedUser)
 from pydantic import BaseModel
 from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import (
-    Select,
-    Update,
-    delete,
-    false,
-    literal_column,
-    select,
-    true,
-    union,
-    update,
-)
+from sqlalchemy import (Select, Update, delete, false, literal_column, select,
+                        true, union, update)
 from sqlalchemy.orm import Session
 
 
@@ -113,7 +83,6 @@ class Delete(WithAccess):
             uuids of active targets.
             """
             q = q_assoc.where(T_assoc.deleted == bool_())
-            util.sql(self.session, q)
             items = tuple(self.session.execute(q).scalars())
             items = tuple(
                 (item.uuid, getattr(item, uuid_target_attr)) for item in items
@@ -288,30 +257,8 @@ class Delete(WithAccess):
     ]:
         session = self.session
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
+
         data.event = self.assoc_event(data, assocs)
-        # target_attr_name = data.data.kind_target.name
-        # uuid_target_attr_name = f"uuid_{target_attr_name}"
-        # event_common = self.event_common
-        # data.event = Event(
-        #     **event_common,
-        #     uuid_obj=data.data.uuid_source,
-        #     kind_obj=data.data.kind_source,
-        #     children=[
-        #         Event(
-        #             **event_common,
-        #             kind_obj=data.data.kind_target,
-        #             uuid_obj=getattr(assoc, uuid_target_attr_name),
-        #             children=[
-        #                 Event(
-        #                     **event_common,
-        #                     kind_obj=data.data.kind_assoc,
-        #                     uuid_obj=assoc.uuid,
-        #                 )
-        #             ],
-        #         )
-        #         for assoc in assocs
-        #     ],
-        # )
         session.add(data.event)
         session.execute(q_del)
         session.commit()
@@ -455,37 +402,6 @@ class Delete(WithAccess):
     a_grant_document = with_access(Access.grant_document)(grant_user)
     a_grant_user = with_access(Access.grant_user)(grant_document)
 
-    # ----------------------------------------------------------------------- #
-    # Collections
-
-    # def document(
-    #     self,
-    #     resolvable_document: Resolvable[Document],
-    #     *,
-    #     token_user: ResolvableSingular[User] | None = None,
-    # ) -> Event: ...
-    #
-    # # ----------------------------------------------------------------------- #
-    # # Edits
-    # #
-    #
-    # def edit(
-    #     self,
-    #     resolvable_edit: Resolvable[Edit],
-    #     *,
-    #     token_user: ResolvableSingular[User] | None = None,
-    # ) -> Event: ...
-    #
-    # # ----------------------------------------------------------------------- #
-    # # Users
-    # def user(
-    #     self,
-    #     resolvable_user: Resolvable[Document],
-    #     *,
-    #     token_user: ResolvableSingular[User],
-    # ) -> Event: ...
-    #
-    # # ----------------------------------------------------------------------- #
 
 
 class WithDelete(WithAccess):

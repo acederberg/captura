@@ -112,6 +112,14 @@
   pending: False
   pending_from: grantee
 
+- uuid: -=-=-=-=-=-
+  uuid_parent: 6-666-666-6
+  id_user: 3
+  id_document: 6
+  level: view
+  pending: False
+  pending_from: grantee
+
 
 # --------------------------------------------------------------------------- #
 # Document 7 (foobar-spam)

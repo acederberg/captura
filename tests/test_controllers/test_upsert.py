@@ -4,7 +4,8 @@ from typing import Set, Type
 
 import pytest
 from app.auth import Auth, Token
-from app.models import KindEvent, KindObject, Level, PendingFrom
+from app.models import (Document, Grant, KindEvent, KindObject, Level,
+                        PendingFrom, User)
 from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
 from app.views.access import H
 from app.views.base import Data
@@ -32,10 +33,30 @@ def upsert(delete: Delete) -> Upsert:
     )
     return res
 
+CASES_ASSOCS_GRANTS_NOT_OWN = [
+    (
+        None,
+        User,
+        "99d-99d-99d",
+        Document,
+        {"petshoppe--"}, 
+        Grant,
+        {"f-fff-fff-f"}
+    ),
+    (
+        None,
+        Document,
+        "petshoppe--",
+        User,
+        {"99d-99d-99d", "777-777-777"},
+        Grant,
+        {"f-fff-fff-f", "-=-=-=-=-=-"},
+    ),
+]
 
 @pytest.mark.parametrize(
     "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
-    CASES_ASSOCS,
+    CASES_ASSOCS_GRANTS_NOT_OWN + CASES_ASSOCS[2:4],
     indirect=["delete"],
 )
 class TestAssoc(BaseTestAssoc):
