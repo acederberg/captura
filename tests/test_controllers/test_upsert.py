@@ -1,24 +1,20 @@
-from http import HTTPMethod
 import json
+from http import HTTPMethod
 from typing import Set, Type
-from app.views.base import Data
 
 import pytest
 from app.auth import Auth, Token
 from app.models import KindEvent, KindObject, Level, PendingFrom
 from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
 from app.views.access import H
+from app.views.base import Data
 from app.views.create import Upsert
 from app.views.delete import AssocData, Delete
 from fastapi import HTTPException
-from sqlalchemy import select, Update
+from sqlalchemy import Update, select
 from sqlalchemy.orm import make_transient
-from tests.test_controllers.test_delete import (
-    CASES_ASSOCS,
-    BaseTestAssoc,
-    as_data,
-    delete,
-)
+from tests.test_controllers.test_delete import (CASES_ASSOCS, BaseTestAssoc,
+                                                as_data, delete)
 
 TEST_DETAIL = "From `test_upsert.py`."
 TEST_API_ORIGIN = "./tests/test_controllers/test_upsert.py"
@@ -68,10 +64,10 @@ class TestAssoc(BaseTestAssoc):
         match data.data.kind_assoc:
             case KindObject.grant:
                 upsert.upsert_data = self.grant_data
-                assoc_args = lambda vv: dict(**vv, pending_from=PendingFrom.granter)
+                assoc_args = upsert.create_grant
             case KindObject.assignment:
                 upsert.upsert_data = self.assignment_data
-                assoc_args = lambda vv: vv
+                assoc_args = upsert.create_assignment
             case kind_assoc:
                 raise AssertionError(f"Invalid `{kind_assoc=}`.")
 

@@ -1,43 +1,21 @@
-import functools
 import inspect
 import secrets
-from collections import namedtuple
-from http import HTTPMethod
+from http import HTTPMethod  # type: ignore[attr-defined]
 from typing import Any, ClassVar, Dict, NamedTuple, Set, Tuple, Type
 
 import pytest
 from app import util
 from app.auth import Auth, Token
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    LevelHTTP,
-    PendingFrom,
-    ResolvableSingular,
-    User,
-    UUIDSplit,
-    uuids,
-)
+from app.models import (Assignment, Collection, Document, Event, Grant,
+                        KindEvent, KindObject, Level, LevelHTTP, PendingFrom,
+                        User, UUIDSplit, uuids)
 from app.views.access import Access, WithAccess, with_access
-from app.views.base import (
-    Data,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
+from app.views.base import (Data, ResolvedAssignmentCollection,
+                            ResolvedAssignmentDocument, ResolvedCollection,
+                            ResolvedDocument, ResolvedGrantDocument,
+                            ResolvedGrantUser, ResolvedUser)
 from fastapi import HTTPException
-from pydantic import BaseModel
-from sqlalchemy import false, func, literal_column, select, update
+from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 

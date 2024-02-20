@@ -1,15 +1,17 @@
-import secrets
+import functools
 import json
+import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import Any, Callable, Dict, Generic, Set, Tuple, Type, TypeVar, overload
+from typing import (Any, Callable, Dict, Generic, Protocol, Set, Tuple, Type,
+                    TypeVar, Union, overload)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (Assignment, Collection, Document, Event, Grant, KindEvent,
-                        KindObject, ResolvableMultiple, ResolvableSingular,
-                        ResolvableSourceAssignment, ResolvableTargetAssignment,
-                        Tables, User)
+from app.models import (Assignment, Collection, Document, Event, Grant,
+                        KindEvent, KindObject, PendingFrom, ResolvableMultiple,
+                        ResolvableSingular, ResolvableSourceAssignment,
+                        ResolvableTargetAssignment, Tables, User)
 from app.schemas import (AssignmentSchema, CollectionCreateSchema,
                          CollectionSchema, CollectionUpdateSchema,
                          DocumentCreateSchema, DocumentUpdateSchema,
@@ -29,6 +31,78 @@ from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, literal_column, select
 from sqlalchemy.orm import Session
 
+# --------------------------------------------------------------------------- #
+# Typehints for assoc callback.
+
+# NOTE: Typehints bad when `CallableAssocCallback` is protocol, idk why
+# NOTE: This also does not work:
+#
+#       .. code:: python
+#
+#         CallableAssocCallback = Callable[
+#             [
+#                 Data[T_AssocCallbackResolved],
+#                 T_AssocCallbackTarget,
+#             ],
+#             T_AssocCallbackAssoc,
+#         ]
+
+# NOTE: Fuck this, using lazy callable signature for now.
+# T_AssocCallbackResolved = TypeVar(
+#     "T_AssocCallbackResolved",
+#     ResolvedGrantUser,
+#     ResolvedGrantDocument,
+#     ResolvedAssignmentDocument,
+#     ResolvedAssignmentCollection,
+#     covariant=True
+# )
+# T_AssocCallbackTarget = TypeVar(
+#     "T_AssocCallbackTarget", User, Document, Collection
+# )
+# T_AssocCallbackAssoc = TypeVar(
+#     "T_AssocCallbackAssoc", Grant, Assignment
+# )
+#
+#
+#
+#
+# class CallableAssocCallback(
+#     Protocol,
+#     Generic[
+#         T_AssocCallbackTarget,
+#         T_AssocCallbackAssoc,
+#         T_AssocCallbackResolved,
+#     ],
+# ):
+#
+#     def __call__(
+#         self,
+#         data: Data[T_AssocCallbackResolved],
+#         target: T_AssocCallbackTarget,
+#     ) -> T_AssocCallbackAssoc: ...
+
+
+AssocCallbackGrant = Callable[
+    [
+        Data[ResolvedGrantDocument] | Data[ResolvedGrantUser],
+        User | Document,
+    ],
+    Grant,
+]
+AssocCallbackAssignment = (
+    Callable[
+        [
+            Data[ResolvedAssignmentDocument] | Data[ResolvedAssignmentCollection],
+            Collection | Document,
+        ],
+        Assignment,
+    ]
+)
+AssocCallback = AssocCallbackGrant | AssocCallbackAssignment
+
+# --------------------------------------------------------------------------- #
+# Generic upsert.
+
 T_Upsert = TypeVar(
     "T_Upsert",
     CollectionUpdateSchema,
@@ -40,7 +114,7 @@ T_Upsert = TypeVar(
     GrantCreateSchema,
     EditCreateSchema,
 )
-CallableAssocCallback = Callable[[Dict[str, Any]], Dict[str, Any]]
+
 
 class Upsert(WithDelete, Generic[T_Upsert]):
 
@@ -55,9 +129,9 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         detail: str,
         api_origin: str,
         force: bool = False,
-        access: Access| None = None,
+        access: Access | None = None,
         delete: Delete | None = None,
-        upsert_data: T_Upsert = None,
+        upsert_data: T_Upsert | None = None,
     ):
         super().__init__(
             session,
@@ -67,7 +141,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
             api_origin=api_origin,
             force=force,
             access=access,
-            delete=delete
+            delete=delete,
         )
         self._upsert_data = upsert_data
 
@@ -81,7 +155,6 @@ class Upsert(WithDelete, Generic[T_Upsert]):
     def upsert_data(self, v: T_Upsert):
         self._upsert_data = v
 
-
     # ----------------------------------------------------------------------- #
     # Helpers
 
@@ -93,50 +166,23 @@ class Upsert(WithDelete, Generic[T_Upsert]):
     @overload
     def assoc(
         self,
-        data: Data[ResolvedGrantUser],
-        assoc_args_callback: CallableAssocCallback = lambda v: v,
-        *,
-        force: bool = False,
-    ) -> Tuple[
-        Data[ResolvedGrantUser],
-        AssocData,
-        Update[Assignment] | sqaDelete[Assignment],
-        Type[Grant],
-    ]: ...
-
-    @overload
-    def assoc(
-        self,
-        data: Data[ResolvedGrantDocument],
-        assoc_args_callback: CallableAssocCallback = lambda v: v,
+        data: Data[ResolvedGrantDocument] | Data[ResolvedGrantUser],
+        create_assoc: AssocCallbackGrant,
         *,
         force: bool | None = None,
     ) -> Tuple[
         Data[ResolvedGrantDocument],
         AssocData,
-        Update[Assignment] | sqaDelete[Assignment],
+        Update[Grant] | sqaDelete[Grant],
         Type[Grant],
     ]: ...
 
+    # NOTE: Typehints bad when `CallableAssocCallback` is protocol, idk why
     @overload
     def assoc(
         self,
-        data: Data[ResolvedAssignmentDocument],
-        assoc_args_callback: CallableAssocCallback = lambda v: v,
-        *,
-        force: bool | None = None,
-    ) -> Tuple[
-        Data[ResolvedAssignmentDocument],
-        AssocData,
-        Update[Assignment] | sqaDelete[Assignment],
-        Type[Assignment],
-    ]: ...
-
-    @overload
-    def assoc(
-        self,
-        data: Data[ResolvedAssignmentCollection],
-        assoc_args_callback: CallableAssocCallback = lambda v: v,
+        data: Data[ResolvedAssignmentCollection] | Data[ResolvedAssignmentDocument],
+        create_assoc: AssocCallbackAssignment,
         *,
         force: bool | None = None,
     ) -> Tuple[
@@ -146,18 +192,17 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         Type[Assignment],
     ]: ...
 
-
     def assoc(
-        self, 
-        data: DataResolvedGrant | DataResolvedAssignment, 
-        assoc_args_callback: CallableAssocCallback = lambda v: v,
+        self,
+        data: DataResolvedGrant | DataResolvedAssignment,
+        create_assoc: AssocCallback,
         *,
         force: bool | None = None,
     ) -> Tuple[
         DataResolvedGrant | DataResolvedAssignment,
         AssocData,
-        Update[Assignment] | sqaDelete[Assignment],
-        Type[Assignment],
+        Update[Assignment] | sqaDelete[Assignment] | Update[Grant] | sqaDelete,
+        Type[Assignment] | Type[Grant],
     ]:
         """Symetrically handle forced creation.
 
@@ -166,10 +211,10 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         :param:`data` specified exising assignments, an error will be raised.
 
         :param assoc_args: Common arguments for creating the associations. This
-            should be everything that is not specified by :param:`data` or 
-            :attr:`upsert_data`. For instance, grant should pass key value 
-            pairs for ``pending_from`` and ``uuid_parent``. This parameter 
-            should be used for internal values and not user inputs, which 
+            should be everything that is not specified by :param:`data` or
+            :attr:`upsert_data`. For instance, grant should pass key value
+            pairs for ``pending_from`` and ``uuid_parent``. This parameter
+            should be used for internal values and not user inputs, which
             should be added to `upsert_data`.
         :returns: The active target ids that do not yet have an assignment to
             their source. The requirement that they be active means that doing
@@ -179,11 +224,13 @@ class Upsert(WithDelete, Generic[T_Upsert]):
         force = force if force is not None else self.force
 
         # NOTE: No actual deletion here. Deletion occurs in SPM.
-        rm_assoc_data, rm_assocs, rm_q, T_assoc = self.delete.try_force(data, force=force)
+        rm_assoc_data, rm_assocs, rm_q, T_assoc = self.delete.try_force(
+            data, force=force
+        )
         uuid_target_create: Set[str]
         uuid_target_create = data.data.uuid_target.copy()  # type: ignore
 
-        event_rm : Event | None = None
+        event_rm: Event | None = None
         match self.method:
             case H.POST if not force:
                 if rm_assoc_data.uuid_assoc_deleted:
@@ -198,12 +245,12 @@ class Upsert(WithDelete, Generic[T_Upsert]):
                             kind_source=data.data.kind_source.name,
                             kind_assoc=data.data.kind_assoc.name,
                             uuid_target=list(rm_assoc_data.uuid_target_deleted),
-                           uuid_source=data.data.uuid_source,
+                            uuid_source=data.data.uuid_source,
                             uuid_assoc=list(rm_assoc_data.uuid_assoc_deleted),
                         ),
                     )
                 uuid_target_create -= rm_assoc_data.uuid_target_active
-            # NOTE: Delete ALL existing, add deleted to created. DO NOT UPDATE 
+            # NOTE: Delete ALL existing, add deleted to created. DO NOT UPDATE
             #       `rm_assoc_data`.
             case H.POST | H.PUT:
                 event_rm = self.delete.assoc_event(data, rm_assocs)
@@ -215,22 +262,9 @@ class Upsert(WithDelete, Generic[T_Upsert]):
             case _:
                 raise HTTPException(405)
 
-        # NOTE: Create assocs. DO NOT TRY TO USE `getattr` on `assoc` for 
-        #       `uuid_target_attr_name`.
-        id_source_name = f"id_{data.data.kind_source.name}"
-        id_target_name = f"id_{data.data.kind_target.name}"
-
-        id_source_value = data.data.source.id # type: ignore
-        targets: Tuple = data.data.target  # Type: ignore
+        targets: Tuple = data.data.target  # type: ignore
         assocs = {
-            target.uuid: T_assoc(
-                **assoc_args_callback({
-                    id_source_name: id_source_value,
-                    id_target_name: target.id,
-                    "uuid": secrets.token_urlsafe(8),
-                    **self.upsert_data.model_dump(),
-                })
-            )
+            target.uuid: create_assoc(data, target)  # type: ignore
             for target in targets
             if target.uuid in uuid_target_create
         }
@@ -266,7 +300,7 @@ class Upsert(WithDelete, Generic[T_Upsert]):
                 **event_common,
                 uuid_obj=data.data.uuid_source,
                 kind_obj=data.data.kind_source,
-                children=[event_rm, event_create]
+                children=[event_rm, event_create],
             )
             event.kind = KindEvent.upsert
             data.event = event
@@ -282,57 +316,124 @@ class Upsert(WithDelete, Generic[T_Upsert]):
 
     # ----------------------------------------------------------------------- #
     # Assocs
+    # @overload
+    # def create_assignment(
+    #     self,
+    #     data: Data[ResolvedAssignmentCollection],
+    #     target: Document,
+    # ) -> Assignment: ...
+    #
+    # @overload
+    # def create_assignment(
+    #     self,
+    #     data: Data[ResolvedAssignmentDocument],
+    #     target: Collection,
+    # ) -> Assignment: ...
+
+    def create_assignment(
+        self,
+        data: Data[ResolvedAssignmentDocument] | Data[ResolvedAssignmentCollection],
+        target: Collection | Document,
+    ) -> Assignment:
+        id_source_name = f"id_{data.data.kind_source.name}"
+        id_target_name = f"id_{data.data.kind_target.name}"
+        id_source_value = data.data.source.id  # type: ignore
+
+        kwargs = {
+            "uuid": secrets.token_urlsafe(8),
+            id_source_name: id_source_value,
+            id_target_name: target.id,
+        }
+        return Assignment(**kwargs)
 
     def assignment_document(
         self,
         data: Data[ResolvedAssignmentDocument],
     ) -> Data[ResolvedAssignmentDocument]:
-        data, *_ = self.assoc(data)
+        data, *_ = self.assoc(data, self.create_assignment)
         return data
 
     def assignment_collection(
         self,
         data: Data[ResolvedAssignmentCollection],
     ) -> Data[ResolvedAssignmentCollection]:
-        data, *_ = self.assoc(data)
+        data, *_ = self.assoc(data, self.create_assignment)
         return data
+
+    # @overload
+    # def create_grant(
+    #     self,
+    #     data: Data[ResolvedGrantDocument],
+    #     target: User,
+    # ) -> Grant: ...
+    #
+    # @overload
+    # def create_grant(
+    #     self,
+    #     data: Data[ResolvedGrantUser],
+    #     target: Document,
+    # ) -> Grant: ...
+
+    def create_grant(
+        self,
+        data: Data[ResolvedGrantDocument] | Data[ResolvedGrantUser],
+        target: Document | User,
+    ) -> Grant:
+        # NOTE: Grants should be indexed by uuids of documents.
+        match data.data.kind_source:
+            case KindObject.user:
+                grant_parent = data.data.grants.get(target.uuid)
+                pending_from = PendingFrom.grantee
+            case KindObject.document:
+                grant_parent = data.data.grants.get(target.uuid)
+                pending_from = PendingFrom.granter
+            case bad:
+                raise ValueError(f"Invalid source `{bad}`.")
+
+        if grant_parent is None:
+            detail = dict(
+                msg="No such grant.",
+                uuid_target=target.uuid,
+                uuid_source=data.data.source.uuid,
+                kind_target=data.data.kind_target,
+                kind_source=data.data.kind_source,
+            )
+            raise HTTPException(403, detail=detail)
+
+        id_source_name = f"id_{data.data.kind_source.name}"
+        id_target_name = f"id_{data.data.kind_target.name}"
+        id_source_value = data.data.source.id  # type: ignore
+
+        kwargs = {
+            "uuid": secrets.token_urlsafe(8),
+            "uuid_parent": grant_parent.uuid,
+            "pending_from": pending_from,
+            "pending": True,
+            id_source_name: id_source_value,
+            id_target_name: target.id,
+        }
+        return Grant(**kwargs)
 
     def grant_user(
         self,
         data: Data[ResolvedGrantUser],
     ) -> Data[ResolvedGrantUser]:
-        data, *_ = self.assoc(data)
+        data, *_ = self.assoc(data, self.create_grant)
         return data
 
     def grant_document(
         self,
         data: Data[ResolvedGrantDocument],
     ) -> Data[ResolvedGrantDocument]:
-        data, *_ = self.assoc(data)
+        data, *_ = self.assoc(data, self.create_grant)
         return data
 
     a_assignment_document = with_access(Access.assignment_document)(assignment_document)
-    a_assignment_collection = with_access(Access.assignment_collection)(assignment_collection)
+    a_assignment_collection = with_access(Access.assignment_collection)(
+        assignment_collection
+    )
     a_grant_document = with_access(Access.grant_document)(grant_document)
     a_grant_user = with_access(Access.grant_user)(grant_user)
 
     # ----------------------------------------------------------------------- #
     # Others
-
-    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]: ...
-
-    def collection(
-        self,
-        data: Data[ResolvedCollection],
-    ) -> Data[ResolvedCollection]: ...
-
-    # NOTE:
-    def document(
-        self,
-        data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]: ...
-    def edit(
-        self,
-        data: Data[ResolvedEdit],
-    ) -> Data[ResolvedEdit]: ...
-
