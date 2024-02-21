@@ -8,19 +8,19 @@ from typing import (Annotated, Any, Callable, Concatenate, Dict, Generic, List,
 
 from app import __version__
 from app.auth import Token
+from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
+                                  DataResolvedGrant, KindData,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedGrantDocument,
+                                  ResolvedGrantUser, ResolvedUser)
 from app.depends import DependsToken
 from app.models import (Assignment, AssocCollectionDocument, AssocUserDocument,
                         ChildrenAssignment, Collection, Document, Edit, Grant,
                         Level, LevelHTTP, Resolvable, ResolvableMultiple,
                         ResolvableSingular, User)
 from app.views import args
-from app.views.base import (BaseController, Data, DataResolvedAssignment,
-                            DataResolvedGrant, KindData,
-                            ResolvedAssignmentCollection,
-                            ResolvedAssignmentDocument, ResolvedCollection,
-                            ResolvedDocument, ResolvedEdit,
-                            ResolvedGrantDocument, ResolvedGrantUser,
-                            ResolvedUser)
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 

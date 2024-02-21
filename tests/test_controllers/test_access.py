@@ -9,8 +9,8 @@ from app.auth import Auth, Token
 from app.models import (Assignment, Collection, Document, Event, Grant,
                         KindEvent, KindObject, Level, LevelHTTP, PendingFrom,
                         User, UUIDSplit, uuids)
-from app.views.access import Access, WithAccess, with_access
-from app.views.base import (Data, ResolvedAssignmentCollection,
+from app.controllers.access import Access, WithAccess, with_access
+from app.controllers.base import (Data, ResolvedAssignmentCollection,
                             ResolvedAssignmentDocument, ResolvedCollection,
                             ResolvedDocument, ResolvedGrantDocument,
                             ResolvedGrantUser, ResolvedUser)

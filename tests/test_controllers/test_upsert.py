@@ -7,10 +7,10 @@ from app.auth import Auth, Token
 from app.models import (Document, Grant, KindEvent, KindObject, Level,
                         PendingFrom, User)
 from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
-from app.views.access import H
-from app.views.base import Data
-from app.views.create import Create
-from app.views.delete import AssocData, Delete
+from app.controllers.access import H
+from app.controllers.base import Data
+from app.controllers.create import Create
+from app.controllers.delete import AssocData, Delete
 from fastapi import HTTPException
 from sqlalchemy import Update, select
 from sqlalchemy.orm import make_transient

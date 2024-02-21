@@ -13,7 +13,7 @@ from app.models import (
 )
 from app.schemas import DocumentMetadataSchema, DocumentSchema, DocumentSearchSchema
 from app.views import args
-from app.views.access import Access
+from app.controllers.access import Access
 from app.views.base import BaseView
 from fastapi import Depends, HTTPException
 from sqlalchemy import select

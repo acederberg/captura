@@ -23,9 +23,9 @@ from app.schemas import (
     EventSchema,
 )
 from app.views import args
-from app.views.access import Access
+from app.controllers.access import Access
 from app.views.base import BaseView
-from app.views.delete import Delete
+from app.controllers.delete import Delete
 from fastapi import Depends, HTTPException
 from sqlalchemy import delete, literal_column, select, union, update
 from sqlalchemy.orm import Session

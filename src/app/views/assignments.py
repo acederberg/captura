@@ -2,25 +2,16 @@ from http import HTTPMethod
 from typing import Any, Dict, List, Set, Tuple
 
 from app import __version__, util
+from app.controllers.access import Access
+from app.controllers.create import Create
+from app.controllers.delete import Delete
 from app.depends import DependsSessionMaker, DependsToken
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Event,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.models import (Assignment, AssocCollectionDocument,
+                        ChildrenAssignment, Collection, Document, Event,
+                        KindEvent, KindObject, Level, User)
 from app.schemas import AssignmentSchema, EventSchema
 from app.views import args
-from app.views.access import Access
 from app.views.base import BaseView
-from app.views.create import Create
-from app.views.delete import Delete
 from fastapi import HTTPException
 from sqlalchemy import delete, literal_column, select, update
 from sqlalchemy.orm import Session

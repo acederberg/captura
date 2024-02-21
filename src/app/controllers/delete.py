@@ -10,8 +10,8 @@ from app.models import (Assignment, AssocCollectionDocument,
                         Grant, KindEvent, KindObject, Level, Resolvable,
                         ResolvableMultiple, ResolvableSingular, Singular, User)
 from app.schemas import EventSchema
-from app.views.access import Access, WithAccess, with_access
-from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
+from app.controllers.access import Access, WithAccess, with_access
+from app.controllers.base import (Data, DataResolvedAssignment, DataResolvedGrant,
                             KindData, ResolvedAssignmentCollection,
                             ResolvedAssignmentDocument, ResolvedCollection,
                             ResolvedDocument, ResolvedEdit,

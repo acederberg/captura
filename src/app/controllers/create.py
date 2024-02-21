@@ -18,14 +18,14 @@ from app.schemas import (AssignmentSchema, CollectionCreateSchema,
                          DocumentCreateSchema, DocumentUpdateSchema,
                          EditCreateSchema, EventSchema, GrantCreateSchema,
                          PostUserSchema, UserCreateSchema, UserUpdateSchema)
-from app.views.access import Access, H, WithAccess, with_access
-from app.views.base import (Data, DataResolvedGrant,
+from app.controllers.access import Access, H, WithAccess, with_access
+from app.controllers.base import (Data, DataResolvedGrant,
                             ResolvedAssignmentCollection,
                             ResolvedAssignmentDocument, ResolvedCollection,
                             ResolvedDocument, ResolvedEdit,
                             ResolvedGrantDocument, ResolvedGrantUser,
                             ResolvedUser)
-from app.views.delete import (AssocData, DataResolvedAssignment, Delete,
+from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
                               WithDelete)
 from fastapi import HTTPException
 from sqlalchemy import Delete as sqaDelete

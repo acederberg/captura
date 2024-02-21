@@ -1,5 +1,5 @@
 from app.models import Collection, Document
-from app.views.base import ResolvedAssignmentDocument, ResolvedDocument
+from app.controllers.base import ResolvedAssignmentDocument, ResolvedDocument
 from sqlalchemy.orm import sessionmaker
 
 

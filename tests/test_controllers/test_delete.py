@@ -7,12 +7,12 @@ from app import util
 from app.models import (Assignment, AssocUserDocument, Collection, Document,
                         Grant, KindEvent, KindObject, Plural, Singular, User)
 from app.schemas import EventSchema
-from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
+from app.controllers.base import (Data, DataResolvedAssignment, DataResolvedGrant,
                             ResolvedAssignmentCollection,
                             ResolvedAssignmentDocument, ResolvedGrantDocument,
                             ResolvedGrantUser)
-from app.views.create import Create
-from app.views.delete import AssocData, Delete
+from app.controllers.create import Create
+from app.controllers.delete import AssocData, Delete
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, update
 from sqlalchemy.orm import Session, make_transient
