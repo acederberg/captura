@@ -7,8 +7,11 @@ from app import util
 from app.models import (Assignment, AssocUserDocument, Collection, Document,
                         Grant, KindEvent, KindObject, Plural, Singular, User)
 from app.schemas import EventSchema
-from app.views.base import Data, DataResolvedAssignment, DataResolvedGrant, ResolvedAssignmentCollection, ResolvedAssignmentDocument, ResolvedGrantDocument, ResolvedGrantUser
-from app.views.create import Upsert
+from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
+                            ResolvedAssignmentCollection,
+                            ResolvedAssignmentDocument, ResolvedGrantDocument,
+                            ResolvedGrantUser)
+from app.views.create import Create
 from app.views.delete import AssocData, Delete
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, update
@@ -32,7 +35,7 @@ def delete(session: Session) -> Delete:
 
 
 def as_data(
-    delete: Delete | Upsert,
+    delete: Delete | Create,
     T_source: Type,
     uuid_source: str,
     T_target: Type,
@@ -46,10 +49,6 @@ def as_data(
     kind_source = KindObject(T_source.__tablename__)
     kind_target = KindObject(T_target.__tablename__)
     kind_assignment = KindObject(T_assoc.__tablename__)
-    assocs = {
-        getattr(assoc, f"uuid_{kind_target.name}"): assoc
-        for assoc in T_assoc.if_many(delete.session, uuid_assoc)
-    }
     data_resolved = {
         kind_source.name: source,
         Singular(kind_target.name).name: targets,
@@ -57,8 +56,16 @@ def as_data(
         "kind_target": kind_target,
         "kind_source": kind_source,
         "kind_assignment": kind_assignment,
-        Singular(kind_assignment.name).name: assocs
     }
+
+    if "grant" in kind:
+        assocs = {
+            getattr(assoc, f"uuid_{kind_target.name}"): assoc
+            for assoc in T_assoc.if_many(delete.session, uuid_assoc)
+        }
+        assoc_name = Singular(kind_assignment.name).name
+        data_resolved.update({f"token_user_{assoc_name}": assocs})
+
     match kind:
         case "assignment_document":
             res = ResolvedAssignmentDocument(**data_resolved)
@@ -144,7 +151,7 @@ class BaseTestAssoc:
 
     def check_event(
         self,
-        delete: Delete | Upsert,
+        delete: Delete | Create,
         assoc_data: AssocData,
         data: DataResolvedAssignment | DataResolvedGrant,
         _event: Event | None = None
@@ -158,7 +165,7 @@ class BaseTestAssoc:
         assert event.uuid_obj == data.data.uuid_source
 
         match delete:
-            case Upsert(force=force):
+            case Create(force=force):
                 uuid_target_expected = data.data.uuid_target.copy()
                 if not force:
                     uuid_target_expected -= assoc_data.uuid_target_active
@@ -188,7 +195,7 @@ class BaseTestAssoc:
 
         return event
 
-    def check_mthd(self, delete: Delete | Upsert, data: DataResolvedAssignment | DataResolvedGrant,) -> Callable[
+    def check_mthd(self, delete: Delete | Create, data: DataResolvedAssignment | DataResolvedGrant,) -> Callable[
         [Data], 
         Tuple[
             DataResolvedGrant | DataResolvedAssignment,

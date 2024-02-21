@@ -8,60 +8,22 @@ import logging
 from functools import cached_property
 from http import HTTPMethod
 from os import walk
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Literal,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    Union,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, Literal, Set,
+                    Tuple, Type, TypeAlias, TypeVar, Union)
 
 from app import __version__, util
 from app.auth import Token
 from app.config import Config
 from app.depends import DependsToken
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    LevelHTTP,
-    Resolvable,
-    ResolvableMultiple,
-    ResolvableSingular,
-    ResolvedRawAny,
-    Singular,
-    User,
-    uuids,
-)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindEvent, KindObject, Level, LevelHTTP,
+                        Resolvable, ResolvableMultiple, ResolvableSingular,
+                        ResolvedRawAny, Singular, User, uuids)
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Discriminator,
-    Field,
-    RootModel,
-    Tag,
-    ValidationInfo,
-    computed_field,
-    field_validator,
-)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Discriminator,
+                      Field, RootModel, Tag, ValidationInfo, computed_field,
+                      field_validator)
 from pydantic_core.core_schema import FieldValidationInfo
 from sqlalchemy.orm import Session
 
@@ -240,11 +202,12 @@ class ResolvedGrantUser(BaseDataAssoc):
     ]
 
     user: User
-    grants: Dict[str, Grant]
     documents: Tuple[Document, ...]
     uuid_user: UuidFromModel
     uuid_documents: UuidSetFromModel
 
+    # NOTE: See note inside of `Access.grant_user` about `token_user_grants`.
+    token_user_grants: Dict[str, Grant]
 
 class ResolvedGrantDocument(BaseDataAssoc):
     kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
@@ -262,11 +225,12 @@ class ResolvedGrantDocument(BaseDataAssoc):
     ]
 
     document: Document
-    grants: Dict[str, Grant]
     users: Tuple[User, ...]
     uuid_document: UuidFromModel
     uuid_users: UuidSetFromModel
 
+    # NOTE: See note inside of `Access.grant_document` about `token_user_grants`.
+    token_user_grants: Dict[str, Grant]
 
 class ResolvedAssignmentCollection(BaseDataAssoc):
     kind: Annotated[
@@ -287,7 +251,7 @@ class ResolvedAssignmentCollection(BaseDataAssoc):
     ]
 
     collection: Collection
-    assignments: Dict[str, Assignment]
+    # assignments: Dict[str, Assignment]
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
     uuid_documents: UuidSetFromModel

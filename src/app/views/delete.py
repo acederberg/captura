@@ -258,7 +258,7 @@ class Delete(WithAccess):
         session = self.session
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
 
-        data.event = self.assoc_event(data, assocs)
+        data.event = self.create_event_assoc(data, assocs)
         session.add(data.event)
         session.execute(q_del)
         session.commit()
@@ -270,7 +270,11 @@ class Delete(WithAccess):
     def event_common(self) -> Dict[str, Any]:
         return dict(**super().event_common, kind=KindEvent.delete)
 
-    def assoc_event(self, data: DataResolvedGrant | DataResolvedAssignment, assocs: Tuple[Grant, ...] | Tuple[Assignment, ...],) -> Event:
+    def create_event_assoc(
+        self, 
+        data: DataResolvedGrant | DataResolvedAssignment,
+        assocs: Tuple[Grant, ...] | Tuple[Assignment, ...],
+    ) -> Event:
 
         # NOTE: Base event indicates the document, secondary event
         #       indicates the users for which permissions were revoked.

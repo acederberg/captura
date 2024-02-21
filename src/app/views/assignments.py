@@ -19,7 +19,7 @@ from app.schemas import AssignmentSchema, EventSchema
 from app.views import args
 from app.views.access import Access
 from app.views.base import BaseView
-from app.views.create import Upsert
+from app.views.create import Create
 from app.views.delete import Delete
 from fastapi import HTTPException
 from sqlalchemy import delete, literal_column, select, update
@@ -242,7 +242,7 @@ class AssignmentView(BaseView):
                 uuid_collection,
             )
 
-            upsert = access.then(Upsert)
+            upsert = access.then(Create)
             event = upsert.assignment_document(document, collections)
             return EventSchema.model_validate(event)
 
@@ -324,7 +324,7 @@ class AssignmentView(BaseView):
                 uuid_document,
             )
 
-            upsert = access.then(Upsert)
+            upsert = access.then(Create)
             event = upsert.assignment_collection(collection, documents)
             return EventSchema.model_validate(event)
 

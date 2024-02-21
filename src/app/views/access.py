@@ -2,62 +2,25 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    Concatenate,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    ParamSpec,
-    Protocol,
-    Self,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    overload,
-)
+from typing import (Annotated, Any, Callable, Concatenate, Dict, Generic, List,
+                    Literal, ParamSpec, Protocol, Self, Sequence, Set, Tuple,
+                    Type, TypeAlias, TypeVar, overload)
 
 from app import __version__
 from app.auth import Token
 from app.depends import DependsToken
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    AssocUserDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Edit,
-    Grant,
-    Level,
-    LevelHTTP,
-    Resolvable,
-    ResolvableMultiple,
-    ResolvableSingular,
-    User,
-)
+from app.models import (Assignment, AssocCollectionDocument, AssocUserDocument,
+                        ChildrenAssignment, Collection, Document, Edit, Grant,
+                        Level, LevelHTTP, Resolvable, ResolvableMultiple,
+                        ResolvableSingular, User)
 from app.views import args
-from app.views.base import (
-    BaseController,
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
+from app.views.base import (BaseController, Data, DataResolvedAssignment,
+                            DataResolvedGrant, KindData,
+                            ResolvedAssignmentCollection,
+                            ResolvedAssignmentDocument, ResolvedCollection,
+                            ResolvedDocument, ResolvedEdit,
+                            ResolvedGrantDocument, ResolvedGrantUser,
+                            ResolvedUser)
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -574,13 +537,15 @@ class Access(BaseController):
             case _:
                 raise HTTPException(405)
 
-        grants: Dict[str, Grant] = dict()
+        # NOTE: See the equivalent note in `ResolvedGrantUser`. User grants are
+        #       not important, only `token_user`. 
+        token_user_grants: Dict[str, Grant] = dict()
         documents = self.document(
             resolve_documents,
             exclude_deleted=exclude_deleted,
-            resolve_user_token=user_token,
+            resolve_user_token=user_token, 
             level=level,
-            grants=grants,
+            grants=token_user_grants,
             grants_index="uuid_document",
         )
 
@@ -590,7 +555,8 @@ class Access(BaseController):
                     documents=documents,
                     user=user,
                     kind="grant_user",
-                    grants=grants,
+                    token_user=self.token_user,
+                    token_user_grants=token_user_grants,
                 ),
                 token_user=user_token,
                 event=None,
@@ -656,16 +622,28 @@ class Access(BaseController):
         level = level if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
-        grants: Dict[str, Grant] = dict()
+        token_user_grant: Dict[str, Grant] = dict()
         document = self.document(
             resolve_document,
             exclude_deleted=exclude_deleted,
             resolve_user_token=user_token,
             return_data=False,
             level=Level.own,
-            grants=grants,
+            grants=token_user_grant,
             grants_index="uuid_user",
         )
+
+        # NOTE: Permissions of users do not matter for CRUD of grants because 
+        #       they're always url params that are filtered out. Notice:
+        #
+        #       1. Reading the grants for document requires no knowledge 
+        #          about the users filtered by.
+        #       2. Creating pending grants for a document requires nothing 
+        #          about the various users to be known with regard to the 
+        #          source document.
+        #       3. Accepting requests for access does not require any grant
+        #          knowledge bout the target users on the source document.
+        # 
         users = self.user(resolve_users)
 
         # Select owner uuids
@@ -693,7 +671,8 @@ class Access(BaseController):
                             document=document,
                             users=users,
                             kind="grant_document",
-                            grants=grants,
+                            token_user_grant=token_user_grant[usert_token.uuid],
+                            user_grants=None
                         ),
                         token_user=user_token,
                         event=None,

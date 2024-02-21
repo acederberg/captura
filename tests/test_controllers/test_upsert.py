@@ -9,7 +9,7 @@ from app.models import (Document, Grant, KindEvent, KindObject, Level,
 from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
 from app.views.access import H
 from app.views.base import Data
-from app.views.create import Upsert
+from app.views.create import Create
 from app.views.delete import AssocData, Delete
 from fastapi import HTTPException
 from sqlalchemy import Update, select
@@ -22,8 +22,8 @@ TEST_API_ORIGIN = "./tests/test_controllers/test_upsert.py"
 
 
 @pytest.fixture
-def upsert(delete: Delete) -> Upsert:
-    res = Upsert(
+def upsert(delete: Delete) -> Create:
+    res = Create(
         delete.session,  # type: ignore
         dict(uuid="000-000-000"),
         HTTPMethod.POST,
@@ -65,7 +65,7 @@ class TestAssoc(BaseTestAssoc):
 
     def test_assoc(
         self,
-        upsert: Upsert,
+        upsert: Create,
         T_source: Type,
         uuid_source: str,
         T_target: Type,

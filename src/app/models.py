@@ -1030,6 +1030,7 @@ class User(SearchableTableMixins, Base):
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
+        pending: bool = False,
     ) -> ColumnElement[bool]:
         cond = AssocUserDocument.id_user == self.id
         if exclude_deleted:
@@ -1047,7 +1048,9 @@ class User(SearchableTableMixins, Base):
                 ),
             )
         if level is not None:
-            cond = and_(cond, AssocUserDocument.level >= level.value)
+            cond = and_(cond, Grant.level >= level.value)
+
+        cond = and_(cond, Grant.pending == (true() if pending else false()))
 
         return cond
 
@@ -1056,6 +1059,7 @@ class User(SearchableTableMixins, Base):
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
+        pending: bool = False,
     ) -> Select:
         # NOTE: Attempting to make roughly the following query:
         #
@@ -1070,7 +1074,9 @@ class User(SearchableTableMixins, Base):
         #          JOIN documents
         #               ON _assocs_user_documents.id_document = documents.id;
         q = select(Grant).select_from(User).join(AssocUserDocument).join(Document)
-        conds = self.q_conds_grants(document_uuids, level, exclude_deleted)
+        conds = self.q_conds_grants(
+            document_uuids, level, exclude_deleted=exclude_deleted, pending=pending
+        )
         q = q.where(conds)
         return q
 
@@ -1146,7 +1152,7 @@ class User(SearchableTableMixins, Base):
         level: Level,
         *,
         grants: Dict[str, "Grant"] | None = None,
-        grants_index: Literal["uuid_document", "uuid_user"] ="uuid_document",
+        grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
     ) -> Self:
         # If the document is public and the level is view, then don't check.
         if document.public and level == Level.view:
@@ -1340,30 +1346,33 @@ class Document(SearchableTableMixins, Base):
         user_uuids: Set[str] | None = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
+        pending: bool = False,
     ) -> ColumnElement[bool]:
-        exp = AssocUserDocument.id_document == self.id
+        cond = AssocUserDocument.id_document == self.id
         if exclude_deleted:
-            exp = and_(
-                exp,
+            cond = and_(
+                cond,
                 AssocUserDocument.deleted == false(),
                 User.deleted == false(),
             )
         if user_uuids is not None:
-            exp = and_(
-                exp,
+            cond = and_(
+                cond,
                 AssocUserDocument.id_user.in_(
                     select(User.id).where(User.uuid.in_(user_uuids))
                 ),
             )
         if level is not None:
-            exp = and_(exp, AssocUserDocument.level >= level)
-        return exp
+            cond = and_(cond, AssocUserDocument.level >= level)
+        cond = and_(cond, Grant.pending == (true() if pending else false()))
+        return cond
 
     def q_select_grants(
         self,
         user_uuids: Set[str] | None = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
+        pending: bool = False,
     ) -> Select:
         """Query to find grants (AssocUserDocument) for this document.
 
@@ -1373,7 +1382,10 @@ class Document(SearchableTableMixins, Base):
         :param level: The minimal level to select joined entries from.
         """
         conds = self.q_conds_grants(
-            user_uuids=user_uuids, level=level, exclude_deleted=exclude_deleted
+            user_uuids=user_uuids,
+            level=level,
+            exclude_deleted=exclude_deleted,
+            pending=pending,
         )
         return select(Grant).join(Document).join(User).where(conds)
 
