@@ -565,7 +565,7 @@ class TestAccessDocument(BaseTestAccess):
         res = access.document({"aaa-aaa-aaa", "draculaflow"}, return_data=True)
         assert isinstance(res, Data)
         assert isinstance(res.data, ResolvedDocument)
-        assert isinstance(res_collection := res.data.document, tuple)
+        assert isinstance(res_collection := res.data.documents, tuple)
         assert all(isinstance(item, Document) for item in res_collection)
 
     def test_private(self, session: Session):

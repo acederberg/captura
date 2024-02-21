@@ -80,6 +80,7 @@ class PendingFrom(str, enum.Enum):
 # NOTE: This maps table names to their corresponding API names. It is important
 #       to note that this uses singular names and not plural names.
 class KindObject(str, enum.Enum):
+    bulk = "bulk"
     user = "users"
     document = "documents"
     collection = "collections"
@@ -1030,7 +1031,8 @@ class User(SearchableTableMixins, Base):
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
-        pending: bool = False,
+        pending: bool | None = None,
+        exclude_pending: bool = False,
     ) -> ColumnElement[bool]:
         cond = AssocUserDocument.id_user == self.id
         if exclude_deleted:
@@ -1050,7 +1052,13 @@ class User(SearchableTableMixins, Base):
         if level is not None:
             cond = and_(cond, Grant.level >= level.value)
 
-        cond = and_(cond, Grant.pending == (true() if pending else false()))
+        match (pending, exclude_pending):
+            case (True, True):
+                raise ValueError()
+            case (bool() as pending, False):
+                cond = and_(cond, Grant.pending == (true() if pending else false()))
+            case (None, True):
+                cond = and_(cond, Grant.pending == false())
 
         return cond
 
@@ -1059,7 +1067,8 @@ class User(SearchableTableMixins, Base):
         document_uuids: None | Set[str] = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
-        pending: bool = False,
+        pending: bool | None = None,
+        exclude_pending: bool = True,
     ) -> Select:
         # NOTE: Attempting to make roughly the following query:
         #
@@ -1075,7 +1084,11 @@ class User(SearchableTableMixins, Base):
         #               ON _assocs_user_documents.id_document = documents.id;
         q = select(Grant).select_from(User).join(AssocUserDocument).join(Document)
         conds = self.q_conds_grants(
-            document_uuids, level, exclude_deleted=exclude_deleted, pending=pending
+            document_uuids,
+            level,
+            exclude_deleted=exclude_deleted,
+            pending=pending,
+            exclude_pending=exclude_pending,
         )
         q = q.where(conds)
         return q
@@ -1161,7 +1174,9 @@ class User(SearchableTableMixins, Base):
         session = self.get_session()
 
         # Deleted and insufficient should be included for better feedback.
-        q = self.q_select_grants({document.uuid}, exclude_deleted=False)
+        q = self.q_select_grants(
+            {document.uuid}, exclude_deleted=False, exclude_pending=False,
+        )
         q_uuid_grant = select(literal_column("uuid")).select_from(q.subquery())
         q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
         res = session.execute(q_grant).scalars()
@@ -1346,8 +1361,15 @@ class Document(SearchableTableMixins, Base):
         user_uuids: Set[str] | None = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
-        pending: bool = False,
+        pending: bool | None = None,
+        exclude_pending: bool = True,
     ) -> ColumnElement[bool]:
+        """
+
+        :param pending: Specify a value for pending.
+        :param exclude_pending: Specify if all grants should be returned
+            regardless of their pending status.
+        """
         cond = AssocUserDocument.id_document == self.id
         if exclude_deleted:
             cond = and_(
@@ -1364,7 +1386,15 @@ class Document(SearchableTableMixins, Base):
             )
         if level is not None:
             cond = and_(cond, AssocUserDocument.level >= level)
-        cond = and_(cond, Grant.pending == (true() if pending else false()))
+
+        match (pending, exclude_pending):
+            case (True, True):
+                raise ValueError()
+            case (bool() as pending, False):
+                cond = and_(cond, Grant.pending == (true() if pending else false()))
+            case (None, True):
+                cond = and_(cond, Grant.pending == false())
+
         return cond
 
     def q_select_grants(
@@ -1372,6 +1402,7 @@ class Document(SearchableTableMixins, Base):
         user_uuids: Set[str] | None = None,
         level: Level | None = None,
         exclude_deleted: bool = True,
+        exclude_pending: bool = True,
         pending: bool = False,
     ) -> Select:
         """Query to find grants (AssocUserDocument) for this document.
@@ -1386,6 +1417,7 @@ class Document(SearchableTableMixins, Base):
             level=level,
             exclude_deleted=exclude_deleted,
             pending=pending,
+            exclude_pending=exclude_pending,
         )
         return select(Grant).join(Document).join(User).where(conds)
 

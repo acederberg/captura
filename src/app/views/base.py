@@ -135,11 +135,11 @@ UuidFromModel = Annotated[
 ]
 
 
-class BaseData(BaseModel):
+class BaseResolved(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class BaseDataAssoc(BaseData):
+class BaseResolvedAssoc(BaseResolved):
     kind_source: Any
     kind_target: Any
     kind_assoc: Any
@@ -161,33 +161,39 @@ class BaseDataAssoc(BaseData):
         return getattr(self, "uuid_" + Singular(self.kind_target.name).name)
 
 
-class ResolvedCollection(BaseData):
+class ResolvedCollection(BaseResolved):
     kind: Annotated[Literal["collection"], Field(default="collection")]
-    collection: Collection | Tuple[Collection, ...]
-    uuid_collection: UuidSetFromModel
+
+    collections: Tuple[Collection, ...]
+    uuid_collections: UuidSetFromModel
 
 
-class ResolvedDocument(BaseData):
+class ResolvedDocument(BaseResolved):
     kind: Annotated[Literal["document"], Field(default="document")]
-    document: Document | Tuple[Document, ...]
-    grants: Dict[str, Grant]
-    uuid_document: UuidSetFromModel
+
+    documents: Tuple[Document, ...]
+    uuid_documents: UuidSetFromModel
+
+    token_user_grants: Dict[str, Grant]
 
 
-class ResolvedEdit(BaseData):
+class ResolvedEdit(BaseResolved):
     kind: Annotated[Literal["edit"], Field(default="edit")]
-    edit: Edit | Tuple[Edit, ...]
-    grants: Dict[str, Grant]
+
+    edits: Tuple[Edit, ...]
     uuid_edit: UuidSetFromModel
 
+    token_user_grants: Dict[str, Grant]
 
-class ResolvedUser(BaseData):
+
+class ResolvedUser(BaseResolved):
     kind: Annotated[Literal["user"], Field(default="user")]
-    user: User | Tuple[User, ...]
-    uuid_user: UuidSetFromModel
+
+    users: Tuple[User, ...]
+    uuid_users: UuidSetFromModel
 
 
-class ResolvedGrantUser(BaseDataAssoc):
+class ResolvedGrantUser(BaseResolvedAssoc):
     kind: Annotated[Literal["grant_user"], Field(default="grant_user")]
     kind_source: Annotated[
         Literal[KindObject.user], Field(default=KindObject.user)
@@ -209,7 +215,7 @@ class ResolvedGrantUser(BaseDataAssoc):
     # NOTE: See note inside of `Access.grant_user` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
 
-class ResolvedGrantDocument(BaseDataAssoc):
+class ResolvedGrantDocument(BaseResolvedAssoc):
     kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
     kind_source: Annotated[
         Literal[KindObject.document],
@@ -232,7 +238,7 @@ class ResolvedGrantDocument(BaseDataAssoc):
     # NOTE: See note inside of `Access.grant_document` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
 
-class ResolvedAssignmentCollection(BaseDataAssoc):
+class ResolvedAssignmentCollection(BaseResolvedAssoc):
     kind: Annotated[
         Literal["assignment_collection"],
         Field(default="assignment_collection"),
@@ -259,7 +265,7 @@ class ResolvedAssignmentCollection(BaseDataAssoc):
     # These are very helpful for handling cases in general
 
 
-class ResolvedAssignmentDocument(BaseDataAssoc):
+class ResolvedAssignmentDocument(BaseResolvedAssoc):
     kind: Annotated[
         Literal["assignment_document"],
         Field(default="assignment_document"),

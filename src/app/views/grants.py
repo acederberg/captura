@@ -2,15 +2,8 @@ from typing import List, Set
 
 from app import __version__
 from app.depends import DependsSessionMaker, DependsToken
-from app.models import (
-    AssocUserDocument,
-    Document,
-    Event,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.models import (AssocUserDocument, Document, Event, KindEvent,
+                        KindObject, Level, User)
 from app.schemas import EventSchema, GrantCreateSchema, GrantSchema
 from app.views import args
 from app.views.base import BaseView
@@ -44,12 +37,6 @@ class GrantView(BaseView):
         :param uuid_user: Users to check for.
         :returns: Nothing.
         """
-
-        q_uuid_users = select(User.uuid).where(
-            User.uuid.in_(uuid_user),
-            User.deleted == false(),
-        )
-        uuid_user_existing = set(session.execute(q_uuid_users).scalars())
 
         if len(bad := uuid_user - uuid_user_existing):
             detail = dict(

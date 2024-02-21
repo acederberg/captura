@@ -35,53 +35,7 @@ from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 # Typehints for assoc callback.
-
-# NOTE: Typehints bad when `CallableAssocCallback` is protocol, idk why
-# NOTE: This also does not work:
-#
-#       .. code:: python
-#
-#         CallableAssocCallback = Callable[
-#             [
-#                 Data[T_AssocCallbackResolved],
-#                 T_AssocCallbackTarget,
-#             ],
-#             T_AssocCallbackAssoc,
-#         ]
-
-# NOTE: Fuck this, using lazy callable signature for now.
-# T_AssocCallbackResolved = TypeVar(
-#     "T_AssocCallbackResolved",
-#     ResolvedGrantUser,
-#     ResolvedGrantDocument,
-#     ResolvedAssignmentDocument,
-#     ResolvedAssignmentCollection,
-#     covariant=True
-# )
-# T_AssocCallbackTarget = TypeVar(
-#     "T_AssocCallbackTarget", User, Document, Collection
-# )
-# T_AssocCallbackAssoc = TypeVar(
-#     "T_AssocCallbackAssoc", Grant, Assignment
-# )
-#
-#
-#
-#
-# class CallableAssocCallback(
-#     Protocol,
-#     Generic[
-#         T_AssocCallbackTarget,
-#         T_AssocCallbackAssoc,
-#         T_AssocCallbackResolved,
-#     ],
-# ):
-#
-#     def __call__(
-#         self,
-#         data: Data[T_AssocCallbackResolved],
-#         target: T_AssocCallbackTarget,
-#     ) -> T_AssocCallbackAssoc: ...
+# NOTE: Tried protocol, too much of a pain in the ass.
 
 
 AssocCallbackGrant = Callable[
@@ -615,12 +569,6 @@ class Update(WithDelete, Generic[T_Update]):
 
         token_user = data.token_user or self.token_user
         token_user_grant = data.data.token_user_grants[token_user.uuid]
-
-        # if len(data.data.users) != 1:
-        #     raise HTTPException(500, detail="Expected exactly one user.")
-        # elif token_user not in data.data.users:
-        #     raise HTTPException(
-        #         403,
 
         # Double check the level.
         detail = dict(

@@ -41,8 +41,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         *,
         return_data: Literal[False] = False,
-    ) -> User:
-        ...
+    ) -> User: ...
 
     @overload
     def user(  # type: ignore[overload-overlap]
@@ -51,8 +50,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         *,
         return_data: Literal[False] = False,
-    ) -> Tuple[User, ...]:
-        ...
+    ) -> Tuple[User, ...]: ...
 
     @overload
     def user(
@@ -61,8 +59,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         *,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedUser]:
-        ...
+    ) -> Data[ResolvedUser]: ...
 
     def user(  # type: ignore
         self,
@@ -106,17 +103,21 @@ class Access(BaseController):
                 case _ as bad:
                     raise ValueError(f"Cannot yet method `{bad}`.")
 
-        match (User.resolve(self.session, resolve_user)):
-            case tuple() as users:
-                res = tuple(map(check_one, users))
-            case User() as user:
-                res = check_one(user)
+        users: Tuple[User, ...]
+        match res := User.resolve(self.session, resolve_user):
+            case tuple():
+                users = tuple(map(check_one, res))
+            case User():
+                _user = check_one(res)
+                if not return_data:
+                    return _user
+                users = (_user,)
             case _:
                 raise HTTPException(405)
 
         if return_data:
             return Data(
-                data=ResolvedUser(user=res, kind="user"),  # type: ignore
+                data=ResolvedUser.model_validate(dict(users=users, kind="user")),  # type: ignore
                 token_user=user_token,
                 event=None,
             )
@@ -175,8 +176,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
-    ) -> Collection:
-        ...
+    ) -> Collection: ...
 
     @overload
     def collection(  # type: ignore[overload-overlap]
@@ -186,8 +186,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[Collection, ...]:
-        ...
+    ) -> Tuple[Collection, ...]: ...
 
     @overload
     def collection(
@@ -197,8 +196,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedCollection]:
-        ...
+    ) -> Data[ResolvedCollection]: ...
 
     def collection(
         self,
@@ -238,15 +236,16 @@ class Access(BaseController):
                     raise ValueError(msg)
 
         token_user = self.token_user_or(resolve_user_token)
-        collections: Collection | Tuple[Collection, ...]
-        collections = Collection.resolve(self.session, resolve_collection)
 
-        res: Collection | Tuple[Collection, ...]
-        match collections:
+        collections: Tuple[Collection, ...]
+        match res := Collection.resolve(self.session, resolve_collection):
             case Collection():
-                res = check_one(collections)
+                _collection = check_one(res)
+                if not return_data:
+                    return _collection
+                collections = (_collection,)
             case tuple():
-                res = tuple(map(check_one, collections))
+                collections = tuple(map(check_one, res))
             case _ as bad:
                 raise ValueError(
                     "`collections must be a `Collection` or `tuple` of "
@@ -255,7 +254,12 @@ class Access(BaseController):
 
         if return_data:
             return Data(
-                data=ResolvedCollection(collection=res, kind="collection"),
+                data=ResolvedCollection.model_validate(
+                    dict(
+                        collections=collections,
+                        kind="collection",
+                    )
+                ),
                 token_user=token_user,
                 event=None,
             )
@@ -289,8 +293,7 @@ class Access(BaseController):
         level: Level | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
-    ) -> Document:
-        ...
+    ) -> Document: ...
 
     @overload
     def document(  # type: ignore[overload-overlap]
@@ -303,8 +306,7 @@ class Access(BaseController):
         level: Level | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
-    ) -> Tuple[Document, ...]:
-        ...
+    ) -> Tuple[Document, ...]: ...
 
     @overload
     def document(
@@ -317,8 +319,7 @@ class Access(BaseController):
         level: Level | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
-    ) -> Data[ResolvedDocument]:
-        ...
+    ) -> Data[ResolvedDocument]: ...
 
     def document(
         self,
@@ -349,26 +350,32 @@ class Access(BaseController):
                 document = document.check_not_deleted(410)
             return document
 
+        documents: Tuple[Document, ...]
         match documents:
             case tuple() as documents:
-                res = tuple(map(check_one, documents))
+                documents = tuple(map(check_one, documents))
             case Document():
-                res = check_one(documents)
+                _document = check_one(documents)
+                if not return_data:
+                    return _document
+                documents = (_document,)
             case _ as bad:
                 msg = f"Unexpected input of type `{type(bad)}`."
                 raise ValueError(msg)
 
         if return_data:
-            return Data(
-                data=ResolvedDocument(
-                    document=res,
-                    kind="document",
-                    grants=grants,
+            return Data[ResolvedDocument](
+                data=ResolvedDocument.model_validate(
+                    dict(
+                        documents=documents,
+                        kind="document",
+                        token_user_grants=grants,
+                    )
                 ),
                 token_user=token_user,
                 event=None,
             )
-        return res
+        return documents
 
     def d_document(
         self,
@@ -400,8 +407,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
-    ) -> Edit:
-        ...
+    ) -> Edit: ...
 
     @overload
     def edit(  # type: ignore[overload-overlap]
@@ -411,8 +417,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[Edit, ...]:
-        ...
+    ) -> Tuple[Edit, ...]: ...
 
     @overload
     def edit(
@@ -422,8 +427,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedEdit]:
-        ...
+    ) -> Data[ResolvedEdit]: ...
 
     def edit(
         self,
@@ -435,11 +439,12 @@ class Access(BaseController):
     ) -> Edit | Tuple[Edit, ...] | Data[ResolvedEdit]:
         # NOTE: I do not know if this was mmoved to acccess.
         user_token = self.token_user_or(resolve_user_token)
-        match (resolved := Edit.resolve(self.session, resolve_edit)):
-            case Edit() as edit:
-                documents = edit.document
-            case tuple() as edits:
-                documents = tuple(edit.document for edit in edits)
+        documents: Tuple[Document, ...]
+        match (res := Edit.resolve(self.session, resolve_edit)):
+            case Edit():
+                documents = (res.document,)
+            case tuple():
+                documents = tuple(edit.document for edit in res)
             case _:
                 raise ValueError()
 
@@ -453,7 +458,13 @@ class Access(BaseController):
         )
         if return_data:
             return Data(
-                data=ResolvedEdit(edit=resolved, kind="edit", grants=grants),
+                data=ResolvedEdit.model_validate(
+                    dict(
+                        edits=res,
+                        kind="edit",
+                        grants=grants,
+                    ),
+                ),
                 token_user=user_token,
                 event=None,
             )
@@ -486,8 +497,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular | None = None,
         level: Level | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[User, Tuple[Document, ...]]:
-        ...
+    ) -> Tuple[User, Tuple[Document, ...]]: ...
 
     @overload
     def grant_user(
@@ -499,8 +509,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular | None = None,
         level: Level | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedGrantUser]:
-        ...
+    ) -> Data[ResolvedGrantUser]: ...
 
     def grant_user(
         self,
@@ -538,12 +547,12 @@ class Access(BaseController):
                 raise HTTPException(405)
 
         # NOTE: See the equivalent note in `ResolvedGrantUser`. User grants are
-        #       not important, only `token_user`. 
+        #       not important, only `token_user`.
         token_user_grants: Dict[str, Grant] = dict()
         documents = self.document(
             resolve_documents,
             exclude_deleted=exclude_deleted,
-            resolve_user_token=user_token, 
+            resolve_user_token=user_token,
             level=level,
             grants=token_user_grants,
             grants_index="uuid_document",
@@ -591,8 +600,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular | None = None,
         level: Level | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[Document, Tuple[User, ...]]:
-        ...
+    ) -> Tuple[Document, Tuple[User, ...]]: ...
 
     @overload
     def grant_document(
@@ -604,8 +612,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular | None = None,
         level: Level | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedGrantDocument]:
-        ...
+    ) -> Data[ResolvedGrantDocument]: ...
 
     def grant_document(
         self,
@@ -633,17 +640,17 @@ class Access(BaseController):
             grants_index="uuid_user",
         )
 
-        # NOTE: Permissions of users do not matter for CRUD of grants because 
+        # NOTE: Permissions of users do not matter for CRUD of grants because
         #       they're always url params that are filtered out. Notice:
         #
-        #       1. Reading the grants for document requires no knowledge 
+        #       1. Reading the grants for document requires no knowledge
         #          about the users filtered by.
-        #       2. Creating pending grants for a document requires nothing 
-        #          about the various users to be known with regard to the 
+        #       2. Creating pending grants for a document requires nothing
+        #          about the various users to be known with regard to the
         #          source document.
         #       3. Accepting requests for access does not require any grant
         #          knowledge bout the target users on the source document.
-        # 
+        #
         users = self.user(resolve_users)
 
         # Select owner uuids
@@ -667,12 +674,14 @@ class Access(BaseController):
             case H.GET | H.POST | H.DELETE | H.PUT:
                 if return_data:
                     return Data(
-                        data=ResolvedGrantDocument(
-                            document=document,
-                            users=users,
-                            kind="grant_document",
-                            token_user_grant=token_user_grant[usert_token.uuid],
-                            user_grants=None
+                        data=ResolvedGrantDocument.model_validate(
+                            dict(
+                                document=document,
+                                users=users,
+                                kind="grant_document",
+                                token_user_grant=token_user_grant[usert_token.uuid],
+                                user_grants=None,
+                            )
                         ),
                         token_user=user_token,
                         event=None,
@@ -712,8 +721,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[Collection, Tuple[Document, ...]]:
-        ...
+    ) -> Tuple[Collection, Tuple[Document, ...]]: ...
 
     @overload
     def assignment_collection(
@@ -725,8 +733,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedAssignmentCollection]:
-        ...
+    ) -> Data[ResolvedAssignmentCollection]: ...
 
     def assignment_collection(
         self,
@@ -766,7 +773,7 @@ class Access(BaseController):
                     collection=collection,
                     assignments=assignments,
                     documents=documents,
-                    uuid_documents=uuid_documents
+                    uuid_documents=uuid_documents,
                 ),
                 token_user=token_user,
                 event=None,
@@ -801,8 +808,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[Document, Tuple[Collection, ...]]:
-        ...
+    ) -> Tuple[Document, Tuple[Collection, ...]]: ...
 
     @overload
     def assignment_document(
@@ -814,8 +820,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: Level | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedAssignmentDocument]:
-        ...
+    ) -> Data[ResolvedAssignmentDocument]: ...
 
     def assignment_document(
         self,
@@ -1044,26 +1049,22 @@ class WithAccess(BaseController, abc.ABC):
     @abc.abstractmethod
     def assignment_collection(
         self, data: Data[ResolvedAssignmentCollection]
-    ) -> Data[ResolvedAssignmentCollection]:
-        ...
+    ) -> Data[ResolvedAssignmentCollection]: ...
 
     @abc.abstractmethod
     def assignment_document(
         self, data: Data[ResolvedAssignmentDocument]
-    ) -> Data[ResolvedAssignmentDocument]:
-        ...
+    ) -> Data[ResolvedAssignmentDocument]: ...
 
     @overload
     def assignment(
         self, data: Data[ResolvedAssignmentCollection]
-    ) -> Data[ResolvedAssignmentCollection]:
-        ...
+    ) -> Data[ResolvedAssignmentCollection]: ...
 
     @overload
     def assignment(
         self, data: Data[ResolvedAssignmentDocument]
-    ) -> Data[ResolvedAssignmentDocument]:
-        ...
+    ) -> Data[ResolvedAssignmentDocument]: ...
 
     def assignment(self, data: DataResolvedAssignment) -> DataResolvedAssignment:
         meth = (
@@ -1080,23 +1081,21 @@ class WithAccess(BaseController, abc.ABC):
     def grant_user(
         self,
         data: Data[ResolvedGrantUser],
-    ) -> Data[ResolvedGrantUser]:
-        ...
+    ) -> Data[ResolvedGrantUser]: ...
 
     @abc.abstractmethod
     def grant_document(
         self,
         data: Data[ResolvedGrantDocument],
-    ) -> Data[ResolvedGrantDocument]:
-        ...
+    ) -> Data[ResolvedGrantDocument]: ...
 
     @overload
-    def grant(self, data: Data[ResolvedGrantUser]) -> Data[ResolvedGrantUser]:
-        ...
+    def grant(self, data: Data[ResolvedGrantUser]) -> Data[ResolvedGrantUser]: ...
 
     @overload
-    def grant(self, data: Data[ResolvedGrantDocument]) -> Data[ResolvedGrantDocument]:
-        ...
+    def grant(
+        self, data: Data[ResolvedGrantDocument]
+    ) -> Data[ResolvedGrantDocument]: ...
 
     def grant(self, data: DataResolvedGrant) -> DataResolvedGrant:
         meth = self.grant_user if data.kind == "grant_user" else self.grant_document
@@ -1106,23 +1105,19 @@ class WithAccess(BaseController, abc.ABC):
     # Everything else
 
     @abc.abstractmethod
-    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
-        ...
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]: ...
 
     @abc.abstractmethod
     def document(
         self,
         data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]:
-        ...
+    ) -> Data[ResolvedDocument]: ...
 
     @abc.abstractmethod
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
-        ...
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]: ...
 
     @abc.abstractmethod
     def collection(
         self,
         data: Data[ResolvedCollection],
-    ) -> Data[ResolvedCollection]:
-        ...
+    ) -> Data[ResolvedCollection]: ...

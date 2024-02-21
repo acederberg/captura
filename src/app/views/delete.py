@@ -1,3 +1,4 @@
+import functools
 from http import HTTPMethod
 from typing import Any, Callable, Dict, List, Set, Tuple, Type, overload
 
@@ -6,7 +7,7 @@ from app.auth import Token
 from app.depends import DependsToken
 from app.models import (Assignment, AssocCollectionDocument,
                         ChildrenAssignment, Collection, Document, Edit, Event,
-                        Grant, KindEvent, KindObject, Resolvable,
+                        Grant, KindEvent, KindObject, Level, Resolvable,
                         ResolvableMultiple, ResolvableSingular, Singular, User)
 from app.schemas import EventSchema
 from app.views.access import Access, WithAccess, with_access
@@ -16,6 +17,7 @@ from app.views.base import (Data, DataResolvedAssignment, DataResolvedGrant,
                             ResolvedDocument, ResolvedEdit,
                             ResolvedGrantDocument, ResolvedGrantUser,
                             ResolvedUser)
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import (Select, Update, delete, false, literal_column, select,
@@ -38,6 +40,10 @@ class Delete(WithAccess):
     # Helpers for force deletion/PUT
     # Looks nasty, but prevents having to maintain four instances of the same
     # code.
+
+    @property
+    def event_common(self) -> Dict[str, Any]:
+        return dict(**super().event_common, kind=KindEvent.delete)
 
     def split_assocs(
         self,
@@ -136,8 +142,7 @@ class Delete(WithAccess):
         Tuple[Grant, ...],
         Update[Grant] | sqaDelete[Grant],
         Type[Grant] | Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     @overload
     def try_force(
@@ -149,8 +154,7 @@ class Delete(WithAccess):
         Tuple[Assignment, ...],
         Update[Assignment] | sqaDelete[Assignment],
         Type[Grant] | Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     def try_force(
         self,
@@ -203,8 +207,7 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     @overload
     def assoc(
@@ -216,8 +219,7 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     @overload
     def assoc(
@@ -229,8 +231,7 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     @overload
     def assoc(
@@ -242,8 +243,7 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     def assoc(
         self,
@@ -266,12 +266,8 @@ class Delete(WithAccess):
 
         return data, assoc_data, q_del, T_assoc
 
-    @property
-    def event_common(self) -> Dict[str, Any]:
-        return dict(**super().event_common, kind=KindEvent.delete)
-
     def create_event_assoc(
-        self, 
+        self,
         data: DataResolvedGrant | DataResolvedAssignment,
         assocs: Tuple[Grant, ...] | Tuple[Assignment, ...],
     ) -> Event:
@@ -307,65 +303,6 @@ class Delete(WithAccess):
                 for assoc in assocs
             ],
         )
-
-    # ----------------------------------------------------------------------- #
-
-    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
-        ...
-
-    def collection(
-        self,
-        data: Data[ResolvedCollection],
-    ) -> Data[ResolvedCollection]:
-        ...
-
-    #     session = self.session
-    #     collection = Collection.resolve(session, resolve_collection)
-    #     user = User.resolve(session, resolve_user or self.token.uuid)
-    #
-    #     # Find docs
-    #     p = select(Document.uuid).join(AssocCollectionDocument)
-    #     p = p.where(AssocCollectionDocument.id_collection == collection.id)
-    #     q = select(literal_column("uuid"))
-    #     q = union(q.select_from(collection.q_select_documents()), p)
-    #     uuid_document = set(session.execute(q).scalars())
-    #
-    #     # Delete assigns and get events before deletion.
-    #     event_assign = self.assignment_collection(
-    #         collection,
-    #         uuid_document,
-    #         resolve_user=user,
-    #     )
-    #
-    #     if self.force:
-    #         session.delete(collection)
-    #     else:
-    #         collection.deleted = True
-    #         session.add(collection)
-    #
-    #     # Create event
-    #     session.add(
-    #         event := Event(
-    #             **self.event_common,
-    #             uuid_obj=collection.uuid,
-    #             children=[event_assign],
-    #             # detail=detail,
-    #         )
-    #     )
-    #     session.commit()
-    #     session.refresh(event)
-    #     return event
-    #
-
-    # NOTE:
-    def document(
-        self,
-        data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]:
-        ...
-
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
-        ...
 
     # ----------------------------------------------------------------------- #
 
@@ -406,6 +343,229 @@ class Delete(WithAccess):
     a_grant_document = with_access(Access.grant_document)(grant_user)
     a_grant_user = with_access(Access.grant_user)(grant_document)
 
+    # ----------------------------------------------------------------------- #
+
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]: ...
+
+    # ----------------------------------------------------------------------- #
+
+    def _collection(
+        self,
+        data: Data[ResolvedCollection],
+        collection: Collection,
+    ) -> Data[ResolvedAssignmentCollection]:
+        q = collection.q_select_documents()
+        uuid_document = set(self.session.execute(q).scalars())
+        documents = Document.resolve(self.session, uuid_document)
+
+        # Delete assigns and get events before deletion.
+        data_assignments = Data.model_validate(
+            dict(
+                token_user=data.token_user,
+                data=ResolvedAssignmentCollection.model_validate(
+                    dict(
+                        collection=collection,
+                        documents=documents,
+                    )
+                ),
+            )
+        )
+        _ = self.assignment_collection(data_assignments)
+
+        # When force, hard delete.
+        session = self.session
+        if self.force:
+            session.delete(collection)
+        else:
+            collection.deleted = True
+            session.add(collection)
+
+        # Create event
+        data_assignments.event = Event(
+            **self.event_common,
+            uuid_obj=collection.uuid,
+            children=[data_assignments.event],
+        )
+        return data_assignments
+
+    def collection(
+        self,
+        data: Data[ResolvedCollection],
+    ) -> Data[ResolvedCollection]:
+
+        session = self.session
+        collections = data.data.collections
+
+        m_data_assignments = map(
+            functools.partial(self._collection, data=data),
+            collections,
+        )
+        data_assignments = tuple(m_data_assignments)
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.bulk,
+            uuid_obj=None,
+            children=[dd.event for dd in data_assignments],
+        )
+
+        session.add(data.event)
+        session.commit()
+
+        return data
+
+    # ----------------------------------------------------------------------- #
+
+    def _document(
+        self,
+        data: Data[ResolvedDocument],
+        document: Document,
+    ) -> Tuple[
+        Data[ResolvedGrantDocument],
+        Data[ResolvedAssignmentDocument],
+        Data[ResolvedEdit],
+    ]:
+        # Delete grants
+        session = self.session
+        q_users = document.q_select_users()
+        users = tuple(session.execute(q_users).scalars())
+        data_grant = Data[ResolvedGrantDocument].model_validate(
+            dict(
+                token_user=self.token_user,
+                data=ResolvedGrantDocument.model_validate(
+                    dict(
+                        token_user_grants=data.data.token_user_grants,
+                        document=document,
+                        users=users,
+                    )
+                ),
+            )
+        )
+        self.grant_document(data_grant)
+
+        q_collections = document.q_select_collections()
+        collections = tuple(session.execute(q_collections))
+        data_assignment = Data[ResolvedAssignmentDocument].model_validate(
+            dict(
+                token_user=self.token_user,
+                data=ResolvedAssignmentDocument.model_validate(
+                    dict(documens=document, collections=collections)
+                ),
+            )
+        )
+        self.assignment_document(data_assignment)
+
+        edits = document.edits
+        data_edit = Data[ResolvedEdit].model_validate(
+            dict(
+                token_user=self.token_user,
+                data=ResolvedEdit.model_validate(dict(edits=edits)),
+            )
+        )
+        self.edit(data_edit)
+
+        return data_grant, data_assignment, data_edit
+
+    def document(
+        self,
+        data: Data[ResolvedDocument],
+    ) -> Data[ResolvedDocument]:
+
+        session = self.session
+        documents = data.data.documents
+
+        data_grants: Tuple[Data[ResolvedGrantDocument], ...]
+        data_assignments: Tuple[Data[ResolvedAssignmentDocument], ...]
+        data_edits: Tuple[Data[ResolvedAssignmentDocument], ...]
+        data_grants, data_assignments, data_edits = tuple(
+            zip(*(self._document(data, dd) for dd in documents))
+        )  # type: ignore[reportGeneralTypeErrors]
+
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.bulk,
+            children=[
+                data_assoc.event
+                for data_assocs in (data_grants, data_assignments, data_edits)
+                for data_assoc in data_assocs
+            ],
+        )
+        session.add(data.event)
+        session.commit()
+
+        return data
+
+    # ----------------------------------------------------------------------- #
+
+    def _edit(self, data: Data[ResolvedEdit], edit: Edit) -> Event:
+        session = self.session
+
+        def rm() -> Event:
+            if self.force:
+                session.delete(edit)
+            else:
+                edit.deleted = True
+                session.add(edit)
+
+            session.add(
+                event := Event(
+                    **self.event_common,
+                    kind_obj=KindObject.edit,
+                    uuid_obj=edit.uuid,
+                )
+            )
+            return event
+
+        user_token = data.token_user or self.token_user
+        user_token_grant = data.data.token_user_grants[user_token.uuid]
+
+        user_edit = edit.user
+        if user_edit == user_token:
+            return rm()
+
+        q_user_edit_grant = user_edit.q_select_grants({edit.document.uuid})
+        user_edit_grant = self.session.execute(q_user_edit_grant).scalar()
+
+        # Depends on current grant of user_edit_grant so that, for instance,
+        # a malicious editor can be rejected from the group and their edits may
+        # be undone.
+        detail = dict(
+            uuid_user_token=user_token.uuid,
+            uuid_user_edit=user_edit.uuid,
+        )
+        match (user_token_grant.level, user_edit_grant):
+            case (Level.own, None):
+                return rm()
+            case (Level.own, Grant(level=user_edit_level)):
+                if user_edit_level == Level.own:
+                    detail.update(msg="Cannot delete edit of other owner.")
+                    raise HTTPException(403, detail=detail)
+                return rm()
+            case (user_token_level, None | Grant()):
+                detail.update(
+                    msg="Cannot delete edit of other user when not an owner",
+                    level=user_token_level.name,
+                )
+                raise HTTPException(403, detail=dict())
+            case _:
+                raise ValueError()
+
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
+        edits = data.data.edits
+        session = self.session
+
+        # NOTE: Only owners can delete the edits of other contributors.
+        events = list(self._edit(data, edit) for edit in edits)
+        data.event = Event(
+            kind_obj=KindObject.bulk,
+            uuid_obj=None,
+            **self.event_common,
+            children=events,
+        )
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
 
 
 class WithDelete(WithAccess):
