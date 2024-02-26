@@ -1,27 +1,23 @@
 import functools
 from http import HTTPMethod
-from typing import Any, Callable, Dict, List, Set, Tuple, Type, overload
+from typing import Any, Dict, Set, Tuple, Type, overload
 
-from app import __version__, util
+from app import __version__
 from app.auth import Token
-from app.depends import DependsToken
-from app.models import (Assignment, AssocCollectionDocument,
-                        ChildrenAssignment, Collection, Document, Edit, Event,
-                        Grant, KindEvent, KindObject, Level, Resolvable,
-                        ResolvableMultiple, ResolvableSingular, Singular, User)
-from app.schemas import EventSchema
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedAssignment, DataResolvedGrant,
-                            KindData, ResolvedAssignmentCollection,
-                            ResolvedAssignmentDocument, ResolvedCollection,
-                            ResolvedDocument, ResolvedEdit,
-                            ResolvedGrantDocument, ResolvedGrantUser,
-                            ResolvedUser)
+from app.controllers.base import (Data, DataResolvedAssignment,
+                                  DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedGrantDocument,
+                                  ResolvedGrantUser, ResolvedUser)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, User)
 from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import (Select, Update, delete, false, literal_column, select,
-                        true, union, update)
+from sqlalchemy import Select, Update, delete, false, true, update
 from sqlalchemy.orm import Session
 
 
@@ -345,7 +341,70 @@ class Delete(WithAccess):
 
     # ----------------------------------------------------------------------- #
 
-    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]: ...
+    def _user(self, data: Data[ResolvedUser], user: User) -> Data[ResolvedUser]:
+        session = self.session
+
+        # Cleanup documents that only this user owns.
+        documents_exclusive: Tuple[Document, ...] = tuple( 
+            session.execute(user.q_select_documents_exclusive()).scalars()
+        )
+        data_documents = Data[ResolvedDocument].model_construct(
+            token_user=self.token_user,
+            data=ResolvedDocument.model_construct(documents=documents_exclusive),
+        )
+        self.document(data_documents)
+
+        # Cleanup collections.
+        q_collections = user.q_collections(exclude_deleted=False)
+
+        collections: Tuple[Collection, ...]
+        collections = tuple(self.session.execute(q_collections).scalars())
+        data_collections = Data[ResolvedCollection].model_construct(
+            token_user=self.token_user,
+            data=ResolvedDocument.model_construct(collections=collections),
+        )
+        self.collection(data_collections)
+
+        # Cleanup user
+        if self.force:
+            session.delete(User)
+        else:
+            user.deleted = True
+            session.add(user)
+
+        # Event
+        data.event = Event(
+            kind_obj=KindObject.user,
+            uuid_obj=user.uuid,
+            children=[
+                data_item.event for data_item in (data_documents, data_collections)
+            ],
+        )
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
+
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
+        session = self.session
+        users = data.data.users
+
+        data_users = tuple(self._user(data, user) for user in users)
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.bulk,
+            uuid_obj=None,
+            children=[dd.event for dd in data_users],
+        )
+
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
+
+    a_user = with_access(Access.user)(user)
 
     # ----------------------------------------------------------------------- #
 
@@ -410,6 +469,7 @@ class Delete(WithAccess):
 
         session.add(data.event)
         session.commit()
+        session.refresh(data.event)
 
         return data
 

@@ -8,6 +8,15 @@ from typing import (Any, Callable, Dict, Generic, Literal, Protocol, Set,
 
 from app import __version__, util
 from app.auth import Token
+from app.controllers.access import Access, H, WithAccess, with_access
+from app.controllers.base import (Data, DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedGrantDocument,
+                                  ResolvedGrantUser, ResolvedUser)
+from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
+                                    WithDelete)
 from app.models import (Assignment, Collection, Document, Event, Grant,
                         KindEvent, KindObject, Level, PendingFrom,
                         ResolvableMultiple, ResolvableSingular,
@@ -17,16 +26,7 @@ from app.schemas import (AssignmentSchema, CollectionCreateSchema,
                          CollectionSchema, CollectionUpdateSchema,
                          DocumentCreateSchema, DocumentUpdateSchema,
                          EditCreateSchema, EventSchema, GrantCreateSchema,
-                         PostUserSchema, UserCreateSchema, UserUpdateSchema)
-from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedGrant,
-                            ResolvedAssignmentCollection,
-                            ResolvedAssignmentDocument, ResolvedCollection,
-                            ResolvedDocument, ResolvedEdit,
-                            ResolvedGrantDocument, ResolvedGrantUser,
-                            ResolvedUser)
-from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
-                              WithDelete)
+                         UserCreateSchema, UserUpdateSchema)
 from fastapi import HTTPException
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
@@ -72,7 +72,7 @@ class Create(WithDelete, Generic[T_Create]):
     # NOTE: `PUT` will only be supported on assignments and grants for now
     #       (force overwriting of existing). This is because `PATCH` will be
     #       used to accept grants by grant uuid.
-    _upsert_data: T_Create | None
+    create_data: T_Create | None
 
     def __init__(
         self,
@@ -85,7 +85,7 @@ class Create(WithDelete, Generic[T_Create]):
         force: bool = False,
         access: Access | None = None,
         delete: Delete | None = None,
-        upsert_data: T_Create | None = None,
+        create_data: T_Create | None = None,
     ):
         if method != H.POST and method != H.PUT:
             msg = f"Cannot accept method `{method}` (expected one of `PUT` or "
@@ -101,17 +101,17 @@ class Create(WithDelete, Generic[T_Create]):
             access=access,
             delete=delete,
         )
-        self._upsert_data = upsert_data
+        self._create_data = create_data
 
     @property
-    def upsert_data(self) -> T_Create:
-        if (upsert_data := self._upsert_data) is None:
-            raise AttributeError("`upsert_data` is not yet set.")
-        return upsert_data
+    def create_data(self) -> T_Create:
+        if (create_data := self._create_data) is None:
+            raise AttributeError("`create_data` is not yet set.")
+        return create_data
 
-    @upsert_data.setter
-    def upsert_data(self, v: T_Create):
-        self._upsert_data = v
+    @create_data.setter
+    def create_data(self, v: T_Create):
+        self._create_data = v
 
     # ----------------------------------------------------------------------- #
     # Helpers
@@ -170,10 +170,10 @@ class Create(WithDelete, Generic[T_Create]):
 
         :param assoc_args: Common arguments for creating the associations. This
             should be everything that is not specified by :param:`data` or
-            :attr:`upsert_data`. For instance, grant should pass key value
+            :attr:`create_data`. For instance, grant should pass key value
             pairs for ``pending_from`` and ``uuid_parent``. This parameter
             should be used for internal values and not user inputs, which
-            should be added to `upsert_data`.
+            should be added to `create_data`.
         :returns: The active target ids that do not yet have an assignment to
             their source. The requirement that they be active means that doing
             the same `POST` twice should be indempotent.
@@ -332,7 +332,9 @@ class Create(WithDelete, Generic[T_Create]):
             id_source_name: id_source_value,
             id_target_name: target.id,
         }
-        return Assignment(**kwargs)
+        return Assignment(**kwargs,
+            **self.create_data.model_dump(exclude={"kind"}),
+                          )
 
     def assignment_document(
         self,
@@ -413,7 +415,7 @@ class Create(WithDelete, Generic[T_Create]):
             id_source_name: id_source_value,
             id_target_name: target.id,
         }
-        return Grant(**kwargs, **self.upsert_data.model_dump())
+        return Grant(**kwargs, **self.create_data.model_dump(exclude={"kind"}))
 
     def grant_user(
         self,

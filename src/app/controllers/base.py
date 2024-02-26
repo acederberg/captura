@@ -7,24 +7,17 @@ import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from os import walk
-from typing import (Annotated, Any, ClassVar, Dict, Generic, Literal, Set,
-                    Tuple, Type, TypeAlias, TypeVar, Union)
+from typing import (Annotated, Any, Dict, Generic, Literal, Set, Tuple, Type,
+                    TypeVar)
 
 from app import __version__, util
 from app.auth import Token
-from app.config import Config
-from app.depends import DependsToken
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindEvent, KindObject, Level, LevelHTTP,
-                        Resolvable, ResolvableMultiple, ResolvableSingular,
-                        ResolvedRawAny, Singular, User, uuids)
-from fastapi import APIRouter, HTTPException
-from fastapi.routing import APIRoute
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Discriminator,
-                      Field, RootModel, Tag, ValidationInfo, computed_field,
-                      field_validator)
-from pydantic_core.core_schema import FieldValidationInfo
+from app.models import (Collection, Document, Edit, Event, Grant, KindObject,
+                        Level, LevelHTTP, ResolvableSingular, ResolvedRawAny,
+                        Singular, User, uuids)
+from fastapi import HTTPException
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
+                      ValidationInfo, computed_field, field_validator)
 from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
@@ -47,6 +40,7 @@ class BaseController:
     method: HTTPMethod
     session: Session
     _token: Token | None
+    _token_user: User | None
 
     @property
     def level(self) -> Level:
@@ -60,7 +54,11 @@ class BaseController:
 
     @cached_property
     def token_user(self) -> User:
-        return User.if_exists(self.session, self.token.uuid)
+        if self._token_user is not None:
+            return self._token_user
+        token_user = self.token.validate(self.session)
+        self._token_user = token_user
+        return token_user
 
     def then(self, type_: Type[T_BaseController], **kwargs) -> T_BaseController:
         "For chainable controllers."
@@ -70,6 +68,7 @@ class BaseController:
         self,
         resolve_user: ResolvableSingular[User] | None = None,
     ) -> User:
+        print("WHERE")
         return (
             User.resolve(self.session, resolve_user)
             if resolve_user is not None
@@ -96,6 +95,12 @@ class BaseController:
                 self._token = None if raw is None else Token.model_validate(raw)
             case Token() as token:
                 self._token = token
+            case bad:
+                raise ValueError(f"Invalid input `{bad}` for token.")
+
+        print("THERE")
+        if self._token:
+            self._token_user = self._token.validate(session)
 
 
 def uuid_set_from_model(data: Any, info: ValidationInfo) -> Set[str]:

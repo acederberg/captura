@@ -29,9 +29,11 @@ def upsert(delete: Delete) -> Create:
         HTTPMethod.POST,
         detail=TEST_DETAIL,
         api_origin=TEST_API_ORIGIN,
-        delete=delete
+        delete=delete,
+        access=delete.access,
     )
     return res
+
 
 CASES_ASSOCS_GRANTS_NOT_OWN = [
     (
@@ -84,10 +86,10 @@ class TestAssoc(BaseTestAssoc):
 
         match data.data.kind_assoc:
             case KindObject.grant:
-                upsert.upsert_data = self.grant_data
+                upsert.create_data = self.grant_data
                 assoc_args = upsert.create_grant
             case KindObject.assignment:
-                upsert.upsert_data = self.assignment_data
+                upsert.create_data = self.assignment_data
                 assoc_args = upsert.create_assignment
             case kind_assoc:
                 raise AssertionError(f"Invalid `{kind_assoc=}`.")

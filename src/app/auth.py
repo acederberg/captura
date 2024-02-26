@@ -1,4 +1,7 @@
 import base64
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.models import User
 import json
 import re
 from os import path
@@ -195,7 +198,33 @@ class Token(BaseModel):
     """Only used in `POST /auth/tokens` until later."""
 
     uuid: Annotated[str, Field()]
+    admin: Annotated[bool, Field(default=False)]
     permissions: Annotated[List[str], Field(default=list())]
+
+    def validate(self, session: Session) -> User:
+        q_user = select(User).where(User.uuid == self.uuid)
+        user = session.execute(q_user).scalar()
+        if user is None:
+            raise HTTPException(
+                401,
+                detail=dict(
+                    msg="User with token uuid does not exist.",
+                    uuid=self.uuid,
+                ),
+            )
+
+        if user.admin != self.admin:
+            raise HTTPException(
+                401,
+                detail=dict(
+                    msg="Admin status inconsistent with database.",
+                    uuid=self.uuid,
+                    admin_token=self.admin,
+                    admin_user=user.admin,
+                ),
+            )
+
+        return user
 
     def encode(self, auth: Auth) -> str:
         return auth.encode(self.model_dump())

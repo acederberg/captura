@@ -3,9 +3,10 @@ import enum
 import secrets
 from datetime import datetime
 from logging import warn
-from typing import (Annotated, Any, Callable, Dict, Generator, Generic, List,
-                    Literal, Self, Set, Tuple, Type, TypeAlias, TypeVar,
-                    overload)
+from typing import (Annotated, Any, Callable, Collection, Dict, Generator,
+                    Generic, List, Literal, Self, Set, Tuple, Type, TypeAlias,
+                    TypeVar, overload)
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import (CTE, BinaryExpression, BooleanClauseList, Column,
@@ -176,6 +177,9 @@ class Base(DeclarativeBase):
 
     # ----------------------------------------------------------------------- #
     # Finders.
+    def q_events(self):
+        return select(Event).where(Event.uuid_obj==self.uuid).order_by(Event.timestamp)
+
     @classmethod
     def if_exists(
         cls, session: Session, uuid: str, status: int = 404, msg=None
@@ -210,13 +214,15 @@ class Base(DeclarativeBase):
 
     @overload
     @classmethod
-    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self: ...
+    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self:
+        ...
 
     @overload
     @classmethod
     def resolve(
         cls, session: Session, that: ResolvableSelfMultiple
-    ) -> Tuple[Self, ...]: ...
+    ) -> Tuple[Self, ...]:
+        ...
 
     @classmethod
     def resolve(cls, session: Session, that: ResolvableSelf) -> Self | Tuple[Self, ...]:
@@ -241,7 +247,8 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfMultiple,
-    ) -> Set[str]: ...
+    ) -> Set[str]:
+        ...
 
     @overload
     @classmethod
@@ -249,7 +256,8 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfSingular,
-    ) -> str: ...
+    ) -> str:
+        ...
 
     @classmethod
     def resolve_uuid(
@@ -257,7 +265,6 @@ class Base(DeclarativeBase):
         session: Session,
         that: ResolvableSelf,
     ) -> str | Set[str]:
-
         data: Self | Tuple[Self, ...]
         match data := cls.resolve(session, that):
             case cls():
@@ -380,7 +387,7 @@ class SearchableTableMixins(PrimaryTableMixins):
     def q_search(
         cls,
         user_uuid: str | None,
-        uuids: Set[str] | None = None,
+        uuids: Set[str] | str | None = None,
         exclude_deleted: bool = True,
         *,
         all_: bool = True,
@@ -393,6 +400,7 @@ class SearchableTableMixins(PrimaryTableMixins):
         q = None
         if user_uuid:
             q = cls.q_select_for_user(user_uuid, uuids, exclude_deleted)
+
         r = None
         if all_:
             r = cls.q_select_public(uuids, exclude_deleted)
@@ -414,7 +422,8 @@ class SearchableTableMixins(PrimaryTableMixins):
         user_uuid: str,
         uuids: Set[str] | None,
         exclude_deleted: bool = True,
-    ) -> Select: ...
+    ) -> Select:
+        ...
 
 
 # =========================================================================== #
@@ -974,7 +983,6 @@ class AssocUserDocument(Base):
         *,
         select_parent_uuids: bool = False,
     ) -> UUIDSplit:
-
         qs = cls.q_split(
             source,
             uuid_target,
@@ -995,6 +1003,35 @@ class User(SearchableTableMixins, Base):
     description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
     url_image: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
     url: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
+    admin: Mapped[bool] = mapped_column(default=False)
+
+    # NOTE: This will be used to implement use by invitation for users. More or
+    #       less, for a user to register they will need to first be given their
+    #       activation code.
+    _prototype_activation_invitation_code: Mapped[str] = mapped_column(
+        String(36),
+        unique=True,
+        nullable=True
+        # default=lambda: str(uuid4()),
+    )
+    _prototype_activation_invitation_email: Mapped[str] = mapped_column(
+        String(128), nullable=True
+    )
+    _prototype_activation_pending_approval: Mapped[bool] = mapped_column(
+        nullable=True,
+    )
+
+    @property
+    def pending_approval(self):
+        return self._prototype_activation_pending_approval
+
+    # @property
+    # def email(self):
+    #     return self._prototype_activation_pending_approval
+    #
+    # @property
+    # def code(self):
+    #     return self._prototype_activation_pending_approval
 
     # documents: Mapped[Dict[str, List[str]]] = relationship(Documents)
 
@@ -1021,10 +1058,32 @@ class User(SearchableTableMixins, Base):
         secondaryjoin="AssocUserDocument.id_document==Document.id",
     )
 
+    # DOES NOT INCLUDE WHERE user is subject
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
     # ----------------------------------------------------------------------- #
     # Queries
+
+    @classmethod
+    def _q_prototype_activation_pending_approval(
+        cls,
+        invitation_uuid: Set[str] | None = None,
+        invitation_email: Set[str] | None = None,
+        invitation_code: Set[str] | None = None,
+    ) -> Select:
+        q = select(cls).where(cls.deleted == true(), cls._prototype_activation_pending_approval == true())
+        if invitation_uuid is not None:
+            q = q.where(cls.uuid.in_(invitation_uuid))
+
+        if invitation_code is not None:
+            q = q.where(cls._prototype_activation_invitation_code.in_(invitation_code))
+
+        if invitation_email is not None:
+            q = q.where(
+                cls._prototype_activation_invitation_email.in_(invitation_email)
+            )
+
+        return q
 
     def q_conds_grants(
         self,
@@ -1137,11 +1196,35 @@ class User(SearchableTableMixins, Base):
     @classmethod
     def q_select_for_user(
         cls,
-        user_uuid: str | None,
+        _: str | None,
         uuids: Set[str] | None,
         exclude_deleted: bool = True,
     ) -> Select:
+        # NOTE: This should get collaborators, etc. in the future.
         return cls.q_select_public(uuids, exclude_deleted)
+
+    def q_conds_collections(
+        self,
+        uuid_collection: Set[str] | None = None,
+        exclude_deleted: bool = True,
+    ) -> ...:
+        conds = and_(Collection.id_user == User.id)
+        if uuid_collection is not None:
+            conds = and_(conds, Collection.uuid.in_(uuid_collection))
+        if exclude_deleted:
+            conds = and_(conds, Collection.deleted == false())
+        return conds
+
+    def q_collections(
+        self,
+        uuid_collection: Set[str] | None = None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        conds = self.q_conds_collections(
+            uuid_collection=uuid_collection,
+            exclude_deleted=exclude_deleted,
+        )
+        return select(Collection).where(conds)
 
     # ----------------------------------------------------------------------- #
     # Chainables for endpoints.
@@ -1175,7 +1258,9 @@ class User(SearchableTableMixins, Base):
 
         # Deleted and insufficient should be included for better feedback.
         q = self.q_select_grants(
-            {document.uuid}, exclude_deleted=False, exclude_pending=False,
+            {document.uuid},
+            exclude_deleted=False,
+            exclude_pending=False,
         )
         q_uuid_grant = select(literal_column("uuid")).select_from(q.subquery())
         q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
@@ -1227,7 +1312,8 @@ class User(SearchableTableMixins, Base):
                 detail.update(msg="There should only be one grant.")
                 raise HTTPException(418, detail=detail)
 
-    def check_sole_owner_document(self, document: "Document") -> Self: ...
+    def check_sole_owner_document(self, document: "Document") -> Self:
+        ...
 
     def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
         if self.uuid != event.uuid_user:
@@ -1519,6 +1605,25 @@ class Edit(PrimaryTableMixins, Base):
         primaryjoin="Document.id==Edit.id_document",
         back_populates="edits",
     )
+
+    @classmethod
+    def q_select_for_user(
+        cls,
+        user: User,
+        uuids: Set[str] | None,
+        exclude_deleted: bool = True,
+    ) -> Select:
+        q_docs = user.q_select_documents(
+            uuids,
+            level=Level.view,
+            exclude_deleted=exclude_deleted,
+        )
+        q_doc_uuids = select(literal_column("uuid")).select_from(q_docs)
+        q_edits = select(Edit).where(Edit.document.uuid.in_(q_doc_uuids))
+        if exclude_deleted:
+            q_edits = q_edits.where(Edit.deleted == false())
+
+        return q_edits
 
 
 # --------------------------------------------------------------------------- #

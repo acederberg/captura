@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.syntax import Syntax
 
 ENV_PREFIX = "ARTICLES_"
+LOG_LEVEL = logging.INFO
 
 # =========================================================================== #
 # LOGGING STUFF
@@ -15,7 +16,7 @@ def get_logger(name: str) -> logging.Logger:
     ll = logging.getLogger(name)
 
     handler = logging.StreamHandler()
-    handler.setLevel(logging.WARNING)
+    handler.setLevel(LOG_LEVEL)
     ll.addHandler(handler)
 
     formatter = logging.Formatter(
@@ -23,7 +24,7 @@ def get_logger(name: str) -> logging.Logger:
     )
     handler.setFormatter(formatter)
 
-    ll.setLevel(logging.WARNING)
+    ll.setLevel(LOG_LEVEL)
     return ll
 
 

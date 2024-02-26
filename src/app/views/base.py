@@ -14,7 +14,7 @@ from fastapi import APIRouter
 from fastapi.routing import APIRoute
 
 logger = util.get_logger(__name__)
-logger.level = logging.INFO
+# logger.level = logging.INFO
 
 class ViewMixins:
     """

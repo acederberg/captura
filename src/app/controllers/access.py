@@ -2,26 +2,22 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (Annotated, Any, Callable, Concatenate, Dict, Generic, List,
-                    Literal, ParamSpec, Protocol, Self, Sequence, Set, Tuple,
-                    Type, TypeAlias, TypeVar, overload)
+from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
+                    Tuple, TypeVar, overload)
 
 from app import __version__
 from app.auth import Token
 from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
-                                  DataResolvedGrant, KindData,
+                                  DataResolvedGrant,
                                   ResolvedAssignmentCollection,
                                   ResolvedAssignmentDocument,
                                   ResolvedCollection, ResolvedDocument,
                                   ResolvedEdit, ResolvedGrantDocument,
                                   ResolvedGrantUser, ResolvedUser)
-from app.depends import DependsToken
-from app.models import (Assignment, AssocCollectionDocument, AssocUserDocument,
-                        ChildrenAssignment, Collection, Document, Edit, Grant,
-                        Level, LevelHTTP, Resolvable, ResolvableMultiple,
-                        ResolvableSingular, User)
-from app.views import args
-from fastapi import Depends, HTTPException
+from app.models import (Assignment, Collection, Document, Edit, Grant, Level,
+                        Resolvable, ResolvableMultiple, ResolvableSingular,
+                        User)
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 H = HTTPMethod
@@ -73,6 +69,7 @@ class Access(BaseController):
         Resolve the user and verify that is not deleted.
         """
 
+        print("peeepeee")
         user_token = self.token_user_or(resolve_user_token)
 
         # NOTE: When `GET` method, if the user is public, return. Otherwise

@@ -7,6 +7,7 @@
 
 - uuid: 000-000-000
   id: 2
+  admin: True
   name: acederberg
   description: maintainer of this project
   url: github.com/acederberg

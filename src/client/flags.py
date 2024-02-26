@@ -24,9 +24,10 @@ class Verbage(str, enum.Enum):
     update = "update"
     delete = "delete"
     create = "create"
+    activate = "activate"
 
-    apply = "apply"
-    destroy = "destroy"
+    # apply = "apply"
+    # destroy = "destroy"
 
 
 class Output(str, enum.Enum):
@@ -40,9 +41,7 @@ class Output(str, enum.Enum):
 # NOTE: Annotations should eventually include help.
 
 FlagOutput: TypeAlias = Annotated[Output, typer.Option("--output", "-o")]
-FlagUUIDChildrenOptional: TypeAlias = Annotated[
-    List[str], typer.Option("--uuid-child", "--uuid-children")
-]
+FlagUUIDs: TypeAlias = Annotated[Optional[List[str]], typer.Option("--uuid")]
 
 
 # User
@@ -56,23 +55,62 @@ FlagUUIDUserOptional: TypeAlias = Annotated[
     ),
 ]
 FlagUUIDUsers: TypeAlias = Annotated[
-    List[str], typer.Option("--uuid-user", help="A required list of user UUIDs.")
+    List[str],
+    typer.Option(
+        "--uuid-user",
+        help="A required list of user UUIDs.",
+    ),
 ]
 FlagUUIDUsersOptional: TypeAlias = Annotated[
     Optional[List[str]],
-    typer.Option("--uuid-user", help="An optional list of user UUIDs."),
+    typer.Option(
+        "--uuid-user",
+        help="An optional list of user UUIDs.",
+    ),
+]
+
+FlagInvitationCode: TypeAlias = Annotated[
+    str,
+    typer.Option(
+        "--invitation-code",
+        help="The invitation code to approve/verify a demo user with.",
+    ),
+]
+FlagInvitationEmail: TypeAlias = Annotated[
+    str,
+    typer.Option(
+        "--invitation-email",
+        help="The email corresponding the invitation code.",
+    ),
+]
+FlagInvitationCodesOptional: TypeAlias = Annotated[
+    Optional[List[str]],
+    typer.Option(
+        "--invitation-code",
+        help="Invitation codes to search by.",
+    ),
+]
+FlagInvitationEmailsOptional: TypeAlias = Annotated[
+    Optional[List[str]],
+    typer.Option(
+        "--invitation-email",
+        help="Invitation emails to search by.",
+    ),
 ]
 
 
+# --------------------------------------------------------------------------- #
 # Documents
 
-FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document")]
+FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document",
+                                                                 help="Document uuids."),]
 FlagUUIDDocumentsOptional: TypeAlias = Annotated[
-    Optional[List[str]], typer.Option("--uuid-document")
+    Optional[List[str]], typer.Option("--uuid-document", help="Optional document uuids.",),
 ]
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
 
 
+# --------------------------------------------------------------------------- #
 # Collections
 
 FlagUUIDCollections: TypeAlias = Annotated[List[str], typer.Option("--uuid-collection")]
@@ -81,14 +119,16 @@ FlagUUIDCollectionsOptional: TypeAlias = Annotated[
 ]
 ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
 
+
+# --------------------------------------------------------------------------- #
 # Events
 
 FlagUUIDEvent = Annotated[str, typer.Option("--uuid-event")]
 FlagUUIDEventOptional = Annotated[Optional[str], typer.Option("--uuid-event")]
 
+
 # --------------------------------------------------------------------------- #
 # Field flags
-
 
 FlagColumns: TypeAlias = Annotated[List[str], typer.Option("--column")]
 FlagLevel: TypeAlias = Annotated[LevelStr, typer.Option("--level")]
@@ -100,10 +140,16 @@ FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
 FlagForce = Annotated[bool, typer.Option("--force/--no-force")]
 FlagKindRecurse: TypeAlias = Annotated[KindRecurse, typer.Option("--recurse-strategy")]
+
+# --------------------------------------------------------------------------- #
+# Search flags
+
+
 FlagNameLike: TypeAlias = Annotated[Optional[str], typer.Option("--name-like")]
 FlagDescriptionLike: TypeAlias = Annotated[
     Optional[str], typer.Option("--description-like")
 ]
+FlagIncludePublic: TypeAlias = Annotated[int, typer.Option("--include-public")]
 FlagLimit: TypeAlias = Annotated[int, typer.Option("--limit")]
 
 

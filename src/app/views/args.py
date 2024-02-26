@@ -1,6 +1,7 @@
+from typing import Annotated, Literal, Optional, Set, TypeAlias
+
+from app.models import KindEvent, KindObject, KindRecurse
 from fastapi import Path, Query
-from typing import Optional, TypeAlias, Annotated, Set, Literal
-from app.models import KindObject, KindEvent, KindRecurse
 
 QueryUUIDCollection: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]

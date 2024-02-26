@@ -12,7 +12,7 @@ from functools import cache
 from typing import Annotated, Any, Callable, Dict, Tuple, TypeAlias
 
 import jwt
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -21,8 +21,12 @@ from sqlalchemy.ext.asyncio.session import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import util
-from app.auth import Auth, try_decode
+from app.auth import Auth, Token, try_decode
 from app.config import Config
+from app.controllers.access import Access
+from app.controllers.create import Create, Update
+from app.controllers.delete import Delete
+from app.controllers.read import Read
 from app.models import User
 
 # NOTE: `cache` is used instead of using the `use_cache` keyword argument of
@@ -140,7 +144,7 @@ DependsAuth: TypeAlias = Annotated[Auth, Depends(auth, use_cache=False)]
 def token(
     auth: DependsAuth,
     authorization: Annotated[str, Header()],
-) -> Dict[str, str]:
+) -> Token:
     """Decode and deserialize the bearer JWT specified in the ``Authorization``
     header.
 
@@ -152,7 +156,8 @@ def token(
     decoded, err = try_decode(auth, authorization)
     if err is not None:
         raise err
-    return decoded
+    token = Token(**decoded)
+    return token
 
 
 def token_optional(
@@ -222,3 +227,64 @@ def user(
 
 
 DependsUser: TypeAlias = Annotated[User, Depends(user)]
+
+# --------------------------------------------------------------------------- #
+
+
+def access(
+    sessionmaker: DependsSessionMaker,
+    token: DependsTokenOptional,
+    request: Request
+) -> Access:
+    with sessionmaker() as session:
+        print("HERE")
+        return Access(session=session, token=token, method=request.method)
+        
+
+
+DependsAccess: TypeAlias = Annotated[Access, Depends(access)]
+
+
+def read(
+    token: DependsTokenOptional,
+    access: DependsAccess,
+    request: Request,
+) -> Read:
+    return Read(session=access.session, token=token, method=request.method)
+
+
+def delete(
+    token: DependsTokenOptional,
+    access: DependsAccess,
+    request: Request,
+) -> Delete:
+    api_origin = request.url.path 
+    return Delete(
+        session=access.session, 
+        token=token, 
+        method=request.method,
+        api_origin=api_origin,
+        detail=...,
+    )
+
+
+def create(
+    token: DependsTokenOptional,
+    access: DependsAccess,
+    request: Request,
+) -> Create:
+    api_origin = request.url.path 
+    return Create(
+        session=access.session, 
+        token=token, 
+        method=request.method,
+        api_origin=api_origin,
+        detail=...,
+    )
+
+
+DependsRead: TypeAlias = Annotated[Read, Depends(read)]
+DependsDelete: TypeAlias = Annotated[Delete, Depends(delete)]
+DependsCreate: TypeAlias = Annotated[Create, Depends(create)]
+
+
