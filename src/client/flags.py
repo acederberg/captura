@@ -16,6 +16,7 @@ from app.models import (
 
 class Verbage(str, enum.Enum):
     read = "read"
+    # TODO: Depricate the two bellow.
     read_document = "read_document"
     read_user = "read_user"
 
@@ -102,10 +103,16 @@ FlagInvitationEmailsOptional: TypeAlias = Annotated[
 # --------------------------------------------------------------------------- #
 # Documents
 
-FlagUUIDDocuments: TypeAlias = Annotated[List[str], typer.Option("--uuid-document",
-                                                                 help="Document uuids."),]
+FlagUUIDDocuments: TypeAlias = Annotated[
+    List[str],
+    typer.Option("--uuid-document", help="Document uuids."),
+]
 FlagUUIDDocumentsOptional: TypeAlias = Annotated[
-    Optional[List[str]], typer.Option("--uuid-document", help="Optional document uuids.",),
+    Optional[List[str]],
+    typer.Option(
+        "--uuid-document",
+        help="Optional document uuids.",
+    ),
 ]
 ArgUUIDDocument: TypeAlias = Annotated[str, typer.Argument()]
 

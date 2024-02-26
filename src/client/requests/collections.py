@@ -1,12 +1,11 @@
+from typing import Any, Dict
+
 import httpx
 import typer
-from typing import Dict, Any
-from client import flags
 from app.models import ChildrenCollection
-
-from client.requests.base import BaseRequest, params
+from client import flags
 from client.handlers import CONSOLE
-
+from client.requests.base import BaseRequest, params
 
 __all__ = ("CollectionRequests",)
 
@@ -33,7 +32,7 @@ class CollectionRequests(BaseRequest):
         self,
         uuid_collection: flags.ArgUUIDCollection,
         child: flags.FlagChildrenCollection | None = None,
-        uuid_child: flags.FlagUUIDChildrenOptional = list(),
+        uuid_child: flags.FlagUUIDs = list(),
     ) -> httpx.Response:
         params: Dict[str, Any] = dict()
         match [child, not len(uuid_child)]:

@@ -15,6 +15,8 @@ from typing import (
 
 import httpx
 import typer
+
+# from app.__main__ import CONSOLE
 from app.views import AppView
 from client import flags
 from client.config import Config
@@ -56,6 +58,7 @@ def params(**kwargs) -> Dict[str, Any]:
 class RequestMixins:
     # CLASSVAR DEFAULTS ARE IN META AS ATTRS
     command: ClassVar[str] = "base"
+    commands_check_verbage: ClassVar[bool] = True
     commands: ClassVar[Tuple[str, ...]] = tuple()
     children: ClassVar[Tuple["RequestMeta", ...]] = tuple()
 
@@ -80,7 +83,9 @@ class RequestMixins:
         handler: Handler | None = None,
     ):
         self.config = config
-        self._client = client
+        self._client = None
+        if client is not None:
+            self.client = client
 
         self.children_instances = children_instances
         self._token = token
@@ -101,6 +106,7 @@ class RequestMeta(type):
     # NOTE: Should match classvars on `RequestMixins`.
     command: str
     commands: Tuple[str, ...]
+    commands_check_verbage: bool
     children: Tuple["RequestMeta", ...]
 
     def __new__(cls, name: str, bases, namespace):
@@ -124,7 +130,7 @@ class RequestMeta(type):
         acceptable = Verbage._value2member_map_
         if commands is None:
             raise AttributeError(f"`{name}` missing `commands`.")
-        elif len(bad := list(cc for cc in commands if cc not in acceptable)):
+        elif T.commands_check_verbage and len(bad := list(cc for cc in commands if cc not in acceptable)):
             msg = f"`{name}.commands` contains illegal verbage `{bad}`."
             raise AttributeError(msg)
         elif len(bad := [cc for cc in commands if not hasattr(T, cc)]):
@@ -150,9 +156,29 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
 
     @client.setter
     def client(self, v: httpx.AsyncClient):
+        # CONSOLE.print(
+        #     f"[red]Setting client `{self}@{self.__class__.__name__}` with "
+        #     "value `{v}`."
+        # )
         self._client = v
+        # CONSOLE.print(f"[orange]{self.client}")
         for child in self.children_instances.values():
             child.client = v
+
+    # ----------------------------------------------------------------------- #
+    # Async context.
+    async def __aenter__(self, app, **kwargs):
+        client = httpx.AsyncClient(
+            base_url=self.config.host.host,
+            app=app,
+            **kwargs,
+        )
+        await self.client.__aenter__()
+        self.client = client
+        return
+
+    async def __aexit__(self, exc_type, exc_value, tb):
+        await self.client.__aexit__(exc_type, exc_value, tb)
 
     @property
     def token(self):
@@ -178,6 +204,8 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
     ) -> Callable[Concatenate[V], httpx.Response]:
         """Add client and self. Make sync."""
 
+        # CONSOLE.print(f"[orange]Decorating `{fn}`.")
+
         async def wrapper(*args: V.args, **kwargs: V.kwargs):
             app = None
             if not self.config.host.remote:
@@ -185,11 +213,8 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
             async with httpx.AsyncClient(
                 base_url=self.config.host.host, app=app
             ) as client:
-                self._client = client
-                print(f"{self.client = }")
+                self.client = client
                 assert self.client
-                print(f"{self = }")
-                print(f"{fn = }")
                 res = await fn(*args, **kwargs)
             return res
 
@@ -205,7 +230,6 @@ class BaseRequest(RequestMixins, metaclass=RequestMeta):
 
     @functools.cached_property
     def typer(self) -> typer.Typer:
-        # Necessary are the function from `fns` must be bound.
         t: typer.Typer = typer.Typer(callback=self.callback)
         for command in self.commands:
             command_clean = command.replace("_", "-")

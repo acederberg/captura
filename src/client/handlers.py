@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Any, Dict, Protocol, Tuple, overload
+from typing import Annotated, Any, Dict, Iterable, Protocol, Tuple, overload
 
 import httpx
 import typer
@@ -80,6 +80,8 @@ class ConsoleHandler(BaseModel):
     output: Annotated[flags.FlagOutput, Field(default=Output.json)]
     columns: Annotated[flags.FlagColumns, Field(default_factory=list)]
     data: Annotated[Any | None, Field(default=None)]
+
+    column_configs: Annotated[Dict[str, Dict[str, Any]], Field(default_factory=dict)]
 
     async def __call__(
         self,
@@ -184,19 +186,28 @@ class ConsoleHandler(BaseModel):
         if include_count := not self.columns or "count" in self.columns:
             table.add_column("count")
 
+        column_config_base= dict(
+            justify="center",
+        )
+
         for ii, key in enumerate(keys):
-            style = typer.colors.BLUE if (ii % 2) else typer.colors.BRIGHT_BLUE
-            table.add_column(
-                key,
-                style=style,
-                justify="center",
-            )
+            column_config_extra = self.column_configs.get(key, dict())
+            column_config: Dict[str, Any] 
+            column_config = column_config_base | column_config_extra
+
+            if  column_config.get("style") is None:
+                style = typer.colors.CYAN if not (ii % 2) else typer.colors.BLUE
+                column_config.update(style=style)
+
+            table.add_column(key, **column_config)
 
         # Add rows
         def omit(row: Dict[str, Any], row_last: Dict[str, Any], key: str):
             value_row_last, value_row = row_last.get(key), row.get(key)
             if value_row == value_row_last:
                 return "`"
+            if isinstance(value_row, list):
+                value_row = ", ".join(value_row)
             return str(value_row)
 
         row_last: Dict[str, Any] = dict()
