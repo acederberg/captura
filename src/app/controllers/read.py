@@ -6,7 +6,8 @@ from app import util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess
 from app.controllers.base import BaseController, Data, ResolvedUser
-from app.models import Collection, Document, Edit, KindObject, Tables, User
+from app.models import (Collection, Document, Edit, KindObject, Singular,
+                        Tables, User)
 from app.schemas import (CollectionSearchSchema, DocumentSearchSchema,
                          EditSearchSchema, UserSearchSchema)
 from sqlalchemy.orm import Session
@@ -90,8 +91,10 @@ class Read(BaseController):
         | Tuple[Collection, ...]
         | Tuple[Edit, ...]
     ):
+        singular = Singular(param.kind_mapped.name)
 
-        T_kind = param._mapped_class
+        T_kind: Type[User] | Type[Document] | Type[Collection] | Type[Edit]
+        T_kind = Tables[singular.name].value  # type: ignore[reportGeneralTypeErrors]
         q = T_kind.q_search(
             user.uuid,
             param.uuid,

@@ -95,7 +95,7 @@ class UserRequests(BaseRequest):
 
         child_name = child.name if child is not None else "users"
         return await self.client.get(
-            f"/users/search/{uuid_user}/{child_name}",
+            f"/users/{uuid_user}/{child_name}",
             headers=self.headers,
             params=params(
                 uuid=uuids,

@@ -20,8 +20,9 @@ from typing import (Annotated, Any, ClassVar, Generic, List, Literal, Optional,
                     Self, Set, Tuple, Type, TypeVar)
 
 from fastapi import Query
-from pydantic import (BaseModel, ConfigDict, Field, create_model,
-                      field_serializer, field_validator, model_validator)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
+                      computed_field, create_model, field_serializer,
+                      field_validator, model_validator)
 from pydantic.fields import FieldInfo
 from pydantic_core.core_schema import FieldValidationInfo
 
@@ -52,8 +53,35 @@ Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
 UUIDS = Annotated[Set[str] | None, Field(default=None)]
 
 
-class BaseSearchSchema(BaseModel):
-    _mapped_class: ClassVar[Type]
+class KindSchema(str, enum.Enum):
+    search = "search"
+    metadata = "metadata"
+    default = "default"
+    extra = "extra"
+    create = "create"
+    update = "update"
+
+
+class KindNesting(str, enum.Enum):
+    array = "list"
+    object = "dict"
+
+
+
+class BaseSchema(BaseModel):
+
+    model_config = ConfigDict(use_enum_values=False, from_attributes=True)
+
+    # NOT FIELDS SINCE THEY ARE CONSTANT. METADATA FOR CONSUMERS!
+    kind_mapped: ClassVar[KindObject]
+    kind_schema: ClassVar[KindSchema]
+
+
+
+
+class BaseSearchSchema(BaseSchema):
+    kind_mapped: ClassVar[KindObject]
+    kind_schema: ClassVar[KindSchema]
 
     uuid: Annotated[Set[str] | None, Field(default=None)]
     limit: Annotated[int, Field(default=10)]
@@ -62,18 +90,12 @@ class BaseSearchSchema(BaseModel):
     include_public: Annotated[bool, Field(default=True)]
 
 
-class BaseSchema(BaseModel):
-    _mapped_class: ClassVar[Type]
-    model_config = ConfigDict(use_enum_values=False, from_attributes=True,
-                              )
-
 
 class BasePrimarySchema(BaseSchema):
     public: bool = True
 
 
-class BaseSecondarySchema(BaseSchema):
-    ...
+class BaseSecondarySchema(BaseSchema): ...
 
 
 def optional(model: Type[BaseModel]) -> Type[BaseModel]:
@@ -102,8 +124,12 @@ def optional(model: Type[BaseModel]) -> Type[BaseModel]:
 
 
 class UserBaseSchema(BasePrimarySchema):
-    _mapped_class = User
-    kind: Annotated[Literal[KindObject.user], Field(default=KindObject.user)]
+    # _mapped_class = User
+    kind_mapped = KindObject.user
+    # : Annotated[  
+    #     Literal[KindObject.user],
+    #     Field(default=KindObject.user),
+    # ]
 
     name: Name
     description: Description
@@ -112,19 +138,38 @@ class UserBaseSchema(BasePrimarySchema):
 
 
 class UserCreateSchema(UserBaseSchema):
-    ...
+    # _schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
+    #     Literal[KindSchema.create],
+    #     Field(default=KindSchema.create),
+    # ]
+    kind_schema = KindSchema.create
 
 
 @optional
 class UserUpdateSchema(UserCreateSchema):
-    ...
+    # _schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
+    #     Literal[KindSchema.update],
+    #     Field(default=KindSchema.update),
+    # ]
+    kind_schema = KindSchema.update
 
 
 class UserSchema(UserBaseSchema):
+    # _schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
+    #     Literal[KindSchema.default],
+    #     Field(default=KindSchema.default),
+    # ]
+    kind_schema = KindSchema.default
     uuid: UUID
 
 
 class UserExtraSchema(UserSchema):
+    _schema = KindSchema.extra
+    # kind_schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
+    #     Literal[KindSchema.extra],
+    #     Field(default=KindSchema.extra),
+    # ]
+
     id: int
     invitation_code: Annotated[
         str | None,
@@ -149,7 +194,7 @@ class UserExtraSchema(UserSchema):
                 return self
             case (invitation_code, invitation_pending, invitation_email):
                 msg = "The fields `invitation_code`, `invitation_email`, and "
-                msg += "`invitation_pending` must all be specified or not." 
+                msg += "`invitation_pending` must all be specified or not."
                 msg += "The following combination of values is "
                 msg += f"`{invitation_pending=}`, `{invitation_email=}`, and "
                 msg += f"`{invitation_code}`."
@@ -157,7 +202,8 @@ class UserExtraSchema(UserSchema):
 
 
 class UserSearchSchema(BaseSearchSchema):
-    _mapped_class = User
+    kind_mapped = KindObject.user
+    kind_schema = KindSchema.search
 
 
 # =========================================================================== #
@@ -165,36 +211,40 @@ class UserSearchSchema(BaseSearchSchema):
 
 
 class CollectionBaseSchema(BasePrimarySchema):
-    _mapped_class = Collection
-    kind: Annotated[
-        Literal[KindObject.collection], Field(default=KindObject.collection)
-    ]
+    # _mapped_class = Collection
+    kind_mapped = KindObject.collection
 
     name: Name
     description: Description
 
 
-class CollectionCreateSchema(CollectionBaseSchema):
-    ...
+class CollectionCreateSchema(CollectionBaseSchema): 
+    kind_schema = KindSchema.create
 
 
 @optional
 class CollectionUpdateSchema(CollectionCreateSchema):
+    kind_schema = KindSchema.update
+
     uuid_user: UUID
 
 
 class CollectionMetadataSchema(CollectionBaseSchema):
+    kind_schema = KindSchema.metadata
+    
     uuid: UUID
 
 
 class CollectionSchema(CollectionMetadataSchema):
-    model_config = ConfigDict(from_attributes=True)
+    kind_schema = KindSchema.default
 
     uuid: UUID
 
 
 class CollectionSearchSchema(BaseSearchSchema):
-    _mapped_class = Collection
+    kind_schema = KindSchema.search
+    kind_mapped = KindObject.collection
+
     uuid_collection: UUIDS
 
 
@@ -203,19 +253,17 @@ class CollectionSearchSchema(BaseSearchSchema):
 
 
 class AssignmentBaseSchema(BaseSecondarySchema):
-    kind: Annotated[
-        Literal[KindObject.assignment], Field(default=KindObject.assignment)
-    ]
-    _mapped_class = Assignment
+    kind_mapped = KindObject.assignment
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
-class AssignmentCreateSchema(AssignmentBaseSchema):
-    ...
+class AssignmentCreateSchema(AssignmentBaseSchema): 
+    kind_schema = KindSchema.create
 
 
 class AssignmentSchema(AssignmentBaseSchema):
-    model_config = ConfigDict(from_attributes=True)
+    kind_schema = KindSchema.default
+
     uuid: UUID
     deleted: bool
 
@@ -225,10 +273,7 @@ class AssignmentSchema(AssignmentBaseSchema):
 
 
 class DocumentBaseSchema(BasePrimarySchema):
-    # uuid was initially excluded bc metadata is labeld by it.
-    # But returning dictionaries sucks so it will be removed soon.
-    kind: Annotated[Literal[KindObject.document], Field(default=KindObject.document)]
-    _mapped_class = Document
+    kind_mapped = KindObject.document
 
     name: Name
     description: Description
@@ -236,26 +281,32 @@ class DocumentBaseSchema(BasePrimarySchema):
 
 
 class DocumentCreateSchema(DocumentBaseSchema):
+    kind_schema = KindSchema.create
+
     content: Content
 
 
 @optional
-class DocumentUpdateSchema(DocumentCreateSchema):
-    ...
+class DocumentUpdateSchema(DocumentCreateSchema): 
+    kind_schema = KindSchema.update
 
 
 class DocumentMetadataSchema(DocumentUpdateSchema):
+    kind_schema = KindSchema.metadata
     uuid: UUID
 
 
 class DocumentSchema(DocumentMetadataSchema):
-    # name: Name
+    kind_schema = KindSchema.default
+
     content: Content
     public: bool = True
 
 
 class DocumentSearchSchema(BaseSearchSchema):
-    _mapped_class = Document
+    kind_mapped = KindObject.document
+    kind_schema = KindSchema.search
+
     uuid_document: UUIDS
 
 
@@ -264,8 +315,7 @@ class DocumentSearchSchema(BaseSearchSchema):
 
 
 class GrantBaseSchema(BaseSecondarySchema):
-    _mapped_class = Grant
-    kind: Annotated[Literal[KindObject.grant], Field(default=KindObject.grant)]
+    kind_mapped = KindObject.grant
 
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
@@ -283,11 +333,13 @@ class GrantBaseSchema(BaseSecondarySchema):
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
-class GrantCreateSchema(GrantBaseSchema):
-    ...
+class GrantCreateSchema(GrantBaseSchema): 
+    kind_schema = KindSchema.create
 
 
 class GrantSchema(GrantBaseSchema):
+    kind_schema = KindSchema.default
+
     model_config = ConfigDict(from_attributes=True)
     uuid: UUID
     uuid_document: UUID
@@ -298,37 +350,36 @@ class GrantSchema(GrantBaseSchema):
 
 
 class EditBaseSchema(BaseSchema):
-    kind: Annotated[Literal[KindObject.edit], Field(default=KindObject.edit)]
-    _mapped_class = Edit
+    kind_mapped = KindObject.edit
 
     content: Content
     message: Message
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED.
-class EditCreateSchema(EditBaseSchema):
-    ...
+class EditCreateSchema(EditBaseSchema): 
+    kind_schema = KindSchema.create
 
 
-class EditMetadataSchema(EditBaseSchema):
-    ...
+class EditMetadataSchema(EditBaseSchema): 
+    kind_schema = KindSchema.metadata
 
 
 class EditSchema(EditMetadataSchema):
-    ...
+    kind_schema = KindSchema.default
 
 
 class EditSearchSchema(BaseSearchSchema):
-    _mapped_class = Edit
+    kind_mapped = KindObject.edit
+    kind_schema = KindSchema.search
 
 
 # =========================================================================== #
 # Events Schema
 
 
-class EventBaseSchema(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    _mapped_class = Event
+class EventBaseSchema(BaseSchema):
+    # kind_mapped: ClassVar[KindObject] = KindObject.event
 
     api_origin: str
     api_version: str
@@ -342,7 +393,7 @@ class EventBaseSchema(BaseModel):
     detail: str
 
     @field_serializer("kind_obj", return_type=str)
-    def serailize_kind_obj(self, v: Any, info) -> str:
+    def serailize__obj(self, v: Any, info) -> str:
         return v.name
 
     @field_validator("kind_obj", mode="before")
@@ -360,18 +411,25 @@ class EventBaseSchema(BaseModel):
         return v
 
 
-class EventSearchSchema(BaseModel):
+class EventSearchSchema(BaseSearchSchema):
+    kind_mapped = KindObject.event
+    kind_schema = KindSchema.search 
+    
     uuid_event: UUIDS
     kind: KindEvent | None = None
-    kind_obj: KindObject | None = None
+    _obj: KindObject | None = None
     uuid_obj: str | None = None
 
 
 class EventWithRootSchema(EventBaseSchema):
+    kind_schema = KindSchema.metadata
+
     uuid_root: str
 
 
 class EventSchema(EventBaseSchema):
+    kind_schema = KindSchema.default
+
     children: Annotated["List[EventSchema]", Field(default=list())]
 
 
@@ -395,7 +453,7 @@ class KindObjectMinimalSchema(enum.Enum):
 #
 #
 # class ObjectSchema(BaseModel):
-#     kind: KindObject
+#     : KindObject
 #     data: AnyMinimalSchema
 #
 
@@ -413,44 +471,87 @@ class EventActionSchema(BaseModel):
 
 T_Spec = TypeVar(
     "T_Spec",
+    # User
     UserSchema,
     UserExtraSchema,
-    DocumentSchema,
-    CollectionSchema,
-    EditSchema,
-    GrantSchema,
-    AssignmentSchema,
     List[UserSchema],
     List[UserExtraSchema],
+
+    # Document
+    DocumentSchema,
+    DocumentMetadataSchema,
+    List[DocumentMetadataSchema],
     List[DocumentSchema],
+
+    # Collection
+    CollectionSchema,
+    CollectionMetadataSchema,
     List[CollectionSchema],
+    List[CollectionMetadataSchema],
+
+    # Edit
+    EditSchema,
+    EditMetadataSchema,
     List[EditSchema],
+    List[EditMetadataSchema],
+
+    # Grant
+    GrantSchema,
     List[GrantSchema],
-    List[AssignmentSchema],
+
+    # Assignment
+    AssignmentSchema,
+    List[AssignmentSchema]
 )
 
 
-def kind(v: Any, field_info: FieldValidationInfo) -> KindObject:
-    if v:
-        raise ValueError("Cannot set `kind` explicitly.")
-
-    match field_info.data:
-        case {"data": list()}:
-            kind = KindObject.bulk
-        case {"data": {"kind": kind}}:
-            kind = kind
-        case _:
-            msg = "Cannot determine `kind` from malformed data."
-            raise ValueError(msg)
-
-    return kind
-
-
 # This is the primary response. See https://youtu.be/HBH6qnj0trU?si=7YIqUkPl4gB5S_sP
-class AsData(BaseModel, Generic[T_Spec]):
+class AsOutput(BaseModel, Generic[T_Spec]):
+    # : Annotated[KindObject, BeforeValidator(kind), Field()]
     data: Annotated[T_Spec, Field()]
-    kind: Annotated[KindObject, Field()]
+
+    @computed_field
+    @property
+    def kind(self) -> KindObject:
+        return self.first().kind_mapped
+
+    @computed_field
+    @property
+    def kind_schema(self) -> KindSchema:
+        return self.first().kind_schema
+
+    @computed_field
+    @property
+    def kind_nesting(self) -> KindNesting | None:
+        match self.data:
+            case list():
+                return KindNesting.array
+            case dict():
+                return KindNesting.object
+            case _:
+                return None
 
 
-class WithEvents(AsData, Generic[T_Spec]):
+    def first(self):
+        match self.data:
+            case [object() as item, *_]:
+                return item 
+            case object() as item:
+                return item
+            case bad:
+                msg = f"Cannot determine `` from malformed data `{bad}`."
+                raise ValueError(msg)
+
+
+
+
+class OutputWithEvents(AsOutput, Generic[T_Spec]):
     events: Annotated[List[EventSchema], Field()]
+
+
+T_mwargs = TypeVar("T_mwargs", bound=type(BaseModel))
+
+
+# Cause I hate wrapping kwargs in dict.
+def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
+    return M(**kwargs)

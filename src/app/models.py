@@ -116,6 +116,7 @@ class KindRecurse(str, enum.Enum):
 
 
 class ChildrenUser(str, enum.Enum):
+    users = "users"
     collections = "collections"
     documents = "documents"
     edits = "edits"

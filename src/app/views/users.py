@@ -9,11 +9,12 @@ from app.depends import (DependsAccess, DependsDelete, DependsRead,
                          DependsSessionMaker, DependsToken)
 from app.models import (Collection, Document, Edit, Event, KindEvent,
                         KindObject, User)
-from app.schemas import (CollectionMetadataSchema, CollectionSearchSchema,
-                         DocumentMetadataSchema, DocumentSearchSchema,
-                         EditMetadataSchema, EditSearchSchema, EventSchema,
+from app.schemas import (AsOutput, CollectionMetadataSchema,
+                         CollectionSearchSchema, DocumentMetadataSchema,
+                         DocumentSearchSchema, EditMetadataSchema,
+                         EditSearchSchema, EventSchema, OutputWithEvents,
                          UserCreateSchema, UserExtraSchema, UserSchema,
-                         UserSearchSchema, UserUpdateSchema, WithEvents)
+                         UserSearchSchema, UserUpdateSchema, mwargs)
 from app.views import args
 from app.views.base import BaseView
 from fastapi import Body, Depends, HTTPException, Query
@@ -53,7 +54,7 @@ class DemoUserView(BaseView):
         invitation_email: Annotated[Set[str] | None, Query()] = None,
         invitation_code: Annotated[Set[str] | None, Query()] = None,
         invitation_uuid: Annotated[Set[str] | None, Query()] = None,
-    ) -> List[WithEvents[UserExtraSchema]]:
+    ) -> List[OutputWithEvents[UserExtraSchema]]:
         if not access.token.admin:
             raise HTTPException(
                 403,
@@ -71,7 +72,8 @@ class DemoUserView(BaseView):
 
         adapter = TypeAdapter(List[EventSchema]) 
         return list(
-            WithEvents[UserExtraSchema].model_construct(
+            mwargs(
+                OutputWithEvents[UserExtraSchema],
                 data=UserExtraSchema.model_validate(user),
                 events=adapter.validate_python(
                     session.execute(user.q_events()).scalars()
@@ -88,7 +90,7 @@ class DemoUserView(BaseView):
         user_in: UserCreateSchema,
         invitation_email: Annotated[str, Query()], 
         force: Annotated[bool, Query()] = False
-    ) -> WithEvents[UserExtraSchema]:
+    ) -> OutputWithEvents[UserExtraSchema]:
         """Create a user.
 
         When an admin posts to this function, the admin should specify initial
@@ -156,7 +158,8 @@ class DemoUserView(BaseView):
         session.refresh(event)
         session.refresh(user)
 
-        return WithEvents[UserExtraSchema].model_construct(
+        return mwargs(
+            OutputWithEvents[UserExtraSchema],
             data=UserExtraSchema.model_validate(user),
             events=[event],
         )
@@ -168,7 +171,7 @@ class DemoUserView(BaseView):
         invitation_uuid: args.PathUUIDUser,
         invitation_code: Annotated[str, Query()],
         invitation_email: Annotated[str, Query()],
-    ) -> WithEvents[UserExtraSchema]:
+    ) -> OutputWithEvents[UserExtraSchema]:
         """If an admin, approves the user request made with `POST /users/demo`.
         If not an admin, this can be used to active an account with the 
         :param:`invitation_uuid`.
@@ -222,13 +225,13 @@ class DemoUserView(BaseView):
                     session.refresh(user)
                 else:
                     status = 403
-                    msg = "Only admins can approve a demo user.",
+                    msg = "Only admins can approve a demo user."
             case User( deleted=True, pending_approval=False, uuid=uuid):
                 # User answered correctly. This should be possible without a 
                 # token 
                 user.deleted = False
                 session.add(user)
-                session.add(event := Event(
+                session.add(Event(
                     detail="Account activated.",
                     **event_kwargs,
                 ))
@@ -245,7 +248,8 @@ class DemoUserView(BaseView):
                 raise HTTPException(500)
             raise HTTPException(status, detail=dict(msg=msg, uuid_user=uuid))
 
-        return WithEvents[UserExtraSchema].model_construct(
+        return mwargs(
+            OutputWithEvents[UserExtraSchema],
             data=UserExtraSchema.model_validate(user),
             events=TypeAdapter(List[EventSchema]).validate_python(
                 session.execute(user.q_events()).scalars()
@@ -280,12 +284,15 @@ class UserSearchView(BaseView):
         uuid_user: args.PathUUIDUser,
         read: DependsRead,
         param: Annotated[UserSearchSchema, Depends()],
-    ) -> List[UserSchema]:
+    ) -> AsOutput[List[UserSchema]]:
         """Get user collaborators or just list some users."""
 
         user: User = read.access.user(uuid_user)
         res: Tuple[User, ...] = read.search_user(user, param)
-        return TypeAdapter(List[UserSchema]).validate_python(res)
+        return mwargs(
+            AsOutput[List[UserSchema]],
+            data=TypeAdapter(List[UserSchema]).validate_python(res)
+        )
 
     # TODO: Test that users cannot access private docs/colls of others here. 
     @classmethod
@@ -294,11 +301,14 @@ class UserSearchView(BaseView):
         uuid_user: args.PathUUIDUser,
         read: DependsRead,
         param: DocumentSearchSchema = Depends(),
-    ) -> List[DocumentMetadataSchema]:
+    ) -> AsOutput[List[DocumentMetadataSchema]]:
 
         user: User = read.access.user(uuid_user)
         res: Tuple[Document, ...] = read.search_user(user, param)
-        return TypeAdapter(List[DocumentMetadataSchema]).validate_python(res)
+        return mwargs(
+            AsOutput[List[DocumentMetadataSchema]],
+            data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(res),
+        )
 
     @classmethod
     def get_search_collections(
@@ -306,11 +316,14 @@ class UserSearchView(BaseView):
         uuid_user: args.PathUUIDUser,
         read: DependsRead,
         param: CollectionSearchSchema = Depends(),
-    ) -> List[CollectionMetadataSchema]:
+    ) -> AsOutput[List[CollectionMetadataSchema]]:
 
         user: User = read.access.user(uuid_user)
         res: Tuple[Collection, ...] = read.search_user(user, param)
-        return TypeAdapter(List[CollectionMetadataSchema]).validate_python(res)
+        return mwargs(
+            AsOutput[List[CollectionMetadataSchema]],
+            data=TypeAdapter(List[CollectionMetadataSchema]).validate_python(res),
+        )
 
     @classmethod
     def get_search_edits(
@@ -318,10 +331,13 @@ class UserSearchView(BaseView):
         uuid_user: args.PathUUIDUser,
         read: DependsRead,
         param: EditSearchSchema = Depends(),
-    ) -> List[EditMetadataSchema]:
+    ) -> AsOutput[List[EditMetadataSchema]]:
         user: User = read.access.user(uuid_user)
         res: Tuple[Edit, ...] = read.search_user(user, param)
-        return TypeAdapter(List[EditMetadataSchema]).validate_python(res)
+        return mwargs(
+            AsOutput[List[EditMetadataSchema]],
+            data=TypeAdapter(List[EditMetadataSchema]).validate_python(res)
+        )
 
 
 class UserView(BaseView):
@@ -350,14 +366,14 @@ class UserView(BaseView):
         cls,
         uuid_user: args.PathUUIDUser,
         read: DependsRead,
-    ) -> UserSchema:
+    ) -> AsOutput[UserExtraSchema]:
         """Get user metadata.
 
         For instance, this should be used to make a profile page.
         """
 
-        user: User = read.access.user(uuid_user)
-        return UserSchema.model_validate(user)
+        user = UserExtraSchema.model_validate(read.access.user(uuid_user))
+        return mwargs(AsOutput[UserExtraSchema], data=user)
 
     @classmethod
     def patch_user(
@@ -366,7 +382,7 @@ class UserView(BaseView):
         token: DependsToken,
         uuid: args.PathUUIDUser,
         updates: Annotated[UserUpdateSchema, Body()]
-    ) -> EventSchema:
+    ) -> AsOutput[EventSchema]:
         """Update a user.
 
         Only the user themself should be able to update this.
@@ -405,7 +421,7 @@ class UserView(BaseView):
         uuid_user: args.PathUUIDUser,
         delete: DependsDelete,
         restore: bool = False,
-    ) -> EventSchema:
+    ) -> AsOutput[EventSchema]:
         """Remove a user and their unshared documents and edits.
 
         Only the user themself or an admin should be able to call this
@@ -416,7 +432,10 @@ class UserView(BaseView):
             raise HTTPException(400, detail="Not yet implemented.")
 
         data = delete.a_user(uuid_user)
-        return EventSchema.model_validate(data.event)
+        return mwargs(
+            AsOutput[EventSchema], 
+            data=EventSchema.model_validate(data.event),
+        )
 
 
         
