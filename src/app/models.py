@@ -456,12 +456,12 @@ class Event(Base):
     uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
     user: Mapped["User"] = relationship()
 
-    uuid_obj: Mapped[MappedColumnUUID]
+    uuid_obj: Mapped[MappedColumnUUID | None]
     api_origin: Mapped[str] = mapped_column(String(64))
     api_version: Mapped[str] = mapped_column(String(16), default=__version__)
     kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))
     kind_obj: Mapped[KindObject] = mapped_column(Enum(KindObject))
-    detail: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
 
     def update(
         self,
@@ -1179,11 +1179,14 @@ class User(SearchableTableMixins, Base):
 
     def q_select_documents_exclusive(self, document_uuids: Set[str] | None = None):
         level = Level.own
+        print(1)
         q = (
             select(Document.id, func.count(Document.id).label("owner_count"))
             .select_from(self.q_select_documents(document_uuids, level))
             .group_by(Document.id)
         )
+        util.sql(self.get_session(), q)
+        print(2)
         q = (
             select(Document.id)
             .select_from(q)
@@ -1191,6 +1194,7 @@ class User(SearchableTableMixins, Base):
                 literal_column("owner_count") == 1,
             )
         )
+        print(3)
         q = select(Document).where(Document.id.in_(q))
         return q
 
@@ -1630,7 +1634,6 @@ class Edit(PrimaryTableMixins, Base):
 # --------------------------------------------------------------------------- #
 # After the matter constants and types.
 
-
 class Tables(enum.Enum):
     assignments = AssocCollectionDocument
     grants = AssocUserDocument
@@ -1650,6 +1653,7 @@ AnyModelBesidesEvent = (
     AssocUserDocument | AssocCollectionDocument | User | Collection | Document | Edit
 )
 AnyModel = Event | AnyModelBesidesEvent
+
 
 # Resolvables
 

@@ -5,8 +5,9 @@ from uuid import uuid4
 
 from app import __version__, util
 from app.controllers.access import Access
+from app.controllers.base import Data, ResolvedUser
 from app.depends import (DependsAccess, DependsDelete, DependsRead,
-                         DependsSessionMaker, DependsToken)
+                         DependsSessionMaker, DependsToken, DependsUpdate)
 from app.models import (Collection, Document, Edit, Event, KindEvent,
                         KindObject, User)
 from app.schemas import (AsOutput, CollectionMetadataSchema,
@@ -27,15 +28,15 @@ class DemoUserView(BaseView):
 
     Demo User Creation/Activation Flow
     ---------------------------------------------------------------------------
-   
+
     The following:
-   
-      1. A human requests an account via "POST /user/demo". The accounts 
+
+      1. A human requests an account via "POST /user/demo". The accounts
         user is created with pending approval (The `user` will have
-        `_prototype_activation_pending_approval=True` and 
-        `deleted=True`) waiting for an admin to accept their invitation 
+        `_prototype_activation_pending_approval=True` and
+        `deleted=True`) waiting for an admin to accept their invitation
         request with `PATCH /users/demo`.
-      2. The accounts `user` is approved by and admin with `PATCH 
+      2. The accounts `user` is approved by and admin with `PATCH
         /users/demo` as stated above.
       3. The user moves their account out `deleted` state by doing a
         `PATCH /users/demo`.
@@ -70,26 +71,25 @@ class DemoUserView(BaseView):
         util.sql(session, q_user)
         users = tuple(session.execute(q_user).scalars())
 
-        adapter = TypeAdapter(List[EventSchema]) 
+        adapter = TypeAdapter(List[EventSchema])
         return list(
             mwargs(
                 OutputWithEvents[UserExtraSchema],
                 data=UserExtraSchema.model_validate(user),
                 events=adapter.validate_python(
                     session.execute(user.q_events()).scalars()
-                ) 
+                ),
             )
             for user in users
         )
-
 
     @classmethod
     def post_user_demo(
         cls,
         access: DependsAccess,
         user_in: UserCreateSchema,
-        invitation_email: Annotated[str, Query()], 
-        force: Annotated[bool, Query()] = False
+        invitation_email: Annotated[str, Query()],
+        force: Annotated[bool, Query()] = False,
     ) -> OutputWithEvents[UserExtraSchema]:
         """Create a user.
 
@@ -105,10 +105,13 @@ class DemoUserView(BaseView):
         if (user_existing := session.execute(q_name).scalar()) is not None:
             if force:
                 if not is_admin:
-                    raise HTTPException(403, detail=dict(
-                        msg="The force is only for masters.",
-                        uuid=invitation_email,
-                    ))
+                    raise HTTPException(
+                        403,
+                        detail=dict(
+                            msg="The force is only for masters.",
+                            uuid=invitation_email,
+                        ),
+                    )
                 events.append(
                     event_user_existing := Event(
                         api_version=__version__,
@@ -125,23 +128,27 @@ class DemoUserView(BaseView):
                 session.commit()
 
             else:
-                raise HTTPException(422, detail=dict(
-                    msg="User with username already exists.",
-                    name=user_in.name,
-                ))
+                raise HTTPException(
+                    422,
+                    detail=dict(
+                        msg="User with username already exists.",
+                        name=user_in.name,
+                    ),
+                )
 
         detail = "Demo user "
         detail += "created by admin." if is_admin else "requested"
-        events.append( event := Event(
-            api_version=__version__,
-            api_origin="POST `/users/demo`",
-            detail=detail,
-            uuid_obj=user_uuid,
-            kind_obj=KindObject.user,
-            uuid_user=access.token_user.uuid,
-            kind=KindEvent.create,
+        events.append(
+            event := Event(
+                api_version=__version__,
+                api_origin="POST `/users/demo`",
+                detail=detail,
+                uuid_obj=user_uuid,
+                kind_obj=KindObject.user,
+                uuid_user=access.token_user.uuid,
+                kind=KindEvent.create,
+            )
         )
-                      )
         invitation_code = str(uuid4())
         user = User(
             _prototype_activation_invitation_email=invitation_email,
@@ -173,15 +180,15 @@ class DemoUserView(BaseView):
         invitation_email: Annotated[str, Query()],
     ) -> OutputWithEvents[UserExtraSchema]:
         """If an admin, approves the user request made with `POST /users/demo`.
-        If not an admin, this can be used to active an account with the 
+        If not an admin, this can be used to active an account with the
         :param:`invitation_uuid`.
         """
 
         # NOTE: There is no access to check in this case. Just the invitation.
         q_user = select(User).where(
-            User._prototype_activation_invitation_code==invitation_code,
-            User._prototype_activation_invitation_email==invitation_email,
-            User.uuid==invitation_uuid,
+            User._prototype_activation_invitation_code == invitation_code,
+            User._prototype_activation_invitation_email == invitation_email,
+            User.uuid == invitation_uuid,
         )
 
         event_kwargs = dict(
@@ -190,23 +197,24 @@ class DemoUserView(BaseView):
             uuid_user=access.token_user.uuid,
             uuid_obj=invitation_uuid,
             kind_obj=KindObject.user,
-            kind=KindEvent.update
+            kind=KindEvent.update,
+            detail="Demo user activation.",
         )
 
         status: int | None = None
-        msg: str |  None = None
+        msg: str | None = None
         session = access.session
         match (user := session.execute(q_user).scalar()):
             case None:
-                msg ="Incorrect combination of `invitation_code` and "
+                msg = "Incorrect combination of `invitation_code` and "
                 msg += "`invitation_email`."
-                raise HTTPException(403, detail=msg) 
-            # NOTE: 422 because the request 
-            case User( deleted=False, pending_approval=False, uuid=uuid):
+                raise HTTPException(403, detail=msg)
+            # NOTE: 422 because the request
+            case User(deleted=False, pending_approval=False, uuid=uuid):
                 status = 422
-                msg ="User already activated."
+                msg = "User already activated."
             # NOTE: 500 because this should never happen.
-            case User( deleted=False, pending_approval=True, uuid=uuid):
+            case User(deleted=False, pending_approval=True, uuid=uuid):
                 status = 500
                 msg = "User is already out of deleted state while pending "
                 msg += "approval."
@@ -216,8 +224,8 @@ class DemoUserView(BaseView):
                     user._prototype_activation_pending_approval = False
                     session.add(user)
                     session.add(
-                        event := Event(
-                            detail="Admin approved invitation.",
+                        Event(
+                            message="Admin approved invitation.",
                             **event_kwargs,
                         )
                     )
@@ -226,22 +234,21 @@ class DemoUserView(BaseView):
                 else:
                     status = 403
                     msg = "Only admins can approve a demo user."
-            case User( deleted=True, pending_approval=False, uuid=uuid):
-                # User answered correctly. This should be possible without a 
-                # token 
+            case User(deleted=True, pending_approval=False, uuid=uuid):
+                # NOTE: User answered correctly. This should be possible
+                #       without a token.
                 user.deleted = False
                 session.add(user)
-                session.add(Event(
-                    detail="Account activated.",
-                    **event_kwargs,
-                ))
+                session.add(
+                    Event(
+                        message="Account activated.",
+                        **event_kwargs,
+                    )
+                )
                 session.commit()
                 session.refresh(user)
-
             case _:
                 raise HTTPException(500)
-
-
 
         if msg is not None:
             if status is None:
@@ -253,7 +260,7 @@ class DemoUserView(BaseView):
             data=UserExtraSchema.model_validate(user),
             events=TypeAdapter(List[EventSchema]).validate_python(
                 session.execute(user.q_events()).scalars()
-            )
+            ),
         )
 
 
@@ -265,9 +272,9 @@ class UserSearchView(BaseView):
 
     view_routes = dict(
         get_search_users="/{uuid_user}/users",
-        #                  ^^^^^^^^^^^  Search results ALWAYS scoped for users 
-        #                               by uuid (since admins might need to 
-        #                               simulate search results of other 
+        #                  ^^^^^^^^^^^  Search results ALWAYS scoped for users
+        #                               by uuid (since admins might need to
+        #                               simulate search results of other
         #                               users).
         get_search_documents="/{uuid_user}/documents",
         get_search_edits="/{uuid_user}/edits",
@@ -291,10 +298,10 @@ class UserSearchView(BaseView):
         res: Tuple[User, ...] = read.search_user(user, param)
         return mwargs(
             AsOutput[List[UserSchema]],
-            data=TypeAdapter(List[UserSchema]).validate_python(res)
+            data=TypeAdapter(List[UserSchema]).validate_python(res),
         )
 
-    # TODO: Test that users cannot access private docs/colls of others here. 
+    # TODO: Test that users cannot access private docs/colls of others here.
     @classmethod
     def get_search_documents(
         cls,
@@ -336,7 +343,7 @@ class UserSearchView(BaseView):
         res: Tuple[Edit, ...] = read.search_user(user, param)
         return mwargs(
             AsOutput[List[EditMetadataSchema]],
-            data=TypeAdapter(List[EditMetadataSchema]).validate_python(res)
+            data=TypeAdapter(List[EditMetadataSchema]).validate_python(res),
         )
 
 
@@ -378,42 +385,25 @@ class UserView(BaseView):
     @classmethod
     def patch_user(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
-        uuid: args.PathUUIDUser,
-        updates: Annotated[UserUpdateSchema, Body()]
+        uuid_user: args.PathUUIDUser,
+        update: DependsUpdate,
+        updates: Annotated[UserUpdateSchema, Body()],
     ) -> AsOutput[EventSchema]:
         """Update a user.
 
         Only the user themself should be able to update this.
         """
 
-        with sessionmaker() as session:
-            user = Access(session, token).user(uuid)
+        update.update_data = updates
+        data: Data[ResolvedUser] = update.a_user(
+            uuid_user, 
+            resolve_user_token=update.token_user,
+        )
+        return mwargs(
+            AsOutput[EventSchema],
+            data=data.event
+        )
 
-            # NOTE: Don't forget to include the metadata.
-            updates_dict = updates.model_dump()
-            event_common = dict(
-                uuid_user=token["uuid"],  # use from token incase bad access.
-                uuid_obj=uuid,
-                kind=KindEvent.update,
-                kind_obj=KindObject.user,
-                api_origin="PATCH /users/<uuid>",
-            )
-            event = Event(**event_common, detail="Updated user.")
-            for key, value in updates_dict.items():
-                if value is None:
-                    continue
-                setattr(user, key, value)
-                event.children.append(
-                    Event(**event_common, detail=f"Updated user {key}.")
-                )
-            session.add(event)
-            session.add(user)
-            session.commit()
-            session.refresh(event)
-
-            return EventSchema.model_validate(event)  # type: ignore
 
     @classmethod
     def delete_user(
@@ -433,9 +423,6 @@ class UserView(BaseView):
 
         data = delete.a_user(uuid_user)
         return mwargs(
-            AsOutput[EventSchema], 
+            AsOutput[EventSchema],
             data=EventSchema.model_validate(data.event),
         )
-
-
-        

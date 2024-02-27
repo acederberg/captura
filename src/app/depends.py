@@ -245,29 +245,6 @@ def access(
 DependsAccess: TypeAlias = Annotated[Access, Depends(access)]
 
 
-def read(
-    token: DependsTokenOptional,
-    access: DependsAccess,
-    request: Request,
-) -> Read:
-    return Read(session=access.session, token=token, method=request.method)
-
-
-def delete(
-    token: DependsTokenOptional,
-    access: DependsAccess,
-    request: Request,
-) -> Delete:
-    api_origin = request.url.path 
-    return Delete(
-        session=access.session, 
-        token=token, 
-        method=request.method,
-        api_origin=api_origin,
-        detail=...,
-    )
-
-
 def create(
     token: DependsTokenOptional,
     access: DependsAccess,
@@ -283,8 +260,47 @@ def create(
     )
 
 
-DependsRead: TypeAlias = Annotated[Read, Depends(read)]
-DependsDelete: TypeAlias = Annotated[Delete, Depends(delete)]
+def read(
+    token: DependsTokenOptional,
+    access: DependsAccess,
+    request: Request,
+) -> Read:
+    return Read(session=access.session, token=token, method=request.method)
+
+
+def update(
+    token: DependsTokenOptional,
+    access: DependsAccess,
+    request: Request,
+) -> Update:
+    api_origin = request.url.path 
+    return Update(
+        session=access.session, 
+        token=token, 
+        method=request.method,
+        api_origin=api_origin,
+        detail=""
+    )
+
+
+def delete(
+    token: DependsTokenOptional,
+    access: DependsAccess,
+    request: Request,
+) -> Delete:
+    api_origin = request.url.path 
+    return Delete(
+        session=access.session, 
+        token=token, 
+        method=request.method,
+        api_origin=api_origin,
+        detail=""
+    )
+
+
 DependsCreate: TypeAlias = Annotated[Create, Depends(create)]
+DependsRead: TypeAlias = Annotated[Read, Depends(read)]
+DependsUpdate: TypeAlias = Annotated[Update, Depends(update)]
+DependsDelete: TypeAlias = Annotated[Delete, Depends(delete)]
 
 

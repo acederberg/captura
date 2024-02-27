@@ -17,7 +17,7 @@ from app.controllers.base import (Data, DataResolvedGrant,
                                   ResolvedGrantUser, ResolvedUser)
 from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
                                     WithDelete)
-from app.models import (Assignment, Collection, Document, Event, Grant,
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
                         KindEvent, KindObject, Level, PendingFrom,
                         ResolvableMultiple, ResolvableSingular,
                         ResolvableSourceAssignment, ResolvableTargetAssignment,
@@ -503,6 +503,231 @@ class Update(WithDelete, Generic[T_Update]):
         )
         self._update_data = update_data
 
+    @property
+    def update_data(self) -> T_Update:
+        if (v := self._update_data) is None:
+            raise ValueError("`update_data` has not been set.")
+        return v
+
+    @update_data.setter
+    def update_data(self, v) -> None:
+        if self._update_data is not None:
+            raise ValueError("Cannot overwrite existing update data.")
+        self._update_data = v
+
+    @property
+    def event_common(self) -> Dict[str, Any]:
+        v = super().event_common
+        v.update(kind=KindEvent.update)
+        return v
+
+    @overload
+    def generic_update(
+        self,
+        data: Data[ResolvedUser],
+        exclude: Set[str] = set()
+    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]: ...
+
+    @overload
+    def generic_update(
+        self,
+        data: Data[ResolvedCollection],
+        exclude: Set[str] = set()
+    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]: ...
+
+    @overload
+    def generic_update(
+        self,
+        data: Data[ResolvedDocument],
+        exclude: Set[str] = set()
+    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]: ...
+
+    # NOTE: Document updates are not generic
+    def generic_update(
+        self,
+        data: Data[ResolvedUser] | Data[ResolvedCollection] | Data[ResolvedDocument],
+        exclude: Set[str] = set()
+    ) -> (
+        Tuple[Data[ResolvedUser], UserUpdateSchema] 
+        | Tuple[Data[ResolvedCollection], CollectionUpdateSchema]
+        | Tuple[Data[ResolvedDocument], DocumentUpdateSchema]
+    ):
+
+        session = self.session
+
+        print(data.data)
+        item: User | Collection | Document
+        match data.data:
+            case object(users=(User() as item, )):
+                pass
+            case object(collections=(Collection() as item, )):
+                pass
+            case object(documents=(Document() as item, )):
+                pass
+            case _:
+                raise ValueError("Updating many is not supported.")
+
+        param: T_Update = self.update_data
+        match self.update_data.kind_mapped:
+            case KindObject.user | KindObject.collection:
+                param_dict = param.model_dump(
+                    exclude_none=True, exclude=exclude
+                )
+            case _:
+                raise ValueError("Incorrect parameter type.")
+
+        # NOTE: @optional will raise 422 if all `null`
+        data.event = Event(
+            uuid_obj=item.uuid,
+            kind_obj=param.kind_mapped,
+            detail="Fields updated using `generic_update`.",
+            **self.event_common,
+        )
+
+        for column, value in param_dict.items():
+            setattr(item, column, value)
+            data.event.children.append(
+                Event(
+                    uuid_obj=item.uuid,
+                    kind_obj=param.kind_mapped,
+                    detail=f"Field `{column}` updated.",
+                    **self.event_common,
+                )
+            )
+
+        session.add(item)
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+
+        return data, param # type: ignore
+
+
+    #------------------------------------------------------------------------ #
+
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
+        session = self.session
+        data, _= self.generic_update(data)
+        user, *_ = data.data.users
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.collection,
+            uuid_obj=user.uuid,
+            detail="User updated.",
+            children=[data.event],
+        )
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+        return data
+
+    a_user = with_access(Access.d_user)(user)
+
+
+    #------------------------------------------------------------------------ #
+
+    def collection(self, data: Data[ResolvedCollection]) -> Data[ResolvedCollection]:
+        param: CollectionUpdateSchema
+        token_user = data.token_user or self.token_user
+        data, param = self.generic_update(data, {"uuid_user"})
+
+        collection, *_ = data.data.collections
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.collection,
+            uuid_obj=collection.uuid,
+            detail="Collection updated.",
+            children=[data.event],
+        )
+        if param.uuid_user is None:
+            return data
+
+        # Transfer ownership
+        session = self.session
+        collection = data.data.collections[0]
+        user = User.if_exists(
+            session,
+            param.uuid_user,
+            msg="User to transfer collection to does not exist.",
+        )
+        collection.id_user = user.id
+        data.event.children.append(
+            Event(
+                **self.event_common,
+                kind_obj=KindObject.user,
+                uuid_obj=token_user.uuid,
+                detail="Ownership of collection transfered.",
+            )
+        )
+        session.add(collection)
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
+
+    a_collection = with_access(Access.d_collection)(collection)
+
+
+    #------------------------------------------------------------------------ #
+
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
+        raise HTTPException(
+            400,
+            detail="Edits cannot be updated."
+        )
+
+    a_edit = with_access(Access.d_edit)(edit)
+
+
+    #------------------------------------------------------------------------ #
+
+    def document(self, data: Data[ResolvedDocument]) -> Data[ResolvedDocument]:
+        session = self.session
+        token_user = data.token_user or self.token_user
+
+        param: DocumentUpdateSchema
+        data, param = self.generic_update(data, {"content"})
+        if param.content is None:
+            return data
+
+        document = data.data.documents[0]
+        document.content = param.content
+
+        # Replace head.
+        edit = Edit(
+            uuid=secrets.token_urlsafe(8),
+            detail=param.message,
+            content=document.content,
+            id_document=document.id,
+            id_user=token_user.uuid,
+        )
+        event_edit = Event(
+            **self.event_common,
+            kind_obj=edit.uuid,
+            uuid_obj=KindObject.edit,
+            detail="Previous document content saved as an edit."
+        )
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.document,
+            uuid_obj=document.uuid,
+            children=[data.event, event_edit],
+            detail="Document updated."
+        )
+
+        session.add(data.event)
+        session.add(edit)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
+
+    a_document = with_access(Access.d_document)(document)
+
+
+    #------------------------------------------------------------------------ #
+
     def create_event_grant(
         self, data: DataResolvedGrant, grants_pending: Tuple[Grant, ...]
     ) -> Event:
@@ -559,6 +784,7 @@ class Update(WithDelete, Generic[T_Update]):
         session.add_all(pending_grants)
 
         event = self.create_event_grant(data, pending_grants)
+        event.detail = "Grant invitation accepted."
         session.add(event)
         session.commit()
         return data
@@ -600,9 +826,14 @@ class Update(WithDelete, Generic[T_Update]):
 
         session.add_all(pending_grants)
         event = self.create_event_grant(data, pending_grants)
+        event.detail = "Access granted."
+
         session.add(event)
         session.commit()
         return data
+    
+
+    #------------------------------------------------------------------------ #
 
     def assignment_document(
         self,

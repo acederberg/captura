@@ -1,8 +1,8 @@
 import functools
 from http import HTTPMethod
-from typing import Any, Dict, Set, Tuple, Type, overload
+from typing import Any, Dict, List, Set, Tuple, Type, overload
 
-from app import __version__
+from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
 from app.controllers.base import (Data, DataResolvedAssignment,
@@ -14,8 +14,9 @@ from app.controllers.base import (Data, DataResolvedAssignment,
                                   ResolvedGrantUser, ResolvedUser)
 from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
                         KindEvent, KindObject, Level, User)
+from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Select, Update, delete, false, true, update
 from sqlalchemy.orm import Session
@@ -113,6 +114,9 @@ class Delete(WithAccess):
 
         :returns: The active target uuids with active assignments or grants.
         """
+        if not len(uuid_target):
+            raise ValueError("`uuid_target` must not be empty.")
+
         assoc_data = self.split_assocs(T_assoc, source, uuid_target)
         uuid_assoc_rm = assoc_data.uuid_assoc_active.copy()
 
@@ -276,23 +280,29 @@ class Delete(WithAccess):
         #       document is first, the users are second, and the grants
         #       exist only as JSON.
         event_common = self.event_common
-        target_attr_name = data.data.kind_target.name
-        uuid_target_attr_name = f"uuid_{target_attr_name}"
+        kind_target = data.data.kind_target
+        kind_assoc, kind_source = data.data.kind_assoc, data.data.kind_source
+
+        uuid_target_attr_name = f"uuid_{kind_target.name}"
+        detail = f"`{kind_assoc.name}`s deleted via `{kind_source.name}`."
 
         return Event(
             **event_common,
             uuid_obj=data.data.uuid_source,
-            kind_obj=data.data.kind_source,
+            kind_obj=kind_source,
+            detail=detail,
             children=[
                 Event(
                     **event_common,
-                    kind_obj=data.data.kind_target,
+                    kind_obj=kind_target,
                     uuid_obj=getattr(assoc, uuid_target_attr_name),
+                    detail=detail,
                     children=[
                         Event(
                             **event_common,
-                            kind_obj=data.data.kind_assoc,
+                            kind_obj=kind_assoc,
                             uuid_obj=assoc.uuid,
+                            detail=detail,
                         )
                     ],
                 )
@@ -315,8 +325,8 @@ class Delete(WithAccess):
         data, *_ = self.assoc(data)
         return data
 
-    a_assignment_document = with_access(Access.assignment_document)(assignment_document)
-    a_assignment_collection = with_access(Access.assignment_collection)(
+    a_assignment_document = with_access(Access.d_assignment_document)(assignment_document)
+    a_assignment_collection = with_access(Access.d_assignment_collection)(
         assignment_collection
     )
 
@@ -336,8 +346,8 @@ class Delete(WithAccess):
         data, *_ = self.assoc(data)
         return data
 
-    a_grant_document = with_access(Access.grant_document)(grant_user)
-    a_grant_user = with_access(Access.grant_user)(grant_document)
+    a_grant_document = with_access(Access.d_grant_document)(grant_user)
+    a_grant_user = with_access(Access.d_grant_user)(grant_document)
 
     # ----------------------------------------------------------------------- #
 
@@ -348,22 +358,27 @@ class Delete(WithAccess):
         documents_exclusive: Tuple[Document, ...] = tuple( 
             session.execute(user.q_select_documents_exclusive()).scalars()
         )
+        print(4)
         data_documents = Data[ResolvedDocument].model_construct(
             token_user=self.token_user,
             data=ResolvedDocument.model_construct(documents=documents_exclusive),
         )
         self.document(data_documents)
+        print(5)
 
         # Cleanup collections.
         q_collections = user.q_collections(exclude_deleted=False)
 
         collections: Tuple[Collection, ...]
         collections = tuple(self.session.execute(q_collections).scalars())
-        data_collections = Data[ResolvedCollection].model_construct(
+        print(5.5)
+        data_collections = mwargs(
+            Data[ResolvedCollection],
             token_user=self.token_user,
-            data=ResolvedDocument.model_construct(collections=collections),
+            data=mwargs(ResolvedCollection, collections=collections),
         )
         self.collection(data_collections)
+        print(6)
 
         # Cleanup user
         if self.force:
@@ -374,12 +389,16 @@ class Delete(WithAccess):
 
         # Event
         data.event = Event(
+            **self.event_common,
             kind_obj=KindObject.user,
             uuid_obj=user.uuid,
             children=[
-                data_item.event for data_item in (data_documents, data_collections)
+                ee
+                for data_item in (data_documents, data_collections)
+                if (ee := data_item.event) is not None
             ],
         )
+        print(7)
         session.add(data.event)
         session.commit()
         session.refresh(data.event)
@@ -404,7 +423,7 @@ class Delete(WithAccess):
 
         return data
 
-    a_user = with_access(Access.user)(user)
+    a_user = with_access(Access.d_user)(user)
 
     # ----------------------------------------------------------------------- #
 
@@ -413,24 +432,29 @@ class Delete(WithAccess):
         data: Data[ResolvedCollection],
         collection: Collection,
     ) -> Data[ResolvedAssignmentCollection]:
+        print("-------------------")
         q = collection.q_select_documents()
-        uuid_document = set(self.session.execute(q).scalars())
-        documents = Document.resolve(self.session, uuid_document)
+        util.sql(self.session, q)
+        documents = set(self.session.execute(q).scalars())
+        # print(f"{uuid_document = }")
+        # documents = Document.resolve(self.session, uuid_document)
+        # print(documents)
 
+        print("a")
         # Delete assigns and get events before deletion.
-        data_assignments = Data.model_validate(
-            dict(
-                token_user=data.token_user,
-                data=ResolvedAssignmentCollection.model_validate(
-                    dict(
-                        collection=collection,
-                        documents=documents,
-                    )
-                ),
-            )
+        data_assignments = mwargs(
+            Data,
+            token_user=data.token_user,
+            data=mwargs(
+                ResolvedAssignmentCollection,
+                collection=collection,
+                documents=documents,
+            ),
         )
-        _ = self.assignment_collection(data_assignments)
+        if len(documents):
+            _ = self.assignment_collection(data_assignments)
 
+        print("b")
         # When force, hard delete.
         session = self.session
         if self.force:
@@ -440,11 +464,17 @@ class Delete(WithAccess):
             session.add(collection)
 
         # Create event
+        event_assignments = data_assignments.event
         data_assignments.event = Event(
             **self.event_common,
+            kind_obj=KindObject.assignment,
             uuid_obj=collection.uuid,
-            children=[data_assignments.event],
+            detail="Bulk deletion of `assignment`s.",
         )
+        if event_assignments is not None:
+            data_assignments.event.children.append(event_assignments)
+        print("c")
+
         return data_assignments
 
     def collection(
@@ -454,22 +484,29 @@ class Delete(WithAccess):
 
         session = self.session
         collections = data.data.collections
+        if not len(collections):
+            return data
+        print(5.6)
 
-        m_data_assignments = map(
-            functools.partial(self._collection, data=data),
-            collections,
+        import json
+        print(json.dumps(list(item.model_dump() for item in TypeAdapter(List[CollectionSchema]).validate_python(collections))))
+        data_assignments = tuple(
+            self._collection(data, collection) for collection in collections
         )
-        data_assignments = tuple(m_data_assignments)
+        print(5.7)
         data.event = Event(
             **self.event_common,
-            kind_obj=KindObject.bulk,
+            kind_obj=KindObject.collection,
             uuid_obj=None,
             children=[dd.event for dd in data_assignments],
+            detail="Bulk deletion of `collection`s."
         )
+        print(5.8)
 
         session.add(data.event)
         session.commit()
         session.refresh(data.event)
+        print(5.9)
 
         return data
 
@@ -532,6 +569,8 @@ class Delete(WithAccess):
 
         session = self.session
         documents = data.data.documents
+        if not len(documents):
+            return data
 
         data_grants: Tuple[Data[ResolvedGrantDocument], ...]
         data_assignments: Tuple[Data[ResolvedAssignmentDocument], ...]

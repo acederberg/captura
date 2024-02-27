@@ -2,14 +2,10 @@ from typing import Generator, List, Set, Tuple, TypeVar
 
 from app import __version__
 from app.depends import DependsSessionMaker, DependsToken
-from app.models import AnyModel, Event, KindEvent, KindObject, KindRecurse, Tables, User
-from app.schemas import (
-    EventActionSchema,
-    EventBaseSchema,
-    EventSchema,
-    EventSearchSchema,
-    EventWithRootSchema,
-)
+from app.models import (AnyModel, Event, KindEvent, KindObject, KindRecurse,
+                        Tables, User)
+from app.schemas import (EventActionSchema, EventBaseSchema, EventSchema,
+                         EventSearchSchema, EventWithRootSchema)
 from app.views import args
 from app.views.base import BaseView
 from fastapi import Depends
@@ -30,7 +26,7 @@ class EventView(BaseView):
         get_events="",
         patch_undo_event="/{uuid_event}/objects",
         # patch_object="/{uuid_event}/objects/restore/{uuid_obj}",
-        # get_event_objects="/{uuid_event}/objects",
+        get_event_objects="/{uuid_event}/objects",
     )
 
     @classmethod

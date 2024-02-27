@@ -218,6 +218,7 @@ class ResolvedGrantUser(BaseResolvedAssoc):
     # NOTE: See note inside of `Access.grant_user` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
 
+
 class ResolvedGrantDocument(BaseResolvedAssoc):
     kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
     kind_source: Annotated[

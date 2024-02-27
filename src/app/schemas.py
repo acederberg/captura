@@ -16,8 +16,8 @@ foreign keys it is not necessary to specify multiple values).
 
 import enum
 from copy import deepcopy
-from typing import (Annotated, Any, ClassVar, Generic, List, Literal, Optional,
-                    Self, Set, Tuple, Type, TypeVar)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
+                    Optional, Self, Set, Tuple, Type, TypeVar, Unpack)
 
 from fastapi import Query
 from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
@@ -47,7 +47,7 @@ Description = Annotated[
     Field(min_length=1, max_length=LENGTH_DESCRIPTION),
 ]
 Url = Annotated[str | None, Field(min_length=8, max_length=LENGTH_URL)]
-Content = Annotated[bytes, Field(max_length=LENGTH_CONTENT)]
+Content = Annotated[str, Field(max_length=LENGTH_CONTENT)]
 Format = Annotated[Literal["md", "rst", "tEx"], Field(default="md")]
 Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
 UUIDS = Annotated[Set[str] | None, Field(default=None)]
@@ -90,6 +90,22 @@ class BaseSearchSchema(BaseSchema):
     include_public: Annotated[bool, Field(default=True)]
 
 
+class BaseUpdateSchema(BaseSchema):
+    """This exists because the editor feedback from the decorator feedback was
+    not very good at all. Unfortunately all of the fields for update requests 
+    will have to be explicit.
+    """
+    kind_mapped: ClassVar[KindObject]
+    kind_schema: ClassVar[KindSchema]
+
+    @model_validator(mode="after")
+    def at_least_one(self) -> Self:
+
+        if not any(getattr(self, field) is not None for field in self.model_fields):
+            msg = ", ".join((str(vv) for vv in self.model_fields.values()))
+            raise ValueError(f"Must specify at least one of `{msg}`.")
+        return self
+
 
 class BasePrimarySchema(BaseSchema):
     public: bool = True
@@ -98,25 +114,7 @@ class BasePrimarySchema(BaseSchema):
 class BaseSecondarySchema(BaseSchema): ...
 
 
-def optional(model: Type[BaseModel]) -> Type[BaseModel]:
-    def make_field_optional(
-        field: FieldInfo,
-        default: Any = None,
-    ) -> Tuple[Any, FieldInfo]:
-        new = deepcopy(field)
-        new.default = default
-        new.annotation = Optional[field.annotation]  # type: ignore
-        return new.annotation, new
-
-    return create_model(
-        model.__name__,
-        __base__=model,
-        __module__=model.__module__,
-        # __cls_kwargs__={
-        #     field_name: make_field_optional(field_info)
-        #     for field_name, field_info in model.model_fields.items()
-        # },
-    )
+T_optional = TypeVar("T_optional")
 
 
 # =========================================================================== #
@@ -126,10 +124,6 @@ def optional(model: Type[BaseModel]) -> Type[BaseModel]:
 class UserBaseSchema(BasePrimarySchema):
     # _mapped_class = User
     kind_mapped = KindObject.user
-    # : Annotated[  
-    #     Literal[KindObject.user],
-    #     Field(default=KindObject.user),
-    # ]
 
     name: Name
     description: Description
@@ -138,37 +132,27 @@ class UserBaseSchema(BasePrimarySchema):
 
 
 class UserCreateSchema(UserBaseSchema):
-    # _schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
-    #     Literal[KindSchema.create],
-    #     Field(default=KindSchema.create),
-    # ]
     kind_schema = KindSchema.create
 
 
-@optional
-class UserUpdateSchema(UserCreateSchema):
-    # _schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
-    #     Literal[KindSchema.update],
-    #     Field(default=KindSchema.update),
-    # ]
+class UserUpdateSchema(BaseUpdateSchema):
+    kind_mapped = KindObject.user
     kind_schema = KindSchema.update
+
+    # NOTE: `url_image` and `url` already optional.
+    name: Optional[Name] = None
+    description: Optional[Description] = None
+    url_image: Url
+    url: Url
 
 
 class UserSchema(UserBaseSchema):
-    # _schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
-    #     Literal[KindSchema.default],
-    #     Field(default=KindSchema.default),
-    # ]
     kind_schema = KindSchema.default
     uuid: UUID
 
 
 class UserExtraSchema(UserSchema):
-    _schema = KindSchema.extra
-    # kind_schema: Annotated[  # type: ignore[reportGeneralTypeErrors]
-    #     Literal[KindSchema.extra],
-    #     Field(default=KindSchema.extra),
-    # ]
+    kind_schema = KindSchema.extra
 
     id: int
     invitation_code: Annotated[
@@ -211,7 +195,6 @@ class UserSearchSchema(BaseSearchSchema):
 
 
 class CollectionBaseSchema(BasePrimarySchema):
-    # _mapped_class = Collection
     kind_mapped = KindObject.collection
 
     name: Name
@@ -222,11 +205,13 @@ class CollectionCreateSchema(CollectionBaseSchema):
     kind_schema = KindSchema.create
 
 
-@optional
-class CollectionUpdateSchema(CollectionCreateSchema):
+class CollectionUpdateSchema(BaseUpdateSchema):
+    kind_mapped = KindObject.user
     kind_schema = KindSchema.update
 
     uuid_user: UUID
+    name: Optional[Name] = None
+    description: Optional[Description] = None
 
 
 class CollectionMetadataSchema(CollectionBaseSchema):
@@ -286,13 +271,38 @@ class DocumentCreateSchema(DocumentBaseSchema):
     content: Content
 
 
-@optional
-class DocumentUpdateSchema(DocumentCreateSchema): 
+class DocumentUpdateSchema(BaseUpdateSchema): 
+    kind_mapped = KindObject.user
     kind_schema = KindSchema.update
 
+    name: Optional[Name] = None
+    description: Optional[Description] = None
+    format: Optional[Format] = None
+    content: Optional[Content] = None
+    message: Optional[Message] = None
 
-class DocumentMetadataSchema(DocumentUpdateSchema):
+    @field_validator("content", mode="before")
+    def check_message_only_when_content(
+        cls, 
+        v: Any, 
+        info: FieldValidationInfo,
+    ) -> Any:
+        if v is None:
+            return v
+
+        match info.data:
+            case object(content=str(), message=str() | None):
+                pass
+            case object(content=None, message=str()):
+                msg = "`message` may only be specified when `content` is."
+                raise ValueError(msg)
+
+        return v
+
+
+class DocumentMetadataSchema(DocumentBaseSchema):
     kind_schema = KindSchema.metadata
+
     uuid: UUID
 
 
@@ -319,7 +329,6 @@ class GrantBaseSchema(BaseSecondarySchema):
 
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
-    # uuid_user: UUID
     level: Annotated[Level, Field()]
 
     @field_validator("level", mode="before")
@@ -379,7 +388,7 @@ class EditSearchSchema(BaseSearchSchema):
 
 
 class EventBaseSchema(BaseSchema):
-    # kind_mapped: ClassVar[KindObject] = KindObject.event
+    kind_mapped = KindObject.event
 
     api_origin: str
     api_version: str
@@ -390,7 +399,7 @@ class EventBaseSchema(BaseSchema):
     kind: KindEvent
     kind_obj: KindObject
     timestamp: UnixTimestamp
-    detail: str
+    detail: str | None
 
     @field_serializer("kind_obj", return_type=str)
     def serailize__obj(self, v: Any, info) -> str:
@@ -442,22 +451,6 @@ class KindObjectMinimalSchema(enum.Enum):
     grants = GrantSchema
 
 
-# AnyMinimalSchema = (
-#     EventSchema
-#     | UserSchema
-#     | DocumentMetadataSchema
-#     | CollectionMetadataSchema
-#     | AssignmentSchema
-#     | GrantSchema
-# )
-#
-#
-# class ObjectSchema(BaseModel):
-#     : KindObject
-#     data: AnyMinimalSchema
-#
-
-
 class EventActionSchema(BaseModel):
     event_action: EventSchema
     event_root: EventSchema
@@ -501,7 +494,11 @@ T_Spec = TypeVar(
 
     # Assignment
     AssignmentSchema,
-    List[AssignmentSchema]
+    List[AssignmentSchema],
+
+    # Event 
+    EventSchema,
+    List[EventSchema],
 )
 
 

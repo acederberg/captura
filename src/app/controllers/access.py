@@ -978,14 +978,13 @@ def with_access(
 #       prefixes, e.g. ``a_assignment_document``.
 class WithAccess(BaseController, abc.ABC):
     access: Access
-    detail: str
     api_origin: str
     force: bool = True
 
     @property
     def event_common(self) -> Dict[str, Any]:
         return dict(
-            detail=self.detail,
+            # detail=self.detail,
             uuid_user=self.token.uuid,
             api_origin=self.api_origin,
             api_version=__version__,
@@ -997,14 +996,12 @@ class WithAccess(BaseController, abc.ABC):
         token: Token | Dict[str, Any] | None,
         method: HTTPMethod | str,
         *,
-        detail: str,
         api_origin: str,
         force: bool = False,
         access: Access | None = None,
     ):
         super().__init__(session, token, method)
         self.force = force
-        self.detail = detail
         self.api_origin = api_origin
         self.access = access if access is not None else self.then(Access)
 
