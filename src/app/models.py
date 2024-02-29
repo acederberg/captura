@@ -3,22 +3,63 @@ import enum
 import secrets
 from datetime import datetime
 from logging import warn
-from typing import (Annotated, Any, Callable, Collection, Dict, Generator,
-                    Generic, List, Literal, Self, Set, Tuple, Type, TypeAlias,
-                    TypeVar, overload)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Collection,
+    Dict,
+    Generator,
+    Generic,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypeVar,
+    overload,
+)
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import (CTE, BinaryExpression, BooleanClauseList, Column,
-                        ColumnClause, ColumnElement, CompoundSelect, Enum,
-                        ForeignKey, Index, Select, String, UniqueConstraint,
-                        and_, func, literal_column, select, text, true, union,
-                        union_all)
+from sqlalchemy import (
+    CTE,
+    BinaryExpression,
+    BooleanClauseList,
+    Column,
+    ColumnClause,
+    ColumnElement,
+    CompoundSelect,
+    Enum,
+    ForeignKey,
+    Index,
+    Select,
+    String,
+    UniqueConstraint,
+    and_,
+    func,
+    literal_column,
+    select,
+    text,
+    true,
+    union,
+    union_all,
+)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
-                            Session, backref, column_property, mapped_column,
-                            object_session, relationship)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+    Mapped,
+    Session,
+    backref,
+    column_property,
+    mapped_column,
+    object_session,
+    relationship,
+)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
@@ -628,17 +669,21 @@ class Event(Base):
         before: int | None = None,
         limit: int | None = None,
     ) -> Select:
-        q = select(cls).where(
-            cls.q_conds(
-                uuid_user=uuid_user,
-                uuid_event=uuid_event,
-                kind=kind,
-                kind_obj=kind_obj,
-                uuid_obj=uuid_obj,
-                before=before,
-                after=after,
+        q = (
+            select(cls)
+            .where(
+                cls.q_conds(
+                    uuid_user=uuid_user,
+                    uuid_event=uuid_event,
+                    kind=kind,
+                    kind_obj=kind_obj,
+                    uuid_obj=uuid_obj,
+                    before=before,
+                    after=after,
+                )
             )
-        ).order_by(cls.timestamp)
+            .order_by(cls.timestamp)
+        )
         if limit:
             q = q.limit(limit)
 

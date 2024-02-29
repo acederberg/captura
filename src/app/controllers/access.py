@@ -2,22 +2,53 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
-                    Tuple, TypeVar, overload)
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Dict,
+    Literal,
+    ParamSpec,
+    Set,
+    Tuple,
+    TypeVar,
+    overload,
+)
 
 from app import __version__
 from app.auth import Token
-from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
-                                  DataResolvedGrant, KindData,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser, T_Data)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindObject, Level, Resolvable, ResolvableMultiple,
-                        ResolvableSingular, Singular, User)
+from app.controllers.base import (
+    BaseController,
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    KindData,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+    T_Data,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    Resolvable,
+    ResolvableMultiple,
+    ResolvableSingular,
+    Singular,
+    User,
+)
 from app.schemas import mwargs
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -26,7 +57,6 @@ H = HTTPMethod
 AccessAssignmentResult = (
     Tuple[Collection, Tuple[Document, ...]] | Tuple[Document, Tuple[Collection, ...]]
 )
-
 
 
 class Access(BaseController):
@@ -51,7 +81,7 @@ class Access(BaseController):
         )
 
     # ----------------------------------------------------------------------- #
-    # Events 
+    # Events
 
     @overload
     def event(
@@ -61,8 +91,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Event:
-        ...
+    ) -> Event: ...
 
     @overload
     def event(
@@ -72,8 +101,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Tuple[Event, ...]:
-        ...
+    ) -> Tuple[Event, ...]: ...
 
     @overload
     def event(
@@ -82,9 +110,8 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[True] = True
-    ) -> Data[ResolvedEvent]:
-        ...
+        return_data: Literal[True] = True,
+    ) -> Data[ResolvedEvent]: ...
 
     def event(
         self,
@@ -92,7 +119,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: bool = False
+        return_data: bool = False,
     ) -> Event | Tuple[Event, ...] | Data[ResolvedEvent]:
 
         session = self.session
@@ -118,11 +145,7 @@ class Access(BaseController):
         if return_data:
             return mwargs(
                 Data[ResolvedEvent],
-                data=mwargs(
-                    ResolvedEvent,
-                    events=events,
-                    token_user=token_user
-                ),
+                data=mwargs(ResolvedEvent, events=events, token_user=token_user),
             )
         return res
 
@@ -247,8 +270,12 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
     ) -> Data[ResolvedUser]:
-        return self.user(resolve_user, resolve_user_token=resolve_user_token, return_data=True,
-                         exclude_deleted=exclude_deleted,)
+        return self.user(
+            resolve_user,
+            resolve_user_token=resolve_user_token,
+            return_data=True,
+            exclude_deleted=exclude_deleted,
+        )
 
     # ----------------------------------------------------------------------- #
     # Collection
@@ -679,7 +706,7 @@ class Access(BaseController):
         )
 
     @overload
-    def grant_document(  
+    def grant_document(
         self,
         resolve_document: ResolvableSingular[Document],
         resolve_users: ResolvableMultiple[User],
@@ -1076,7 +1103,7 @@ class WithAccess(BaseController, abc.ABC):
     # ----------------------------------------------------------------------- #
     access: Access
     api_origin: str
-    force: bool = True 
+    force: bool = True
 
     @property
     def event_common(self) -> Dict[str, Any]:

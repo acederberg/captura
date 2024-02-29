@@ -6,9 +6,18 @@ from app.controllers.access import Access
 from app.controllers.create import Create
 from app.controllers.delete import Delete
 from app.depends import DependsSessionMaker, DependsToken
-from app.models import (Assignment, AssocCollectionDocument,
-                        ChildrenAssignment, Collection, Document, Event,
-                        KindEvent, KindObject, Level, User)
+from app.models import (
+    Assignment,
+    AssocCollectionDocument,
+    ChildrenAssignment,
+    Collection,
+    Document,
+    Event,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import AssignmentSchema, EventSchema
 from app.views import args
 from app.views.base import BaseView

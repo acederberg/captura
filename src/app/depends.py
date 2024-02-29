@@ -232,14 +232,11 @@ DependsUser: TypeAlias = Annotated[User, Depends(user)]
 
 
 def access(
-    sessionmaker: DependsSessionMaker,
-    token: DependsTokenOptional,
-    request: Request
+    sessionmaker: DependsSessionMaker, token: DependsTokenOptional, request: Request
 ) -> Access:
     with sessionmaker() as session:
         print("HERE")
         return Access(session=session, token=token, method=request.method)
-        
 
 
 DependsAccess: TypeAlias = Annotated[Access, Depends(access)]
@@ -250,10 +247,10 @@ def create(
     access: DependsAccess,
     request: Request,
 ) -> Create:
-    api_origin = request.url.path 
+    api_origin = request.url.path
     return Create(
-        session=access.session, 
-        token=token, 
+        session=access.session,
+        token=token,
         method=request.method,
         api_origin=api_origin,
         detail=...,
@@ -273,10 +270,10 @@ def update(
     access: DependsAccess,
     request: Request,
 ) -> Update:
-    api_origin = request.url.path 
+    api_origin = request.url.path
     return Update(
-        session=access.session, 
-        token=token, 
+        session=access.session,
+        token=token,
         method=request.method,
         api_origin=api_origin,
     )
@@ -287,10 +284,10 @@ def delete(
     access: DependsAccess,
     request: Request,
 ) -> Delete:
-    api_origin = request.url.path 
+    api_origin = request.url.path
     return Delete(
-        session=access.session, 
-        token=token, 
+        session=access.session,
+        token=token,
         method=request.method,
         api_origin=api_origin,
     )
@@ -300,5 +297,3 @@ DependsCreate: TypeAlias = Annotated[Create, Depends(create)]
 DependsRead: TypeAlias = Annotated[Read, Depends(read)]
 DependsUpdate: TypeAlias = Annotated[Update, Depends(update)]
 DependsDelete: TypeAlias = Annotated[Delete, Depends(delete)]
-
-

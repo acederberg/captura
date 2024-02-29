@@ -4,13 +4,28 @@ from typing import Callable, Set, Tuple, Type
 
 import pytest
 from app import util
-from app.models import (Assignment, AssocUserDocument, Collection, Document,
-                        Grant, KindEvent, KindObject, Plural, Singular, User)
+from app.models import (
+    Assignment,
+    AssocUserDocument,
+    Collection,
+    Document,
+    Grant,
+    KindEvent,
+    KindObject,
+    Plural,
+    Singular,
+    User,
+)
 from app.schemas import EventSchema
-from app.controllers.base import (Data, DataResolvedAssignment, DataResolvedGrant,
-                            ResolvedAssignmentCollection,
-                            ResolvedAssignmentDocument, ResolvedGrantDocument,
-                            ResolvedGrantUser)
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+)
 from app.controllers.create import Create
 from app.controllers.delete import AssocData, Delete
 from sqlalchemy import Delete as sqaDelete
@@ -133,6 +148,7 @@ CASES_ASSOCS = [
     ),
 ]
 
+
 class BaseTestAssoc:
     # ----------------------------------------------------------------------- #
     # Fixtures
@@ -154,7 +170,7 @@ class BaseTestAssoc:
         delete: Delete | Create,
         assoc_data: AssocData,
         data: DataResolvedAssignment | DataResolvedGrant,
-        _event: Event | None = None
+        _event: Event | None = None,
     ) -> EventSchema:
         assert data.event is not None
         expect_common = delete.event_common
@@ -174,11 +190,10 @@ class BaseTestAssoc:
                 uuid_target_expected = assoc_data.uuid_target_active.copy()
                 uuid_assoc_expected = assoc_data.uuid_assoc_active.copy()
                 if force:
-                    uuid_target_expected |= assoc_data.uuid_target_deleted 
+                    uuid_target_expected |= assoc_data.uuid_target_deleted
                     uuid_assoc_expected |= assoc_data.uuid_assoc_deleted
             case bad:
                 raise ValueError(f"Invalid value `{bad}` for `delete`.")
-
 
         for item in event.children:
             util.event_compare(item, expect_common)
@@ -195,14 +210,18 @@ class BaseTestAssoc:
 
         return event
 
-    def check_mthd(self, delete: Delete | Create, data: DataResolvedAssignment | DataResolvedGrant,) -> Callable[
-        [Data], 
+    def check_mthd(
+        self,
+        delete: Delete | Create,
+        data: DataResolvedAssignment | DataResolvedGrant,
+    ) -> Callable[
+        [Data],
         Tuple[
             DataResolvedGrant | DataResolvedAssignment,
             AssocData,
             Update[Assignment] | sqaDelete[Assignment],
             Type[Assignment],
-        ]
+        ],
     ]:
 
         # Get method (name should match data kind).
@@ -231,6 +250,7 @@ class BaseTestAssoc:
             raise AssertionError(msg)
 
         return mthd
+
 
 @pytest.mark.parametrize(
     "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
@@ -298,7 +318,7 @@ class TestDeleteAssoc(BaseTestAssoc):
         uuid_target: Set[str],
         T_assoc: Type,
         uuid_assoc: Set[str],
-        force: bool
+        force: bool,
     ) -> None:
 
         session = delete.session

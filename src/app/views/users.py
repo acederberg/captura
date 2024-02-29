@@ -6,16 +6,32 @@ from uuid import uuid4
 from app import __version__, util
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedUser
-from app.depends import (DependsAccess, DependsDelete, DependsRead,
-                         DependsSessionMaker, DependsToken, DependsUpdate)
-from app.models import (Collection, Document, Edit, Event, KindEvent,
-                        KindObject, User)
-from app.schemas import (AsOutput, CollectionMetadataSchema,
-                         CollectionSearchSchema, DocumentMetadataSchema,
-                         DocumentSearchSchema, EditMetadataSchema,
-                         EditSearchSchema, EventSchema, OutputWithEvents,
-                         UserCreateSchema, UserExtraSchema, UserSchema,
-                         UserSearchSchema, UserUpdateSchema, mwargs)
+from app.depends import (
+    DependsAccess,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUpdate,
+)
+from app.models import Collection, Document, Edit, Event, KindEvent, KindObject, User
+from app.schemas import (
+    AsOutput,
+    CollectionMetadataSchema,
+    CollectionSearchSchema,
+    DocumentMetadataSchema,
+    DocumentSearchSchema,
+    EditMetadataSchema,
+    EditSearchSchema,
+    EventSchema,
+    OutputWithEvents,
+    UserCreateSchema,
+    UserExtraSchema,
+    UserSchema,
+    UserSearchSchema,
+    UserUpdateSchema,
+    mwargs,
+)
 from app.views import args
 from app.views.base import BaseView
 from fastapi import Body, Depends, HTTPException, Query
@@ -396,14 +412,10 @@ class UserView(BaseView):
 
         update.update_data = updates
         data: Data[ResolvedUser] = update.a_user(
-            uuid_user, 
+            uuid_user,
             resolve_user_token=update.token_user,
         )
-        return mwargs(
-            AsOutput[EventSchema],
-            data=data.event
-        )
-
+        return mwargs(AsOutput[EventSchema], data=data.event)
 
     @classmethod
     def delete_user(

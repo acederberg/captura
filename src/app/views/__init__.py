@@ -58,8 +58,8 @@ class AppView(BaseView):
             raise HTTPException(403, detail="Admins only.")
 
         # NOTE: Type ignored for metaclass considerations.
-        items: Generator[APIRoute, None, None] 
-        items = (item for item in cls.view_router.routes) # type: ignore
+        items: Generator[APIRoute, None, None]
+        items = (item for item in cls.view_router.routes)  # type: ignore
 
         if methods is not None:
             items = (

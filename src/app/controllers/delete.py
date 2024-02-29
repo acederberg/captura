@@ -5,16 +5,33 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedAssignment,
-                                  DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, User)
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -35,13 +52,18 @@ class Delete(WithAccess):
     """Perform deletions."""
 
     def _event(self, item: Event, info: Set[Tuple[KindObject, None | str]]) -> int:
-        # Pruning events should not create any more events besides one marking 
+        # Pruning events should not create any more events besides one marking
         # that the pruning was performed.
 
         _ = tuple(
             (
                 self.session.delete(child),
-                info.add((child.kind_obj, child.uuid_obj,)),
+                info.add(
+                    (
+                        child.kind_obj,
+                        child.uuid_obj,
+                    )
+                ),
             )
             for child in item.flattened()
         )
@@ -66,11 +88,7 @@ class Delete(WithAccess):
         kind_obj: KindObject
         uuid_obj: str | None
         match data.data:
-            case ResolvedEvent(
-                events=(
-                    Event(kind_obj=kind_obj, uuid_obj=uuid_obj),
-                )
-            ):
+            case ResolvedEvent(events=(Event(kind_obj=kind_obj, uuid_obj=uuid_obj),)):
                 pass
             case ResolvedObjectEvents(kind_obj=kind_obj, uuid_obj=uuid_obj):
                 pass
@@ -78,7 +96,7 @@ class Delete(WithAccess):
                 raise ValueError("Invalid data of kind `{data.kind}`.")
 
         detail = f"Events pruned by pruning object of kind `{kind_obj.name}` "
-        detail += f"with uuid `{uuid_obj}`." 
+        detail += f"with uuid `{uuid_obj}`."
         event.children = [
             Event(
                 **self.event_common,
@@ -91,23 +109,23 @@ class Delete(WithAccess):
                         **self.event_common,
                         kind_obj=collatoral_kind_obj,
                         uuid_obj=collatoral_uuid_obj,
-                        detail=detail
+                        detail=detail,
                     )
                     for collatoral_kind_obj, collatoral_uuid_obj in info
-                ]
+                ],
             )
         ]
         return event
 
     @overload
-    def event(self, data: Data[ResolvedEvent]) -> Data[ResolvedEvent]:
-        ...
+    def event(self, data: Data[ResolvedEvent]) -> Data[ResolvedEvent]: ...
 
     @overload
-    def event(self, data: Data[ResolvedObjectEvents]) -> Data[ResolvedObjectEvents]:
-        ...
+    def event(self, data: Data[ResolvedObjectEvents]) -> Data[ResolvedObjectEvents]: ...
 
-    def event(self, data: Data[ResolvedEvent] | Data[ResolvedObjectEvents] ) -> Data[ResolvedEvent] | Data[ResolvedObjectEvents]:
+    def event(
+        self, data: Data[ResolvedEvent] | Data[ResolvedObjectEvents]
+    ) -> Data[ResolvedEvent] | Data[ResolvedObjectEvents]:
         obj_info = set()
         n = sum(self._event(item, obj_info) for item in data.data.events)
         data.event = self.event_event(data, n, obj_info)
@@ -118,7 +136,6 @@ class Delete(WithAccess):
         session.refresh(data.event)
 
         return data
-
 
     # ----------------------------------------------------------------------- #
     # Helpers for force deletion/PUT
@@ -412,7 +429,9 @@ class Delete(WithAccess):
         data, *_ = self.assoc(data)
         return data
 
-    a_assignment_document = with_access(Access.d_assignment_document)(assignment_document)
+    a_assignment_document = with_access(Access.d_assignment_document)(
+        assignment_document
+    )
     a_assignment_collection = with_access(Access.d_assignment_collection)(
         assignment_collection
     )
@@ -442,7 +461,7 @@ class Delete(WithAccess):
         session = self.session
 
         # Cleanup documents that only this user owns.
-        documents_exclusive: Tuple[Document, ...] = tuple( 
+        documents_exclusive: Tuple[Document, ...] = tuple(
             session.execute(user.q_select_documents_exclusive()).scalars()
         )
         print(4)
@@ -576,7 +595,17 @@ class Delete(WithAccess):
         print(5.6)
 
         import json
-        print(json.dumps(list(item.model_dump() for item in TypeAdapter(List[CollectionSchema]).validate_python(collections))))
+
+        print(
+            json.dumps(
+                list(
+                    item.model_dump()
+                    for item in TypeAdapter(List[CollectionSchema]).validate_python(
+                        collections
+                    )
+                )
+            )
+        )
         data_assignments = tuple(
             self._collection(data, collection) for collection in collections
         )
@@ -586,7 +615,7 @@ class Delete(WithAccess):
             kind_obj=KindObject.collection,
             uuid_obj=None,
             children=[dd.event for dd in data_assignments],
-            detail="Bulk deletion of `collection`s."
+            detail="Bulk deletion of `collection`s.",
         )
         print(5.8)
 

@@ -17,20 +17,55 @@ foreign keys it is not necessary to specify multiple values).
 import enum
 from copy import deepcopy
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Tuple, Type, TypeVar, Unpack)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Unpack,
+)
 
 from fastapi import Query
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
-                      computed_field, create_model, field_serializer,
-                      field_validator, model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    computed_field,
+    create_model,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from pydantic.fields import FieldInfo
 from pydantic_core.core_schema import FieldValidationInfo
 
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_URL, Assignment, Collection,
-                        Document, Edit, Event, Grant, KindEvent, KindObject,
-                        KindRecurse, Level)
+from app.models import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_URL,
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    KindRecurse,
+    Level,
+)
 from app.models import PendingFrom as PendingFrom_
 from app.models import User
 
@@ -97,9 +132,10 @@ class BaseSearchSchema(BaseSchema):
 
 class BaseUpdateSchema(BaseSchema):
     """This exists because the editor feedback from the decorator feedback was
-    not very good at all. Unfortunately all of the fields for update requests 
+    not very good at all. Unfortunately all of the fields for update requests
     will have to be explicit.
     """
+
     kind_mapped: ClassVar[KindObject]
     kind_schema: ClassVar[KindSchema]
 
@@ -212,7 +248,7 @@ class CollectionBaseSchema(BasePrimarySchema):
     description: Description
 
 
-class CollectionCreateSchema(CollectionBaseSchema): 
+class CollectionCreateSchema(CollectionBaseSchema):
     kind_schema = KindSchema.create
 
 
@@ -227,7 +263,7 @@ class CollectionUpdateSchema(BaseUpdateSchema):
 
 class CollectionMetadataSchema(CollectionBaseSchema):
     kind_schema = KindSchema.metadata
-    
+
     uuid: UUID
 
 
@@ -257,7 +293,7 @@ class AssignmentBaseSchema(BaseSecondarySchema):
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
-class AssignmentCreateSchema(AssignmentBaseSchema): 
+class AssignmentCreateSchema(AssignmentBaseSchema):
     kind_schema = KindSchema.create
 
 
@@ -295,7 +331,7 @@ class DocumentCreateSchema(DocumentBaseSchema):
     content: Content
 
 
-class DocumentUpdateSchema(BaseUpdateSchema): 
+class DocumentUpdateSchema(BaseUpdateSchema):
     kind_mapped = KindObject.user
     kind_schema = KindSchema.update
 
@@ -307,8 +343,8 @@ class DocumentUpdateSchema(BaseUpdateSchema):
 
     @field_validator("content", mode="before")
     def check_message_only_when_content(
-        cls, 
-        v: Any, 
+        cls,
+        v: Any,
         info: FieldValidationInfo,
     ) -> Any:
         if v is None:
@@ -370,7 +406,7 @@ class GrantBaseSchema(BaseSecondarySchema):
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
-class GrantCreateSchema(GrantBaseSchema): 
+class GrantCreateSchema(GrantBaseSchema):
     kind_schema = KindSchema.create
 
 
@@ -398,6 +434,7 @@ class GrantExtraSchema(GrantSchema):
 
     children: Annotated["List[GrantExtraSchema]", Field()]
 
+
 # =========================================================================== #
 # Edits Schema
 
@@ -410,11 +447,11 @@ class EditBaseSchema(BaseSchema):
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED.
-class EditCreateSchema(EditBaseSchema): 
+class EditCreateSchema(EditBaseSchema):
     kind_schema = KindSchema.create
 
 
-class EditMetadataSchema(EditBaseSchema): 
+class EditMetadataSchema(EditBaseSchema):
     kind_schema = KindSchema.metadata
 
 
@@ -452,7 +489,6 @@ class EventBaseSchema(BaseSchema):
     kind_obj: KindObject
     timestamp: UnixTimestamp
     detail: Detail
-        
 
     @computed_field
     @property
@@ -522,13 +558,14 @@ def create_validate_datetime(delta: timedelta):
 
         utcnow = datetime.utcnow()
         return utcnow - delta
+
     return BeforeValidator(validator)
 
 
 class BaseEventParams(BaseModel):
-    limit: Annotated[int,  Field(default=3)]
+    limit: Annotated[int, Field(default=3)]
     before: Annotated[
-        datetime | None, 
+        datetime | None,
         Field(default=None),
     ]
     after: Annotated[
@@ -538,7 +575,6 @@ class BaseEventParams(BaseModel):
     ]
 
 
-
 class EventSearchSchema(BaseEventParams):
     kind_mapped: ClassVar[KindObject] = KindObject.event
     kind_schema: ClassVar[KindSchema] = KindSchema.search
@@ -546,7 +582,7 @@ class EventSearchSchema(BaseEventParams):
     # NOTE: It appears that using `Query(None)` as the field default is what
     #       will help fastapi find `uuid_event`. This was tricky to find so do
     #       not touch this. The result was though up on the basis that using
-    #       `uuid_event: Set[str] | None = Query(None)` in the endpoint 
+    #       `uuid_event: Set[str] | None = Query(None)` in the endpoint
     #       signature worked.
     uuid_event: Annotated[Set[str] | None, Field(default=Query(None))]
 
@@ -573,7 +609,6 @@ T_Output = TypeVar(
     UserExtraSchema,
     List[UserSchema],
     List[UserExtraSchema],
-
     # Document
     DocumentSchema,
     DocumentMetadataSchema,
@@ -581,7 +616,6 @@ T_Output = TypeVar(
     List[DocumentMetadataSchema],
     List[DocumentSchema],
     List[DocumentExtraSchema],
-
     # Collection
     CollectionSchema,
     CollectionMetadataSchema,
@@ -589,7 +623,6 @@ T_Output = TypeVar(
     List[CollectionSchema],
     List[CollectionMetadataSchema],
     List[CollectionExtraSchema],
-
     # Edit
     EditSchema,
     EditMetadataSchema,
@@ -597,26 +630,23 @@ T_Output = TypeVar(
     List[EditSchema],
     List[EditMetadataSchema],
     List[EditExtraSchema],
-
     # Grant
     GrantSchema,
     GrantExtraSchema,
     List[GrantSchema],
     List[GrantExtraSchema],
-
     # Assignment
     AssignmentSchema,
     AssignmentExtraSchema,
     List[AssignmentSchema],
     List[AssignmentExtraSchema],
-
-    # Event 
+    # Event
     EventMetadataSchema,
     EventSchema,
     EventExtraSchema,
     List[EventMetadataSchema],
     List[EventSchema],
-    List[EventExtraSchema]
+    List[EventExtraSchema],
 )
 
 
@@ -667,12 +697,12 @@ class AsOutput(BaseModel, Generic[T_Output]):
                 raise ValueError(msg)
 
 
-
 # T_OutputEvents = TypeVar(
 #     "T_OutputEvents",
 #     EventSchema,
 #     EventWithObjectsSchema,
 # )
+
 
 class OutputWithEvents(AsOutput, Generic[T_Output]):
     events: Annotated[List[EventSchema], Field()]

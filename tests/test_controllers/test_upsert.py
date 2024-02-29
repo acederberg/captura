@@ -4,8 +4,7 @@ from typing import Set, Type
 
 import pytest
 from app.auth import Auth, Token
-from app.models import (Document, Grant, KindEvent, KindObject, Level,
-                        PendingFrom, User)
+from app.models import Document, Grant, KindEvent, KindObject, Level, PendingFrom, User
 from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
 from app.controllers.access import H
 from app.controllers.base import Data
@@ -14,8 +13,12 @@ from app.controllers.delete import AssocData, Delete
 from fastapi import HTTPException
 from sqlalchemy import Update, select
 from sqlalchemy.orm import make_transient
-from tests.test_controllers.test_delete import (CASES_ASSOCS, BaseTestAssoc,
-                                                as_data, delete)
+from tests.test_controllers.test_delete import (
+    CASES_ASSOCS,
+    BaseTestAssoc,
+    as_data,
+    delete,
+)
 
 TEST_DETAIL = "From `test_upsert.py`."
 TEST_API_ORIGIN = "./tests/test_controllers/test_upsert.py"
@@ -36,15 +39,7 @@ def upsert(delete: Delete) -> Create:
 
 
 CASES_ASSOCS_GRANTS_NOT_OWN = [
-    (
-        None,
-        User,
-        "99d-99d-99d",
-        Document,
-        {"petshoppe--"}, 
-        Grant,
-        {"f-fff-fff-f"}
-    ),
+    (None, User, "99d-99d-99d", Document, {"petshoppe--"}, Grant, {"f-fff-fff-f"}),
     (
         None,
         Document,
@@ -55,6 +50,7 @@ CASES_ASSOCS_GRANTS_NOT_OWN = [
         {"f-fff-fff-f", "-=-=-=-=-=-"},
     ),
 ]
+
 
 @pytest.mark.parametrize(
     "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
@@ -116,7 +112,7 @@ class TestAssoc(BaseTestAssoc):
             case Delete() | Update():
                 pass
             case bad:
-                msg =f"`res[2]` has invalid type `{type(bad)}`." 
+                msg = f"`res[2]` has invalid type `{type(bad)}`."
                 raise AssertionError(msg)
 
         event = self.check_event(upsert, assoc_data, data)
@@ -160,12 +156,12 @@ class TestAssoc(BaseTestAssoc):
                 "Some targets have existing assignments awaiting cleanup. "
                 "Try this request again with `force=true` or make an "
                 "equivalent `PUT` request."
-            )
+            ),
         )
         assert data.event is None
 
         # NOTE: Force create. This should remove the existing uuids and replace
-        #       them. The event returned for create without upsert is wrapped 
+        #       them. The event returned for create without upsert is wrapped
         #       in an additional layer that will point to the deletion event.
         upsert.force = True
         upsert.delete.force = True
@@ -188,7 +184,9 @@ class TestAssoc(BaseTestAssoc):
 
         assert event.kind.name == "upsert"
         assert len(event_del.children) == len(uuid_target), str(event_del.children)
-        assert len(event_create.children) == len(uuid_target), str(event_create.children)
+        assert len(event_create.children) == len(uuid_target), str(
+            event_create.children
+        )
         self.check_event(upsert.delete, assoc_data, data, _event=event_del)
         self.check_event(upsert, assoc_data, data, _event=event_create)
 

@@ -7,17 +7,48 @@ import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Annotated, Any, ClassVar, Dict, Generic, Literal, Set,
-                    Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Literal,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Collection, Document, Edit, Event, Grant,
-                        KindObject, Level, LevelHTTP, ResolvableSingular,
-                        ResolvedRawAny, Singular, User, uuids)
+from app.models import (
+    AnyModel,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    LevelHTTP,
+    ResolvableSingular,
+    ResolvedRawAny,
+    Singular,
+    User,
+    uuids,
+)
 from fastapi import HTTPException
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
-                      ValidationInfo, computed_field, field_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Tag,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
@@ -258,6 +289,7 @@ class ResolvedGrantDocument(BaseResolvedAssoc):
     # NOTE: See note inside of `Access.grant_document` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
 
+
 class ResolvedAssignmentCollection(BaseResolvedAssoc):
     kind = KindData.assignment_collection
     kind_source = KindObject.collection
@@ -297,7 +329,7 @@ T_Data = TypeVar(
     Annotated[ResolvedGrantUser, Tag("grant_user")],
     Annotated[ResolvedGrantDocument, Tag("grant_document")],
     Annotated[ResolvedEvent, Tag("event")],
-    Annotated[ResolvedObjectEvents, Tag("object_events")]
+    Annotated[ResolvedObjectEvents, Tag("object_events")],
 )
 
 kind_type_map = dict(
@@ -356,6 +388,3 @@ DataResolvedAssignment = (
     Data[ResolvedAssignmentCollection] | Data[ResolvedAssignmentDocument]
 )
 DataResolvedGrant = Data[ResolvedGrantUser] | Data[ResolvedGrantDocument]
-
-
-

@@ -1,23 +1,65 @@
 import functools
-from typing import (Callable, Concatenate, Generator, List, ParamSpec, Set,
-                    Tuple, Type, TypeVar)
+from typing import (
+    Callable,
+    Concatenate,
+    Generator,
+    List,
+    ParamSpec,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from app import __version__, util
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (BaseController, Data, ResolvedEvent,
-                                  ResolvedObjectEvents)
-from app.depends import (DependsAccess, DependsDelete, DependsRead,
-                         DependsSessionMaker, DependsToken)
-from app.models import (AnyModel, Assignment, Collection, Document, Event,
-                        Grant, KindEvent, KindObject, KindRecurse,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
-from app.schemas import (AsOutput, AssignmentExtraSchema,
-                         CollectionExtraSchema, DocumentExtraSchema,
-                         DocumentMetadataSchema, EventBaseSchema,
-                         EventExtraSchema, EventMetadataSchema, EventParams,
-                         EventSchema, EventSearchSchema, GrantExtraSchema,
-                         OutputWithEvents, T_Output, UserExtraSchema, mwargs)
+from app.controllers.base import (
+    BaseController,
+    Data,
+    ResolvedEvent,
+    ResolvedObjectEvents,
+)
+from app.depends import (
+    DependsAccess,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Collection,
+    Document,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    KindRecurse,
+    ResolvableSingular,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    AssignmentExtraSchema,
+    CollectionExtraSchema,
+    DocumentExtraSchema,
+    DocumentMetadataSchema,
+    EventBaseSchema,
+    EventExtraSchema,
+    EventMetadataSchema,
+    EventParams,
+    EventSchema,
+    EventSearchSchema,
+    GrantExtraSchema,
+    OutputWithEvents,
+    T_Output,
+    UserExtraSchema,
+    mwargs,
+)
 from app.views import args
 from app.views.base import BaseView
 from fastapi import Depends, HTTPException, Query, Request
@@ -77,7 +119,6 @@ class EventSearchView(BaseView):
         get_assignment_events="/documents/{uuid_document}/collections/{uuid_collection}/events",
     )
 
-
     # @classmethod
     # def object_events(
     #     cls,
@@ -116,7 +157,6 @@ class EventSearchView(BaseView):
             data=EventExtraSchema.model_validate(event),
         )
 
-
     @classmethod
     @admin_only
     def get_user_events(
@@ -125,7 +165,7 @@ class EventSearchView(BaseView):
         read: DependsRead,
         uuid_user: args.PathUUIDUser,
         param: EventParams = Depends(),
-    ) -> OutputWithEvents[UserExtraSchema]: 
+    ) -> OutputWithEvents[UserExtraSchema]:
 
         item, events = read.object_events(uuid_user, KindObject.user, param)
         return mwargs(
@@ -133,7 +173,6 @@ class EventSearchView(BaseView):
             events=events,
             data=UserExtraSchema.model_validate(item),
         )
-
 
     @classmethod
     @admin_only
@@ -143,7 +182,7 @@ class EventSearchView(BaseView):
         read: DependsRead,
         uuid_document: args.PathUUIDUser,
         param: EventParams = Depends(),
-    ) -> OutputWithEvents[DocumentExtraSchema]: 
+    ) -> OutputWithEvents[DocumentExtraSchema]:
         item, events = read.object_events(uuid_document, KindObject.document, param)
         return mwargs(
             OutputWithEvents[DocumentExtraSchema],
@@ -184,7 +223,7 @@ class EventSearchView(BaseView):
         grants = Grant.resolve_from_target(session, user, {document.uuid})
         if len(grants) != 1:
             raise HTTPException(500)
-        grant, = grants
+        (grant,) = grants
 
         item, events = read.object_events(grant, KindObject.grant, param)
         return mwargs(
@@ -202,18 +241,16 @@ class EventSearchView(BaseView):
         uuid_document: args.PathUUIDCollection,
         uuid_collection: args.PathUUIDDocument,
         param: EventParams = Depends(),
-    ) -> OutputWithEvents[AssignmentExtraSchema]: 
+    ) -> OutputWithEvents[AssignmentExtraSchema]:
 
         session = access.session
         document = Document.resolve(session, uuid_document)
         collection = Collection.resolve(session, uuid_collection)
-        grants = Assignment.resolve_from_target(
-            session, collection, {document.uuid}
-        )
+        grants = Assignment.resolve_from_target(session, collection, {document.uuid})
 
         if len(grants) != 1:
             raise HTTPException(500)
-        grant, = grants
+        (grant,) = grants
 
         item, events = read.object_events(grant, KindObject.grant, param)
         return mwargs(
@@ -264,7 +301,7 @@ class EventView(BaseView):
         return mwargs(
             OutputWithEvents[EventSchema],
             data=event_serial,
-            events=[EventSchema.model_validate(data.event)]
+            events=[EventSchema.model_validate(data.event)],
         )
 
     @classmethod
@@ -275,7 +312,7 @@ class EventView(BaseView):
         read: DependsRead,
         kind_obj: args.PathKindObj,
         uuid_obj: args.PathUUIDObj,
-        param: EventParams = Depends()
+        param: EventParams = Depends(),
     ):
         # T_obj = Tables[Singular(kind_obj.name).name].value
         obj, events = read.object_events(
@@ -292,15 +329,15 @@ class EventView(BaseView):
                 events=events,
                 uuid_obj=uuid_obj,
                 kind_obj=kind_obj,
-                obj=obj
+                obj=obj,
             ),
         )
         _ = delete.event(data)
-        
+
         return mwargs(
             OutputWithEvents[EventSchema],
             data=obj,
-            events=[EventSchema.model_validate(data.event)]
+            events=[EventSchema.model_validate(data.event)],
         )
 
     @classmethod
@@ -317,10 +354,7 @@ class EventView(BaseView):
         if param.root:
             event = event.find_root(session)
 
-        return mwargs(
-            AsOutput[EventSchema],
-            data=EventSchema.model_validate(event)
-        )
+        return mwargs(AsOutput[EventSchema], data=EventSchema.model_validate(event))
 
     @classmethod
     def get_events(
@@ -339,7 +373,8 @@ class EventView(BaseView):
             **kwargs_search,
             before=(
                 int(param_search.before.timestamp())
-                if param_search.before is not None else None
+                if param_search.before is not None
+                else None
             ),
             after=int(param_search.after.timestamp()),
         )
@@ -379,14 +414,14 @@ class EventView(BaseView):
         data = delete.event(
             mwargs(
                 Data[ResolvedEvent],
-                data=mwargs(ResolvedEvent, events =(event,)),
+                data=mwargs(ResolvedEvent, events=(event,)),
             )
         )
 
         return mwargs(
             OutputWithEvents[EventSchema],
             data=EventSchema.model_validate(event),
-            event=data.event
+            event=data.event,
         )
 
     # NOTE: This will be implemented individually in each `DELETE` because
@@ -397,8 +432,7 @@ class EventView(BaseView):
         delete: DependsDelete,
         kind_object: args.KindObject,
         uuid_object: args.PathUUIDObj,
-    ): 
-        ...
+    ): ...
 
     # TODO: Finish this later when time exists for it.
     # @classmethod
@@ -432,4 +466,3 @@ class EventView(BaseView):
     #         await websocket.send(f"text = `{text}`.")
     #
     #     ...
-

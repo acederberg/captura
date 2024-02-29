@@ -1,5 +1,3 @@
-
-
 """Api routers and functions. 
 This includes a metaclass so that undecorated functions may be tested.
 
@@ -15,6 +13,7 @@ from fastapi.routing import APIRoute
 
 logger = util.get_logger(__name__)
 # logger.level = logging.INFO
+
 
 class ViewMixins:
     """
@@ -114,4 +113,3 @@ class ViewMeta(type):
 
 
 class BaseView(ViewMixins, metaclass=ViewMeta): ...
-

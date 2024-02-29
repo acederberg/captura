@@ -3,31 +3,69 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Any, Callable, Dict, Generic, Literal, Protocol, Set,
-                    Tuple, Type, TypeVar, Union, overload)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Literal,
+    Protocol,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser)
-from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
-                                    WithDelete)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, PendingFrom,
-                        ResolvableMultiple, ResolvableSingular,
-                        ResolvableSourceAssignment, ResolvableTargetAssignment,
-                        Tables, User)
-from app.schemas import (AssignmentSchema, CollectionCreateSchema,
-                         CollectionSchema, CollectionUpdateSchema,
-                         DocumentCreateSchema, DocumentUpdateSchema,
-                         EditCreateSchema, EventSchema, GrantCreateSchema,
-                         UserCreateSchema, UserUpdateSchema)
+from app.controllers.base import (
+    Data,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
+from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    ResolvableMultiple,
+    ResolvableSingular,
+    ResolvableSourceAssignment,
+    ResolvableTargetAssignment,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AssignmentSchema,
+    CollectionCreateSchema,
+    CollectionSchema,
+    CollectionUpdateSchema,
+    DocumentCreateSchema,
+    DocumentUpdateSchema,
+    EditCreateSchema,
+    EventSchema,
+    GrantCreateSchema,
+    UserCreateSchema,
+    UserUpdateSchema,
+)
 from fastapi import HTTPException
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
@@ -331,9 +369,10 @@ class Create(WithDelete, Generic[T_Create]):
             id_source_name: id_source_value,
             id_target_name: target.id,
         }
-        return Assignment(**kwargs,
+        return Assignment(
+            **kwargs,
             **self.create_data.model_dump(exclude={"kind"}),
-                          )
+        )
 
     def assignment_document(
         self,
@@ -522,32 +561,26 @@ class Update(WithDelete, Generic[T_Update]):
 
     @overload
     def generic_update(
-        self,
-        data: Data[ResolvedUser],
-        exclude: Set[str] = set()
+        self, data: Data[ResolvedUser], exclude: Set[str] = set()
     ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]: ...
 
     @overload
     def generic_update(
-        self,
-        data: Data[ResolvedCollection],
-        exclude: Set[str] = set()
+        self, data: Data[ResolvedCollection], exclude: Set[str] = set()
     ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]: ...
 
     @overload
     def generic_update(
-        self,
-        data: Data[ResolvedDocument],
-        exclude: Set[str] = set()
+        self, data: Data[ResolvedDocument], exclude: Set[str] = set()
     ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]: ...
 
     # NOTE: Document updates are not generic
     def generic_update(
         self,
         data: Data[ResolvedUser] | Data[ResolvedCollection] | Data[ResolvedDocument],
-        exclude: Set[str] = set()
+        exclude: Set[str] = set(),
     ) -> (
-        Tuple[Data[ResolvedUser], UserUpdateSchema] 
+        Tuple[Data[ResolvedUser], UserUpdateSchema]
         | Tuple[Data[ResolvedCollection], CollectionUpdateSchema]
         | Tuple[Data[ResolvedDocument], DocumentUpdateSchema]
     ):
@@ -557,11 +590,11 @@ class Update(WithDelete, Generic[T_Update]):
         print(data.data)
         item: User | Collection | Document
         match data.data:
-            case object(users=(User() as item, )):
+            case object(users=(User() as item,)):
                 pass
-            case object(collections=(Collection() as item, )):
+            case object(collections=(Collection() as item,)):
                 pass
-            case object(documents=(Document() as item, )):
+            case object(documents=(Document() as item,)):
                 pass
             case _:
                 raise ValueError("Updating many is not supported.")
@@ -569,9 +602,7 @@ class Update(WithDelete, Generic[T_Update]):
         param: T_Update = self.update_data
         match self.update_data.kind_mapped:
             case KindObject.user | KindObject.collection:
-                param_dict = param.model_dump(
-                    exclude_none=True, exclude=exclude
-                )
+                param_dict = param.model_dump(exclude_none=True, exclude=exclude)
             case _:
                 raise ValueError("Incorrect parameter type.")
 
@@ -599,14 +630,13 @@ class Update(WithDelete, Generic[T_Update]):
         session.commit()
         session.refresh(data.event)
 
-        return data, param # type: ignore
+        return data, param  # type: ignore
 
-
-    #------------------------------------------------------------------------ #
+    # ------------------------------------------------------------------------ #
 
     def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
         session = self.session
-        data, _= self.generic_update(data)
+        data, _ = self.generic_update(data)
         user, *_ = data.data.users
         data.event = Event(
             **self.event_common,
@@ -622,8 +652,7 @@ class Update(WithDelete, Generic[T_Update]):
 
     a_user = with_access(Access.d_user)(user)
 
-
-    #------------------------------------------------------------------------ #
+    # ------------------------------------------------------------------------ #
 
     def collection(self, data: Data[ResolvedCollection]) -> Data[ResolvedCollection]:
         param: CollectionUpdateSchema
@@ -667,19 +696,14 @@ class Update(WithDelete, Generic[T_Update]):
 
     a_collection = with_access(Access.d_collection)(collection)
 
-
-    #------------------------------------------------------------------------ #
+    # ------------------------------------------------------------------------ #
 
     def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
-        raise HTTPException(
-            400,
-            detail="Edits cannot be updated."
-        )
+        raise HTTPException(400, detail="Edits cannot be updated.")
 
     a_edit = with_access(Access.d_edit)(edit)
 
-
-    #------------------------------------------------------------------------ #
+    # ------------------------------------------------------------------------ #
 
     def document(self, data: Data[ResolvedDocument]) -> Data[ResolvedDocument]:
         session = self.session
@@ -705,14 +729,14 @@ class Update(WithDelete, Generic[T_Update]):
             **self.event_common,
             kind_obj=edit.uuid,
             uuid_obj=KindObject.edit,
-            detail="Previous document content saved as an edit."
+            detail="Previous document content saved as an edit.",
         )
         data.event = Event(
             **self.event_common,
             kind_obj=KindObject.document,
             uuid_obj=document.uuid,
             children=[data.event, event_edit],
-            detail="Document updated."
+            detail="Document updated.",
         )
 
         session.add(data.event)
@@ -724,8 +748,7 @@ class Update(WithDelete, Generic[T_Update]):
 
     a_document = with_access(Access.d_document)(document)
 
-
-    #------------------------------------------------------------------------ #
+    # ------------------------------------------------------------------------ #
 
     def create_event_grant(
         self, data: DataResolvedGrant, grants_pending: Tuple[Grant, ...]
@@ -830,9 +853,8 @@ class Update(WithDelete, Generic[T_Update]):
         session.add(event)
         session.commit()
         return data
-    
 
-    #------------------------------------------------------------------------ #
+    # ------------------------------------------------------------------------ #
 
     def assignment_document(
         self,
@@ -846,13 +868,12 @@ class Update(WithDelete, Generic[T_Update]):
     ) -> Data[ResolvedAssignmentCollection]:
         raise HTTPException(400, detail="Not implemented.")
 
-
     # ----------------------------------------------------------------------- #
 
     def event(self, data: Data[ResolvedEvent]) -> Data[ResolvedEvent]:
 
         token_user = self.token_user or data.token_user
-        event, = data.data.events
+        (event,) = data.data.events
 
         event_undo = Event(
             **self.event_common,
@@ -882,4 +903,3 @@ class Update(WithDelete, Generic[T_Update]):
 
         data.event = event_undo
         return data
-

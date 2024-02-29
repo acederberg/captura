@@ -6,14 +6,32 @@ from typing import Any, ClassVar, Dict, NamedTuple, Set, Tuple, Type
 import pytest
 from app import util
 from app.auth import Auth, Token
-from app.models import (Assignment, Collection, Document, Event, Grant,
-                        KindEvent, KindObject, Level, LevelHTTP, PendingFrom,
-                        User, UUIDSplit, uuids)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    LevelHTTP,
+    PendingFrom,
+    User,
+    UUIDSplit,
+    uuids,
+)
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, ResolvedAssignmentCollection,
-                            ResolvedAssignmentDocument, ResolvedCollection,
-                            ResolvedDocument, ResolvedGrantDocument,
-                            ResolvedGrantUser, ResolvedUser)
+from app.controllers.base import (
+    Data,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
 from fastapi import HTTPException
 from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
@@ -1319,8 +1337,7 @@ class TestAccessGrant(BaseTestAccess):
         grant_document=Data[ResolvedGrantDocument],
     )
 
-    def test_overloads(self, session: Session):
-        ...
+    def test_overloads(self, session: Session): ...
 
     def check_result(
         self,

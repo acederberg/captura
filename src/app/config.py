@@ -21,6 +21,7 @@ Instead do
     def is_local(config: Annotated[Config, Depends(Config)]) -> bool:
         return config.m
 """
+
 from typing import Annotated
 
 from pydantic import BaseModel, Field

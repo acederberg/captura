@@ -2,8 +2,15 @@ from typing import List, Set
 
 from app import __version__
 from app.depends import DependsSessionMaker, DependsToken
-from app.models import (AssocUserDocument, Document, Event, KindEvent,
-                        KindObject, Level, User)
+from app.models import (
+    AssocUserDocument,
+    Document,
+    Event,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import EventSchema, GrantCreateSchema, GrantSchema
 from app.views import args
 from app.views.base import BaseView

@@ -1,18 +1,31 @@
 from http import HTTPMethod
-from typing import (Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar,
-                    overload)
+from typing import Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar, overload
 
 from app import util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess
-from app.controllers.base import (BaseController, Data, ResolvedEvent,
-                                  ResolvedUser)
-from app.models import (Base, Collection, Document, Edit, Event, KindObject,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
-from app.schemas import (AsOutput, CollectionSearchSchema,
-                         DocumentSearchSchema, EditSearchSchema, EventParams,
-                         UserSearchSchema)
+from app.controllers.base import BaseController, Data, ResolvedEvent, ResolvedUser
+from app.models import (
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    KindObject,
+    ResolvableSingular,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    CollectionSearchSchema,
+    DocumentSearchSchema,
+    EditSearchSchema,
+    EventParams,
+    UserSearchSchema,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -107,7 +120,6 @@ class Read(BaseController):
         res = self.session.execute(q)
         return tuple(res)
 
-
     # ----------------------------------------------------------------------- #
     # Events
 
@@ -130,7 +142,7 @@ class Read(BaseController):
         )
 
         if not no_limit:
-            q = q .limit(param.limit)
+            q = q.limit(param.limit)
 
         res = self.session.execute(q).scalars()
 
