@@ -13,8 +13,9 @@ from app.controllers.base import (Data, DataResolvedGrant,
                                   ResolvedAssignmentCollection,
                                   ResolvedAssignmentDocument,
                                   ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedGrantDocument,
-                                  ResolvedGrantUser, ResolvedUser)
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser)
 from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
                                     WithDelete)
 from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
@@ -80,7 +81,6 @@ class Create(WithDelete, Generic[T_Create]):
         token: Token | Dict[str, Any] | None,
         method: HTTPMethod | str,
         *,
-        detail: str,
         api_origin: str,
         force: bool = False,
         access: Access | None = None,
@@ -95,7 +95,6 @@ class Create(WithDelete, Generic[T_Create]):
             session,
             token,
             method,
-            detail=detail,
             api_origin=api_origin,
             force=force,
             access=access,
@@ -846,4 +845,41 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedAssignmentCollection],
     ) -> Data[ResolvedAssignmentCollection]:
         raise HTTPException(400, detail="Not implemented.")
+
+
+    # ----------------------------------------------------------------------- #
+
+    def event(self, data: Data[ResolvedEvent]) -> Data[ResolvedEvent]:
+
+        token_user = self.token_user or data.token_user
+        event, = data.data.events
+
+        event_undo = Event(
+            **self.event_common,
+            detail="Deletion event reverted.",
+            uuid_user=token_user.uuid,
+            kind_obj=KindObject.event,
+            uuid_obj=event.uuid,
+        )
+        event.uuid_undo = event_undo.uuid
+
+        session = self.session
+        session.add(event_undo)
+        session.add(event)
+
+        for item in event.flattened():
+            object_ = item.object_
+            if object_ is None or not hasattr(object_, "deleted"):
+                continue
+            object_.deleted = False
+
+            item.uuid_undo = event_undo.uuid
+            session.add(object_)
+            session.add(item)
+
+        session.commit()
+        session.refresh(event)
+
+        data.event = event_undo
+        return data
 

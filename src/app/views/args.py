@@ -12,6 +12,8 @@ PathUUIDUser: TypeAlias = Annotated[str, Path()]
 PathUUIDCollection: TypeAlias = Annotated[str, Path()]
 PathUUIDDocument: TypeAlias = Annotated[str, Path()]
 PathUUIDEvent: TypeAlias = Annotated[str, Path()]
+PathUUIDObj: TypeAlias = Annotated[str, Path()]
+PathKindObj: TypeAlias = Annotated[KindObject, Path()]
 
 # NOTE: Due to how `q_conds_` works (with empty `set()` versus `None`) the
 #       empty set cannot be allowed. When nothing is passed it ought to be

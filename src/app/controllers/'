@@ -12,9 +12,9 @@ from typing import (Annotated, Any, ClassVar, Dict, Generic, Literal, Set,
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Collection, Document, Edit, Event, Grant,
-                        KindObject, Level, LevelHTTP, ResolvableSingular,
-                        ResolvedRawAny, Singular, User, uuids)
+from app.models import (Collection, Document, Edit, Event, Grant, KindObject,
+                        Level, LevelHTTP, ResolvableSingular, ResolvedRawAny,
+                        Singular, User, uuids)
 from fastapi import HTTPException
 from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
                       ValidationInfo, computed_field, field_validator)
@@ -139,15 +139,12 @@ UuidFromModel = Annotated[
 
 
 class KindData(str, enum.Enum):
-    event = "event"
-    collection = "collection"
-    document = "document"
-    user = "user"
-    edit = "edit"
-    assignment_document = "assignment_document"
-    assignment_collection = "assignment_collection"
-    grant_document = "grant_document"
-    grant_user = "grant_user"
+    collections = "collections"
+    documents = "documents"
+    users = "users"
+    edits = "edits"
+    collection_document = "assignment_document"
+    document_collection = "assignment_collection"
 
 
 class BaseResolved(BaseModel):
@@ -157,41 +154,36 @@ class BaseResolved(BaseModel):
 
 
 class BaseResolvedAssoc(BaseResolved):
-    kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]
     kind_assoc: ClassVar[KindObject]
 
     @computed_field
-    @property
     def source(self) -> Document:
         return getattr(self, self.kind_source.name)
 
     @computed_field
-    @property
     def target(self) -> Tuple[Collection, ...]:
         return getattr(self, Singular(self.kind_target.name).name)
 
     @computed_field
-    @property
     def uuid_source(self) -> str:
         return getattr(self, "uuid_" + self.kind_source.name)
 
     @computed_field
-    @property
     def uuid_target(self) -> Set[str]:
         return getattr(self, "uuid_" + Singular(self.kind_target.name).name)
 
 
 class ResolvedCollection(BaseResolved):
-    kind = KindData.collection
+    kind: KindData.collections
 
     collections: Tuple[Collection, ...]
     uuid_collections: UuidSetFromModel
 
 
 class ResolvedDocument(BaseResolved):
-    kind = KindData.document
+    kind: Annotated[Literal["document"], Field(default="document")]
 
     documents: Tuple[Document, ...]
     uuid_documents: UuidSetFromModel
@@ -200,7 +192,7 @@ class ResolvedDocument(BaseResolved):
 
 
 class ResolvedEdit(BaseResolved):
-    kind = KindData.edit
+    kind: Annotated[Literal["edit"], Field(default="edit")]
 
     edits: Tuple[Edit, ...]
     uuid_edit: UuidSetFromModel
@@ -209,31 +201,32 @@ class ResolvedEdit(BaseResolved):
 
 
 class ResolvedUser(BaseResolved):
-    kind = KindData.user
+    kind: Annotated[Literal["user"], Field(default="user")]
 
     users: Tuple[User, ...]
     uuid_users: UuidSetFromModel
 
 
 class ResolvedEvent(BaseResolved):
-    kind = KindData.event
+    kind: Annotated[Literal["event"], Field(default="event")]
 
     events: Tuple[Event, ...]
     uuid_events: UuidSetFromModel
 
 
-class ResolvedObjectEvents(ResolvedEvent):
-
-    obj: Annotated[AnyModel, Field()]
-    uuid_obj: UuidFromModel
-    kind_obj: Annotated[KindObject, Field()]
-
-
 class ResolvedGrantUser(BaseResolvedAssoc):
-    kind = KindData.grant_user
-    kind_source = KindObject.user
-    kind_target = KindObject.document
-    kind_assoc = KindObject.grant
+    kind: Annotated[Literal["grant_user"], Field(default="grant_user")]
+    kind_source: Annotated[
+        Literal[KindObject.user], Field(default=KindObject.user)
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.grant],
+        Field(default=KindObject.grant),
+    ]
 
     user: User
     documents: Tuple[Document, ...]
@@ -245,10 +238,19 @@ class ResolvedGrantUser(BaseResolvedAssoc):
 
 
 class ResolvedGrantDocument(BaseResolvedAssoc):
-    kind = KindData.grant_document
-    kind_source = KindObject.document
-    kind_target = KindObject.user
-    kind_assoc = KindObject.grant
+    kind: Annotated[Literal["grant_document"], Field(default="grant_document")]
+    kind_source: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.user],
+        Field(default=KindObject.user),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.grant],
+        Field(default=KindObject.grant),
+    ]
 
     document: Document
     users: Tuple[User, ...]
@@ -259,10 +261,22 @@ class ResolvedGrantDocument(BaseResolvedAssoc):
     token_user_grants: Dict[str, Grant]
 
 class ResolvedAssignmentCollection(BaseResolvedAssoc):
-    kind = KindData.assignment_collection
-    kind_source = KindObject.collection
-    kind_target = KindObject.document
-    kind_assoc = KindObject.assignment
+    kind: Annotated[
+        Literal["assignment_collection"],
+        Field(default="assignment_collection"),
+    ]
+    kind_source: Annotated[
+        Literal[KindObject.collection],
+        Field(default=KindObject.collection),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.assignment],
+        Field(default=KindObject.assignment),
+    ]
 
     collection: Collection
     # assignments: Dict[str, Assignment]
@@ -274,16 +288,63 @@ class ResolvedAssignmentCollection(BaseResolvedAssoc):
 
 
 class ResolvedAssignmentDocument(BaseResolvedAssoc):
-    kind = KindData.assignment_document
-    kind_source = KindObject.document
-    kind_target = KindObject.collection
-    kind_assoc = KindObject.assignment
+    kind: Annotated[
+        Literal["assignment_document"],
+        Field(default="assignment_document"),
+    ]
+    kind_source: Annotated[
+        Literal[KindObject.document],
+        Field(default=KindObject.document),
+    ]
+    kind_target: Annotated[
+        Literal[KindObject.collection],
+        Field(default=KindObject.collection),
+    ]
+    kind_assoc: Annotated[
+        Literal[KindObject.assignment],
+        Field(default=KindObject.assignment),
+    ]
 
     document: Document
     # assignments: Dict[str, Assignment]
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
     uuid_collections: UuidSetFromModel
+
+
+# class KindData(enum.Enum):
+#     user: User
+#     collection: ResolvedCollection
+#     document: ResolvedDocument
+#     edit: ResolvedEdit
+#     grant_user: ResolvedGrantUser
+#     grant_document: ResolvedGrantDocument
+#     assignment_collection: ResolvedAssignmentCollection
+#     assignment_document: ResolvedAssignmentDocument
+#
+#     # Resolve the tag for any data. Tags should match corresponding functions for
+#     # types.
+#     @classmethod
+#     def discriminate_raw(cls, v: ResolvedRawAny) -> str | None:
+#         match v:
+#             case Collection() | Document() | User() | Edit() as row:
+#                 # Map tablename to singular name.
+#                 return Singular[row.__tablename__].value
+#             # Check assignments
+#             case (Collection(), (Document(), *_)):
+#                 return "assingment_collection"
+#             case (Document(), (Collection(), *_)):
+#                 return "assignment_document"
+#             # Check grants
+#             case (Document(), (User(), *_)):
+#                 return "grant_user"
+#             case (User(), (Document(), *_)):
+#                 return "grant_document"
+#             # If tuple not matching above, look at items inside.
+#             case (_ as item, *_):
+#                 return cls.discriminate_raw(item)
+#             case _:
+#                 return None
 
 
 T_Data = TypeVar(
@@ -297,7 +358,6 @@ T_Data = TypeVar(
     Annotated[ResolvedGrantUser, Tag("grant_user")],
     Annotated[ResolvedGrantDocument, Tag("grant_document")],
     Annotated[ResolvedEvent, Tag("event")],
-    Annotated[ResolvedObjectEvents, Tag("object_events")]
 )
 
 kind_type_map = dict(
@@ -344,8 +404,7 @@ class Data(BaseModel, Generic[T_Data]):
         return v
 
     @computed_field
-    @property
-    def kind(self) -> KindData:
+    def kind(self) -> str:
         return self.data.kind
 
     def types(self) -> Any:

@@ -1,7 +1,7 @@
 from typing import Annotated, Generator, List, Set
 
 from app.auth import Auth
-from app.controllers.access import H
+from app.controllers.access import Access, H
 from app.depends import DependsAccess, DependsAuth, DependsSessionMaker
 from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
@@ -12,7 +12,7 @@ from .auth import AuthView
 from .base import BaseView
 from .collections import CollectionView
 from .documents import DocumentView
-from .events import EventView
+from .events import EventSearchView, EventView
 from .grants import GrantView
 from .users import UserSearchView, UserView
 
@@ -31,6 +31,7 @@ class AppView(BaseView):
         "get_routes": "/routes",
     }
     view_children = {
+        "": EventSearchView,
         "/grants": GrantView,
         "/assignments": AssignmentView,
         "/users": UserView,
@@ -41,8 +42,8 @@ class AppView(BaseView):
     }
 
     @classmethod
-    def get_index(cls, uuid: int, makesession: DependsSessionMaker) -> None:
-        ...
+    def get_index(cls, access: DependsAccess) -> str:
+        return "It works!"
 
     @classmethod
     def get_routes(

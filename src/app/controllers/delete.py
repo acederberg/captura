@@ -1,6 +1,6 @@
 import functools
 from http import HTTPMethod
-from typing import Any, Dict, List, Set, Tuple, Type, overload
+from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 
 from app import __version__, util
 from app.auth import Token
@@ -10,8 +10,9 @@ from app.controllers.base import (Data, DataResolvedAssignment,
                                   ResolvedAssignmentCollection,
                                   ResolvedAssignmentDocument,
                                   ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedGrantDocument,
-                                  ResolvedGrantUser, ResolvedUser)
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser)
 from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
                         KindEvent, KindObject, Level, User)
 from app.schemas import CollectionSchema, mwargs
@@ -32,6 +33,92 @@ class AssocData(BaseModel):
 
 class Delete(WithAccess):
     """Perform deletions."""
+
+    def _event(self, item: Event, info: Set[Tuple[KindObject, None | str]]) -> int:
+        # Pruning events should not create any more events besides one marking 
+        # that the pruning was performed.
+
+        _ = tuple(
+            (
+                self.session.delete(child),
+                info.add((child.kind_obj, child.uuid_obj,)),
+            )
+            for child in item.flattened()
+        )
+
+        return len(_)
+
+    def event_event(
+        self,
+        data: Data[ResolvedEvent] | Data[ResolvedObjectEvents],
+        n: int,
+        info: Set[Tuple[KindObject, str]],
+    ) -> Event:
+
+        token_user = data.token_user or self.token_user
+        event = Event(
+            **self.event_common,
+            kind_obj=KindObject.user,
+            uuid_obj=token_user.uuid,
+            detail=f"User pruned `{n}` events.",
+        )
+
+        kind_obj: KindObject
+        uuid_obj: str | None
+        match data.data:
+            case ResolvedEvent(
+                events=(
+                    Event(kind_obj=kind_obj, uuid_obj=uuid_obj),
+                )
+            ):
+                pass
+            case ResolvedObjectEvents(kind_obj=kind_obj, uuid_obj=uuid_obj):
+                pass
+            case _:
+                raise ValueError("Invalid data of kind `{data.kind}`.")
+
+        detail = f"Events pruned by pruning object of kind `{kind_obj.name}` "
+        detail += f"with uuid `{uuid_obj}`." 
+        event.children = [
+            Event(
+                **self.event_common,
+                kind_obj=kind_obj,
+                uuid_obj=uuid_obj,
+                detail=detail,
+                # Every object should have a record.
+                children=[
+                    Event(
+                        **self.event_common,
+                        kind_obj=collatoral_kind_obj,
+                        uuid_obj=collatoral_uuid_obj,
+                        detail=detail
+                    )
+                    for collatoral_kind_obj, collatoral_uuid_obj in info
+                ]
+            )
+        ]
+        return event
+
+    @overload
+    def event(self, data: Data[ResolvedEvent]) -> Data[ResolvedEvent]:
+        ...
+
+    @overload
+    def event(self, data: Data[ResolvedObjectEvents]) -> Data[ResolvedObjectEvents]:
+        ...
+
+    def event(self, data: Data[ResolvedEvent] | Data[ResolvedObjectEvents] ) -> Data[ResolvedEvent] | Data[ResolvedObjectEvents]:
+        obj_info = set()
+        n = sum(self._event(item, obj_info) for item in data.data.events)
+        data.event = self.event_event(data, n, obj_info)
+
+        session = self.session
+        session.add(data.event)
+        session.commit()
+        session.refresh(data.event)
+
+        return data
+
 
     # ----------------------------------------------------------------------- #
     # Helpers for force deletion/PUT
@@ -676,7 +763,6 @@ class WithDelete(WithAccess):
         token: Token | Dict[str, Any] | None,
         method: HTTPMethod | str,
         *,
-        detail: str,
         api_origin: str,
         force: bool = False,
         access: Access | None = None,
@@ -686,7 +772,6 @@ class WithDelete(WithAccess):
             session,
             token,
             method,
-            detail=detail,
             api_origin=api_origin,
             force=force,
             access=access,

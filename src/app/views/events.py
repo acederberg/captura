@@ -1,16 +1,226 @@
-from typing import Generator, List, Set, Tuple, TypeVar
+import functools
+from typing import (Callable, Concatenate, Generator, List, ParamSpec, Set,
+                    Tuple, Type, TypeVar)
 
-from app import __version__
-from app.depends import DependsSessionMaker, DependsToken
-from app.models import (AnyModel, Event, KindEvent, KindObject, KindRecurse,
-                        Tables, User)
-from app.schemas import (EventActionSchema, EventBaseSchema, EventSchema,
-                         EventSearchSchema, EventWithRootSchema)
+from app import __version__, util
+from app.controllers.access import Access, WithAccess, with_access
+from app.controllers.base import (BaseController, Data, ResolvedEvent,
+                                  ResolvedObjectEvents)
+from app.depends import (DependsAccess, DependsDelete, DependsRead,
+                         DependsSessionMaker, DependsToken)
+from app.models import (AnyModel, Assignment, Collection, Document, Event,
+                        Grant, KindEvent, KindObject, KindRecurse,
+                        ResolvableSingular, Singular, T_Resolvable, Tables,
+                        User)
+from app.schemas import (AsOutput, AssignmentExtraSchema,
+                         CollectionExtraSchema, DocumentExtraSchema,
+                         DocumentMetadataSchema, EventBaseSchema,
+                         EventExtraSchema, EventMetadataSchema, EventParams,
+                         EventSchema, EventSearchSchema, GrantExtraSchema,
+                         OutputWithEvents, T_Output, UserExtraSchema, mwargs)
 from app.views import args
 from app.views.base import BaseView
-from fastapi import Depends
-from sqlalchemy import select
+from fastapi import Depends, HTTPException, Query, Request
+from fastapi.routing import get_request_handler
+from pydantic import TypeAdapter
+from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
+# Decorators.
+#
+# Typing voodoo (from hell).
+
+T_admin_only_controller = TypeVar("T_admin_only_controller", bound=Access | WithAccess)
+T_admin_only_return = TypeVar("T_admin_only_return")
+T_admin_only_self = TypeVar("T_admin_only_self", bound=Type[BaseView])
+P_admin_only = ParamSpec("P_admin_only")
+CallableControllerFirst = Callable[
+    Concatenate[T_admin_only_self, T_admin_only_controller, P_admin_only],
+    T_admin_only_return,
+]
+
+
+def admin_only(
+    fn: CallableControllerFirst[
+        T_admin_only_self, T_admin_only_controller, P_admin_only, T_admin_only_return
+    ],
+) -> CallableControllerFirst[
+    T_admin_only_self, T_admin_only_controller, P_admin_only, T_admin_only_return
+]:
+
+    @functools.wraps(fn)
+    def wrapper(
+        cls: Type[BaseView],
+        access: T_admin_only_controller,
+        *args: P_admin_only.args,
+        **kwargs: P_admin_only.kwargs,
+    ):
+
+        if not access.token.admin:
+            detail = "This endpoint is for admins only."
+            raise HTTPException(403, detail=detail)
+        return fn(cls, access, *args, **kwargs)
+
+    return wrapper
+
+
+# NOTE: Mounted directly on app. Easier to maintain here.
+class EventSearchView(BaseView):
+
+    view_routes = dict(
+        get_event_objects="/events/{uuid_event}/objects",
+        get_user_events="/users/{uuid_user}/events",
+        get_document_events="/documents/{uuid_document}/events",
+        get_collection_events="/collections/{uuid_collection}/events",
+        get_grant_events="/documents/{uuid_document}/users/{uuid_user}/events",
+        get_assignment_events="/documents/{uuid_document}/collections/{uuid_collection}/events",
+    )
+
+
+    # @classmethod
+    # def object_events(
+    #     cls,
+    #     Schema: Type[T_Output],
+    #     read: DependsRead,
+    #     resolvable_object: ResolvableSingular[T_Resolvable],
+    #     resolvable_object_kind: KindObject,
+    #     param: EventParams,
+    # ) -> OutputWithEvents[T_Output]:
+    #
+    #     item, events = read.object_events(resolvable_object, resolvable_object_kind, param,)
+    #     return mwargs(
+    #         OutputWithEvents[Schema],
+    #         events=events,
+    #         data=TypeAdapter(Schema).validate_python(item),
+    #     )
+
+    @classmethod
+    @admin_only
+    def get_event_objects(
+        cls,
+        access: DependsAccess,
+        uuid_event: args.PathUUIDEvent,
+        param: EventParams = Depends(),
+    ) -> AsOutput[EventExtraSchema]:
+        """Restore a deletion from an event."""
+
+        data: Data[ResolvedEvent] = access.d_event(uuid_event)
+        event = data.data.events[0]
+
+        if param.root:
+            event = event.find_root(access.session)
+
+        return mwargs(
+            AsOutput[EventExtraSchema],
+            data=EventExtraSchema.model_validate(event),
+        )
+
+
+    @classmethod
+    @admin_only
+    def get_user_events(
+        cls,
+        access: DependsAccess,
+        read: DependsRead,
+        uuid_user: args.PathUUIDUser,
+        param: EventParams = Depends(),
+    ) -> OutputWithEvents[UserExtraSchema]: 
+
+        item, events = read.object_events(uuid_user, KindObject.user, param)
+        return mwargs(
+            OutputWithEvents[UserExtraSchema],
+            events=events,
+            data=UserExtraSchema.model_validate(item),
+        )
+
+
+    @classmethod
+    @admin_only
+    def get_document_events(
+        cls,
+        access: DependsAccess,
+        read: DependsRead,
+        uuid_document: args.PathUUIDUser,
+        param: EventParams = Depends(),
+    ) -> OutputWithEvents[DocumentExtraSchema]: 
+        item, events = read.object_events(uuid_document, KindObject.document, param)
+        return mwargs(
+            OutputWithEvents[DocumentExtraSchema],
+            events=events,
+            data=DocumentExtraSchema.model_validate(item),
+        )
+
+    @classmethod
+    @admin_only
+    def get_collection_events(
+        cls,
+        access: DependsAccess,
+        read: DependsRead,
+        uuid_collection: args.PathUUIDUser,
+        param: EventParams = Depends(),
+    ) -> OutputWithEvents[CollectionExtraSchema]:
+        item, events = read.object_events(uuid_collection, KindObject.collection, param)
+        return mwargs(
+            OutputWithEvents[CollectionExtraSchema],
+            events=events,
+            data=CollectionExtraSchema.model_validate(item),
+        )
+
+    @classmethod
+    @admin_only
+    def get_grant_events(
+        cls,
+        access: DependsAccess,
+        read: DependsRead,
+        uuid_document: args.PathUUIDDocument,
+        uuid_user: args.PathUUIDUser,
+        param: EventParams = Depends(),
+    ) -> OutputWithEvents[GrantExtraSchema]:
+
+        session = access.session
+        document = Document.resolve(session, uuid_document)
+        user = User.resolve(session, uuid_user)
+        grants = Grant.resolve_from_target(session, user, {document.uuid})
+        if len(grants) != 1:
+            raise HTTPException(500)
+        grant, = grants
+
+        item, events = read.object_events(grant, KindObject.grant, param)
+        return mwargs(
+            OutputWithEvents[GrantExtraSchema],
+            events=events,
+            data=GrantExtraSchema.model_validate(item),
+        )
+
+    @classmethod
+    @admin_only
+    def get_assignment_events(
+        cls,
+        access: DependsAccess,
+        read: DependsRead,
+        uuid_document: args.PathUUIDCollection,
+        uuid_collection: args.PathUUIDDocument,
+        param: EventParams = Depends(),
+    ) -> OutputWithEvents[AssignmentExtraSchema]: 
+
+        session = access.session
+        document = Document.resolve(session, uuid_document)
+        collection = Collection.resolve(session, uuid_collection)
+        grants = Assignment.resolve_from_target(
+            session, collection, {document.uuid}
+        )
+
+        if len(grants) != 1:
+            raise HTTPException(500)
+        grant, = grants
+
+        item, events = read.object_events(grant, KindObject.grant, param)
+        return mwargs(
+            OutputWithEvents[AssignmentExtraSchema],
+            events=events,
+            data=AssignmentExtraSchema.model_validate(item),
+        )
 
 
 class EventView(BaseView):
@@ -22,86 +232,175 @@ class EventView(BaseView):
 
     view_routes = dict(
         get_event="/{uuid_event}",
-        delete_event="/{uuid_event}",
         get_events="",
+        delete_prune_event="/{uuid_event}",
+        delete_prune_object_events="/{kind_obj}/{uuid_obj}",
         patch_undo_event="/{uuid_event}/objects",
-        # patch_object="/{uuid_event}/objects/restore/{uuid_obj}",
-        get_event_objects="/{uuid_event}/objects",
     )
 
     @classmethod
-    def delete_event(
+    @admin_only
+    def delete_prune_event(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        access: DependsAccess,
+        delete: DependsDelete,
         uuid_event: args.PathUUIDEvent,
-    ) -> EventSchema:
-        with sessionmaker() as session:
-            user, event = cls.verify_access(session, token, uuid_event)
-            event_root = event.find_root()
-            session.delete(event_root)
-            session.commit()
-            event = Event(
-                api_version=__version__,
-                api_origin="DELETE /events/<uuid>",
-                detail="Event deleted.",
-                kind=KindEvent.delete,
-                kind_obj=KindObject.event,
-                uuid_user=user.uuid,
-                uuid_obj=event.uuid,
-            )
-            session.add(event)
-            session.commit()
-            session.refresh(event)
+        param: EventParams = Depends(),
+    ) -> OutputWithEvents[EventSchema]:
 
-            return EventSchema.model_validate(event)
+        session = access.session
+        event = Event.resolve(session, uuid_event)
+        if param.root:
+            event = event.find_root()
+
+        event_serial = EventSchema.model_validate(event)
+        data = delete.event(
+            mwargs(
+                Data[ResolvedEvent],
+                data=mwargs(ResolvedEvent, events=(event,)),
+            )
+        )
+
+        return mwargs(
+            OutputWithEvents[EventSchema],
+            data=event_serial,
+            events=[EventSchema.model_validate(data.event)]
+        )
 
     @classmethod
+    @admin_only
+    def delete_prune_object_events(
+        cls,
+        delete: DependsDelete,
+        read: DependsRead,
+        kind_obj: args.PathKindObj,
+        uuid_obj: args.PathUUIDObj,
+        param: EventParams = Depends()
+    ):
+        # T_obj = Tables[Singular(kind_obj.name).name].value
+        obj, events = read.object_events(
+            uuid_obj,
+            kind_obj,
+            param,
+            no_limit=True,
+        )
+
+        data = mwargs(
+            Data[ResolvedObjectEvents],
+            data=mwargs(
+                ResolvedObjectEvents,
+                events=events,
+                uuid_obj=uuid_obj,
+                kind_obj=kind_obj,
+                obj=obj
+            ),
+        )
+        _ = delete.event(data)
+        
+        return mwargs(
+            OutputWithEvents[EventSchema],
+            data=obj,
+            events=[EventSchema.model_validate(data.event)]
+        )
+
+    @classmethod
+    @admin_only
     def get_event(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        access: DependsAccess,
         uuid_event: args.PathUUIDEvent,
-        tree: args.QueryTree = False,
-    ) -> EventSchema:
-        with sessionmaker() as session:
-            _, event = cls.verify_access(session, token, uuid_event)
-            if tree:
-                while uuid_parent := event.uuid_parent:
-                    event = Event.if_exists(session, uuid_parent)
+        param: EventParams = Depends(),
+    ) -> AsOutput[EventSchema]:
 
-            return EventSchema.model_validate(event)
+        session = access.session
+        event = Event.resolve(session, uuid_event)
+        if param.root:
+            event = event.find_root(session)
+
+        return mwargs(
+            AsOutput[EventSchema],
+            data=EventSchema.model_validate(event)
+        )
 
     @classmethod
-    async def get_events(
+    def get_events(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
-        param: EventSearchSchema = Depends(),
-        flatten: args.QueryFlat = True,
-        kind_recurse: args.QueryKindRecurse = KindRecurse.depth_first,
-    ) -> List[EventWithRootSchema] | List[EventBaseSchema]:
-        with sessionmaker() as session:
-            User.if_exists(session, token["uuid"]).check_not_deleted()
-            q = Event.q_select_search(token["uuid"], **param.model_dump())
-            res = session.execute(q)
-            uuid_event: Set[str] = set(res.scalars())
+        access: DependsAccess,
+        param_search: EventSearchSchema = Depends(),
+    ) -> AsOutput[List[EventMetadataSchema]]:
 
-            if flatten:
-                q = Event.q_select_recursive(
-                    uuid_event,
-                    kind_recurse=kind_recurse,
-                ).order_by(Event.timestamp)
-                events = session.execute(q)
-                T = EventWithRootSchema
-            else:
-                q = Event.q_uuid(uuid_event).order_by(Event.timestamp)
-                events = (session.execute(q)).scalars()
-                T = EventBaseSchema
+        # NOTE: Build the search.
+        kwargs_search = param_search.model_dump(exclude={"before", "after"})
+        if not access.token.admin:
+            kwargs_search.update(uuid_user=access.token_user.uuid)
 
-            return [T.model_validate(ee) for ee in events]
+        session = access.session
+        q = Event.q_select_search(
+            **kwargs_search,
+            before=(
+                int(param_search.before.timestamp())
+                if param_search.before is not None else None
+            ),
+            after=int(param_search.after.timestamp()),
+        )
+        util.sql(session, q)
+        events = session.execute(q).scalars()
 
-    ## TODO: Finish this later when time exists for it.
+        data = TypeAdapter(List[EventMetadataSchema]).validate_python(events)
+        return mwargs(AsOutput, data=data)
+
+    @classmethod
+    def patch_undo_event(
+        cls,
+        delete: DependsDelete,
+        uuid_event: args.PathUUIDUser,
+    ) -> OutputWithEvents[EventSchema]:
+        """Restore a deletion from an event.
+
+        Return the events and updated objects.
+
+        :param dry_run:
+        """
+
+        event = (
+            delete.access.event(uuid_event)
+            .check_kind(KindEvent.delete)
+            .check_not_undone()
+        )
+        delete.access.token_user.check_can_access_event(event)
+
+        event = (
+            delete.access.event(event.find_root())
+            .check_kind(KindEvent.delete)
+            .check_not_undone()
+        )
+        delete.access.token_user.check_can_access_event(event)
+
+        data = delete.event(
+            mwargs(
+                Data[ResolvedEvent],
+                data=mwargs(ResolvedEvent, events =(event,)),
+            )
+        )
+
+        return mwargs(
+            OutputWithEvents[EventSchema],
+            data=EventSchema.model_validate(event),
+            event=data.event
+        )
+
+    # NOTE: This will be implemented individually in each `DELETE` because
+    #       access will be handled already and data will have instantiated.
+    @classmethod
+    def patch_restore_object(
+        cls,
+        delete: DependsDelete,
+        kind_object: args.KindObject,
+        uuid_object: args.PathUUIDObj,
+    ): 
+        ...
+
+    # TODO: Finish this later when time exists for it.
     # @classmethod
     # async def ws_events(
     #     cls,
@@ -134,96 +433,3 @@ class EventView(BaseView):
     #
     #     ...
 
-    @classmethod
-    def get_event_objects(
-        cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
-        uuid_event: args.PathUUIDUser,
-    ) -> List[EventWithRootSchema]:
-        """Restore a deletion from an event."""
-
-        with sessionmaker() as session:
-            user, event = cls.verify_access(session, token, uuid_event)
-            ...
-
-    @classmethod
-    def verify_access(
-        cls,
-        session: Session,
-        token: DependsToken,
-        uuid_event: args.PathUUIDUser,
-    ) -> Tuple[User, Event]:
-        event = Event.if_exists(session, uuid_event)
-        user = (
-            User.if_exists(session, token["uuid"])
-            .check_can_access_event(event)
-            .check_not_deleted(410)
-        )
-
-        return user, event
-
-    T = TypeVar("T")
-
-    @classmethod
-    def iter_eventobject(
-        cls, session: Session, events: List[T]
-    ) -> Generator[Tuple[T, AnyModel], None, None]:
-        for item in events:
-            tt = Tables[item.kind_obj].value
-            qq = select(tt).where(tt.uuid == item.uuid_obj)
-            oo = session.execute(qq).scalar()
-            if oo is None:
-                continue
-            yield item, oo
-
-    @classmethod
-    def patch_undo_event(
-        cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
-        uuid_event: args.PathUUIDUser,
-    ) -> EventActionSchema:
-        """Restore a deletion from an event.
-
-        Return the events and updated objects.
-
-        :param dry_run:
-        """
-
-        with sessionmaker() as session:
-            user, event = cls.verify_access(session, token, uuid_event)
-            event.check_kind(KindEvent.delete).check_not_undone()
-
-            # Event for restoring from event.
-
-            event_root = event.find_root().check_kind(KindEvent.delete)
-            event_root = event_root.check_not_undone()
-
-            user.check_can_access_event(event_root).check_not_deleted(410)
-
-            event_action = event_root.undone(
-                api_version=__version__,
-                api_origin="PATCH /events/restore/<uuid>",
-                detail="Restored from deletion event.",
-                uuid_user=token["uuid"],
-            )
-            session.add(event_action)
-
-            for item in event.flattened():
-                object_ = item.object_
-                print(object_)
-                if not hasattr(object_, "deleted"):
-                    continue
-                object_.deleted = False
-                session.add(object_)
-
-            session.commit()
-            session.refresh(event_action)
-
-            return EventActionSchema.model_validate(
-                dict(event_action=event_action, event_root=event_root)
-            )
-
-    @classmethod
-    def patch_undo_object(cls): ...

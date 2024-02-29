@@ -179,7 +179,9 @@ class Base(DeclarativeBase):
     # ----------------------------------------------------------------------- #
     # Finders.
     def q_events(self):
-        return select(Event).where(Event.uuid_obj==self.uuid).order_by(Event.timestamp)
+        return (
+            select(Event).where(Event.uuid_obj == self.uuid).order_by(Event.timestamp)
+        )
 
     @classmethod
     def if_exists(
@@ -215,15 +217,13 @@ class Base(DeclarativeBase):
 
     @overload
     @classmethod
-    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self:
-        ...
+    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self: ...
 
     @overload
     @classmethod
     def resolve(
         cls, session: Session, that: ResolvableSelfMultiple
-    ) -> Tuple[Self, ...]:
-        ...
+    ) -> Tuple[Self, ...]: ...
 
     @classmethod
     def resolve(cls, session: Session, that: ResolvableSelf) -> Self | Tuple[Self, ...]:
@@ -248,8 +248,7 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfMultiple,
-    ) -> Set[str]:
-        ...
+    ) -> Set[str]: ...
 
     @overload
     @classmethod
@@ -257,8 +256,7 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfSingular,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @classmethod
     def resolve_uuid(
@@ -423,8 +421,7 @@ class SearchableTableMixins(PrimaryTableMixins):
         user_uuid: str,
         uuids: Set[str] | None,
         exclude_deleted: bool = True,
-    ) -> Select:
-        ...
+    ) -> Select: ...
 
 
 # =========================================================================== #
@@ -461,7 +458,9 @@ class Event(Base):
     api_version: Mapped[str] = mapped_column(String(16), default=__version__)
     kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))
     kind_obj: Mapped[KindObject] = mapped_column(Enum(KindObject))
-    detail: Mapped[str | None] = mapped_column(String(LENGTH_DESCRIPTION), nullable=True)
+    detail: Mapped[str | None] = mapped_column(
+        String(LENGTH_DESCRIPTION), nullable=True
+    )
 
     def update(
         self,
@@ -490,44 +489,48 @@ class Event(Base):
                 uuid_user=uuid_user,
             )
 
-    def undone(
-        self,
-        uuid_user: str,
-        detail: str,
-        api_origin: str,
-        api_version: str = __version__,
-        callback: Callable[["Event"], "Event"] | None = None,
-    ) -> "Event":
-        """Create the inverse event."""
-
-        if self.uuid_undo:
-            raise AttributeError("Cannot undo an event that has been undone.")
-
-        common: Dict[str, Any] = dict(
-            api_version=api_version,
-            api_origin=api_origin,
-            uuid_user=uuid_user,
-            detail=detail,
-        )
-
-        children = [item.undone(**common, callback=callback) for item in self.children]
-        event = self.__class__(
-            uuid_undo=self.uuid,
-            uuid_obj=self.uuid_obj,
-            kind_obj=self.kind_obj,
-            kind=KindEvent.restore,
-            children=children,
-            **common,
-        )
-        return event if callback is None else callback(event)
+    # def undone(
+    #     self,
+    #     uuid_user: str,
+    #     detail: str,
+    #     api_origin: str,
+    #     api_version: str = __version__,
+    #     callback: Callable[["Event"], "Event"] | None = None,
+    # ) -> "Event":
+    #     """Create the inverse event."""
+    #
+    #     if self.uuid_undo:
+    #         raise AttributeError("Cannot undo an event that has been undone.")
+    #
+    #     common: Dict[str, Any] = dict(
+    #         api_version=api_version,
+    #         api_origin=api_origin,
+    #         uuid_user=uuid_user,
+    #         detail=detail,
+    #     )
+    #
+    #     children = [item.undone(**common, callback=callback) for item in self.children]
+    #     event = self.__class__(
+    #         uuid_undo=self.uuid,
+    #         uuid_obj=self.uuid_obj,
+    #         kind_obj=self.kind_obj,
+    #         kind=KindEvent.restore,
+    #         children=children,
+    #         **common,
+    #     )
+    #     return event if callback is None else callback(event)
 
     def flattened(self) -> Generator["Event", None, None]:
         yield self
-        for child in self.children:
-            yield from child.flattened()
+        yield from (
+            child_child for child in self.children for child_child in child.flattened()
+        )
+        # yield self
+        # for child in self.children:
+        #     yield from child.flattened()
 
     @property
-    def object_(self) -> "AnyModelBesidesEvent | None":
+    def object_(self) -> "AnyModel | None":
         session = self.get_session()
         t = Tables[self.kind_obj.value].value
         q = select(t).where(t.uuid == self.uuid_obj)
@@ -584,22 +587,61 @@ class Event(Base):
         return union(*(qq(uuid) for uuid in uuid_event))
 
     @classmethod
-    def q_select_search(
+    def q_conds(
         cls,
-        uuid_user: str,
-        *,
+        uuid_user: str | None = None,
+        uuid_event: Set[str] | None = None,
         kind: str | None = None,
         kind_obj: str | None = None,
         uuid_obj: str | None = None,
-    ) -> Select:
-        q = select(cls.uuid).where(cls.uuid_user == uuid_user)
+        before: int | None = None,
+        after: int | None = None,
+    ) -> ...:
+
+        conds = []
+        if uuid_user is not None:
+            conds.append(cls.uuid_user == uuid_user)
+        if uuid_event is not None:
+            conds.append(cls.uuid.in_(uuid_event))
         if kind is not None:
-            q = q.where(cls.kind == kind)
+            conds.append(cls.kind == kind)
         if kind_obj is not None:
-            q = q.where(cls.kind_obj == kind_obj)
+            conds.append(cls.kind_obj == kind_obj)
         if uuid_obj is not None:
-            q = q.where(cls.uuid_obj == uuid_obj)
-        q = q.where(Event.uuid_parent.is_(None))
+            conds.append(cls.uuid_obj == uuid_obj)
+        if before is not None:
+            conds.append(cls.timestamp < before)
+        if after is not None:
+            conds.append(cls.timestamp > after)
+        return and_(*conds)
+
+    @classmethod
+    def q_select_search(
+        cls,
+        # From `EventSearchSchema`.
+        uuid_user: str | None = None,
+        uuid_event: Set[str] | None = None,
+        kind: str | None = None,
+        kind_obj: str | None = None,
+        uuid_obj: str | None = None,
+        after: int | None = None,
+        before: int | None = None,
+        limit: int | None = None,
+    ) -> Select:
+        q = select(cls).where(
+            cls.q_conds(
+                uuid_user=uuid_user,
+                uuid_event=uuid_event,
+                kind=kind,
+                kind_obj=kind_obj,
+                uuid_obj=uuid_obj,
+                before=before,
+                after=after,
+            )
+        ).order_by(cls.timestamp)
+        if limit:
+            q = q.limit(limit)
+
         return q
 
     def check_kind(
@@ -680,118 +722,6 @@ class AssocCollectionDocument(Base):
             raise ValueError("Inconcievable!")
         return res
 
-    # @classmethod
-    # def q_split(
-    #     cls,
-    #     source: "Collection | Document",
-    #     uuid_targets: Set[str],
-    #     *,
-    #     select_parent_uuids: bool = False,
-    # ) -> Tuple[Select, Select]:
-    #     "Returns a select for assignment uuids."
-    #
-    #     # NOTE: These queries should also have joins such that warning are not
-    #     #       raised by sqlalchemy.
-    #     match source:
-    #         case _ if not select_parent_uuids:
-    #             q = source.q_select_assignment(
-    #                 uuid_targets,
-    #                 exclude_deleted=False,
-    #             )
-    #             s = literal_column("uuid")
-    #         case Collection() as collection:
-    #             q = collection.q_select_documents(
-    #                 uuid_targets,
-    #                 exclude_deleted=False,
-    #             )
-    #             s = literal_column("uuid_collection")
-    #         case Document() as document:
-    #             q = document.q_select_collections(
-    #                 uuid_targets,
-    #                 exclude_deleted=False,
-    #             )
-    #             s = literal_column("uuid_document")
-    #
-    #     return tuple(  # type: ignore
-    #         select(s).select_from(q.where(Assignment.deleted == bool_()).subquery())
-    #         for bool_ in (true, false)
-    #     )
-    #
-    # @classmethod
-    # def q_projection(cls, selectable, uuid_assignment: Set[str]) -> Select:
-    #     return (
-    #         select(selectable)
-    #         .join(Assignment)
-    #         .where(Assignment.uuid.in_(uuid_assignment))
-    #     )
-    #
-    # @overload
-    # @classmethod
-    # def split(
-    #     cls,
-    #     session: Session,
-    #     source: "Document",
-    #     resolvable_target: "ResolvableMultiple[Collection]",
-    #     *,
-    #     select_parent_uuids: bool = False,
-    # ) -> UUIDSplit: ...
-    #
-    # @overload
-    # @classmethod
-    # def split(
-    #     cls,
-    #     session: Session,
-    #     source: "Collection",
-    #     resolvable_target: "ResolvableMultiple[Document]",
-    #     *,
-    #     select_parent_uuids: bool = False,
-    # ) -> UUIDSplit: ...
-    #
-    # @classmethod
-    # def split(
-    #     cls,
-    #     session: Session,
-    #     source: "Collection | Document",
-    #     resolvable_target: "ResolvableMultiple[Collection] | ResolvableMultiple[Document]",
-    #     *,
-    #     select_parent_uuids: bool = False,
-    # ) -> UUIDSplit:
-    #
-    #     match [source, resolvable_target]:
-    #         case [Document() as document, _ as resolvable_collections]:
-    #             uuid_collection = Collection.resolve_uuid(
-    #                 session,
-    #                 resolvable_collections,
-    #             )
-    #             qs = cls.q_split(
-    #                 document,
-    #                 uuid_collection,
-    #                 select_parent_uuids=select_parent_uuids,
-    #             )
-    #         case [Collection() as collection, _ as resolvable_documents]:
-    #             uuid_document = Document.resolve_uuid(
-    #                 session,
-    #                 resolvable_documents,
-    #             )
-    #             qs = cls.q_split(
-    #                 collection,
-    #                 uuid_document,
-    #                 select_parent_uuids=select_parent_uuids,
-    #             )
-    #         case _:
-    #             msg = f"Invalid source `{source}` of type `{type(source)}`. "
-    #             msg += "Must be an instnce of `Collection` or `Document`."
-    #             raise ValueError(msg)
-    #
-    #     # kind_target = cls.resolve_target_kind(source, resolvable_target)
-    #     # is_doc = kind_target == ChildrenAssignment.documents
-    #     # Target = Document if is_doc else Collection
-    #     # uuid_target = Target.resolve_uuid(session, resolvable_target)  # type: ignore
-    #     # qs = cls.q_split(uuid_document, collection)
-    #
-    #     res = tuple(set(session.execute(q).scalars()) for q in qs)
-    #     return res  # type: ignore
-
     @classmethod
     def resolve_target_kind(
         cls,
@@ -871,12 +801,6 @@ class AssocUserDocument(Base):
 
     __table_args__ = (UniqueConstraint("a", "b", name="_grant_vector"),)
 
-    # uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
-    # uuid_parent: Mapped[str] = mapped_column(
-    #     ForeignKey("events.uuid"),
-    #     nullable=True,
-    # )
-
     @property
     def uuid_document(self) -> str:
         session = self.get_session()
@@ -919,7 +843,6 @@ class AssocUserDocument(Base):
                 raise HTTPException(500, detail="Cannot resolve.")
 
         q = q.where(*conds)
-        util.sql(session, q)
         return tuple(session.execute(q).scalars())
 
     # ----------------------------------------------------------------------- #
@@ -953,45 +876,6 @@ class AssocUserDocument(Base):
             for bool_ in (true, false)
         )
 
-    # @overload
-    # @classmethod
-    # def split(
-    #     cls,
-    #     session: Session,
-    #     source: "Document",
-    #     resolvable_target: "ResolvableMultiple[User]",
-    #     *,
-    #     select_parent_uuids: bool = False,
-    # ) -> UUIDSplit: ...
-    #
-    # @overload
-    # @classmethod
-    # def split(
-    #     cls,
-    #     session: Session,
-    #     source: "User",
-    #     resolvable_target: "ResolvableMultiple[Document]",
-    #     *,
-    #     select_parent_uuids: bool = False,
-    # ) -> UUIDSplit: ...
-
-    @classmethod
-    def split(
-        cls,
-        session: Session,
-        source: "User | Document",
-        uuid_target: Set[str],
-        *,
-        select_parent_uuids: bool = False,
-    ) -> UUIDSplit:
-        qs = cls.q_split(
-            source,
-            uuid_target,
-            select_parent_uuids=select_parent_uuids,
-        )
-        res = tuple(set(session.execute(q).scalars()) for q in qs)
-        return res  # type: ignore
-
 
 class User(SearchableTableMixins, Base):
     __tablename__ = "users"
@@ -1012,7 +896,7 @@ class User(SearchableTableMixins, Base):
     _prototype_activation_invitation_code: Mapped[str] = mapped_column(
         String(36),
         unique=True,
-        nullable=True
+        nullable=True,
         # default=lambda: str(uuid4()),
     )
     _prototype_activation_invitation_email: Mapped[str] = mapped_column(
@@ -1025,16 +909,6 @@ class User(SearchableTableMixins, Base):
     @property
     def pending_approval(self):
         return self._prototype_activation_pending_approval
-
-    # @property
-    # def email(self):
-    #     return self._prototype_activation_pending_approval
-    #
-    # @property
-    # def code(self):
-    #     return self._prototype_activation_pending_approval
-
-    # documents: Mapped[Dict[str, List[str]]] = relationship(Documents)
 
     # NOTE: This should correspond to `user`. Is all of the collection objects
     #       labeled by their names.
@@ -1072,7 +946,9 @@ class User(SearchableTableMixins, Base):
         invitation_email: Set[str] | None = None,
         invitation_code: Set[str] | None = None,
     ) -> Select:
-        q = select(cls).where(cls.deleted == true(), cls._prototype_activation_pending_approval == true())
+        q = select(cls).where(
+            cls.deleted == true(), cls._prototype_activation_pending_approval == true()
+        )
         if invitation_uuid is not None:
             q = q.where(cls.uuid.in_(invitation_uuid))
 
@@ -1185,7 +1061,6 @@ class User(SearchableTableMixins, Base):
             .select_from(self.q_select_documents(document_uuids, level))
             .group_by(Document.id)
         )
-        util.sql(self.get_session(), q)
         print(2)
         q = (
             select(Document.id)
@@ -1317,8 +1192,7 @@ class User(SearchableTableMixins, Base):
                 detail.update(msg="There should only be one grant.")
                 raise HTTPException(418, detail=detail)
 
-    def check_sole_owner_document(self, document: "Document") -> Self:
-        ...
+    def check_sole_owner_document(self, document: "Document") -> Self: ...
 
     def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
         if self.uuid != event.uuid_user:
@@ -1355,6 +1229,15 @@ class Collection(SearchableTableMixins, Base):
         primaryjoin="and_(Collection.id==AssocCollectionDocument.id_collection, AssocCollectionDocument.deleted == false())",
         secondaryjoin="and_(Document.deleted == false(), Document.id==AssocCollectionDocument.id_document)",
     )
+
+    @property
+    def uuid_user(self) -> str:
+        session = self.get_session()
+        q = select(User.uuid).where(User.id == self.id_user)
+        res = session.execute(q).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
 
     def q_conds_assignment(
         self,
@@ -1611,6 +1494,24 @@ class Edit(PrimaryTableMixins, Base):
         back_populates="edits",
     )
 
+    @property
+    def uuid_user(self) -> str:
+        session = self.get_session()
+        q = select(User.uuid).where(User.id == self.id_user)
+        res = session.execute(q).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
+
+    @property
+    def uuid_document(self) -> str:
+        session = self.get_session()
+        q = select(Document.uuid).where(Document.id == self.id_user)
+        res = session.execute(q).scalar()
+        if res is None:
+            raise ValueError("Inconcievable!")
+        return res
+
     @classmethod
     def q_select_for_user(
         cls,
@@ -1633,6 +1534,7 @@ class Edit(PrimaryTableMixins, Base):
 
 # --------------------------------------------------------------------------- #
 # After the matter constants and types.
+
 
 class Tables(enum.Enum):
     assignments = AssocCollectionDocument
@@ -1665,6 +1567,7 @@ T_Resolvable = TypeVar(
     Collection,
     Document,
     Edit,
+    Event,
 )
 
 ResolvableSingular: TypeAlias = T_Resolvable | str

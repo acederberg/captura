@@ -279,7 +279,6 @@ def update(
         token=token, 
         method=request.method,
         api_origin=api_origin,
-        detail=""
     )
 
 
@@ -294,7 +293,6 @@ def delete(
         token=token, 
         method=request.method,
         api_origin=api_origin,
-        detail=""
     )
 
 
