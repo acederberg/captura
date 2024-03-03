@@ -4,30 +4,16 @@ from typing import Callable, Set, Tuple, Type
 
 import pytest
 from app import util
-from app.models import (
-    Assignment,
-    AssocUserDocument,
-    Collection,
-    Document,
-    Grant,
-    KindEvent,
-    KindObject,
-    Plural,
-    Singular,
-    User,
-)
-from app.schemas import EventSchema
-from app.controllers.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-)
+from app.controllers.base import (Data, DataResolvedAssignment,
+                                  DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedGrantDocument, ResolvedGrantUser)
 from app.controllers.create import Create
 from app.controllers.delete import AssocData, Delete
+from app.models import (Assignment, AssocUserDocument, Collection, Document,
+                        Grant, KindEvent, KindObject, Plural, Singular, User)
+from app.schemas import EventSchema
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, update
 from sqlalchemy.orm import Session, make_transient
@@ -44,7 +30,6 @@ def delete(session: Session) -> Delete:
         session,
         dict(uuid="000-000-000"),
         HTTPMethod.POST,
-        detail=TEST_DETAIL,
         api_origin=TEST_API_ORIGIN,
     )
 
@@ -243,10 +228,10 @@ class BaseTestAssoc:
             raise AssertionError(msg)
 
         # Make sure that the corresponding method exists.
-        a_mthd = getattr(delete, f"a_{data.kind}")
+        a_mthd = getattr(delete, f"a_{data.kind.name}")
         if not callable(a_mthd):
-            msg = f"`Delete.{data.kind}`s signature should match signature of "
-            msg += f"`Access.{data.kind}`."
+            msg = f"`Delete.{data.kind.name}`s signature should match signature of "
+            msg += f"`Access.{data.kind.name}`."
             raise AssertionError(msg)
 
         return mthd

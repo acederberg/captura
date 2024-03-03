@@ -254,6 +254,10 @@ class ResolvedEvent(BaseResolved):
 
 
 class ResolvedObjectEvents(ResolvedEvent):
+    # kind = KindData.event
+    #
+    # events: Tuple[Event, ...]
+    # uuid_events: UuidSetFromModel
 
     obj: Annotated[AnyModel, Field()]
     uuid_obj: UuidFromModel

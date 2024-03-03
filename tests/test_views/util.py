@@ -1,7 +1,8 @@
 import functools
 import json
 from http import HTTPMethod
-from typing import Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple, Type
+from typing import (Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple,
+                    Type)
 
 import httpx
 import pytest
@@ -20,7 +21,7 @@ DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
 DEFAULT_UUID: str = "000-000-000"
 DEFAULT_TOKEN_PAYLOAD = dict(uuid=DEFAULT_UUID)
-EVENT_COMMON_FIELDS = {"api_origin", "api_version", "kind", "uuid_user", "detail"}
+EVENT_COMMON_FIELDS = {"api_origin", "api_version", "kind", "uuid_user"}
 
 
 # =========================================================================== #

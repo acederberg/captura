@@ -11,6 +11,7 @@ from typing import (
     ParamSpec,
     Set,
     Tuple,
+    Type,
     TypeVar,
     overload,
 )
@@ -31,11 +32,14 @@ from app.controllers.base import (
     ResolvedEvent,
     ResolvedGrantDocument,
     ResolvedGrantUser,
+    ResolvedObjectEvents,
     ResolvedUser,
     T_Data,
 )
 from app.models import (
+    AnyModel,
     Assignment,
+    Base,
     Collection,
     Document,
     Edit,
@@ -47,9 +51,11 @@ from app.models import (
     ResolvableMultiple,
     ResolvableSingular,
     Singular,
+    T_Resolvable,
+    Tables,
     User,
 )
-from app.schemas import mwargs
+from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -68,6 +74,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
+        return_data: bool = False,
         **kwargs,
     ) -> Data:
         if (method := getattr(self, kind_data.name, None)) is None:
@@ -76,7 +83,7 @@ class Access(BaseController):
             resolvable,
             resolve_user_token=resolve_user_token,
             exclude_deleted=exclude_deleted,
-            return_data=True,
+            return_data=return_data,
             **kwargs,
         )
 
@@ -158,6 +165,104 @@ class Access(BaseController):
     ) -> Data[ResolvedEvent]:
         return self.event(
             resolvable_uuid,
+            resolve_user_token=resolve_user_token,
+            exclude_deleted=exclude_deleted,
+            return_data=True,
+        )
+
+    @overload
+    def object_events(
+        self,
+        object_resolvable: ResolvableSingular[T_Resolvable],
+        object_kind: KindObject,
+        param: EventSearchSchema | EventParams | None = None,
+        *,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        exclude_deleted: bool = True,
+        return_data: Literal[True] = True,
+    ) -> Data[ResolvedObjectEvents]:
+        ...
+
+    @overload
+    def object_events(
+        self,
+        object_resolvable: ResolvableSingular[T_Resolvable],
+        object_kind: KindObject,
+        param: EventSearchSchema | EventParams | None = None,
+        *,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        exclude_deleted: bool = True,
+        return_data: Literal[False] = False,
+    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]:
+        ...
+
+    def object_events(
+        self,
+        object_resolvable: ResolvableSingular[T_Resolvable],
+        object_kind: KindObject,
+        param: EventSearchSchema | EventParams | None = None,
+        *,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        exclude_deleted: bool = True,
+        return_data: bool = False,
+    ) -> Data[ResolvedObjectEvents] | Tuple[T_Resolvable, Tuple[Event, ...]]:
+
+        # NOTE: Resolved.
+        resolve_user_token = self.token_user_or(resolve_user_token)
+        T_Mapped: Type[Base]  # [T_Resolvable]
+        T_Mapped = Tables[Singular(object_kind.name).name].value
+        object_: T_Resolvable = T_Mapped.resolve(self.session, object_resolvable,)  # type: ignore
+
+        # NOTE: Check access to the object.
+        _ = self(
+            KindData[object_kind.name],
+            object_, 
+            resolve_user_token=resolve_user_token,
+            exclude_deleted=exclude_deleted,
+            return_data=False,
+        )
+
+        # Find events.
+        if param is not None:
+            match param:
+                case EventParams():
+                    exclude = {"root"}
+                case EventSearchSchema():
+                    exclude = set()
+
+            search = param.model_dump(exclude=exclude)
+        else:
+            search = dict()
+
+        q_event = Event.q_select_search(**search)
+        events = tuple(self.session.execute(q_event).scalars())
+
+        if return_data:
+            return mwargs(
+                Data[ResolvedObjectEvents],
+                data=mwargs(
+                    ResolvedObjectEvents,
+                    obj=object_,
+                    kind_obj=object_kind,
+                    events=events,
+                )
+            )
+
+        return object_, events
+
+    def d_object_events(
+        self,
+        object_resolvable: ResolvableSingular[T_Resolvable],
+        object_kind: KindObject,
+        param: EventSearchSchema | EventParams | None = None,
+        *,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        exclude_deleted: bool = True,
+    ) -> Data[ResolvedObjectEvents]:
+        return self.object_events(
+            object_resolvable,
+            object_kind,
+            param,
             resolve_user_token=resolve_user_token,
             exclude_deleted=exclude_deleted,
             return_data=True,

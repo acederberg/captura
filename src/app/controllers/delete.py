@@ -137,6 +137,16 @@ class Delete(WithAccess):
 
         return data
 
+    def object_events(
+        self,
+        data: Data[ResolvedObjectEvents],
+    ) -> Data[ResolvedObjectEvents]:
+
+        _ = self.event(data)
+        return data
+
+    a_object_events = with_access(Access.d_object_events)(object_events)
+
     # ----------------------------------------------------------------------- #
     # Helpers for force deletion/PUT
     # Looks nasty, but prevents having to maintain four instances of the same
@@ -464,27 +474,23 @@ class Delete(WithAccess):
         documents_exclusive: Tuple[Document, ...] = tuple(
             session.execute(user.q_select_documents_exclusive()).scalars()
         )
-        print(4)
         data_documents = Data[ResolvedDocument].model_construct(
             token_user=self.token_user,
             data=ResolvedDocument.model_construct(documents=documents_exclusive),
         )
         self.document(data_documents)
-        print(5)
 
         # Cleanup collections.
         q_collections = user.q_collections(exclude_deleted=False)
 
         collections: Tuple[Collection, ...]
         collections = tuple(self.session.execute(q_collections).scalars())
-        print(5.5)
         data_collections = mwargs(
             Data[ResolvedCollection],
             token_user=self.token_user,
             data=mwargs(ResolvedCollection, collections=collections),
         )
         self.collection(data_collections)
-        print(6)
 
         # Cleanup user
         if self.force:
@@ -504,7 +510,6 @@ class Delete(WithAccess):
                 if (ee := data_item.event) is not None
             ],
         )
-        print(7)
         session.add(data.event)
         session.commit()
         session.refresh(data.event)
@@ -538,15 +543,9 @@ class Delete(WithAccess):
         data: Data[ResolvedCollection],
         collection: Collection,
     ) -> Data[ResolvedAssignmentCollection]:
-        print("-------------------")
         q = collection.q_select_documents()
-        util.sql(self.session, q)
         documents = set(self.session.execute(q).scalars())
-        # print(f"{uuid_document = }")
-        # documents = Document.resolve(self.session, uuid_document)
-        # print(documents)
 
-        print("a")
         # Delete assigns and get events before deletion.
         data_assignments = mwargs(
             Data,
@@ -560,7 +559,6 @@ class Delete(WithAccess):
         if len(documents):
             _ = self.assignment_collection(data_assignments)
 
-        print("b")
         # When force, hard delete.
         session = self.session
         if self.force:
@@ -579,7 +577,6 @@ class Delete(WithAccess):
         )
         if event_assignments is not None:
             data_assignments.event.children.append(event_assignments)
-        print("c")
 
         return data_assignments
 
@@ -592,24 +589,10 @@ class Delete(WithAccess):
         collections = data.data.collections
         if not len(collections):
             return data
-        print(5.6)
 
-        import json
-
-        print(
-            json.dumps(
-                list(
-                    item.model_dump()
-                    for item in TypeAdapter(List[CollectionSchema]).validate_python(
-                        collections
-                    )
-                )
-            )
-        )
         data_assignments = tuple(
             self._collection(data, collection) for collection in collections
         )
-        print(5.7)
         data.event = Event(
             **self.event_common,
             kind_obj=KindObject.collection,
@@ -617,12 +600,10 @@ class Delete(WithAccess):
             children=[dd.event for dd in data_assignments],
             detail="Bulk deletion of `collection`s.",
         )
-        print(5.8)
 
         session.add(data.event)
         session.commit()
         session.refresh(data.event)
-        print(5.9)
 
         return data
 

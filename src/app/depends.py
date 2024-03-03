@@ -253,7 +253,6 @@ def create(
         token=token,
         method=request.method,
         api_origin=api_origin,
-        detail=...,
     )
 
 
@@ -270,7 +269,7 @@ def update(
     access: DependsAccess,
     request: Request,
 ) -> Update:
-    api_origin = request.url.path
+    api_origin = f"{request.method} {request.url.path}"
     return Update(
         session=access.session,
         token=token,
@@ -290,6 +289,7 @@ def delete(
         token=token,
         method=request.method,
         api_origin=api_origin,
+        access=access,
     )
 
 

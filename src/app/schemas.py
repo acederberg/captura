@@ -69,6 +69,9 @@ from app.models import (
 from app.models import PendingFrom as PendingFrom_
 from app.models import User
 
+
+# --------------------------------------------------------------------------- #
+
 UUID = Annotated[
     str,
     _FieldUUID := Field(
@@ -96,6 +99,8 @@ Deleted = Annotated[bool, Field()]
 Detail = Annotated[str | None, Field(default=None)]
 
 
+# --------------------------------------------------------------------------- #
+
 class KindSchema(str, enum.Enum):
     search = "search"
     metadata = "metadata"
@@ -110,6 +115,45 @@ class KindNesting(str, enum.Enum):
     object = "dict"
 
 
+# --------------------------------------------------------------------------- #
+
+class Registry():
+
+    schemas: Dict[KindObject, Dict[KindSchema, Type["BaseSchema"]]]
+
+    def __init__(self):
+        self.schemas = dict()
+
+    def add(self, schema: Type["BaseSchema"]):
+        kind, kind_schema = schema.kind_mapped, schema.kind_schema
+        schemas = self.schemas
+
+        if kind not in schemas:
+            schemas[kind] = {kind_schema: schema}
+            return 
+
+        schemas_for_kind = schemas[kind]
+        if kind_schema in schemas_for_kind:
+            msg = f"Registry already has value for `{kind} -> {kind_schema}`."
+            msg += f"`(existing value = {schemas_for_kind[kind_schema]}`"
+            msg += f"`overwritting_value = {schema}`)."
+            raise ValueError(msg)
+
+        schemas_for_kind[kind_schema] = schema
+
+    def get(self, kind: KindObject, kind_schema: KindSchema) -> "BaseSchema":
+        schemas = self.schemas
+        if (schemas_for_kind := schemas.get(kind)) is None:
+            raise ValueError(f"No schemas for kind `{kind.name}`.")
+        elif (schema := schemas_for_kind.get(kind_schema)) is None:
+            msg = f"No schema of type `{kind_schema}` for `{kind.name}`." 
+            raise ValueError(msg)
+        return schema
+
+
+registry = Registry()
+
+
 class BaseSchema(BaseModel):
 
     model_config = ConfigDict(use_enum_values=False, from_attributes=True)
@@ -117,6 +161,33 @@ class BaseSchema(BaseModel):
     # NOT FIELDS SINCE THEY ARE CONSTANT. METADATA FOR CONSUMERS!
     kind_mapped: ClassVar[KindObject]
     kind_schema: ClassVar[KindSchema]
+    registry: ClassVar[Registry] = registry
+
+    def __init_subclass__(cls) -> None:
+        # super().__init_subclass__()
+        if "Base" in cls.__name__:
+            return
+
+        cls.check_kind("kind_mapped", KindObject)
+        cls.check_kind("kind_schema", KindSchema)
+        registry.add(cls)
+
+    @classmethod
+    def check_kind(cls, field: str, Enum: Type[enum.Enum]) -> None:
+        if not hasattr(cls, field):
+            msg = f"`{cls.__name__}` missing explicit `{field}`."
+            raise AttributeError(msg)
+
+        match getattr(cls, field, None):
+            case Enum() | None:
+                pass
+            case bad:
+                raise ValueError(
+                    f"`{cls.__name__}` has incorrect type for `{field}`."
+                    f"Expected `{Enum}` or `None` (got `{bad}` of type "
+                    f"`{type(bad)}`)."
+                )
+
 
 
 class BaseSearchSchema(BaseSchema):
@@ -161,11 +232,9 @@ class BasePrimaryTableExtraSchema(BaseSchema):
     deleted: Deleted
 
 
-T_optional = TypeVar("T_optional")
 
 
-# =========================================================================== #
-# User schemas
+# --------------------------------------------------------------------------- #
 
 
 class UserBaseSchema(BasePrimarySchema):
@@ -253,7 +322,7 @@ class CollectionCreateSchema(CollectionBaseSchema):
 
 
 class CollectionUpdateSchema(BaseUpdateSchema):
-    kind_mapped = KindObject.user
+    kind_mapped = KindObject.collection
     kind_schema = KindSchema.update
 
     uuid_user: UUID
@@ -332,7 +401,7 @@ class DocumentCreateSchema(DocumentBaseSchema):
 
 
 class DocumentUpdateSchema(BaseUpdateSchema):
-    kind_mapped = KindObject.user
+    kind_mapped = KindObject.document
     kind_schema = KindSchema.update
 
     name: Optional[Name] = None
@@ -551,7 +620,8 @@ class EventExtraSchema(EventBaseSchema):
 #     event_root: EventSchema
 
 
-def create_validate_datetime(delta: timedelta):
+# NOTE: Could use partials but I like this pattern more.
+def create_validate_datetime(delta: timedelta) -> BeforeValidator:
     def validator(v: Any, field_info: FieldValidationInfo) -> Any:
         if v:
             return v
@@ -563,7 +633,7 @@ def create_validate_datetime(delta: timedelta):
 
 
 class BaseEventParams(BaseModel):
-    limit: Annotated[int, Field(default=3)]
+    limit: Annotated[int | None, Field(default=None)]
     before: Annotated[
         datetime | None,
         Field(default=None),
@@ -573,6 +643,17 @@ class BaseEventParams(BaseModel):
         Field(validate_default=True, default=None),
         create_validate_datetime(timedelta(days=3)),
     ]
+
+    def _timestamp(self, v: datetime | None) -> int | None:
+        return int(datetime.timestamp(v)) if v is not None else None
+
+    @property
+    def timestamp_before(self) -> int | None:
+        return self._timestamp(self.before)
+
+    @property
+    def timestamp_after(self) -> int | None:
+        return self._timestamp(self.after)
 
 
 class EventSearchSchema(BaseEventParams):
@@ -659,7 +740,7 @@ class AsOutput(BaseModel, Generic[T_Output]):
     @property
     def kind(self) -> KindObject | None:
         if (ff := self.first()) is not None:
-            return ff.kind
+            return ff.kind_mapped
 
     @computed_field
     @property

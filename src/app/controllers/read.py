@@ -4,7 +4,7 @@ from typing import Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar, overl
 from app import util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess
-from app.controllers.base import BaseController, Data, ResolvedEvent, ResolvedUser
+from app.controllers.base import BaseController, Data, ResolvedEvent, ResolvedObjectEvents, ResolvedUser
 from app.models import (
     Base,
     Collection,
@@ -24,6 +24,7 @@ from app.schemas import (
     DocumentSearchSchema,
     EditSearchSchema,
     EventParams,
+    EventSearchSchema,
     UserSearchSchema,
 )
 from sqlalchemy import select
@@ -122,28 +123,3 @@ class Read(BaseController):
 
     # ----------------------------------------------------------------------- #
     # Events
-
-    def object_events(
-        self,
-        resolvable_object: ResolvableSingular[T_Resolvable],
-        resolvable_object_kind: KindObject,
-        param: EventParams,
-        no_limit: bool = False,
-    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]:
-
-        T_Mapped: Type[Base]  # [T_Resolvable]
-        T_Mapped = Tables[Singular(resolvable_object_kind.name).name].value
-        object_: T_Resolvable = T_Mapped.resolve(self.session, resolvable_object)  # type: ignore
-
-        q = Event.q_select_search(
-            uuid_obj=object_.uuid,
-            kind_obj=resolvable_object_kind,
-            before=int(param.before.timestamp()),
-        )
-
-        if not no_limit:
-            q = q.limit(param.limit)
-
-        res = self.session.execute(q).scalars()
-
-        return object_, tuple(res)

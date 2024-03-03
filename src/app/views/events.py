@@ -4,6 +4,7 @@ from typing import (
     Concatenate,
     Generator,
     List,
+    Literal,
     ParamSpec,
     Set,
     Tuple,
@@ -43,6 +44,8 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    KindSchema,
+    registry,
     AsOutput,
     AssignmentExtraSchema,
     CollectionExtraSchema,
@@ -162,16 +165,16 @@ class EventSearchView(BaseView):
     def get_user_events(
         cls,
         access: DependsAccess,
-        read: DependsRead,
         uuid_user: args.PathUUIDUser,
         param: EventParams = Depends(),
     ) -> OutputWithEvents[UserExtraSchema]:
 
-        item, events = read.object_events(uuid_user, KindObject.user, param)
+        data: Data[ResolvedObjectEvents]
+        data = access.d_object_events(uuid_user, KindObject.user, param)
         return mwargs(
             OutputWithEvents[UserExtraSchema],
-            events=events,
-            data=UserExtraSchema.model_validate(item),
+            events=data.data.events,
+            data=UserExtraSchema.model_validate(data.data.obj),
         )
 
     @classmethod
@@ -308,36 +311,23 @@ class EventView(BaseView):
     @admin_only
     def delete_prune_object_events(
         cls,
+        access: DependsAccess,
         delete: DependsDelete,
-        read: DependsRead,
-        kind_obj: args.PathKindObj,
+        kind_obj: Literal["users", "documents", "collections"],
         uuid_obj: args.PathUUIDObj,
         param: EventParams = Depends(),
-    ):
-        # T_obj = Tables[Singular(kind_obj.name).name].value
-        obj, events = read.object_events(
-            uuid_obj,
-            kind_obj,
-            param,
-            no_limit=True,
-        )
+    ) -> AsOutput[EventSchema]:
 
-        data = mwargs(
-            Data[ResolvedObjectEvents],
-            data=mwargs(
-                ResolvedObjectEvents,
-                events=events,
-                uuid_obj=uuid_obj,
-                kind_obj=kind_obj,
-                obj=obj,
-            ),
+        data = delete.a_object_events(
+            uuid_obj,
+            KindObject(kind_obj),
+            param,
+            exclude_deleted=False,
         )
-        _ = delete.event(data)
 
         return mwargs(
-            OutputWithEvents[EventSchema],
-            data=obj,
-            events=[EventSchema.model_validate(data.event)],
+            AsOutput[EventSchema],
+            data=EventSchema.model_validate(data.event),
         )
 
     @classmethod
@@ -367,6 +357,7 @@ class EventView(BaseView):
         kwargs_search = param_search.model_dump(exclude={"before", "after"})
         if not access.token.admin:
             kwargs_search.update(uuid_user=access.token_user.uuid)
+        print(kwargs_search)
 
         session = access.session
         q = Event.q_select_search(
