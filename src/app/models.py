@@ -143,6 +143,7 @@ class Plural(str, enum.Enum):
 
 
 class Singular(str, enum.Enum):
+    events = "event"
     users = "user"
     documents = "document"
     collections = "collection"

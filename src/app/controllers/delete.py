@@ -5,33 +5,16 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedObjectEvents,
-    ResolvedUser,
-)
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.controllers.base import (Data, DataResolvedAssignment,
+                                  DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, User)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -607,6 +590,8 @@ class Delete(WithAccess):
 
         return data
 
+    a_collection = with_access(Access.collection)(collection)
+
     # ----------------------------------------------------------------------- #
 
     def _document(
@@ -690,6 +675,8 @@ class Delete(WithAccess):
 
         return data
 
+    a_document = with_access(Access.document)(document)
+
     # ----------------------------------------------------------------------- #
 
     def _edit(self, data: Data[ResolvedEdit], edit: Edit) -> Event:
@@ -763,6 +750,7 @@ class Delete(WithAccess):
 
         return data
 
+    a_edit = with_access(Access.edit)(edit)
 
 class WithDelete(WithAccess):
     delete: Delete
@@ -790,7 +778,6 @@ class WithDelete(WithAccess):
         if delete is None:
             delete = self.then(
                 Delete,
-                detail=detail,
                 api_origin=api_origin,
                 force=force,
                 access=self.access,

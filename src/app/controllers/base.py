@@ -3,6 +3,7 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
+from typing import Self
 import enum
 import logging
 from functools import cached_property
@@ -99,7 +100,6 @@ class BaseController:
         self,
         resolve_user: ResolvableSingular[User] | None = None,
     ) -> User:
-        print("WHERE")
         return (
             User.resolve(self.session, resolve_user)
             if resolve_user is not None
@@ -186,12 +186,69 @@ class BaseResolved(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        if "Base" in cls.__name__:
+            return
 
-class BaseResolvedAssoc(BaseResolved):
+        util.check_enum_opt_attr(cls, "kind", KindData)
+
+
+class BaseResolvedPrimary(BaseResolved):
+
+    _items_attr_name: ClassVar[str]
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        if "Base" in cls.__name__:
+            return
+
+        cls._items_attr_name = Singular(cls.kind.name).name
+
+        # NOTE: How to check that a particular field is defined? `model_fields`
+        #       is empty here but not when using the class otherwise. A
+        #       solution without metaclasses is strongly preffered.
+        #       This is nice to have because it verifies that
+        #       ``_items_attr_name`` is an actual field.
+
+        # field_name = Singular(cls.kind.name).name
+        # if field_name not in cls.model_fields:
+        #     msg = f"`{cls.__name__}` should have field `{field_name}`. "
+        #     msg += f"`{cls.model_fields}`."
+        #     raise ValueError(msg)
+        # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    def err_nonempty(self) -> ValueError | None:
+
+        # It is empty
+        if not len(getattr(self, attr_name := self._items_attr_name)):
+            return None
+
+        name = self.__class__.__name__
+        msg = f"Primary data `{name}` should be empty (in field "
+        msg += f"`{attr_name}`)."
+        return ValueError(msg)
+
+    @classmethod
+    def empty(cls, **kwargs_init) -> Self:
+        return cls(**{cls._items_attr_name: tuple()}, **kwargs_init)
+
+
+
+class BaseResolvedSecondary(BaseResolved):
     kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]
     kind_assoc: ClassVar[KindObject]
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        if "Base" in cls.__name__:
+            return
+
+        util.check_enum_opt_attr(cls, "kind_source", KindObject)
+        util.check_enum_opt_attr(cls, "kind_target", KindObject)
+        util.check_enum_opt_attr(cls, "kind_assoc", KindObject)
 
     @computed_field
     @property
@@ -214,14 +271,14 @@ class BaseResolvedAssoc(BaseResolved):
         return getattr(self, "uuid_" + Singular(self.kind_target.name).name)
 
 
-class ResolvedCollection(BaseResolved):
+class ResolvedCollection(BaseResolvedPrimary):
     kind = KindData.collection
 
     collections: Tuple[Collection, ...]
     uuid_collections: UuidSetFromModel
 
 
-class ResolvedDocument(BaseResolved):
+class ResolvedDocument(BaseResolvedPrimary):
     kind = KindData.document
 
     documents: Tuple[Document, ...]
@@ -230,7 +287,7 @@ class ResolvedDocument(BaseResolved):
     token_user_grants: Dict[str, Grant]
 
 
-class ResolvedEdit(BaseResolved):
+class ResolvedEdit(BaseResolvedPrimary):
     kind = KindData.edit
 
     edits: Tuple[Edit, ...]
@@ -239,14 +296,14 @@ class ResolvedEdit(BaseResolved):
     token_user_grants: Dict[str, Grant]
 
 
-class ResolvedUser(BaseResolved):
+class ResolvedUser(BaseResolvedPrimary):
     kind = KindData.user
 
     users: Tuple[User, ...]
     uuid_users: UuidSetFromModel
 
 
-class ResolvedEvent(BaseResolved):
+class ResolvedEvent(BaseResolvedPrimary):
     kind = KindData.event
 
     events: Tuple[Event, ...]
@@ -264,7 +321,7 @@ class ResolvedObjectEvents(ResolvedEvent):
     kind_obj: Annotated[KindObject, Field()]
 
 
-class ResolvedGrantUser(BaseResolvedAssoc):
+class ResolvedGrantUser(BaseResolvedSecondary):
     kind = KindData.grant_user
     kind_source = KindObject.user
     kind_target = KindObject.document
@@ -279,7 +336,7 @@ class ResolvedGrantUser(BaseResolvedAssoc):
     token_user_grants: Dict[str, Grant]
 
 
-class ResolvedGrantDocument(BaseResolvedAssoc):
+class ResolvedGrantDocument(BaseResolvedSecondary):
     kind = KindData.grant_document
     kind_source = KindObject.document
     kind_target = KindObject.user
@@ -294,7 +351,7 @@ class ResolvedGrantDocument(BaseResolvedAssoc):
     token_user_grants: Dict[str, Grant]
 
 
-class ResolvedAssignmentCollection(BaseResolvedAssoc):
+class ResolvedAssignmentCollection(BaseResolvedSecondary):
     kind = KindData.assignment_collection
     kind_source = KindObject.collection
     kind_target = KindObject.document
@@ -309,7 +366,7 @@ class ResolvedAssignmentCollection(BaseResolvedAssoc):
     # These are very helpful for handling cases in general
 
 
-class ResolvedAssignmentDocument(BaseResolvedAssoc):
+class ResolvedAssignmentDocument(BaseResolvedSecondary):
     kind = KindData.assignment_document
     kind_source = KindObject.document
     kind_target = KindObject.collection

@@ -15,60 +15,20 @@ foreign keys it is not necessary to specify multiple values).
 """
 
 import enum
-from copy import deepcopy
 from datetime import datetime, timedelta
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    Optional,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Unpack,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
+                    Optional, Self, Set, Type, TypeVar)
 
 from fastapi import Query
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    computed_field,
-    create_model,
-    field_serializer,
-    field_validator,
-    model_validator,
-)
-from pydantic.fields import FieldInfo
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
+                      computed_field, field_serializer, field_validator,
+                      model_validator)
 from pydantic_core.core_schema import FieldValidationInfo
 
-from app.models import (
-    LENGTH_CONTENT,
-    LENGTH_DESCRIPTION,
-    LENGTH_MESSAGE,
-    LENGTH_NAME,
-    LENGTH_URL,
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    KindRecurse,
-    Level,
-)
+from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
+                        LENGTH_NAME, LENGTH_URL, KindEvent, KindObject, Level)
 from app.models import PendingFrom as PendingFrom_
-from app.models import User
-
+from app.util import check_enum_opt_attr
 
 # --------------------------------------------------------------------------- #
 
@@ -117,6 +77,7 @@ class KindNesting(str, enum.Enum):
 
 # --------------------------------------------------------------------------- #
 
+
 class Registry():
 
     schemas: Dict[KindObject, Dict[KindSchema, Type["BaseSchema"]]]
@@ -164,29 +125,13 @@ class BaseSchema(BaseModel):
     registry: ClassVar[Registry] = registry
 
     def __init_subclass__(cls) -> None:
-        # super().__init_subclass__()
         if "Base" in cls.__name__:
             return
 
-        cls.check_kind("kind_mapped", KindObject)
-        cls.check_kind("kind_schema", KindSchema)
+        check_enum_opt_attr(cls, "kind_mapped", KindObject)
+        check_enum_opt_attr(cls, "kind_schema", KindSchema)
         registry.add(cls)
 
-    @classmethod
-    def check_kind(cls, field: str, Enum: Type[enum.Enum]) -> None:
-        if not hasattr(cls, field):
-            msg = f"`{cls.__name__}` missing explicit `{field}`."
-            raise AttributeError(msg)
-
-        match getattr(cls, field, None):
-            case Enum() | None:
-                pass
-            case bad:
-                raise ValueError(
-                    f"`{cls.__name__}` has incorrect type for `{field}`."
-                    f"Expected `{Enum}` or `None` (got `{bad}` of type "
-                    f"`{type(bad)}`)."
-                )
 
 
 
@@ -315,6 +260,8 @@ class CollectionBaseSchema(BasePrimarySchema):
 
     name: Name
     description: Description
+    uuid_user: UUID
+    uuid: UUID
 
 
 class CollectionCreateSchema(CollectionBaseSchema):
@@ -325,7 +272,7 @@ class CollectionUpdateSchema(BaseUpdateSchema):
     kind_mapped = KindObject.collection
     kind_schema = KindSchema.update
 
-    uuid_user: UUID
+    uuid_user: Optional[UUID] = None
     name: Optional[Name] = None
     description: Optional[Description] = None
 
@@ -333,13 +280,9 @@ class CollectionUpdateSchema(BaseUpdateSchema):
 class CollectionMetadataSchema(CollectionBaseSchema):
     kind_schema = KindSchema.metadata
 
-    uuid: UUID
-
 
 class CollectionSchema(CollectionMetadataSchema):
     kind_schema = KindSchema.default
-
-    uuid: UUID
 
 
 class CollectionExtraSchema(BasePrimaryTableExtraSchema, CollectionSchema):
@@ -583,12 +526,6 @@ class EventBaseSchema(BaseSchema):
         return v
 
 
-# class EventWithRootSchema(EventBaseSchema):
-#     kind_schema = KindSchema.metadata
-#
-#     uuid_root: str
-
-
 class EventMetadataSchema(EventBaseSchema):
     kind_schema = KindSchema.metadata
 
@@ -604,20 +541,6 @@ class EventExtraSchema(EventBaseSchema):
 
     data: "AsOutput"
     children: Annotated["List[EventExtraSchema]", Field(default=list())]
-
-
-# class KindObjectMinimalSchema(enum.Enum):
-#     users = UserSchema
-#     collections = CollectionMetadataSchema
-#     documents = DocumentMetadataSchema
-#     events = EventSchema
-#     assignments = AssignmentSchema
-#     grants = GrantSchema
-
-
-# class EventActionSchema(BaseModel):
-#     event_action: EventSchema
-#     event_root: EventSchema
 
 
 # NOTE: Could use partials but I like this pattern more.

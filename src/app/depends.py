@@ -12,7 +12,7 @@ from functools import cache
 from typing import Annotated, Any, Callable, Dict, Tuple, TypeAlias
 
 import jwt
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -28,6 +28,7 @@ from app.controllers.create import Create, Update
 from app.controllers.delete import Delete
 from app.controllers.read import Read
 from app.models import User
+from app.views.args import QueryForce
 
 # NOTE: `cache` is used instead of using the `use_cache` keyword argument of
 #       `Depends` because it will result in identical object ids. For instance
@@ -264,17 +265,25 @@ def read(
     return Read(session=access.session, token=token, method=request.method)
 
 
+def api_origin(request: Request) -> str:
+    return f"{request.method} {request.url.path}"
+
+DependsApiOrigin = Annotated[str, Depends(api_origin)]
+
+
 def update(
     token: DependsTokenOptional,
     access: DependsAccess,
     request: Request,
+    api_origin: DependsApiOrigin,
+    force: QueryForce = False,
 ) -> Update:
-    api_origin = f"{request.method} {request.url.path}"
     return Update(
         session=access.session,
         token=token,
         method=request.method,
         api_origin=api_origin,
+        force=force,
     )
 
 
@@ -282,14 +291,16 @@ def delete(
     token: DependsTokenOptional,
     access: DependsAccess,
     request: Request,
+    api_origin: DependsApiOrigin,
+    force :QueryForce = False,
 ) -> Delete:
-    api_origin = request.url.path
     return Delete(
         session=access.session,
         token=token,
         method=request.method,
         api_origin=api_origin,
         access=access,
+        force=force,
     )
 
 

@@ -1,6 +1,7 @@
+import enum
 import logging
 from os import environ, path
-from typing import Any, Iterable
+from typing import Any, Iterable, Type
 
 from rich.console import Console
 from rich.syntax import Syntax
@@ -90,3 +91,26 @@ PATH_CONFIG_APP = Path.config("app.yaml")
 PATH_CONFIG_CLIENT = Path.config("client.yaml")
 PATH_CONFIG_TEST_APP = Path.config("app.test.yaml")
 PATH_CONFIG_TEST_CLIENT = Path.config("client.test.yaml")
+
+
+# =========================================================================== #
+# Enum Stuff
+
+def check_enum_opt_attr(
+    cls: Type[Any],
+    field: str,
+    T_enum: Type[enum.Enum],
+) -> None:
+    if not hasattr(cls, field):
+        msg = f"`{cls.__name__}` missing explicit `{field}`."
+        raise AttributeError(msg)
+
+    match getattr(cls, field, None):
+        case T_enum() | None:
+            pass
+        case bad:
+            raise ValueError(
+                f"`{cls.__name__}` has incorrect type for `{field}`."
+                f"Expected `{Enum}` or `None` (got `{bad}` of type "
+                f"`{type(bad)}`)."
+            )

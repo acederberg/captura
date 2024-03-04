@@ -1246,39 +1246,6 @@ class WithAccess(BaseController, abc.ABC):
         self.api_origin = api_origin
         self.access = access if access is not None else self.then(Access)
 
-    # NOTE: Will be needed by delete and upsert both.
-    # def split_assignment_uuids(
-    #     self,
-    #     source: Collection | Document,
-    #     uuid_target: Set[str],
-    # ) -> Tuple[Set[str], Set[str]]:
-    #     """If"""
-    #     kind_source = source.__class__.__tablename__
-    #     is_doc = kind_source == "documents"
-    #     kind_target = "collections" if is_doc else "documents"
-    #
-    #     uuid_deleted, uuid_active = Assignment.split(
-    #         self.session,
-    #         source,
-    #         uuid_target,
-    #     )
-    #
-    #     if uuid_deleted and not self.force:
-    #         raise HTTPException(
-    #             400,
-    #             detail=dict(
-    #                 uuid_user=self.token.uuid,
-    #                 kind_source=kind_source,
-    #                 uuid_source=source.uuid,
-    #                 kind_target=kind_target,
-    #                 uuid_target=uuid_target,
-    #                 msg="Assignments must be hard deleted to re-`POST`.",
-    #             ),
-    #         )
-    #
-    #     return uuid_deleted, uuid_active
-    #
-
     # ----------------------------------------------------------------------- #
     # Assignments
 
