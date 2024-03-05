@@ -35,10 +35,10 @@ class DemoRequests(BaseRequest):
         self,
         *,
         invitation_email: flags.FlagInvitationEmail,
-        name: flags.FlagName,
-        description: flags.FlagDescription,
-        url: flags.FlagUrl = None,
-        url_image: flags.FlagUrlImage = None,
+        name: flags.FlagNameOptional,
+        description: flags.FlagDescriptionOptional,
+        url: flags.FlagUrlOptional = None,
+        url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = True,
         force: flags.FlagForce = False,
     ) -> httpx.Response:
@@ -118,33 +118,32 @@ class UserRequests(BaseRequest):
     async def update(
         self,
         uuid_user: flags.ArgUUIDUser,
-        name: flags.FlagName = None,
-        description: flags.FlagDescription = None,
-        url: flags.FlagUrl = None,
-        url_image: flags.FlagUrlImage = None,
+        name: flags.FlagNameOptional = None,
+        description: flags.FlagDescriptionOptional = None,
+        url: flags.FlagUrlOptional = None,
+        url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = None,
     ) -> httpx.Response:
-        params = dict(
+        json = dict(
             name=name,
             description=description,
             url=url,
             url_image=url_image,
             public=public,
         )
-        params = {k: v for k, v in params.items() if v is not None}
         return await self.client.patch(
             f"/users/{uuid_user}",
-            params=params,
+            json=json,
             headers=self.headers,
         )
 
     async def create(
         self,
         *,
-        name: flags.FlagName = None,
-        description: flags.FlagDescription = None,
-        url: flags.FlagUrl = None,
-        url_image: flags.FlagUrlImage = None,
+        name: flags.FlagNameOptional = None,
+        description: flags.FlagDescriptionOptional = None,
+        url: flags.FlagUrlOptional = None,
+        url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = True,
     ) -> httpx.Response:
         json_data = dict(

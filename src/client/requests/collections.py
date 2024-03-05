@@ -58,8 +58,8 @@ class CollectionRequests(BaseRequest):
 
     async def create(
         self,
-        name: flags.FlagName = None,
-        description: flags.FlagDescription = None,
+        name: flags.FlagNameOptional = None,
+        description: flags.FlagDescriptionOptional = None,
         public: flags.FlagPublicOptional = None,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
     ) -> httpx.Response:
@@ -84,20 +84,19 @@ class CollectionRequests(BaseRequest):
     async def update(
         self,
         uuid_collection: flags.ArgUUIDCollection,
-        name: flags.FlagName = None,
-        description: flags.FlagDescription = None,
+        name: flags.FlagNameOptional = None,
+        description: flags.FlagDescriptionOptional = None,
         public: flags.FlagPublicOptional = None,
         uuid_user: flags.FlagUUIDUserOptional = None,
     ) -> httpx.Response:
-        params = dict(
+        data = params(
             name=name,
             description=description,
             public=public,
             uuid_user=uuid_user,
         )
-        params = {k: v for k, v in params.items() if v is not None}
         return await self.client.patch(
             f"/collections/{uuid_collection}",
-            params=params,
+            json=data,
             headers=self.headers,
         )

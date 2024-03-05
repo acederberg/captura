@@ -1,21 +1,10 @@
 import asyncio
 import functools
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    ClassVar,
-    Concatenate,
-    Dict,
-    ParamSpec,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import (Any, Awaitable, Callable, ClassVar, Concatenate, Dict,
+                    ParamSpec, Tuple, Type, TypeVar)
 
 import httpx
 import typer
-
 # from app.__main__ import CONSOLE
 from app.views import AppView
 from client import flags

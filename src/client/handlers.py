@@ -77,7 +77,7 @@ class ConsoleHandler(BaseModel):
     This should be built by a handler somewhere.
     """
 
-    output: Annotated[flags.FlagOutput, Field(default=Output.json)]
+    output: Annotated[flags.FlagOutput, Field(default=Output.yaml)]
     columns: Annotated[flags.FlagColumns, Field(default_factory=list)]
     data: Annotated[Any | None, Field(default=None)]
 

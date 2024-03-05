@@ -1,17 +1,11 @@
 import enum
 import pathlib
+from datetime import datetime
 from typing import Annotated, List, Optional, TypeAlias, TypeVar
 
 import typer
-from app.models import (
-    ChildrenCollection,
-    ChildrenDocument,
-    ChildrenUser,
-    KindEvent,
-    KindObject,
-    KindRecurse,
-    LevelStr,
-)
+from app.models import (ChildrenCollection, ChildrenDocument, ChildrenUser,
+                        Format, KindEvent, KindObject, KindRecurse, LevelStr)
 
 
 class Verbage(str, enum.Enum):
@@ -132,6 +126,8 @@ ArgUUIDCollection: TypeAlias = Annotated[str, typer.Argument()]
 
 FlagUUIDEvent = Annotated[str, typer.Option("--uuid-event")]
 FlagUUIDEventOptional = Annotated[Optional[str], typer.Option("--uuid-event")]
+FlagUUIDEvents = Annotated[List[str], typer.Option("--uuid-event")]
+FlagUUIDEventsOptional = Annotated[Optional[List[str]], typer.Option("--uuid-event")]
 
 
 # --------------------------------------------------------------------------- #
@@ -139,14 +135,26 @@ FlagUUIDEventOptional = Annotated[Optional[str], typer.Option("--uuid-event")]
 
 FlagColumns: TypeAlias = Annotated[List[str], typer.Option("--column")]
 FlagLevel: TypeAlias = Annotated[LevelStr, typer.Option("--level")]
-FlagName = Annotated[Optional[str], typer.Option("--name")]
-FlagDescription = Annotated[Optional[str], typer.Option("--description")]
-FlagUrl = Annotated[Optional[str], typer.Option("--url")]
-FlagUrlImage = Annotated[Optional[str], typer.Option("--url-image")]
+
+FlagName = Annotated[str, typer.Option("--name")]
+FlagNameOptional = Annotated[Optional[str], typer.Option("--name")]
+
+FlagDescription = Annotated[str, typer.Option("--description")]
+FlagDescriptionOptional = Annotated[Optional[str], typer.Option("--description")]
+FlagUrlOptional = Annotated[Optional[str], typer.Option("--url")]
+FlagUrlImageOptional = Annotated[Optional[str], typer.Option("--url-image")]
+
 FlagPublic = Annotated[bool, typer.Option("--public/--private")]
 FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private")]
 FlagForce = Annotated[bool, typer.Option("--force/--no-force")]
 FlagKindRecurse: TypeAlias = Annotated[KindRecurse, typer.Option("--recurse-strategy")]
+
+FlagFormatOptional: TypeAlias = Annotated[Optional[Format], typer.Option("--format")]
+FlagContentOptional: TypeAlias = Annotated[Optional[str], typer.Option("--content")]
+FlagMessageOptional: TypeAlias = Annotated[Optional[str], typer.Option("--message")]
+FlagFormat: TypeAlias = Annotated[Format, typer.Option("--format")]
+FlagContent: TypeAlias = Annotated[str, typer.Option("--content")]
+FlagMessage: TypeAlias = Annotated[str, typer.Option("--message")]
 
 # --------------------------------------------------------------------------- #
 # Search flags
@@ -173,6 +181,7 @@ FlagChildrenDocument: TypeAlias = Annotated[
     ChildrenDocument, typer.Option("--child", "--children")
 ]
 
+
 # --------------------------------------------------------------------------- #
 # Events flags
 
@@ -188,7 +197,20 @@ FlagKind: TypeAlias = Annotated[
     Optional[KindEvent],
     typer.Option("--kind", "-k", help="Matches against the `kind` field."),
 ]
+
+ArgKindObject: TypeAlias = Annotated[
+    KindObject,
+    typer.Argument(help="Object kind, matches again the `kind_obj` field."),
+]
 FlagKindObject: TypeAlias = Annotated[
+    KindObject,
+    typer.Option(
+        "--object",
+        "-j",
+        help="Object kind, matches again the `kind_obj` field.",
+    ),
+]
+FlagKindObjectOptional: TypeAlias = Annotated[
     Optional[KindObject],
     typer.Option(
         "--object",
@@ -196,7 +218,20 @@ FlagKindObject: TypeAlias = Annotated[
         help="Object kind, matches again the `kind_obj` field.",
     ),
 ]
+
+ArgUUIDEventObject: TypeAlias = Annotated[
+    str, typer.Argument(help="Target object uuid.")
+]
+
 FlagUUIDEventObject: TypeAlias = Annotated[
+    str,
+    typer.Option(
+        "--uuid-object",
+        "--uuid",
+        help="Target object UUID.",
+    ),
+]
+FlagUUIDEventObjectOptional: TypeAlias = Annotated[
     Optional[str],
     typer.Option(
         "--uuid-object",
@@ -204,6 +239,8 @@ FlagUUIDEventObject: TypeAlias = Annotated[
         help="Target object UUID.",
     ),
 ]
+FlagBefore = Annotated[Optional[datetime], typer.Option("--before")]
+FlagAfter = Annotated[Optional[datetime], typer.Option("--after")]
 
 # --------------------------------------------------------------------------- #
 # Configuration Flags.
@@ -238,6 +275,12 @@ ArgFilePath: TypeAlias = Annotated[
 FlagTokenOptional: TypeAlias = Annotated[
     Optional[str], typer.Option(help="Specifies the token to use for any request.")
 ]
+
+FlagAdmin: TypeAlias = Annotated[
+    Optional[bool],
+    typer.Option("--admin/--not-an-admin", help="Admin token or not an admin token")
+]
+
 ArgTokenPayload: TypeAlias = Annotated[
     str, typer.Option(help="Data for token payload.")
 ]

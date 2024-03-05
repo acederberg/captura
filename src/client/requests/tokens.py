@@ -37,10 +37,12 @@ class TokenRequests(BaseRequest):
         )
 
     async def create(
-        self, uuid_user: flags.FlagUUIDUserOptional = None
+        self, 
+        uuid_user: flags.FlagUUIDUserOptional = None,
+        admin: flags.FlagAdmin = None,
     ) -> httpx.Response:
         uuid = uuid_user if uuid_user is not None else self.uuid_user
-        token_payload = dict(uuid=uuid)
+        token_payload = dict(uuid=uuid, admin=admin)
         return await self.client.post(
             "/auth/token",
             json=token_payload,

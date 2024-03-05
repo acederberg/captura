@@ -17,7 +17,7 @@ foreign keys it is not necessary to specify multiple values).
 import enum
 from datetime import datetime, timedelta
 from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Type, TypeVar)
+                    Optional, Self, Set, Type, TypeAlias, TypeVar)
 
 from fastapi import Query
 from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
@@ -26,7 +26,9 @@ from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_URL, KindEvent, KindObject, Level)
+                        LENGTH_NAME, LENGTH_URL)
+from app.models import Format as FormatEnum
+from app.models import KindEvent, KindObject, Level
 from app.models import PendingFrom as PendingFrom_
 from app.util import check_enum_opt_attr
 
@@ -49,7 +51,7 @@ Description = Annotated[
 ]
 Url = Annotated[str | None, Field(min_length=8, max_length=LENGTH_URL)]
 Content = Annotated[str, Field(max_length=LENGTH_CONTENT)]
-Format = Annotated[Literal["md", "rst", "tEx"], Field(default="md")]
+Format = Annotated[FormatEnum, Field(default="md")]
 Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
 UUIDS = Annotated[Set[str] | None, Field(default=None)]
 ID = Annotated[int, Field()]
@@ -57,7 +59,22 @@ Pending = Annotated[bool, Field()]
 PendingFrom = Annotated[PendingFrom_, Field()]
 Deleted = Annotated[bool, Field()]
 Detail = Annotated[str | None, Field(default=None)]
+OptionalTimestamp: TypeAlias = Annotated[
+    datetime | None,
+    Field(default=None),
+]
+Limit: TypeAlias = Annotated[int | None, Field(default=None)]
 
+# NOTE: Could use partials but I like this pattern more.
+def create_validate_datetime(delta: timedelta) -> BeforeValidator:
+    def validator(v: Any, field_info: FieldValidationInfo) -> Any:
+        if v:
+            return v
+
+        utcnow = datetime.utcnow()
+        return utcnow - delta
+
+    return BeforeValidator(validator)
 
 # --------------------------------------------------------------------------- #
 
@@ -260,8 +277,6 @@ class CollectionBaseSchema(BasePrimarySchema):
 
     name: Name
     description: Description
-    uuid_user: UUID
-    uuid: UUID
 
 
 class CollectionCreateSchema(CollectionBaseSchema):
@@ -279,6 +294,8 @@ class CollectionUpdateSchema(BaseUpdateSchema):
 
 class CollectionMetadataSchema(CollectionBaseSchema):
     kind_schema = KindSchema.metadata
+    uuid_user: UUID
+    uuid: UUID
 
 
 class CollectionSchema(CollectionMetadataSchema):
@@ -341,6 +358,8 @@ class DocumentCreateSchema(DocumentBaseSchema):
     kind_schema = KindSchema.create
 
     content: Content
+    uuid_collection: UUIDS
+    uuid_user: UUIDS
 
 
 class DocumentUpdateSchema(BaseUpdateSchema):
@@ -394,6 +413,37 @@ class DocumentSearchSchema(BaseSearchSchema):
     kind_schema = KindSchema.search
 
     uuid_document: UUIDS
+
+
+class TimespanLimitParams(BaseModel):
+
+    limit: Limit
+    before: OptionalTimestamp
+    after: OptionalTimestamp
+
+    @computed_field
+    @property
+    def before_timestamp(self) -> int | None:
+        if self.before is None:
+            return 
+        return int(datetime.timestamp(self.before))
+
+    @computed_field
+    @property
+    def after_timestamp(self) -> int | None:
+        if self.after is None:
+            return
+        return int(datetime.timestamp(self.after))
+
+    @model_validator(mode="after")
+    def check_before_after(self) -> Self:
+        if self.before is None or self.after is None:
+            return self
+
+        if self.before < self.after:
+            raise ValueError("`before` must be less than `after`.")
+
+        return self
 
 
 # =========================================================================== #
@@ -543,24 +593,11 @@ class EventExtraSchema(EventBaseSchema):
     children: Annotated["List[EventExtraSchema]", Field(default=list())]
 
 
-# NOTE: Could use partials but I like this pattern more.
-def create_validate_datetime(delta: timedelta) -> BeforeValidator:
-    def validator(v: Any, field_info: FieldValidationInfo) -> Any:
-        if v:
-            return v
-
-        utcnow = datetime.utcnow()
-        return utcnow - delta
-
-    return BeforeValidator(validator)
 
 
 class BaseEventParams(BaseModel):
     limit: Annotated[int | None, Field(default=None)]
-    before: Annotated[
-        datetime | None,
-        Field(default=None),
-    ]
+    before: OptionalTimestamp
     after: Annotated[
         datetime,
         Field(validate_default=True, default=None),

@@ -3,63 +3,22 @@ import enum
 import secrets
 from datetime import datetime
 from logging import warn
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    Collection,
-    Dict,
-    Generator,
-    Generic,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    overload,
-)
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
+                    Generator, Generic, List, Literal, Self, Set, Tuple, Type,
+                    TypeAlias, TypeVar, overload)
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import (
-    CTE,
-    BinaryExpression,
-    BooleanClauseList,
-    Column,
-    ColumnClause,
-    ColumnElement,
-    CompoundSelect,
-    Enum,
-    ForeignKey,
-    Index,
-    Select,
-    String,
-    UniqueConstraint,
-    and_,
-    func,
-    literal_column,
-    select,
-    text,
-    true,
-    union,
-    union_all,
-)
+from sqlalchemy import (CTE, BinaryExpression, BooleanClauseList, Column,
+                        ColumnClause, ColumnElement, CompoundSelect, Enum,
+                        ForeignKey, Index, Select, String, UniqueConstraint,
+                        and_, func, literal_column, select, text, true, union,
+                        union_all)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    InstrumentedAttribute,
-    Mapped,
-    Session,
-    backref,
-    column_property,
-    mapped_column,
-    object_session,
-    relationship,
-)
+from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
+                            Session, backref, column_property, mapped_column,
+                            object_session, relationship)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
@@ -102,6 +61,14 @@ class LevelHTTP(enum.Enum):
     POST = Level.modify
     PATCH = Level.modify
     GET = Level.view
+
+
+class Format(str, enum.Enum):
+    md = "md"
+    rst = "rst"
+    tEx = "tEx"
+    txt = "txt"
+    docs = "docs"
 
 
 class KindEvent(str, enum.Enum):
@@ -332,7 +299,7 @@ class Base(DeclarativeBase):
                 kind=KindObject._value2member_map_[self.__tablename__].name,
                 msg="Could not find session.",
             )
-            raise HTTPException(500, detail=detail)
+            raise ValueError(str(detail))
         return session
 
     def check_not_deleted(
@@ -475,6 +442,8 @@ class Event(Base):
     #       deletions inside of an events table instead? It would be easy to
     #       track the objects by their UUID
 
+    detail_document_editted: ClassVar[str] = "Document editted."
+
     __tablename__ = "events"
 
     timestamp: Mapped[int] = mapped_column(
@@ -531,45 +500,11 @@ class Event(Base):
                 uuid_user=uuid_user,
             )
 
-    # def undone(
-    #     self,
-    #     uuid_user: str,
-    #     detail: str,
-    #     api_origin: str,
-    #     api_version: str = __version__,
-    #     callback: Callable[["Event"], "Event"] | None = None,
-    # ) -> "Event":
-    #     """Create the inverse event."""
-    #
-    #     if self.uuid_undo:
-    #         raise AttributeError("Cannot undo an event that has been undone.")
-    #
-    #     common: Dict[str, Any] = dict(
-    #         api_version=api_version,
-    #         api_origin=api_origin,
-    #         uuid_user=uuid_user,
-    #         detail=detail,
-    #     )
-    #
-    #     children = [item.undone(**common, callback=callback) for item in self.children]
-    #     event = self.__class__(
-    #         uuid_undo=self.uuid,
-    #         uuid_obj=self.uuid_obj,
-    #         kind_obj=self.kind_obj,
-    #         kind=KindEvent.restore,
-    #         children=children,
-    #         **common,
-    #     )
-    #     return event if callback is None else callback(event)
-
     def flattened(self) -> Generator["Event", None, None]:
         yield self
         yield from (
             child_child for child in self.children for child_child in child.flattened()
         )
-        # yield self
-        # for child in self.children:
-        #     yield from child.flattened()
 
     @property
     def object_(self) -> "AnyModel | None":
@@ -1175,12 +1110,13 @@ class User(SearchableTableMixins, Base):
         *,
         grants: Dict[str, "Grant"] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
+        # _session: Session | None = None
     ) -> Self:
         # If the document is public and the level is view, then don't check.
         if document.public and level == Level.view:
             return self
 
-        session = self.get_session()
+        session = self.get_session() # if _session is None else _session
 
         # Deleted and insufficient should be included for better feedback.
         q = self.q_select_grants(
@@ -1353,7 +1289,7 @@ class Document(SearchableTableMixins, Base):
     name: Mapped[str] = mapped_column(String(LENGTH_NAME))
     description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
     content: Mapped[str] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
-    format: Mapped[str] = mapped_column(String(LENGTH_FORMAT))
+    format: Mapped[Format] = mapped_column(Enum(Format))
 
     edits: Mapped[List["Edit"]] = relationship(
         cascade="all, delete",
@@ -1503,6 +1439,71 @@ class Document(SearchableTableMixins, Base):
             .join(Assignment)
             .where(self.q_conds_assignment(collection_uuids, exclude_deleted))
         )
+        return q
+
+    def q_select_edits(
+        self,
+        exclude_deleted: bool = True,
+        before: int | None = None,
+        after: int | None = None,
+        limit: int | None = None,
+    ) -> Select:
+
+        conds = []
+        if before is not None:
+            conds.append(Event.timestamp <= before)
+        if after is not None:
+            conds.append(Event.timestamp >= after)
+
+        q_uuids = select(Event.uuid_obj).where(
+            Event.kind_obj == KindObject.edit,
+            Event.kind == KindEvent.update,
+            Event.detail == Event.detail_document_editted,
+            *conds,
+        )
+        q = select(Edit).where(Edit.uuid.in_(q_uuids))
+        if exclude_deleted:
+            q = q.where(Edit.deleted == false())
+        if limit is not None:
+            q = q.limit(limit)
+
+        return q
+
+    @classmethod
+    def q_select_documents(
+        cls,
+        user: User,
+        uuid_documents: Set[str] | None = None,
+        exclude_deleted: bool = True,
+        before: int | None = None,
+        after: int | None = None,
+        limit: int | None = None,
+    ) -> Select:
+
+        conds = []
+        if before is not None:
+            conds.append(Event.timestamp <= before)
+        if after is not None:
+            conds.append(Event.timestamp >= after)
+
+        q_uuids = select(Event.uuid_obj).where(
+            Event.kind_obj == KindObject.document,
+            Event.kind == KindEvent.update,
+            Event.detail == Event.detail_document_editted,
+            *conds,
+        ).distinct()
+        if limit is not None:
+            q_uuids = q_uuids.limit(limit)
+
+        q = select(cls).where(cls.uuid.in_(q_uuids))
+        if exclude_deleted:
+            q = q.where(cls.deleted == false())
+        if uuid_documents:
+            q = q.where(cls.uuid.in_(uuid_documents))
+
+        conds = user.q_conds_grants(uuid_documents)
+        q = q.join(Grant).join(User).where(conds)
+
         return q
 
     @classmethod

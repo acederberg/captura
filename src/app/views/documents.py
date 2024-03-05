@@ -1,166 +1,147 @@
 from http import HTTPMethod
-from typing import List, Tuple, overload
+from typing import Annotated, List, Tuple, overload
 
 from app import __version__
-from app.depends import DependsSessionMaker, DependsToken, DependsTokenOptional
-from app.models import (
-    AssocCollectionDocument,
-    AssocUserDocument,
-    Collection,
-    Document,
-    Level,
-    User,
-)
-from app.schemas import DocumentMetadataSchema, DocumentSchema, DocumentSearchSchema
-from app.views import args
 from app.controllers.access import Access
+from app.controllers.base import Data, ResolvedDocument
+from app.depends import (DependsAccess, DependsCreate, DependsDelete,
+                         DependsRead, DependsSessionMaker, DependsToken,
+                         DependsTokenOptional, DependsUpdate)
+from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
+                        Document, Level, User)
+from app.schemas import (AsOutput, DocumentCreateSchema,
+                         DocumentMetadataSchema, DocumentSchema,
+                         DocumentSearchSchema, DocumentUpdateSchema,
+                         EditSchema, EditSearchSchema, EventSchema,
+                         OutputWithEvents, TimespanLimitParams, mwargs)
+from app.views import args
 from app.views.base import BaseView
-from fastapi import Depends, HTTPException
+from fastapi import Body, Depends, HTTPException
+from pydantic import TypeAdapter
 from sqlalchemy import select
+
+
+class DocumentSearchView(BaseView):
+    view_routes = dict(
+        get_recent_documents="",
+        get_recent_document_edits="/{uuid_document}/edits",
+    )
+
+    # NOTE: Return the most recently editted  
+    @classmethod
+    def get_recent_documents(
+        cls,
+        read: DependsRead,
+        param: Annotated[TimespanLimitParams, Depends()],
+        uuid_documents: args.QueryUUIDDocumentOptional = None,
+    ) -> AsOutput[List[DocumentMetadataSchema]]:
+        """Recently editted documents."""
+        q_documents = Document.q_select_documents(
+            read.token_user,
+            uuid_documents=uuid_documents,
+            limit=param.limit,
+            before=param.before_timestamp,
+            after=param.after_timestamp,
+        )
+        # read.token_user.documents
+        res = read.session.execute(q_documents)
+        documents = tuple(res.scalars())
+        return mwargs(
+            AsOutput[List[DocumentMetadataSchema]],
+            data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(documents),
+        )
+
+    @classmethod
+    def get_recent_document_edits(
+        cls,
+        uuid_document: args.PathUUIDDocument,
+        read: DependsRead,
+        param: Annotated[TimespanLimitParams, Depends()],
+    ) -> AsOutput[EditSchema]:
+        """Recent edits to a particular document."""
+
+        data: Data[ResolvedDocument] = read.access.d_document(uuid_document)
+        document, = data.data.documents
+
+        q = document.q_select_edits(
+            before=param.before_timestamp,
+            after=param.after_timestamp,
+            limit=param.limit,
+        )
+        res = read.session.execute(q)
+        edits = tuple(res.scalars())
+        return mwargs(
+            AsOutput[EditSchema],
+            data=TypeAdapter(List[EditSchema]).validate_python(edits)
+        )
 
 
 class DocumentView(BaseView):
     view_routes = dict(
         get_document="/{uuid_document}",
-        get_documents="",
         post_document="",
-        put_document="/{uuid_document}",
+        patch_document="/{uuid_document}",
         delete_document="/{uuid_document}",
-        get_document_edits="/{uuid_document}/edits",
     )
+    view_children = {"/recent": DocumentSearchView}
 
     @classmethod
     def get_document(
         cls,
-        makesession: DependsSessionMaker,
+        access: DependsAccess,
         uuid_document: args.PathUUIDDocument,
-        token: DependsTokenOptional = None,
-    ) -> DocumentSchema:
-        with makesession() as session:
-            # if not token:
-            #     if not document.public:
-            #         msg = "User cannot access document."
-            #         detail = dict(uuid_document=uuid_document, msg=msg)
-            #         raise HTTPException(403, detail=detail)
-
-            access = Access(session, token, method=HTTPMethod.GET)
-            document = access.document(uuid_document, level=Level.view)
-
-            return document  # type: ignore
-
-    @classmethod
-    def get_documents(
-        cls,
-        token: DependsTokenOptional,
-        makesession: DependsSessionMaker,
-        params: DocumentSearchSchema = Depends(),
-    ) -> List[DocumentMetadataSchema]:
-        with makesession() as session:
-            q = Document.q_search(
-                token.get("uuid") if token is not None else None,
-                params.uuid_document,
-                name_like=params.name_like,
-                description_like=params.description_like,
-                all_=params.all_,
-            )
-            return list(
-                DocumentMetadataSchema.model_validate(item)
-                for item in session.execute(q)
-            )
-
-    @classmethod
-    def get_document_edits(
-        cls,
-        token: DependsToken,
-        makesession: DependsSessionMaker,
-        uuid: args.PathUUIDUser,
-    ): ...
+    ) -> AsOutput[DocumentSchema]:
+        document: Document = access.document(uuid_document, level=Level.view)
+        return mwargs(
+            AsOutput[DocumentSchema],
+            data=DocumentSchema.model_validate(document)
+        )
 
     # TODO: When integration tests are written, all CUD endpoints should
     #       test that the private CUD fields are approprietly set.
     @classmethod
     def post_document(
         cls,
-        token: DependsToken,
-        makesession: DependsSessionMaker,
-        documents_raw: List[DocumentSchema],
-        uuid_collection: args.QueryUUIDCollection = set(),
-        uuid_owner: args.QueryUUIDOwner = set(),
-    ):
-        uuid = token["uuid"]
-        with makesession() as session:
-            # Add the documents
-            logger.debug("Adding new documents for user `%s`.", uuid)
-            documents = {
-                document.name: Document(**document.model_dump())
-                for document in documents_raw
-            }
-            session.add_all(documents.values())
-            session.commit()
+        create: DependsCreate,
+        create_data: Annotated[DocumentCreateSchema, Body()],
+    ) -> OutputWithEvents[DocumentSchema]:
 
-            # Add user ownership for documents.
-            logger.debug("Defining ownership of new documents.")
-            user_uuids = [uuid, *uuid_owner]
-            users: List[User] = list(
-                session.execute(
-                    select(User).where(User.uuid.in_(user_uuids)),
-                ).scalars()
-            )
+        create.create_data = create_data
+        data = create.e_document(None)
 
-            # NOTE: This must be done directly creating associations because of
-            #       the ``_created_by_uuid_user`` and ``_updated_by_uuid_user``
-            #       fields.
-            assocs_owners = list(
-                AssocUserDocument(
-                    user_id=user,
-                    document_id=document,
-                    level="owner",
-                )
-                for document in documents.values()
-                for user in users
-            )
-            session.add_all(assocs_owners)
-            session.commit()
-
-            logger.debug("Adding document to collections `%s`.", uuid_collection)
-            collections: List[Collection] = list(
-                session.execute(
-                    select(Collection).where(
-                        Collection.uuid.in_(uuid_collection),
-                    )
-                ).scalars()
-            )
-            assocs_collections = list(
-                AssocCollectionDocument(
-                    id_document=document.id,
-                    id_collection=collection.id,
-                )
-                for document in documents
-                for collection in collections
-            )
-            session.add_all(assocs_collections)
-            session.commit()
-
-            return dict(
-                documents={dd.uuid: dd.name for dd in documents},
-                assoc_collections=list(aa.uuid for aa in assocs_collections),
-                assoc_document_owners=user_uuids,
-            )
+        return mwargs(
+            OutputWithEvents[DocumentSchema],
+            events=[EventSchema.model_validate(data.event)],
+            data=DocumentSchema.model_validate(data.data.documents)
+        )
 
     @classmethod
-    def put_document(cls, filter_params):
-        # Take current document content and turn it into a document history.
-        ...
+    def patch_document(
+        cls, 
+        uuid_document: args.PathUUIDDocument,
+        update: DependsUpdate,
+        update_data: Annotated[DocumentUpdateSchema, Body()],
+    ) -> OutputWithEvents[DocumentSchema]:
+
+        update.update_data = update_data
+        data = update.a_document(uuid_document)
+
+        return mwargs(
+            OutputWithEvents[DocumentSchema],
+            events=[EventSchema.model_validate(data.event)],
+            data=DocumentSchema.model_validate(*data.data.documents)
+        )
 
     @classmethod
     def delete_document(
         cls,
-        token: DependsToken,
-        sessionmaker: DependsSessionMaker,
         uuid_document: args.PathUUIDDocument,
-    ):
-        with sessionmaker() as session:
-            user, document = cls.verify_access(session, token, uuid_document, Level.own)
-            # event_assignments = AssignmentView.delete_assignment(
-            #     sessionmaker, token, uuid_collection
-            # )
+        delete: DependsDelete,
+    ) -> AsOutput[DocumentSchema]:
+
+        data = delete.a_document(uuid_document)
+        return mwargs(
+            OutputWithEvents[EventSchema],
+            data=DocumentSchema.model_validate(data.data.documents[0]),
+            events=[EventSchema.model_validate(data.event)],
+        )

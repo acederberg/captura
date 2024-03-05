@@ -506,7 +506,7 @@ class Create(WithDelete, Generic[T_Create]):
             **self.event_common,
             kind_obj=KindObject.collection,
             uuid_obj=uuid_collection,
-            detail="Collection created.:",
+            detail="Collection created.",
         )
 
         session = self.session
@@ -522,7 +522,57 @@ class Create(WithDelete, Generic[T_Create]):
     def document(
         self,
         data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]: ...
+    ) -> Data[ResolvedDocument]: 
+        uuid_document, uuid_grant = (secrets.token_urlsafe(8) for _ in range(2))
+        user = data.token_user or self.token_user
+        data.data.documents = (
+            document := Document(
+                **self.create_data.model_dump(),
+            ),
+        )
+
+        data.data.token_user_grants = {
+            user.uuid: (grant := Grant(
+                user = user.uuid,
+                document=document,
+                level=Level.own,
+                pending=False,
+                pending_from=PendingFrom.created,
+                uuid=uuid_grant,
+                uuid_user_granter=user.uuid,
+            ))
+        }
+        data.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.document,
+            uuid_obj=uuid_document,
+            detail="Document created.",
+            children=[
+                Event(
+                    kind_obj=KindObject.user,
+                    uuid_obj=user.uuid,
+                    detail="Ownership granted by creation.",
+                    children=[
+                        Event(
+                            **self.event_common,
+                            kind_obj=KindObject.grant,
+                            uuid_obj=uuid_grant,
+                            detail="Ownership created for user."
+                        )
+                    ]
+                )
+            ]
+        )
+        session = self.session
+        session.add(data.event)
+        session.add(grant)
+        session.add(document)
+        session.commit()
+        session.refresh(data.event)
+        session.refresh(document)
+        return data
+
+
 
     e_document = with_empty_data(document)
 
@@ -647,10 +697,12 @@ class Update(WithDelete, Generic[T_Update]):
 
         param: T_Update = self.update_data
         match self.update_data.kind_mapped:
-            case KindObject.user | KindObject.collection:
+            case KindObject.user | KindObject.collection | KindObject.document:
                 param_dict = param.model_dump(exclude_none=True, exclude=exclude)
-            case _:
-                raise ValueError("Incorrect parameter type.")
+            case bad:
+                msg = f"Incorrect parameter type (got `{bad}` expected "
+                msg += f"{KindObject.user}` or `{KindObject.document})."
+                raise ValueError(msg)
 
         # NOTE: @optional will raise 422 if all `null`
         data.event = Event(
@@ -771,11 +823,14 @@ class Update(WithDelete, Generic[T_Update]):
 
         param: DocumentUpdateSchema
         data, param = self.generic_update(data, {"content"}, commit=False)
-        if param.content is None:
-            return data
-
         document = data.data.documents[0]
-        document.content = param.content
+
+        if param.content is None:
+            session.add(document)
+            session.add(data.event)
+            session.commit()
+            session.refresh(data.event)
+            return data
 
         # Replace head.
         edit = Edit(
@@ -785,6 +840,8 @@ class Update(WithDelete, Generic[T_Update]):
             id_document=document.id,
             id_user=token_user.uuid,
         )
+        document.content = param.content
+
         event_edit = Event(
             **self.event_common,
             kind_obj=edit.uuid,
@@ -803,6 +860,7 @@ class Update(WithDelete, Generic[T_Update]):
         session.add(edit)
         session.commit()
         session.refresh(data.event)
+        session.refresh(edit)
 
         return data
 

@@ -1,21 +1,24 @@
-import typer
-from client import flags
+from datetime import datetime
+
 import httpx
+import typer
+from app.models import KindObject, KindRecurse, Singular
+from client import flags
 from client.flags import Output
-from client.handlers import ConsoleHandler, CONSOLE
-from client.requests.base import BaseRequest
-from app.models import KindRecurse
+from client.handlers import CONSOLE, ConsoleHandler
+from client.requests.base import BaseRequest, params
 
 __all__ = ("EventsRequests",)
 
 
 class EventsRequests(BaseRequest):
     command = "events"
-    commands = ("delete", "read", "search", "restore")
+    commands_check_verbage = False
+    commands = ("prune", "read", "search", "restore", "objects")
 
     def callback(
         self,
-        output: flags.FlagOutput = Output.table,
+        output: flags.FlagOutput = Output.yaml,
         columns: flags.FlagColumns = list(),
     ):
         """Specify request output format."""
@@ -28,47 +31,78 @@ class EventsRequests(BaseRequest):
 
         self.handler = ConsoleHandler(output=output, columns=columns, data=None)
 
-    async def delete(self, uuid_event: flags.ArgUUIDEvent) -> httpx.Response:
+
+    async def prune(
+        self, 
+        kind_obj: flags.ArgKindObject,
+        uuid_obj: flags.ArgUUIDEvent,
+        root: bool = False,
+    ) -> httpx.Response:
+        p = params(root=root)
+        if kind_obj == KindObject.event:
+            return await self.client.delete(
+                f"/events/{uuid_obj}",
+                headers=self.headers,
+                params=p
+            )
         return await self.client.delete(
-            f"/events/{uuid_event}",
+            f"/events/{Singular(kind_obj.name).name}/{uuid_obj}",
             headers=self.headers,
+            params=p,
         )
 
     async def read(
         self,
-        uuid_event: flags.ArgUUIDEvent,
+        kind_obj: flags.ArgKindObject,
+        uuid_obj: flags.ArgUUIDEvent,
+        root: bool = False,
     ) -> httpx.Response:
+        if kind_obj == KindObject.event:
+            return await self.client.get(
+                f"/events/{uuid_obj}",
+                headers=self.headers,
+                params=dict(root=root),
+            )
+
+        # NOTE: Across many controllers.
+        kind_object_plural = Singular(kind_obj.name).name
         return await self.client.get(
-            f"/events/{uuid_event}",
+            f"/{kind_object_plural}/{uuid_obj}/events",
+            params=params(root=root),
             headers=self.headers,
-            params=dict(uuid_user=uuid_event),
         )
+
 
     async def search(
         self,
-        flatten: flags.FlagFlatten = True,
+        # recurse: flags.FlagKindRecurse = KindRecurse.depth_firsut, 
+        # flatten: flags.FlagFlatten = True,
         kind: flags.FlagKind = None,
-        kind_obj: flags.FlagKindObject = None,
-        uuid_obj: flags.FlagUUIDEventObject = None,
-        recurse: flags.FlagKindRecurse = KindRecurse.depth_first,
+        kind_obj: flags.FlagKindObjectOptional = None,
+        uuid_obj: flags.FlagUUIDEventObjectOptional = None,
+        uuid_event: flags.FlagUUIDEventsOptional = None,
+        before: flags.FlagBefore = None,
+        after: flags.FlagAfter = None,
     ) -> httpx.Response:
-        params = dict(
-            flatten=flatten,
-            uuid_obj=uuid_obj,
-            kind=kind.value if kind is not None else None,
-            kind_obj=kind_obj.value if kind_obj is not None else None,
-            recurse=recurse.value if recurse is not None else None,
-        )
-        params = {k: v for k, v in params.items() if v is not None}
-        return await self.client.get(
+        res = await self.client.get(
             "/events",
             headers=self.headers,
-            params=params,
+            params=(p:=params(
+                # flatten=flatten,
+                # recurse=recurse.value if recurse is not None else None,
+                before=datetime.timestamp(before) if before is not None else before,
+                after=datetime.timestamp(after) if after is not None else after,
+                uuid_event=uuid_event,
+                uuid_obj=uuid_obj,
+                kind=kind.value if kind is not None else None,
+                kind_obj=kind_obj.value if kind_obj is not None else None,
+            ))
         )
+        return res
 
     async def restore(
         self,
-        uuid_object: flags.FlagUUIDEventObject = None,
+        uuid_object: flags.FlagUUIDEventObjectOptional = None,
         uuid_event: flags.FlagUUIDEventOptional = None,
     ) -> httpx.Response:
         res = None
@@ -90,6 +124,17 @@ class EventsRequests(BaseRequest):
 
         return res
 
+    async def objects(
+        self,
+        uuid_event: flags.ArgUUIDEvent,
+        root: bool = False,
+    ) -> httpx.Response:
+
+        return await self.client.get(
+            f"/events/{uuid_event}/objects",
+            params=params(root=root),
+        )
+
     # async def ws_watch(
     #     self,
     #     watcher: Callable[
@@ -99,7 +144,7 @@ class EventsRequests(BaseRequest):
     #     flatten: flags.FlagFlatten = True,
     #     kind: flags.FlagKind = None,
     #     kind_obj: flags.FlagKindObject = None,
-    #     uuid_obj: flags.FlagUUIDEventObject = None,
+    #     uuid_obj: flags.FlagUUIDEventObjectOptional = None,
     #     recurse: flags.FlagKindRecurse = KindRecurse.depth_first,
     # ) -> None:
     #     url = f"{self.config.host}/events"
@@ -121,7 +166,7 @@ class EventsRequests(BaseRequest):
     #     flatten: flags.FlagFlatten = True,
     #     kind: flags.FlagKind = None,
     #     kind_obj: flags.FlagKindObject = None,
-    #     uuid_obj: flags.FlagUUIDEventObject = None,
+    #     uuid_obj: flags.FlagUUIDEventObjectOptional = None,
     #     recurse: flags.FlagKindRecurse = KindRecurse.depth_first,
     # ):
     #     async def console_watcher(

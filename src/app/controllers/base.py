@@ -3,53 +3,22 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
-from typing import Self
 import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Literal,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
+                    Self, Set, Tuple, Type, TypeVar)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (
-    AnyModel,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    LevelHTTP,
-    ResolvableSingular,
-    ResolvedRawAny,
-    Singular,
-    User,
-    uuids,
-)
+from app.models import (AnyModel, Collection, Document, Edit, Event, Grant,
+                        KindObject, Level, LevelHTTP, ResolvableSingular,
+                        ResolvedRawAny, Singular, User, uuids)
+from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    Tag,
-    ValidationInfo,
-    computed_field,
-    field_validator,
-)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
+                      ValidationInfo, computed_field, field_validator)
 from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
@@ -89,6 +58,7 @@ class BaseController:
         if self._token_user is not None:
             return self._token_user
         token_user = self.token.validate(self.session)
+
         self._token_user = token_user
         return token_user
 
@@ -113,6 +83,8 @@ class BaseController:
         method: HTTPMethod | str,
     ):
         self.session = session
+        self._token_user = None
+
         match method:
             case str():
                 self.method = HTTPMethod(method)
@@ -128,10 +100,6 @@ class BaseController:
                 self._token = token
             case bad:
                 raise ValueError(f"Invalid input `{bad}` for token.")
-
-        print("THERE")
-        if self._token:
-            self._token_user = self._token.validate(session)
 
 
 def uuid_set_from_model(data: Any, info: ValidationInfo) -> Set[str]:
@@ -193,8 +161,16 @@ class BaseResolved(BaseModel):
 
         util.check_enum_opt_attr(cls, "kind", KindData)
 
+    def commit(self, session: Session, commit: bool = False) -> None:
+        ...
 
-class BaseResolvedPrimary(BaseResolved):
+
+T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
+
+
+class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
+
+    # ----------------------------------------------------------------------- #
 
     _items_attr_name: ClassVar[str]
 
@@ -218,6 +194,15 @@ class BaseResolvedPrimary(BaseResolved):
         #     raise ValueError(msg)
         # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+    @classmethod
+    def empty(cls, **kwargs_init) -> Self:
+        return cls(**{cls._items_attr_name: tuple()}, **kwargs_init)
+
+    # ----------------------------------------------------------------------- #
+
+    def targets(self) -> Tuple[T_ResolvedPrimary, ...]:
+        return getattr(self, self._items_attr_name)
+
     def err_nonempty(self) -> ValueError | None:
 
         # It is empty
@@ -229,10 +214,31 @@ class BaseResolvedPrimary(BaseResolved):
         msg += f"`{attr_name}`)."
         return ValueError(msg)
 
-    @classmethod
-    def empty(cls, **kwargs_init) -> Self:
-        return cls(**{cls._items_attr_name: tuple()}, **kwargs_init)
+    def commit(
+        self, 
+        session: Session, 
+        commit: bool = False,
+        delete: bool = False,
+    ) -> None:
+        """Because writing commit/refresh logic and wrapping to avoid breaking
+        'all or none'.
+        """
 
+        if commit:
+            # Add or delete items.
+            items = self.targets()
+            if delete:
+                for item in items:
+                    session.delete(item)
+            else:
+                session.add_all(items)
+
+
+            # Commit and refresh.
+            session.commit()
+            if not delete:
+                for item in items:
+                    session.refresh(item)
 
 
 class BaseResolvedSecondary(BaseResolved):
@@ -269,6 +275,31 @@ class BaseResolvedSecondary(BaseResolved):
     @property
     def uuid_target(self) -> Set[str]:
         return getattr(self, "uuid_" + Singular(self.kind_target.name).name)
+
+
+    def commit(self, session: Session, commit: bool = False,
+               delete: bool = False,) -> None:
+        """Because writing commit/refresh logic and wrapping to avoid breaking
+        'all or none'.
+        """
+
+        assert False
+        # if commit:
+        #     targets = self.targets()
+        #     if delete:
+        #         for target in items:
+        #             session.delete(item)
+        #     else:
+        #         session.add_all(items)
+        #
+        #     # Recurse.
+        #     for child in self.children:
+        #         child.commit(session, False)
+        #
+        #     session.commit()
+        #     if not delete:
+        #         for item in items:
+        #             session.refresh(item)
 
 
 class ResolvedCollection(BaseResolvedPrimary):
@@ -431,6 +462,8 @@ class Data(BaseModel, Generic[T_Data]):
     data: T_Data
     event: Annotated[Event | None, Field(default=None)]
     token_user: Annotated[User | None, Field(default=None)]
+    children: Annotated["List[Data]", Field(default_factory=list)]
+
 
     @field_validator("data", mode="before")
     def validate_raw(cls, v):
@@ -441,8 +474,42 @@ class Data(BaseModel, Generic[T_Data]):
     def kind(self) -> KindData:
         return self.data.kind
 
+    # ----------------------------------------------------------------------- #
+
+    def add(self, *items: "Data") -> None:
+        for item in items:
+            self.children.append(item.data)
+
+    def commit(
+        self, 
+        session: Session, 
+        commit: bool = False,
+        *,
+        delete: bool = False,
+    ) -> None:
+        if commit:
+            # Commit own data and events.
+            self.data.commit(session, commit, delete)
+            session.add(self.event)
+
+            # Recurse.
+            for child in self.children:
+                child.commit(session, True, delete=delete)
+
+            session.refresh(self.event)
+
     def types(self) -> Any:
         return kind_type_map[self.kind]  # type: ignore[return-type]
+
+#
+# T_OutputKind = TypeVar("T_OutputKind", AsOutput, OutputWithEvents)
+# T_Output
+#
+# def primary_output(
+#     data: Data[T_Data_Singular],
+#     T_output_kind: T_OutputKind,
+#     T_output: T_Output,
+# ) -> Data[T_Data_
 
 
 DataResolvedAssignment = (

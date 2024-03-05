@@ -6,32 +6,16 @@ from uuid import uuid4
 from app import __version__, util
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedUser
-from app.depends import (
-    DependsAccess,
-    DependsDelete,
-    DependsRead,
-    DependsSessionMaker,
-    DependsToken,
-    DependsUpdate,
-)
-from app.models import Collection, Document, Edit, Event, KindEvent, KindObject, User
-from app.schemas import (
-    AsOutput,
-    CollectionMetadataSchema,
-    CollectionSearchSchema,
-    DocumentMetadataSchema,
-    DocumentSearchSchema,
-    EditMetadataSchema,
-    EditSearchSchema,
-    EventSchema,
-    OutputWithEvents,
-    UserCreateSchema,
-    UserExtraSchema,
-    UserSchema,
-    UserSearchSchema,
-    UserUpdateSchema,
-    mwargs,
-)
+from app.depends import (DependsAccess, DependsDelete, DependsRead,
+                         DependsSessionMaker, DependsToken, DependsUpdate)
+from app.models import (Collection, Document, Edit, Event, KindEvent,
+                        KindObject, User)
+from app.schemas import (AsOutput, CollectionMetadataSchema,
+                         CollectionSearchSchema, DocumentMetadataSchema,
+                         DocumentSearchSchema, EditMetadataSchema,
+                         EditSearchSchema, EventSchema, OutputWithEvents,
+                         UserCreateSchema, UserExtraSchema, UserSchema,
+                         UserSearchSchema, UserUpdateSchema, mwargs)
 from app.views import args
 from app.views.base import BaseView
 from fastapi import Body, Depends, HTTPException, Query
@@ -404,7 +388,7 @@ class UserView(BaseView):
         uuid_user: args.PathUUIDUser,
         update: DependsUpdate,
         updates: Annotated[UserUpdateSchema, Body()],
-    ) -> AsOutput[EventSchema]:
+    ) -> OutputWithEvents[UserSchema]:
         """Update a user.
 
         Only the user themself should be able to update this.
@@ -415,7 +399,11 @@ class UserView(BaseView):
             uuid_user,
             resolve_user_token=update.token_user,
         )
-        return mwargs(AsOutput[EventSchema], data=data.event)
+        return mwargs(
+            OutputWithEvents[UserSchema], 
+            data=UserSchema.model_validate(data.data.users[0]),
+            events=[data.event]
+        )
 
     @classmethod
     def delete_user(
@@ -423,7 +411,7 @@ class UserView(BaseView):
         uuid_user: args.PathUUIDUser,
         delete: DependsDelete,
         restore: bool = False,
-    ) -> AsOutput[EventSchema]:
+    ) -> OutputWithEvents[UserSchema]:
         """Remove a user and their unshared documents and edits.
 
         Only the user themself or an admin should be able to call this
@@ -435,6 +423,7 @@ class UserView(BaseView):
 
         data = delete.a_user(uuid_user)
         return mwargs(
-            AsOutput[EventSchema],
-            data=EventSchema.model_validate(data.event),
+            OutputWithEvents[UserSchema],
+            events=[EventSchema.model_validate(data.event)],
+            data=UserSchema.model_validate(data.data.user[0]),
         )

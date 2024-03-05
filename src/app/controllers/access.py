@@ -2,59 +2,23 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (
-    Any,
-    Callable,
-    Concatenate,
-    Dict,
-    Literal,
-    ParamSpec,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    overload,
-)
+from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
+                    Tuple, Type, TypeVar, overload)
 
 from app import __version__
 from app.auth import Token
-from app.controllers.base import (
-    BaseController,
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedObjectEvents,
-    ResolvedUser,
-    T_Data,
-)
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    Resolvable,
-    ResolvableMultiple,
-    ResolvableSingular,
-    Singular,
-    T_Resolvable,
-    Tables,
-    User,
-)
+from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
+                                  DataResolvedGrant, KindData,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser, T_Data)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, Resolvable,
+                        ResolvableMultiple, ResolvableSingular, Singular,
+                        T_Resolvable, Tables, User)
 from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -596,7 +560,7 @@ class Access(BaseController):
 
     def d_document(
         self,
-        resolve_document: ResolvableMultiple[Document],
+        resolve_document: Resolvable[Document],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
