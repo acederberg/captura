@@ -1,7 +1,7 @@
 from app.auth import Token
 from app.depends import DependsAuth, DependsConfig
+from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 from fastapi import HTTPException
-from app.views.base import BaseView
 
 
 class AuthView(BaseView):
@@ -11,6 +11,10 @@ class AuthView(BaseView):
         post_token="/token",
         get_login="/login",
         get_token="/token",
+    )
+    view_router_args = dict(
+        tags=[OpenApiTags.auth0],
+        responses=OpenApiResponseCommon,
     )
 
     @classmethod

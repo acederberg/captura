@@ -13,16 +13,27 @@ from app.models import (Collection, Document, Edit, Event, KindEvent,
 from app.schemas import (AsOutput, CollectionMetadataSchema,
                          CollectionSearchSchema, DocumentMetadataSchema,
                          DocumentSearchSchema, EditMetadataSchema,
-                         EditSearchSchema, EventSchema, OutputWithEvents,
-                         UserCreateSchema, UserExtraSchema, UserSchema,
-                         UserSearchSchema, UserUpdateSchema, mwargs)
+                         EditSearchSchema, ErrAccessUser, ErrDetail,
+                         EventSchema, OutputWithEvents, UserCreateSchema,
+                         UserExtraSchema, UserSchema, UserSearchSchema,
+                         UserUpdateSchema, mwargs)
 from app.views import args
-from app.views.base import BaseView
+from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 from fastapi import Body, Depends, HTTPException, Query
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
+OpenApiResponseUser = {
 
+            **OpenApiResponseCommon,
+            403: {
+                "model": ErrDetail[ErrAccessUser],
+                "description": (
+                    "User must be logged in as the user specified in the url "
+                    "or an admin to not raise this status."
+                ),
+            }
+        }
 class DemoUserView(BaseView):
     """Routes for user data and metadata.
 
@@ -46,6 +57,11 @@ class DemoUserView(BaseView):
         post_user_demo="",
         get_user_demos="",
         patch_user_demo="/{invitation_uuid}",
+    )
+
+    view_router_args = dict(
+        tags=[OpenApiTags.users],
+        responses=OpenApiResponseUser,
     )
 
     @classmethod
@@ -280,6 +296,10 @@ class UserSearchView(BaseView):
         get_search_edits="/{uuid_user}/edits",
         get_search_collections="/{uuid_user}/collections",
     )
+    view_router_args = dict(
+        tags=[OpenApiTags.users],
+        responses=OpenApiResponseUser,
+    )
 
     # ----------------------------------------------------------------------- #
 
@@ -357,6 +377,10 @@ class UserView(BaseView):
         get_user="/{uuid_user}",
         patch_user="/{uuid_user}",
         delete_user="/{uuid_user}",
+    )
+    view_router_args = dict(
+        responses=OpenApiResponseUser,
+        tags=[OpenApiTags.users]
     )
     view_children = {
         "/extensions/demos": DemoUserView,

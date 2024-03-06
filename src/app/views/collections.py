@@ -7,10 +7,10 @@ from app.depends import (DependsCreate, DependsDelete, DependsRead,
 from app.models import Collection
 from app.schemas import (AsOutput, CollectionCreateSchema, CollectionSchema,
                          CollectionUpdateSchema, DocumentMetadataSchema,
-                         DocumentSearchSchema, EventSchema, OutputWithEvents,
-                         mwargs)
+                         DocumentSearchSchema, ErrAccessCollection, ErrDetail,
+                         EventSchema, OutputWithEvents, mwargs)
 from app.views import args
-from app.views.base import BaseView
+from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
@@ -31,12 +31,34 @@ DependsCollection = Annotated[Collection, Depends(collection)]
 
 # --------------------------------------------------------------------------- #
 
+OpenApiResponseCollectionUnauthorized = {
+    403: {
+        "model": ErrDetail[ErrAccessCollection],
+        "description": (
+            "Raised when a token user does not own the specified collection "
+            "(and in the case of `GET`, only when the collection is not "
+            "public and the token user is not the collection owner)."
+        ),
+    },
+}
+OpenApiResponseCollection = {
+    **OpenApiResponseCommon,
+    **OpenApiResponseCollectionUnauthorized,
+}
+
 
 class CollectionSearchView(BaseView):
 
     view_routes = dict(
-        get_search_documents="/{uuid_collection}/documents",
+        get_search_documents=dict(
+            url="/{uuid_collection}/documents",
+            name="Search Collection Documents",
+        ),
         # get_search_collections="",
+    )
+    view_router_args = dict(
+        tags=[OpenApiTags.collections],
+        responses=OpenApiResponseCollection,
     )
 
     @classmethod
@@ -46,7 +68,10 @@ class CollectionSearchView(BaseView):
         read: DependsRead,
         param: Annotated[DocumentSearchSchema, Depends()],
     ) -> AsOutput[List[DocumentMetadataSchema]]:
-        """Return UUIDS for the documents."""
+        """Return metadata for `documents` (document `JSON` without `content`) 
+        in the `collection` specified by **uuid_collection** matching search 
+        params.
+        """
 
         res: Tuple[Collection, ...] = read.search_collection(collection, param) 
         return mwargs(
@@ -77,10 +102,30 @@ class CollectionView(BaseView):
     """Routes for collection CRUD and metadata."""
 
     view_routes = dict(
-        get_collection="/{uuid_collection}",
-        delete_collection="/{uuid_collection}",
-        patch_collection="/{uuid_collection}",
-        post_collection="",
+        get_collection=dict(
+            url="/{uuid_collection}",
+            name="Read Collection",
+            responses=OpenApiResponseCollectionUnauthorized,
+        ),
+        delete_collection=dict(
+            url="/{uuid_collection}",
+            name="Delete Collection",
+            responses=OpenApiResponseCollectionUnauthorized,
+        ),
+        patch_collection=dict(
+            url="/{uuid_collection}",
+            name="Update Collection/Transfer Ownership",
+            responses=OpenApiResponseCollectionUnauthorized,
+        ),
+        post_collection=dict(
+            url="",
+            name="Create a New Collection",
+        )
+    )
+    view_children = {"": CollectionSearchView}
+    view_router_args = dict(
+        tags=[OpenApiTags.collections],
+        responses=OpenApiResponseCollection,
     )
 
     @classmethod
@@ -88,6 +133,11 @@ class CollectionView(BaseView):
         cls,
         collection: DependsCollection
     ) -> AsOutput[CollectionSchema]:
+        """Read a collection.
+
+        To view documents in a collection use
+        `GET /collections/{uuid_collection}/documents`.
+        """
         return mwargs(
             AsOutput[CollectionSchema],
             data=CollectionSchema.model_validate(collection)
@@ -99,6 +149,10 @@ class CollectionView(BaseView):
         delete: DependsDelete,
         uuid_collection: args.PathUUIDCollection,
     ) -> AsOutput[EventSchema]:
+        """Remove a `collection`.
+
+        This will not remove the `documents` in a `collection` but will remove 
+        their respective `assignments`."""
 
         data: Data[ResolvedCollection] = delete.a_collection(uuid_collection)
         return mwargs(
@@ -113,6 +167,14 @@ class CollectionView(BaseView):
         uuid_collection: args.PathUUIDCollection,
         updates: Annotated[CollectionUpdateSchema, Body()],
     ) -> OutputWithEvents[CollectionSchema]:
+        """Update a collection/transfer collection ownership.
+
+        When **uuid_user** is specified, the `collection` will be transfered to
+        this user. Doing this will not change the `document` permissions such 
+        that the new owner of the `collection` will be able to access the 
+        `collection` and in fact the new owner will not see that such 
+        `documents` exist.
+        """
         update.update_data = updates
         data: Data[ResolvedCollection] = update.a_collection(
             uuid_collection,
@@ -123,7 +185,7 @@ class CollectionView(BaseView):
             OutputWithEvents[CollectionSchema],
             data=CollectionSchema.model_validate(*data.data.collections),
             events=[EventSchema.model_validate(data.event)],
-        )
+        ) 
 
     @classmethod
     def post_collection(
@@ -131,6 +193,11 @@ class CollectionView(BaseView):
         create: DependsCreate,
         create_data:  Annotated[CollectionCreateSchema, Body()],
     ) -> OutputWithEvents[CollectionSchema]:
+        """Create a new collection.
+
+        To add documents to this collection use 
+        `POST /assignments/collection/{uuid_collection}`.
+        """
 
         # NOTE: User only needs a valid token to create a collection.
         create.create_data = create_data

@@ -1,70 +1,26 @@
 import functools
-from typing import (
-    Callable,
-    Concatenate,
-    Generator,
-    List,
-    Literal,
-    ParamSpec,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import (Callable, Concatenate, Generator, List, Literal, ParamSpec,
+                    Set, Tuple, Type, TypeVar)
 
 from app import __version__, util
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
-    BaseController,
-    Data,
-    ResolvedEvent,
-    ResolvedObjectEvents,
-)
-from app.depends import (
-    DependsAccess,
-    DependsDelete,
-    DependsRead,
-    DependsSessionMaker,
-    DependsToken,
-)
-from app.models import (
-    AnyModel,
-    Assignment,
-    Collection,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    KindRecurse,
-    ResolvableSingular,
-    Singular,
-    T_Resolvable,
-    Tables,
-    User,
-)
-from app.schemas import (
-    KindSchema,
-    registry,
-    AsOutput,
-    AssignmentExtraSchema,
-    CollectionExtraSchema,
-    DocumentExtraSchema,
-    DocumentMetadataSchema,
-    EventBaseSchema,
-    EventExtraSchema,
-    EventMetadataSchema,
-    EventParams,
-    EventSchema,
-    EventSearchSchema,
-    GrantExtraSchema,
-    OutputWithEvents,
-    T_Output,
-    UserExtraSchema,
-    mwargs,
-)
+from app.controllers.base import (BaseController, Data, ResolvedEvent,
+                                  ResolvedObjectEvents)
+from app.depends import (DependsAccess, DependsDelete, DependsRead,
+                         DependsSessionMaker, DependsToken)
+from app.models import (AnyModel, Assignment, Collection, Document, Event,
+                        Grant, KindEvent, KindObject, KindRecurse,
+                        ResolvableSingular, Singular, T_Resolvable, Tables,
+                        User)
+from app.schemas import (AsOutput, AssignmentExtraSchema,
+                         CollectionExtraSchema, DocumentExtraSchema,
+                         DocumentMetadataSchema, EventBaseSchema,
+                         EventExtraSchema, EventMetadataSchema, EventParams,
+                         EventSchema, EventSearchSchema, GrantExtraSchema,
+                         KindSchema, OutputWithEvents, T_Output,
+                         UserExtraSchema, mwargs, registry)
 from app.views import args
-from app.views.base import BaseView
+from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.routing import get_request_handler
 from pydantic import TypeAdapter
@@ -120,6 +76,11 @@ class EventSearchView(BaseView):
         get_collection_events="/collections/{uuid_collection}/events",
         get_grant_events="/documents/{uuid_document}/users/{uuid_user}/events",
         get_assignment_events="/documents/{uuid_document}/collections/{uuid_collection}/events",
+    )
+
+    view_router_args = dict(
+        tags=[OpenApiTags.events],
+        responses=OpenApiResponseCommon,
     )
 
     # @classmethod
@@ -276,6 +237,10 @@ class EventView(BaseView):
         delete_prune_event="/{uuid_event}",
         delete_prune_object_events="/{kind_obj}/{uuid_obj}",
         patch_undo_event="/{uuid_event}/objects",
+    )
+    view_router_args = dict(
+        tags=[OpenApiTags.events],
+        responses=OpenApiResponseCommon,
     )
 
     @classmethod

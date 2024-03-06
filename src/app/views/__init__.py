@@ -1,5 +1,6 @@
 from typing import Annotated, Generator, List, Set
 
+from app import __version__
 from app.auth import Auth
 from app.controllers.access import Access, H
 from app.depends import DependsAccess, DependsAuth, DependsSessionMaker
@@ -7,13 +8,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from .assignments import AssignmentView
+from .assignments import CollectionAssignmentView, DocumentAssignmentView
 from .auth import AuthView
-from .base import BaseView
+from .base import BaseView, OpenApiTagMetadata, OpenApiTags
 from .collections import CollectionView
 from .documents import DocumentView
 from .events import EventSearchView, EventView
-from .grants import GrantView
+from .grants import DocumentGrantView, UserGrantView
 from .users import UserSearchView, UserView
 
 
@@ -23,17 +24,57 @@ class AppRouteInfo(BaseModel):
     name: Annotated[str, Field()]
     methods: Annotated[Set[H], Field()]
 
+description: str ="""
+An API for storing, rendering, editting, and sharing text documents and other 
+deffered objects. 
+
+
+## Sharing
+
+Documents can be public or private and owners can grant to other users
+the ability to view, modify, or own the document.
+
+
+## Deffered Objects
+
+Soon the Captura API will support deffering objects to other APIs. More
+or less this model will be 'sharing as a service'.
+"""
+
 
 class AppView(BaseView):
-    view_router = FastAPI()  # type: ignore
+    view_router = FastAPI(
+        title="Captura Document Automation, Sharing, and Organization API.",
+        description=description,
+        version=__version__,
+        contact=dict(
+            name="Adrian Cederberg",
+            url="https://github.com/acederberg",
+            email="adrn.cederberg123@gmail.com",
+        ),
+        openapi_tags=OpenApiTagMetadata
+
+    )  # type: ignore
     view_routes = {
-        "get_index": "/",
-        "get_routes": "/routes",
+        "get_index": {
+            "url": "/",
+            "tags": [OpenApiTags.html],
+            "name": "Index Page",
+            "description": "For humans.",
+        },
+        "get_routes": {
+            "url": "/routes",
+            "tags": [OpenApiTags.admin],
+            "name": "Routes Directory",
+            "description": "For text based clients that won't like using help."
+        }
     }
     view_children = {
         "": EventSearchView,
-        "/grants": GrantView,
-        "/assignments": AssignmentView,
+        "/grants/documents": DocumentGrantView,
+        "/grants/users": UserGrantView,
+        "/assignments/documents": DocumentAssignmentView,
+        "/assignments/collections": CollectionAssignmentView,
         "/users": UserView,
         "/collections": CollectionView,
         "/documents": DocumentView,
@@ -88,10 +129,10 @@ class AppView(BaseView):
 
 
 __all__ = (
-    "GrantView",
+    "DocumentGrantView",
+    "UserGrantView",
     "AssignmentView",
     "CollectionView",
-    "GrantView",
     "AuthView",
     "EventView",
     "DocumentView",

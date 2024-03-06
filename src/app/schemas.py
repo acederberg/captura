@@ -15,6 +15,7 @@ foreign keys it is not necessary to specify multiple values).
 """
 
 import enum
+import secrets
 from datetime import datetime, timedelta
 from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
                     Optional, Self, Set, Type, TypeAlias, TypeVar)
@@ -25,11 +26,9 @@ from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
                       model_validator)
 from pydantic_core.core_schema import FieldValidationInfo
 
+from app import models
 from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
                         LENGTH_NAME, LENGTH_URL)
-from app.models import Format as FormatEnum
-from app.models import KindEvent, KindObject, Level
-from app.models import PendingFrom as PendingFrom_
 from app.util import check_enum_opt_attr
 
 # --------------------------------------------------------------------------- #
@@ -39,31 +38,139 @@ UUID = Annotated[
     _FieldUUID := Field(
         min_length=4,
         max_length=16,
-        description="Universally unique identifier for a table row.",
+        description="Universally unique identifier for an object.",
+        examples=[secrets.token_urlsafe(8) for _ in range(10)],
     ),
 ]
 UUIDOptional = Annotated[str | None, _FieldUUID]
-UnixTimestamp = Annotated[None | int, Field(description="Unix timestamp.")]
-Name = Annotated[str, Field(min_length=1, max_length=LENGTH_NAME)]
+
+UnixTimestamp = Annotated[
+    None | int,
+    Field(
+        description="Unix timestamp.",
+        examples=[int(datetime.now().timestamp())],
+    ),
+]
+UnixTimestampOptional: TypeAlias = Annotated[
+    datetime | None,
+    Field(
+        default=None,
+        description="",
+    ),
+]
+
+Name = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=LENGTH_NAME,
+        description="Object name.",
+        examples=["New Mexican Recipes", "Trails", "Software"],
+    ),
+]
 Description = Annotated[
     str,
-    Field(min_length=1, max_length=LENGTH_DESCRIPTION),
+    Field(
+        min_length=1,
+        max_length=LENGTH_DESCRIPTION,
+        description="Object description",
+        examples=["This is a document/user/collection description."],
+    ),
 ]
-Url = Annotated[str | None, Field(min_length=8, max_length=LENGTH_URL)]
-Content = Annotated[str, Field(max_length=LENGTH_CONTENT)]
-Format = Annotated[FormatEnum, Field(default="md")]
-Message = Annotated[str, Field(min_length=0, max_length=LENGTH_MESSAGE)]
-UUIDS = Annotated[Set[str] | None, Field(default=None)]
-ID = Annotated[int, Field()]
-Pending = Annotated[bool, Field()]
-PendingFrom = Annotated[PendingFrom_, Field()]
-Deleted = Annotated[bool, Field()]
-Detail = Annotated[str | None, Field(default=None)]
-OptionalTimestamp: TypeAlias = Annotated[
-    datetime | None,
-    Field(default=None),
+Url = Annotated[
+    str | None,
+    Field(
+        min_length=8,
+        max_length=LENGTH_URL,
+        description="User url.",
+        examples=["https://github.com/acederberg"],
+    ),
 ]
-Limit: TypeAlias = Annotated[int | None, Field(default=None)]
+Content = Annotated[
+    str,
+    Field(
+        max_length=LENGTH_CONTENT,
+        description="Document content.",
+        examples=[
+            "orem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
+        ],
+    ),
+]
+Format = Annotated[
+    models.Format,
+    Field(default=models.Format.md, description="Document format."),
+]
+Message = Annotated[
+    str,
+    Field(
+        min_length=0,
+        max_length=LENGTH_MESSAGE,
+        description="Edit message.",
+        examples=["The following changes were made to the document: ..."],
+    ),
+]
+UUIDS = Annotated[
+    Set[str] | None,
+    Field(
+        default=None,
+        description="UUIDs to filter with.",
+        examples=[set(secrets.token_urlsafe() for _ in range(5))],
+    ),
+]
+ID = Annotated[int, Field(description="Primary key(s) for tables.")]
+
+Pending = Annotated[
+    bool,
+    Field(description="Grant awaiting approval (or not)."),
+]
+PendingFrom = Annotated[
+    models.PendingFrom,
+    Field(description="Grant initiator."),
+]
+Deleted = Annotated[
+    bool,
+    Field(description="Object pending deletion or not."),
+]
+Detail = Annotated[
+    str | None,
+    Field(default=None, description="Event detail."),
+]
+LimitOptional: TypeAlias = Annotated[int | None, Field(default=None)]
+NameLike = Annotated[
+    str | None,
+    Field(
+        description="Search objects for a name like this.",
+        examples=["foobar", "billy mays"],
+    ),
+]
+DescriptionLike = Annotated[
+    str | None,
+    Field(
+        description="Search objects for a description like this.",
+        examples=["dolor sit amit,"],
+    ),
+]
+Level = Annotated[models.Level, Field(description="Access level for grant.")]
+KindEvent = Annotated[
+    models.KindEvent | None,
+    Field(
+        default=None,
+        description="Event opperation tag.",
+    ),
+]
+KindObject = Annotated[
+    models.KindObject | None,
+    Field(
+        default=None,
+        description="Target object type. Often this is the name of corresponding table.",
+        examples=[
+            models.KindObject.user,
+            models.KindObject.collection,
+            models.KindObject.document
+        ],
+    ),
+]
+
 
 # NOTE: Could use partials but I like this pattern more.
 def create_validate_datetime(delta: timedelta) -> BeforeValidator:
@@ -76,7 +183,9 @@ def create_validate_datetime(delta: timedelta) -> BeforeValidator:
 
     return BeforeValidator(validator)
 
+
 # --------------------------------------------------------------------------- #
+
 
 class KindSchema(str, enum.Enum):
     search = "search"
@@ -95,7 +204,7 @@ class KindNesting(str, enum.Enum):
 # --------------------------------------------------------------------------- #
 
 
-class Registry():
+class Registry:
 
     schemas: Dict[KindObject, Dict[KindSchema, Type["BaseSchema"]]]
 
@@ -108,7 +217,7 @@ class Registry():
 
         if kind not in schemas:
             schemas[kind] = {kind_schema: schema}
-            return 
+            return
 
         schemas_for_kind = schemas[kind]
         if kind_schema in schemas_for_kind:
@@ -124,7 +233,7 @@ class Registry():
         if (schemas_for_kind := schemas.get(kind)) is None:
             raise ValueError(f"No schemas for kind `{kind.name}`.")
         elif (schema := schemas_for_kind.get(kind_schema)) is None:
-            msg = f"No schema of type `{kind_schema}` for `{kind.name}`." 
+            msg = f"No schema of type `{kind_schema}` for `{kind.name}`."
             raise ValueError(msg)
         return schema
 
@@ -137,7 +246,7 @@ class BaseSchema(BaseModel):
     model_config = ConfigDict(use_enum_values=False, from_attributes=True)
 
     # NOT FIELDS SINCE THEY ARE CONSTANT. METADATA FOR CONSUMERS!
-    kind_mapped: ClassVar[KindObject]
+    kind_mapped: ClassVar[models.KindObject]
     kind_schema: ClassVar[KindSchema]
     registry: ClassVar[Registry] = registry
 
@@ -145,21 +254,19 @@ class BaseSchema(BaseModel):
         if "Base" in cls.__name__:
             return
 
-        check_enum_opt_attr(cls, "kind_mapped", KindObject)
+        check_enum_opt_attr(cls, "kind_mapped", models.KindObject)
         check_enum_opt_attr(cls, "kind_schema", KindSchema)
         registry.add(cls)
 
 
-
-
 class BaseSearchSchema(BaseSchema):
-    kind_mapped: ClassVar[KindObject]
+    kind_mapped: ClassVar[models.KindObject]
     kind_schema: ClassVar[KindSchema]
 
-    uuid: Annotated[Set[str] | None, Field(default=None)]
-    limit: Annotated[int, Field(default=10)]
-    name_like: Annotated[str | None, Field(default=None)]
-    description_like: Annotated[str | None, Field(default=None)]
+    uuid: UUIDOptional
+    limit: LimitOptional
+    name_like: NameLike
+    description_like: DescriptionLike
     include_public: Annotated[bool, Field(default=True)]
 
 
@@ -169,7 +276,7 @@ class BaseUpdateSchema(BaseSchema):
     will have to be explicit.
     """
 
-    kind_mapped: ClassVar[KindObject]
+    kind_mapped: ClassVar[models.KindObject]
     kind_schema: ClassVar[KindSchema]
 
     @model_validator(mode="after")
@@ -194,14 +301,12 @@ class BasePrimaryTableExtraSchema(BaseSchema):
     deleted: Deleted
 
 
-
-
 # --------------------------------------------------------------------------- #
 
 
 class UserBaseSchema(BasePrimarySchema):
     # _mapped_class = User
-    kind_mapped = KindObject.user
+    kind_mapped = models.KindObject.user
 
     name: Name
     description: Description
@@ -214,7 +319,7 @@ class UserCreateSchema(UserBaseSchema):
 
 
 class UserUpdateSchema(BaseUpdateSchema):
-    kind_mapped = KindObject.user
+    kind_mapped = models.KindObject.user
     kind_schema = KindSchema.update
 
     # NOTE: `url_image` and `url` already optional.
@@ -264,7 +369,7 @@ class UserExtraSchema(BasePrimaryTableExtraSchema, UserSchema):
 
 
 class UserSearchSchema(BaseSearchSchema):
-    kind_mapped = KindObject.user
+    kind_mapped = models.KindObject.user
     kind_schema = KindSchema.search
 
 
@@ -273,7 +378,7 @@ class UserSearchSchema(BaseSearchSchema):
 
 
 class CollectionBaseSchema(BasePrimarySchema):
-    kind_mapped = KindObject.collection
+    kind_mapped = models.KindObject.collection
 
     name: Name
     description: Description
@@ -284,7 +389,7 @@ class CollectionCreateSchema(CollectionBaseSchema):
 
 
 class CollectionUpdateSchema(BaseUpdateSchema):
-    kind_mapped = KindObject.collection
+    kind_mapped = models.KindObject.collection
     kind_schema = KindSchema.update
 
     uuid_user: Optional[UUID] = None
@@ -308,7 +413,7 @@ class CollectionExtraSchema(BasePrimaryTableExtraSchema, CollectionSchema):
 
 class CollectionSearchSchema(BaseSearchSchema):
     kind_schema = KindSchema.search
-    kind_mapped = KindObject.collection
+    kind_mapped = models.KindObject.collection
 
     uuid_collection: UUIDS
 
@@ -318,7 +423,7 @@ class CollectionSearchSchema(BaseSearchSchema):
 
 
 class AssignmentBaseSchema(BaseSecondarySchema):
-    kind_mapped = KindObject.assignment
+    kind_mapped = models.KindObject.assignment
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
@@ -347,7 +452,7 @@ class AssignmentExtraSchema(AssignmentSchema):
 
 
 class DocumentBaseSchema(BasePrimarySchema):
-    kind_mapped = KindObject.document
+    kind_mapped = models.KindObject.document
 
     name: Name
     description: Description
@@ -358,12 +463,12 @@ class DocumentCreateSchema(DocumentBaseSchema):
     kind_schema = KindSchema.create
 
     content: Content
-    uuid_collection: UUIDS
-    uuid_user: UUIDS
+    # uuid_collection: UUIDS
+    # uuid_user: UUIDS
 
 
 class DocumentUpdateSchema(BaseUpdateSchema):
-    kind_mapped = KindObject.document
+    kind_mapped = models.KindObject.document
     kind_schema = KindSchema.update
 
     name: Optional[Name] = None
@@ -409,7 +514,7 @@ class DocumentExtraSchema(BasePrimaryTableExtraSchema, DocumentSchema):
 
 
 class DocumentSearchSchema(BaseSearchSchema):
-    kind_mapped = KindObject.document
+    kind_mapped = models.KindObject.document
     kind_schema = KindSchema.search
 
     uuid_document: UUIDS
@@ -417,15 +522,15 @@ class DocumentSearchSchema(BaseSearchSchema):
 
 class TimespanLimitParams(BaseModel):
 
-    limit: Limit
-    before: OptionalTimestamp
-    after: OptionalTimestamp
+    limit: LimitOptional
+    before: UnixTimestampOptional
+    after: UnixTimestampOptional
 
     @computed_field
     @property
     def before_timestamp(self) -> int | None:
         if self.before is None:
-            return 
+            return
         return int(datetime.timestamp(self.before))
 
     @computed_field
@@ -451,18 +556,18 @@ class TimespanLimitParams(BaseModel):
 
 
 class GrantBaseSchema(BaseSecondarySchema):
-    kind_mapped = KindObject.grant
+    kind_mapped = models.KindObject.grant
 
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
-    level: Annotated[Level, Field()]
+    level: Level
 
     @field_validator("level", mode="before")
-    def validate_level(cls, v) -> None | Level:
+    def validate_level(cls, v) -> None | models.Level:
         if isinstance(v, int):
-            return Level._value2member_map_.get(v)
+            return models.Level._value2member_map_.get(v)
         elif isinstance(v, str):
-            return Level[v]
+            return models.Level[v]
         else:
             return v
 
@@ -502,7 +607,7 @@ class GrantExtraSchema(GrantSchema):
 
 
 class EditBaseSchema(BaseSchema):
-    kind_mapped = KindObject.edit
+    kind_mapped = models.KindObject.edit
 
     content: Content
     message: Message
@@ -530,7 +635,7 @@ class EditExtraSchema(BasePrimaryTableExtraSchema, EditSchema):
 
 
 class EditSearchSchema(BaseSearchSchema):
-    kind_mapped = KindObject.edit
+    kind_mapped = models.KindObject.edit
     kind_schema = KindSchema.search
 
 
@@ -539,7 +644,7 @@ class EditSearchSchema(BaseSearchSchema):
 
 
 class EventBaseSchema(BaseSchema):
-    kind_mapped = KindObject.event
+    kind_mapped = models.KindObject.event
 
     api_origin: str
     api_version: str
@@ -565,9 +670,9 @@ class EventBaseSchema(BaseSchema):
     def validate_kind(cls, v: None | str | KindObject) -> None | KindObject:
         if isinstance(v, str):
             try:
-                w = KindObject[v]
+                w = models.KindObject[v]
             except KeyError:
-                w = KindObject._value2member_map_.get(v)
+                w = models.KindObject._value2member_map_.get(v)
                 if w is None:
                     msg = f"Could not find enum value associated with `{v}`."
                     raise ValueError(msg)
@@ -593,11 +698,9 @@ class EventExtraSchema(EventBaseSchema):
     children: Annotated["List[EventExtraSchema]", Field(default=list())]
 
 
-
-
 class BaseEventParams(BaseModel):
-    limit: Annotated[int | None, Field(default=None)]
-    before: OptionalTimestamp
+    limit: LimitOptional
+    before: UnixTimestampOptional
     after: Annotated[
         datetime,
         Field(validate_default=True, default=None),
@@ -617,7 +720,7 @@ class BaseEventParams(BaseModel):
 
 
 class EventSearchSchema(BaseEventParams):
-    kind_mapped: ClassVar[KindObject] = KindObject.event
+    kind_mapped: ClassVar[models.KindObject] = models.KindObject.event
     kind_schema: ClassVar[KindSchema] = KindSchema.search
 
     # NOTE: It appears that using `Query(None)` as the field default is what
@@ -627,8 +730,8 @@ class EventSearchSchema(BaseEventParams):
     #       signature worked.
     uuid_event: Annotated[Set[str] | None, Field(default=Query(None))]
 
-    kind: Annotated[KindEvent | None, Field(default=None)]
-    kind_obj: Annotated[KindObject | None, Field(default=None)]
+    kind: KindEvent
+    kind_obj: KindObject
     uuid_obj: UUID | None = None
 
 
@@ -694,11 +797,11 @@ T_Output = TypeVar(
 # This is the primary response. See https://youtu.be/HBH6qnj0trU?si=7YIqUkPl4gB5S_sP
 class AsOutput(BaseModel, Generic[T_Output]):
     # : Annotated[KindObject, BeforeValidator(kind), Field()]
-    data: Annotated[T_Output, Field()]
+    data: Annotated[T_Output, Field(desciption="Wrapped data.")]
 
     @computed_field
     @property
-    def kind(self) -> KindObject | None:
+    def kind(self) -> models.KindObject | None:
         if (ff := self.first()) is not None:
             return ff.kind_mapped
 
@@ -755,3 +858,55 @@ T_mwargs = TypeVar("T_mwargs", bound=type(BaseModel))
 # Cause I hate wrapping kwargs in dict.
 def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
     return M(**kwargs)
+
+
+# --------------------------------------------------------------------------- #
+# Error Message Schemas.
+
+
+class ErrBase(BaseModel):
+    msg: str
+
+
+class ErrObjMinSchema(ErrBase):
+    uuid_obj: UUID
+    kind_obj: KindObject
+
+
+class ErrAccessUser(ErrBase):
+    uuid_user: UUID
+    uuid_user_token: UUID
+
+
+class ErrAccessCollection(ErrBase):
+    uuid_user: UUID
+    uuid_collection: UUID
+
+
+class ErrAccessEvent(ErrBase):
+    uuid_user: UUID
+    uuid_event: UUID
+
+
+class ErrAccessDocumentGrantNone(ErrBase):
+    uuid_document: UUID
+    uuid_user: UUID
+    level_grant_required: Level
+
+
+class ErrAccessDocument(ErrAccessDocumentGrantNone):
+    level_grant: Level
+    uuid_grant: UUID
+
+
+T_ErrDetail = TypeVar("T_ErrDetail", bound=BaseModel)
+
+
+class ErrDetail(BaseModel, Generic[T_ErrDetail]):
+    detail: T_ErrDetail
+
+
+# Cause I hate wrapping kwargs in dict.
+def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
+    return M(**kwargs)
+

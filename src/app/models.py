@@ -820,8 +820,8 @@ class AssocUserDocument(Base):
                 conds = (User.uuid == uuid_user, Document.uuid.in_(uuid_target))
             case Document(uuid=uuid_doc):
                 conds = (Document.uuid == uuid_doc, User.uuid.in_(uuid_target))
-            case _:
-                raise HTTPException(500, detail="Cannot resolve.")
+            case bad:
+                raise ValueError(f"Invalid input `{bad}`.")
 
         q = q.where(*conds)
         return tuple(session.execute(q).scalars())
@@ -1099,7 +1099,7 @@ class User(SearchableTableMixins, Base):
                     msg="Cannot access private collection.",
                     uuid_user=self.uuid,
                     uuid_collection=collection.uuid,
-                ),
+                )
             )
         return self
 
@@ -1134,7 +1134,7 @@ class User(SearchableTableMixins, Base):
             case []:
                 detail.update(
                     msg="Grant does not exist.",
-                    level_grant_required=level.name,
+                    level=level.name,
                 )
                 raise HTTPException(403, detail=detail)
             case [

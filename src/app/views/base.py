@@ -3,16 +3,82 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
+import enum
 import logging
 from http import HTTPMethod
-from typing import Any, ClassVar, Dict
+from typing import Any, ClassVar, Dict, Generic, TypeVar
 
 from app import __version__, util
-from fastapi import APIRouter
+from app.models import KindObject
+from app.schemas import ErrDetail, ErrObjMinSchema
+from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
+from pydantic import BaseModel
 
 logger = util.get_logger(__name__)
 # logger.level = logging.INFO
+
+
+class OpenApiTags(str, enum.Enum):
+    users = "users"
+    documents = "documents"
+    collections = "collections"
+    edits = "edits"
+    grants = "grants"
+    assignments = "assignments"
+    events = "events"
+
+    # etc
+    auth0 = "auth0"
+    admin = "admin"
+    html = "html"
+
+
+OpenApiTagMetadata = [
+    {
+        "name": "users",
+        "description": "View and Manage Users.",
+    },
+    {
+        "name": "documents",
+        "description": "View and Manage Documents.",
+    },
+    {
+        "name": "collections",
+        "description": "View and Manage Collections.",
+    },
+    {
+        "name": "grants",
+        "description": "View and manage document access and access invitations."
+    },
+    {
+        "name": "assignments",
+        "description": "View and manage assignments of documents to collections."
+    },
+    {
+        "name": "events",
+        "description": "View and manage object events.",
+    },
+    {
+        "name": "auth0",
+        "description": "Auth0 and token tools."
+    },
+    {
+        "name": "html",
+        "description": "For humans.",
+    },
+]
+
+OpenApiResponseCommon = {
+    404: dict(
+        model=ErrDetail[ErrObjMinSchema],
+        description="Object could not be found.",
+    ),
+    410: dict(
+        model=ErrDetail[ErrObjMinSchema],
+        detail="Object is deleted or is pending deletion.",
+    ),
+}
 
 
 class ViewMixins:
@@ -27,7 +93,7 @@ class ViewMixins:
     view_children: ClassVar[Dict[str, "ViewMeta"]] = dict()
     view_router: ClassVar[APIRouter]
     view_router_args: ClassVar[Dict[str, Any]] = dict()
-    view_routes: ClassVar[Dict[str, str]] = dict()
+    view_routes: ClassVar[Dict[str, str | Dict[str, Any]]] = dict()
 
 
 class ViewMeta(type):
@@ -37,33 +103,43 @@ class ViewMeta(type):
     """
 
     @classmethod
-    def add_route(cls, T, name_fn: str, route: APIRoute):
+    def add_route(cls, T, fn_name: str, fn_info_raw: str | Dict[str, Any]):
         name = T.__name__
 
+        # Build info 
+        info: Dict[str, Any]
+        url: str
+        match fn_info_raw:
+            case str() as url:
+                info = dict()
+            case {"url": url, **info}:
+                ...
+            case bad:
+                msg = "Invalid info for url: Expected `str` for url or "
+                msg += f"`dict` specifying atleast a url, got `{bad}`."
+                raise ValueError(msg)
+
         # Parse name
-        raw, _ = name_fn.split("_", 1)
+        raw, _ = fn_name.split("_", 1)
         http_meth = next((hh for hh in HTTPMethod if hh.value.lower() == raw), None)
         if http_meth is None:
-            logger.warning(f"Could not determine method of `{name_fn}`.")
+            logger.warning(f"Could not determine method of `{fn_name}`.")
             return
 
+        # Update status code if not provided.
+        if http_meth == HTTPMethod.POST and "status" not in info:
+            info.update(status_code=201)
+
         # Find attr
-        fn = getattr(T, name_fn, None)
+        fn = getattr(T, fn_name, None)
         if fn is None:
-            msg = f"No such method `{name_fn}` of `{name}`."
+            msg = f"No such method `{fn_name}` of `{name}`."
             raise ValueError(msg)
 
-        # Create decorator kwargs
-        kwargs = dict()
-        if http_meth == HTTPMethod.POST:
-            kwargs.update(status_code=201)
-
-        # kwargs.update(views_route_args)
-
         # Get the decoerator and call it.
-        logger.debug("Adding function `%s` at route `%s`.", fn.__name__, route)
+        logger.debug("Adding function `%s` at url `%s`.", fn.__name__, url)
         decorator = getattr(T.view_router, http_meth.value.lower())
-        decorator(route, **kwargs)(fn)
+        decorator(url, **info)(fn)
 
     def __new__(cls, name, bases, namespace):
         T = super().__new__(cls, name, bases, namespace)
@@ -95,8 +171,8 @@ class ViewMeta(type):
                 if hasattr(T, "view_router")
                 else APIRouter(**T.view_router_args)  # type: ignore
             )
-            for name_fn, route in T.view_routes.items():  # type: ignore
-                cls.add_route(T, name_fn, route)
+            for fn_name, fn_info in T.view_routes.items():  # type: ignore
+                cls.add_route(T, fn_name, fn_info)
 
             for child_prefix, child in T.view_children.items():  # type: ignore
                 logger.debug(

@@ -19,7 +19,8 @@ from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
                         Event, Grant, KindObject, Level, Resolvable,
                         ResolvableMultiple, ResolvableSingular, Singular,
                         T_Resolvable, Tables, User)
-from app.schemas import EventParams, EventSearchSchema, mwargs
+from app.schemas import (ErrAccessCollection, ErrAccessUser, EventParams,
+                         EventSearchSchema, mwargs)
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -288,23 +289,23 @@ class Access(BaseController):
             match self.method:
                 case _ if not user.public:
                     if self.token.uuid != user.uuid:
-                        detail = dict(
+                        detail = ErrAccessUser(
                             uuid_user_token=user_token.uuid,
                             uuid_user=user.uuid,
                             msg="Cannot access private user.",
                         )
-                        raise HTTPException(403, detail=detail)
+                        raise HTTPException(403, detail=detail.model_dump())
                     return user
                 case H.GET:
                     return user
                 case H.POST | H.PATCH | H.PUT | H.DELETE:
                     if user.uuid != user_token.uuid:
-                        detail = dict(
+                        detail = ErrAccessUser(
                             uuid_user=user.uuid,
                             uuid_user_token=user_token.uuid,
                             msg="Cannot modify other user.",
                         )
-                        raise HTTPException(403, detail)
+                        raise HTTPException(403, detail.model_dump())
                     return user
                 case _ as bad:
                     raise ValueError(f"Cannot yet method `{bad}`.")
@@ -399,7 +400,7 @@ class Access(BaseController):
                     return collection
                 case H.POST | H.DELETE | H.PUT | H.PATCH:
                     if token_user.id != collection.id_user:
-                        detail = dict(
+                        detail = ErrAccessCollection(
                             uuid_user=token_user.uuid,
                             uuid_collection=collection.uuid,
                             msg="Cannot modify collection.",
@@ -407,10 +408,10 @@ class Access(BaseController):
 
                         # Not sure how this happens on occasion.
                         if collection.id_user is None:
-                            detail.update(msg="Collection has no owner.")
-                            raise HTTPException(418, detail=detail)
+                            detail.msg="Collection has no owner."
+                            raise HTTPException(418, detail=detail.model_dump())
 
-                        raise HTTPException(403, detail=detail)
+                        raise HTTPException(403, detail=detail.model_dump())
                     return collection
                 case _:
                     msg = f"Cannot handle HTTPMethod `{self.method}`."
@@ -434,12 +435,12 @@ class Access(BaseController):
                 )
 
         if return_data:
-            return Data(
-                data=ResolvedCollection.model_validate(
-                    dict(
-                        collections=collections,
-                        kind="collection",
-                    )
+            return mwargs(
+                Data[ResolvedCollection],
+                data=mwargs(
+                    ResolvedCollection,
+                    collections=collections,
+                    kind="collection",
                 ),
                 token_user=token_user,
                 event=None,

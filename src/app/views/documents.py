@@ -12,19 +12,43 @@ from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
 from app.schemas import (AsOutput, DocumentCreateSchema,
                          DocumentMetadataSchema, DocumentSchema,
                          DocumentSearchSchema, DocumentUpdateSchema,
-                         EditSchema, EditSearchSchema, EventSchema,
+                         EditSchema, EditSearchSchema, ErrAccessDocument,
+                         ErrAccessDocumentGrantNone, ErrDetail, EventSchema,
                          OutputWithEvents, TimespanLimitParams, mwargs)
 from app.views import args
-from app.views.base import BaseView
+from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 from fastapi import Body, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
-
+OpenApiResponseDocumentUnauthorized = {403: dict(
+        model=ErrDetail[ErrAccessDocument] | ErrAccessDocumentGrantNone,
+        description=(
+            "For read, cannot access document because no grants exist and "
+            "the document is private. Otherwise because grants do not exist"
+            "regardless of private/public status of document."
+        ),
+    )
+}
+OpenApiResponseDocument = {
+    **OpenApiResponseCommon,
+    **OpenApiResponseDocumentUnauthorized
+}
 class DocumentSearchView(BaseView):
     view_routes = dict(
-        get_recent_documents="",
-        get_recent_document_edits="/{uuid_document}/edits",
+        get_recent_documents=dict(
+            url="/recent",
+            name="Read Recently Editted Document",
+        ),
+        get_recent_document_edits=dict(
+            url="/{uuid_document}/edits",
+            name="Read Recents Edits for a Document",
+        )
+    )
+    view_router_args = dict(
+        tags=[OpenApiTags.documents],
+        responses=OpenApiResponseDocument,
     )
 
     # NOTE: Return the most recently editted  
@@ -78,12 +102,36 @@ class DocumentSearchView(BaseView):
 
 class DocumentView(BaseView):
     view_routes = dict(
-        get_document="/{uuid_document}",
-        post_document="",
-        patch_document="/{uuid_document}",
-        delete_document="/{uuid_document}",
+        get_document=dict(
+            url="/{uuid_document}",
+            name="Get Document JSON",
+            responses=OpenApiResponseDocumentUnauthorized,
+        ),
+        get_document_rendered=dict(
+            url="/{uuid_document}/rendered",
+            name="Get Rendered Document",
+            responses=OpenApiResponseDocumentUnauthorized,
+        ),
+        post_document=dict(
+            url="",
+            name="Create Document",
+        ),
+        patch_document=dict(
+            url="/{uuid_document}",
+            name="Update Document",
+            responses=OpenApiResponseDocumentUnauthorized,
+        ),
+        delete_document=dict(
+            url="/{uuid_document}",
+            name="Delete Document and Associated Objects",
+            responses=OpenApiResponseDocumentUnauthorized,
+        )
     )
-    view_children = {"/recent": DocumentSearchView}
+    view_children = {"": DocumentSearchView}
+    view_router_args = dict(
+        tags=[OpenApiTags.documents],
+        responses=OpenApiResponseCommon,
+    )
 
     @classmethod
     def get_document(
@@ -91,11 +139,24 @@ class DocumentView(BaseView):
         access: DependsAccess,
         uuid_document: args.PathUUIDDocument,
     ) -> AsOutput[DocumentSchema]:
+        """Read a document (as `JSON`).
+
+        To render a document, use `GET /documents/{uuid}/rendered`.
+        """
         document: Document = access.document(uuid_document, level=Level.view)
         return mwargs(
             AsOutput[DocumentSchema],
             data=DocumentSchema.model_validate(document)
         )
+
+    @classmethod
+    def get_document_rendered(
+        cls,
+        access: DependsAccess,
+        uuid_document: args.PathUUIDDocument,
+    ) -> FileResponse:
+        """Read document content rendered."""
+        raise HTTPException(400, detail="Not implemented yet.")
 
     # TODO: When integration tests are written, all CUD endpoints should
     #       test that the private CUD fields are approprietly set.
@@ -105,6 +166,12 @@ class DocumentView(BaseView):
         create: DependsCreate,
         create_data: Annotated[DocumentCreateSchema, Body()],
     ) -> OutputWithEvents[DocumentSchema]:
+        """Create a new document.
+
+        To share your document use `POST /grants/documents/{uuid_document}` and
+        to assign it to collections use
+        `POST /assignments/documents/{uuid_document}`.
+        """
 
         create.create_data = create_data
         data = create.e_document(None)
@@ -121,7 +188,19 @@ class DocumentView(BaseView):
         uuid_document: args.PathUUIDDocument,
         update: DependsUpdate,
         update_data: Annotated[DocumentUpdateSchema, Body()],
+        rollback: bool = False,
+        uuid_rollback: args.QueryUUIDEditOptional = None,
     ) -> OutputWithEvents[DocumentSchema]:
+        """Update document. Updating **content** will result in the current
+        document content being moved to an edit. 
+
+        To undo updates of the `content` field use **rollback** to revert to 
+        the most recent edit, or use `uuid_rollback` to specify the exact edit 
+        uuid to rollback to.
+
+        To read the edits for a document use
+        `GET /documents/{uuid_document}/edits`.
+        """
 
         update.update_data = update_data
         data = update.a_document(uuid_document)
@@ -138,8 +217,19 @@ class DocumentView(BaseView):
         uuid_document: args.PathUUIDDocument,
         delete: DependsDelete,
     ) -> AsOutput[DocumentSchema]:
+        """Delete a **document** *(and all associated content, such as edits,
+        assignments, and collections)*.
 
-        data = delete.a_document(uuid_document)
+        To restore an accidental deletion (within a reasonable timeframe,
+        before events and deleted objects are pruned) use
+        `POST /events/objects/documents/{uuid_deleted}/restore`.
+
+        To remove a document with no chance of restoration, use **force**. A
+        record of the deletion (an `event`) will be kept for some time and 
+        then eventually pruned.
+        """
+
+        data = delete.a_document(uuid_document, commit=True)
         return mwargs(
             OutputWithEvents[EventSchema],
             data=DocumentSchema.model_validate(data.data.documents[0]),
