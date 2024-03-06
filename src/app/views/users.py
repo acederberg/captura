@@ -34,6 +34,8 @@ OpenApiResponseUser = {
                 ),
             }
         }
+
+
 class DemoUserView(BaseView):
     """Routes for user data and metadata.
 
@@ -54,9 +56,18 @@ class DemoUserView(BaseView):
     """
 
     view_routes = dict(
-        post_user_demo="",
-        get_user_demos="",
-        patch_user_demo="/{invitation_uuid}",
+        post_user_demo=dict(
+            url="",
+            name="Request a Demo User",
+        ),
+        get_user_demos=dict(
+            url="",
+            name="Read Demo Requests",
+        ),
+        patch_user_demo=dict(
+            url="/{invitation_uuid}",
+            name="Admin Approve Request/Auth0 Verify",
+        ),
     )
 
     view_router_args = dict(
@@ -72,6 +83,12 @@ class DemoUserView(BaseView):
         invitation_code: Annotated[Set[str] | None, Query()] = None,
         invitation_uuid: Annotated[Set[str] | None, Query()] = None,
     ) -> List[OutputWithEvents[UserExtraSchema]]:
+        """Get requests for demo accounts.
+
+        Optionally filter by **invitation_email**, **invitation_code**, or 
+        **invitation_uuid**.
+        """
+        
         if not access.token.admin:
             raise HTTPException(
                 403,
@@ -109,8 +126,10 @@ class DemoUserView(BaseView):
     ) -> OutputWithEvents[UserExtraSchema]:
         """Create a user.
 
-        When an admin posts to this function, the admin should specify initial
-        details requested for approval.
+        If the user has no token or has a valid token but is not an admin, the 
+        `user` created will await approval from an admin. If the token exists 
+        and is an for an `admin`, then the `user` created will only await 
+        activation via `PATCH /users/extensions/demo/{invitation_code}`
         """
         is_admin = access.token.admin
         user_uuid = secrets.token_urlsafe(8)
@@ -195,9 +214,12 @@ class DemoUserView(BaseView):
         invitation_code: Annotated[str, Query()],
         invitation_email: Annotated[str, Query()],
     ) -> OutputWithEvents[UserExtraSchema]:
-        """If an admin, approves the user request made with `POST /users/demo`.
-        If not an admin, this can be used to active an account with the
-        :param:`invitation_uuid`.
+        """If user has a valid token and is an admin, approves the user request
+        made with `POST /users/demo` matching **invitation_uuid**,
+        **invitation_code**, and **invitation_email**.
+
+        If not an admin, this should be used by auth0 to activate an account
+        by verifying the afforementioned parameters.
         """
 
         # NOTE: There is no access to check in this case. Just the invitation.
@@ -287,14 +309,25 @@ class UserSearchView(BaseView):
     """
 
     view_routes = dict(
-        get_search_users="/{uuid_user}/users",
-        #                  ^^^^^^^^^^^  Search results ALWAYS scoped for users
-        #                               by uuid (since admins might need to
-        #                               simulate search results of other
-        #                               users).
-        get_search_documents="/{uuid_user}/documents",
-        get_search_edits="/{uuid_user}/edits",
-        get_search_collections="/{uuid_user}/collections",
+        get_search_users=dict(
+            name="Search Users",
+            url="/{uuid_user}/users",
+            #   ^^^^^^^^^^^^^^^^^^^^^  Search results ALWAYS scoped for users
+            #   by uuid (since admins might need to simulate search results of
+            #   other users).
+        ),
+        get_search_documents=dict(
+            url="/{uuid_user}/documents",
+            name="Search User Documents",
+        ),
+        get_search_edits=dict(
+            url="/{uuid_user}/edits",
+            name="Search User Edits",
+        ),
+        get_search_collections=dict(
+            url="/{uuid_user}/collections",
+            name="Search User Collections",
+        ),
     )
     view_router_args = dict(
         tags=[OpenApiTags.users],
@@ -374,9 +407,18 @@ class UserView(BaseView):
     """
 
     view_routes = dict(
-        get_user="/{uuid_user}",
-        patch_user="/{uuid_user}",
-        delete_user="/{uuid_user}",
+        get_user=dict(
+            url="/{uuid_user}",
+            name="Read User",
+        ),
+        patch_user=dict(
+            url="/{uuid_user}",
+            name="Update User",
+        ),
+        delete_user=dict(
+            url="/{uuid_user}",
+            name="Delete User (and Associated Objects)",
+        ),
     )
     view_router_args = dict(
         responses=OpenApiResponseUser,
@@ -398,9 +440,9 @@ class UserView(BaseView):
         uuid_user: args.PathUUIDUser,
         read: DependsRead,
     ) -> AsOutput[UserExtraSchema]:
-        """Get user metadata.
+        """Get `user` metadata.
 
-        For instance, this should be used to make a profile page.
+        For instance, this could be used to make a profile page.
         """
 
         user = UserExtraSchema.model_validate(read.access.user(uuid_user))
@@ -413,10 +455,7 @@ class UserView(BaseView):
         update: DependsUpdate,
         updates: Annotated[UserUpdateSchema, Body()],
     ) -> OutputWithEvents[UserSchema]:
-        """Update a user.
-
-        Only the user themself should be able to update this.
-        """
+        """Update the `user` specified by **uuid_user**."""
 
         update.update_data = updates
         data: Data[ResolvedUser] = update.a_user(

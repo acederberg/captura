@@ -1,38 +1,32 @@
 import functools
-from typing import (Callable, Concatenate, Generator, List, Literal, ParamSpec,
-                    Set, Tuple, Type, TypeVar)
+from typing import (Callable, Concatenate, List, Literal, ParamSpec, Type,
+                    TypeVar)
 
 from app import __version__, util
-from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (BaseController, Data, ResolvedEvent,
-                                  ResolvedObjectEvents)
-from app.depends import (DependsAccess, DependsDelete, DependsRead,
-                         DependsSessionMaker, DependsToken)
-from app.models import (AnyModel, Assignment, Collection, Document, Event,
-                        Grant, KindEvent, KindObject, KindRecurse,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
+from app.controllers.access import Access, WithAccess
+from app.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
+from app.depends import DependsAccess, DependsDelete, DependsRead
+from app.models import (Assignment, Collection, Document, Event, Grant,
+                        KindEvent, KindObject, User)
 from app.schemas import (AsOutput, AssignmentExtraSchema,
                          CollectionExtraSchema, DocumentExtraSchema,
-                         DocumentMetadataSchema, EventBaseSchema,
                          EventExtraSchema, EventMetadataSchema, EventParams,
                          EventSchema, EventSearchSchema, GrantExtraSchema,
-                         KindSchema, OutputWithEvents, T_Output,
-                         UserExtraSchema, mwargs, registry)
+                         OutputWithEvents, UserExtraSchema, mwargs)
 from app.views import args
 from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
-from fastapi import Depends, HTTPException, Query, Request
-from fastapi.routing import get_request_handler
+from fastapi import Depends, HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import literal_column, select
-from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 # Decorators.
 #
 # Typing voodoo (from hell).
 
-T_admin_only_controller = TypeVar("T_admin_only_controller", bound=Access | WithAccess)
+T_admin_only_controller = TypeVar(
+    "T_admin_only_controller",
+    bound=Access | WithAccess,
+)
 T_admin_only_return = TypeVar("T_admin_only_return")
 T_admin_only_self = TypeVar("T_admin_only_self", bound=Type[BaseView])
 P_admin_only = ParamSpec("P_admin_only")
@@ -70,35 +64,41 @@ def admin_only(
 class EventSearchView(BaseView):
 
     view_routes = dict(
-        get_event_objects="/events/{uuid_event}/objects",
-        get_user_events="/users/{uuid_user}/events",
-        get_document_events="/documents/{uuid_document}/events",
-        get_collection_events="/collections/{uuid_collection}/events",
-        get_grant_events="/documents/{uuid_document}/users/{uuid_user}/events",
-        get_assignment_events="/documents/{uuid_document}/collections/{uuid_collection}/events",
+        get_event_objects=dict(
+            url="/events/{uuid_event}/objects",
+            name="Get Objects for Event",
+            tags=[OpenApiTags.events],
+        ),
+        get_user_events=dict(
+            url="/users/{uuid_user}/events",
+            name="Get Events for User",
+            tags=[OpenApiTags.users],
+        ),
+        get_document_events=dict(
+            url="/documents/{uuid_document}/events",
+            name="Get Events for Document",
+            tags=[OpenApiTags.documents],
+        ),
+        get_collection_events=dict(
+            url="/collections/{uuid_collection}/events",
+            name="Get Events for Collection",
+            tags=[OpenApiTags.collections],
+        ),
+        get_grant_events=dict(
+            url="/grants/documents/{uuid_document}/users/{uuid_user}/events",
+            name="Get Events for Grant",
+            tags=[OpenApiTags.grants],
+        ),
+        get_assignment_events=dict(
+            url="/assignments/documents/{uuid_document}/collections/{uuid_collection}/events",
+            name="Get Events for Assignment",
+            tags=[OpenApiTags.assignments],
+        ),
     )
 
     view_router_args = dict(
-        tags=[OpenApiTags.events],
         responses=OpenApiResponseCommon,
     )
-
-    # @classmethod
-    # def object_events(
-    #     cls,
-    #     Schema: Type[T_Output],
-    #     read: DependsRead,
-    #     resolvable_object: ResolvableSingular[T_Resolvable],
-    #     resolvable_object_kind: KindObject,
-    #     param: EventParams,
-    # ) -> OutputWithEvents[T_Output]:
-    #
-    #     item, events = read.object_events(resolvable_object, resolvable_object_kind, param,)
-    #     return mwargs(
-    #         OutputWithEvents[Schema],
-    #         events=events,
-    #         data=TypeAdapter(Schema).validate_python(item),
-    #     )
 
     @classmethod
     @admin_only
@@ -232,11 +232,26 @@ class EventView(BaseView):
     """
 
     view_routes = dict(
-        get_event="/{uuid_event}",
-        get_events="",
-        delete_prune_event="/{uuid_event}",
-        delete_prune_object_events="/{kind_obj}/{uuid_obj}",
-        patch_undo_event="/{uuid_event}/objects",
+        get_event=dict(
+            url="/{uuid_event}",
+            name="Get Event",
+        ),
+        get_events=dict(
+            url="",
+            name="Search Events",
+        ),
+        delete_prune_event=dict(
+            url="/{uuid_event}",
+            name="Prune Event",
+        ),
+        delete_prune_object_events=dict(
+            url="/{kind_obj}/{uuid_obj}",
+            name="Prune Object Events",
+        ),
+        patch_undo_event=dict(
+            url="/{uuid_event}/objects",
+            name="Restore from Event",
+        ),
     )
     view_router_args = dict(
         tags=[OpenApiTags.events],
@@ -252,6 +267,10 @@ class EventView(BaseView):
         uuid_event: args.PathUUIDEvent,
         param: EventParams = Depends(),
     ) -> OutputWithEvents[EventSchema]:
+        """Proceed with caution. Admin only.
+
+        This will result in pruning of information of other objects.
+        """
 
         session = access.session
         event = Event.resolve(session, uuid_event)
@@ -282,6 +301,7 @@ class EventView(BaseView):
         uuid_obj: args.PathUUIDObj,
         param: EventParams = Depends(),
     ) -> AsOutput[EventSchema]:
+        "Proceed with caution. Admin only."
 
         data = delete.a_object_events(
             uuid_obj,
@@ -303,6 +323,7 @@ class EventView(BaseView):
         uuid_event: args.PathUUIDEvent,
         param: EventParams = Depends(),
     ) -> AsOutput[EventSchema]:
+        "Get event by **uuid_event**. Admin only."
 
         session = access.session
         event = Event.resolve(session, uuid_event)
@@ -349,8 +370,6 @@ class EventView(BaseView):
         """Restore a deletion from an event.
 
         Return the events and updated objects.
-
-        :param dry_run:
         """
 
         event = (
@@ -380,15 +399,6 @@ class EventView(BaseView):
             event=data.event,
         )
 
-    # NOTE: This will be implemented individually in each `DELETE` because
-    #       access will be handled already and data will have instantiated.
-    @classmethod
-    def patch_restore_object(
-        cls,
-        delete: DependsDelete,
-        kind_object: args.KindObject,
-        uuid_object: args.PathUUIDObj,
-    ): ...
 
     # TODO: Finish this later when time exists for it.
     # @classmethod

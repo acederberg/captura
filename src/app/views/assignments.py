@@ -38,15 +38,15 @@ class DocumentAssignmentView(BaseView):
 
     view_routes = dict(
         delete_assignment_document=dict(
-            url="/documents/{uuid_document}",
+            url="/{uuid_document}",
             name="Remove Document from Collections by Deleting Assignments"
         ),
         post_assignment_document=dict(
-            url="/documents/{uuid_document}",
+            url="/{uuid_document}",
             name="Add Document to Collections by Creating Assignments",
         ),
         get_assignment_document=dict(
-            url="/documents/{uuid_document}",
+            url="/{uuid_document}",
             name="Read Assignments of Document to Collections",
         ),
     )
@@ -119,15 +119,15 @@ class DocumentAssignmentView(BaseView):
 class CollectionAssignmentView(BaseView):
     view_routes = dict(
         delete_assignment_collection=dict(
-            url="/collections/{uuid_collection}",
+            url="/{uuid_collection}",
             description="Remove Documents from Collection (by Deleting Assignments)",
         ),
         post_assignment_collection=dict(
-            url="/collections/{uuid_collection}",
+            url="/{uuid_collection}",
             description="Add Documents to Collection (by Creating Assignments)",
         ),
         get_assignment_collection=dict(
-            url="/collections/{uuid_collection}",
+            url="/{uuid_collection}",
             description="Read Documents for Collection.",
         )
     )

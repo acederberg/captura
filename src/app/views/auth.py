@@ -8,9 +8,15 @@ class AuthView(BaseView):
     """This is where routes to handle login and getting tokens will be."""
 
     view_routes = dict(
-        post_token="/token",
+        post_token=dict(
+            url="/token",
+            name="Mint Test Token",
+        ),
         get_login="/login",
-        get_token="/token",
+        get_token=dict(
+            url="/token",
+            name="Verify Token",
+        ),
     )
     view_router_args = dict(
         tags=[OpenApiTags.auth0],
@@ -41,3 +47,4 @@ class AuthView(BaseView):
                 409,
                 detail="Login is not available in pytest mode.",
             )
+        raise HTTPException(400, detail = "Not implemented.")
