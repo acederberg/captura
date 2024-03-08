@@ -14,7 +14,8 @@ from app.schemas import (AsOutput, AssignmentExtraSchema,
                          EventSchema, EventSearchSchema, GrantExtraSchema,
                          OutputWithEvents, UserExtraSchema, mwargs)
 from app.views import args
-from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Depends, HTTPException
 from pydantic import TypeAdapter
 
@@ -97,7 +98,10 @@ class EventSearchView(BaseView):
     )
 
     view_router_args = dict(
-        responses=OpenApiResponseCommon,
+        responses={
+            **OpenApiResponseCommon,
+            **OpenApiResponseUnauthorized,
+        }
     )
 
     @classmethod
@@ -255,7 +259,10 @@ class EventView(BaseView):
     )
     view_router_args = dict(
         tags=[OpenApiTags.events],
-        responses=OpenApiResponseCommon,
+        responses={
+            **OpenApiResponseCommon,
+            **OpenApiResponseUnauthorized,
+        }
     )
 
     @classmethod

@@ -7,14 +7,15 @@ import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Self, Set, Tuple, Type, TypeVar)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
+                    Literal, Self, Set, Tuple, Type, TypeVar)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Collection, Document, Edit, Event, Grant,
-                        KindObject, Level, LevelHTTP, ResolvableSingular,
-                        ResolvedRawAny, Singular, User, uuids)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, LevelHTTP,
+                        ResolvableSingular, ResolvedRawAny, Singular, User,
+                        uuids)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
 from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
@@ -113,9 +114,18 @@ def uuid_set_from_model(data: Any, info: ValidationInfo) -> Set[str]:
     data_key_source = data_key.replace("uuid_", "")
     if data_key_source not in info.data:
         raise ValueError(f"Invalid source `{data_key_source}` for uuids.")
-    data_source = info.data[data_key_source]
-    res = uuids(data_source)
-    return res
+
+    match info.data[data_key_source]:
+        case tuple() as resolved:
+            return uuids(resolved)
+        case dict() as resovled:
+            return uuids(tuple(resovled.values()))
+        # case (*other,):
+        #     return set(other)
+        case Base() as other:
+            return {other.uuid}
+        case bad:
+            return bad
 
 
 def uuid_from_model(data: Any, info: ValidationInfo) -> str:
@@ -161,7 +171,7 @@ class BaseResolved(BaseModel):
 
         util.check_enum_opt_attr(cls, "kind", KindData)
 
-    def commit(self, session: Session, commit: bool = False) -> None:
+    def register(self, session: Session, refresh: bool = False) -> None:
         ...
 
 
@@ -171,21 +181,20 @@ T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edi
 class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
 
     # ----------------------------------------------------------------------- #
-
-    _items_attr_name: ClassVar[str]
+    _attr_name_targets: ClassVar[str]
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
         if "Base" in cls.__name__:
             return
 
-        cls._items_attr_name = Singular(cls.kind.name).name
+        cls._attr_name_targets = Singular(cls.kind.name).name
 
         # NOTE: How to check that a particular field is defined? `model_fields`
         #       is empty here but not when using the class otherwise. A
         #       solution without metaclasses is strongly preffered.
         #       This is nice to have because it verifies that
-        #       ``_items_attr_name`` is an actual field.
+        #       ``_attr_name_targets`` is an actual field.
 
         # field_name = Singular(cls.kind.name).name
         # if field_name not in cls.model_fields:
@@ -196,17 +205,17 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
 
     @classmethod
     def empty(cls, **kwargs_init) -> Self:
-        return cls(**{cls._items_attr_name: tuple()}, **kwargs_init)
+        return cls(**{cls._attr_name_targets: tuple()}, **kwargs_init)
 
     # ----------------------------------------------------------------------- #
 
     def targets(self) -> Tuple[T_ResolvedPrimary, ...]:
-        return getattr(self, self._items_attr_name)
+        return getattr(self, self._attr_name_targets)
 
     def err_nonempty(self) -> ValueError | None:
 
         # It is empty
-        if not len(getattr(self, attr_name := self._items_attr_name)):
+        if not len(getattr(self, attr_name := self._attr_name_targets)):
             return None
 
         name = self.__class__.__name__
@@ -214,38 +223,42 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         msg += f"`{attr_name}`)."
         return ValueError(msg)
 
-    def commit(
+    def register(
         self, 
         session: Session, 
-        commit: bool = False,
-        delete: bool = False,
+        refresh: bool = False,
     ) -> None:
         """Because writing commit/refresh logic and wrapping to avoid breaking
         'all or none'.
         """
 
-        if commit:
-            # Add or delete items.
-            items = self.targets()
-            if delete:
-                for item in items:
-                    session.delete(item)
-            else:
-                session.add_all(items)
+        # Add or delete items.
+        targets = self.targets()
+        session.add_all(targets)
 
 
-            # Commit and refresh.
-            session.commit()
-            if not delete:
-                for item in items:
-                    session.refresh(item)
-
+        # Commit and refresh.
+        session.commit()
+        if refresh:
+            for target in targets:
+                session.refresh(target)
 
 class BaseResolvedSecondary(BaseResolved):
     kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]
     kind_assoc: ClassVar[KindObject]
+    _attr_name_source: ClassVar[str]
+    _attr_name_target: ClassVar[str]
+    _attr_name_assoc: ClassVar[str]
+
+    q: Annotated[List[Any] | None, Field(default=None)]
+
+    def add_q(self, q) -> None:
+        if self.q is None:
+            self.q = [q]
+            return
+        self.q.append(q)
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -255,51 +268,58 @@ class BaseResolvedSecondary(BaseResolved):
         util.check_enum_opt_attr(cls, "kind_source", KindObject)
         util.check_enum_opt_attr(cls, "kind_target", KindObject)
         util.check_enum_opt_attr(cls, "kind_assoc", KindObject)
+        cls._attr_name_source = cls.kind_source.name
+        cls._attr_name_target = Singular(cls.kind_target.name).name
+        cls._attr_name_assoc = Singular(cls.kind_assoc.name).name
 
     @computed_field
     @property
-    def source(self) -> Document:
-        return getattr(self, self.kind_source.name)
+    def source(self) -> Document | User | Collection:
+        return getattr(self, self._attr_name_source)
 
     @computed_field
     @property
     def target(self) -> Tuple[Collection, ...]:
-        return getattr(self, Singular(self.kind_target.name).name)
+        return getattr(self, self._attr_name_target)
+
+    @computed_field
+    @property
+    def assoc(self) -> Dict[str, Any]:
+        return getattr(self, self._attr_name_assoc)
 
     @computed_field
     @property
     def uuid_source(self) -> str:
-        return getattr(self, "uuid_" + self.kind_source.name)
+        return getattr(self, "uuid_" + self._attr_name_source)
 
     @computed_field
     @property
     def uuid_target(self) -> Set[str]:
-        return getattr(self, "uuid_" + Singular(self.kind_target.name).name)
+        return getattr(self, "uuid_" + self._attr_name_target)
 
+    @computed_field
+    @property
+    def uuid_assoc(self) -> Set[str]:
+        return getattr(self, "uuid_" + self._attr_name_assoc)
 
-    def commit(self, session: Session, commit: bool = False,
-               delete: bool = False,) -> None:
+    def register(self, session: Session, refresh: bool = False) -> None:
         """Because writing commit/refresh logic and wrapping to avoid breaking
         'all or none'.
         """
+        # NOTE: Should not commit targets or sources since they should not
+        #       be modified in any of the functions that accept this `kind`
+        #       of data. Instead, child data should be appended to data.
 
-        assert False
-        # if commit:
-        #     targets = self.targets()
-        #     if delete:
-        #         for target in items:
-        #             session.delete(item)
-        #     else:
-        #         session.add_all(items)
-        #
-        #     # Recurse.
-        #     for child in self.children:
-        #         child.commit(session, False)
-        #
-        #     session.commit()
-        #     if not delete:
-        #         for item in items:
-        #             session.refresh(item)
+        session.add_all(self.assoc.values())
+        if self.q:
+            for q in self.q:
+                util.sql(session, q)
+                session.execute(q)
+
+        session.commit()
+        if refresh:
+            for assoc in self.assoc.values():
+                session.refresh(assoc)
 
 
 class ResolvedCollection(BaseResolvedPrimary):
@@ -307,6 +327,7 @@ class ResolvedCollection(BaseResolvedPrimary):
 
     collections: Tuple[Collection, ...]
     uuid_collections: UuidSetFromModel
+
 
 
 class ResolvedDocument(BaseResolvedPrimary):
@@ -360,11 +381,21 @@ class ResolvedGrantUser(BaseResolvedSecondary):
 
     user: User
     documents: Tuple[Document, ...]
+    grants: Annotated[
+        Dict[str, Grant],
+        Field(description="A map from `document` uuids to their respective `grant`s for `user`.")
+    ]
     uuid_user: UuidFromModel
     uuid_documents: UuidSetFromModel
+    uuid_grants: UuidSetFromModel
 
     # NOTE: See note inside of `Access.grant_user` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
+
+    # TODO: Add TypedDict for these kwargs.
+    # def grants(self, session: Session, **kwargs) -> Tuple[Grant, ...]:
+    #     q = self.user.q_select_grants(self.uuid_documents, **kwargs)
+    #     return tuple(session.execute(q).scalars())
 
 
 class ResolvedGrantDocument(BaseResolvedSecondary):
@@ -375,11 +406,21 @@ class ResolvedGrantDocument(BaseResolvedSecondary):
 
     document: Document
     users: Tuple[User, ...]
+    grants: Annotated[
+        Dict[str, Grant],
+        Field(description="A map from `user` uuids to their respective `grant`s for `document`.")
+    ]
     uuid_document: UuidFromModel
     uuid_users: UuidSetFromModel
+    uuid_grants: UuidSetFromModel 
 
     # NOTE: See note inside of `Access.grant_document` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
+
+    # TODO: Add TypedDict for these kwargs.
+    # def grants(self, session: Session, **kwargs) -> Tuple[Grant, ...]:
+    #     q = self.document.q_select_grants(self.uuid_users, **kwargs)
+    #     return tuple(session.execute(q).scalars())
 
 
 class ResolvedAssignmentCollection(BaseResolvedSecondary):
@@ -389,7 +430,7 @@ class ResolvedAssignmentCollection(BaseResolvedSecondary):
     kind_assoc = KindObject.assignment
 
     collection: Collection
-    # assignments: Dict[str, Assignment]
+    assignments: Dict[str, Assignment]
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
     uuid_documents: UuidSetFromModel
@@ -404,7 +445,7 @@ class ResolvedAssignmentDocument(BaseResolvedSecondary):
     kind_assoc = KindObject.assignment
 
     document: Document
-    # assignments: Dict[str, Assignment]
+    assignments: Dict[str, Assignment]
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
     uuid_collections: UuidSetFromModel
@@ -480,23 +521,21 @@ class Data(BaseModel, Generic[T_Data]):
         for item in items:
             self.children.append(item.data)
 
-    def commit(
-        self, 
-        session: Session, 
-        commit: bool = False,
-        *,
-        delete: bool = False,
-    ) -> None:
+    def register(self, session: Session) -> None:
+        print("Registering...")
+        self.data.register(session)
+        session.add(self.event)
+
+        for child in self.children:
+            child.register(session)
+
+
+    def commit(self, session: Session, commit: bool=False) -> None:
         if commit:
-            # Commit own data and events.
-            self.data.commit(session, commit, delete)
-            session.add(self.event)
+            print("Committing...")
+            self.register(session)
+            session.commit()
 
-            # Recurse.
-            for child in self.children:
-                child.commit(session, True, delete=delete)
-
-            session.refresh(self.event)
 
     def types(self) -> Any:
         return kind_type_map[self.kind]  # type: ignore[return-type]

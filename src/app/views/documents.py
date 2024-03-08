@@ -16,7 +16,8 @@ from app.schemas import (AsOutput, DocumentCreateSchema,
                          ErrAccessDocumentGrantNone, ErrDetail, EventSchema,
                          OutputWithEvents, TimespanLimitParams, mwargs)
 from app.views import args
-from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
@@ -29,7 +30,8 @@ OpenApiResponseDocumentUnauthorized = {403: dict(
             "the document is private. Otherwise because grants do not exist"
             "regardless of private/public status of document."
         ),
-    )
+    ),
+                                       **OpenApiResponseUnauthorized,
 }
 OpenApiResponseDocument = {
     **OpenApiResponseCommon,

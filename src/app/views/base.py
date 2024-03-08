@@ -6,7 +6,7 @@ This includes a metaclass so that undecorated functions may be tested.
 import enum
 import logging
 from http import HTTPMethod
-from typing import Any, ClassVar, Dict, Generic, TypeVar
+from typing import Any, ClassVar, Dict, Generic, Literal, TypeVar
 
 from app import __version__, util
 from app.models import KindObject
@@ -77,6 +77,12 @@ OpenApiResponseCommon = {
     410: dict(
         model=ErrDetail[ErrObjMinSchema],
         detail="Object is deleted or is pending deletion.",
+    ),
+}
+OpenApiResponseUnauthorized = {
+    401: dict(
+        model=ErrDetail[Literal["Token required"]],
+
     ),
 }
 

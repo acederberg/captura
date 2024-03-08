@@ -69,24 +69,34 @@ class Cli:
         ModelTestMeta.load(self.sessionmaker)
 
     def run(self):
-        """This function can be run by invoking this module (e.g. python -m 
+        """This function can be run by invoking this module (e.g. python -m
         app) or by using the command installed by ``pyproject.toml``, ``app``.
 
-        To connect to the application when it is running in the docker compose
-        project, run the following:
+        To get the IP address of the Captura server do
 
         .. code:: shell
 
-            # List the processes so that name of the container running this 
+            # List the processes so that name of the container running this
             # code is known
             export CONTAINER_NAME=$( \
                 docker compose --file=docker/docker-compose.yaml \
                 ps --format '{{ .Name }}' \
                 | grep server \
             )
-            export FORMAT='{{ 
-                .NetworkSettings.Networks.docker_documents.IPAddress }}'  
-            export CONTAINER_IP=$( docker inspect --filter=FORMAT $CONTAINER_NAME )
+            export FORMAT='{{
+                .NetworkSettings.Networks.docker_documents.IPAddress }}'
+            export CONTAINER_IP=$( \
+                docker inspect \
+                --format=$FORMAT \
+                $CONTAINER_NAME \
+            )
+            echo $CONTAINER_IP
+
+
+        and verify:
+
+
+        .. code:: shell
             curl "http://$CONTAINER_IP:8080"
 
         """

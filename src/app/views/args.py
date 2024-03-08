@@ -1,47 +1,77 @@
 from typing import Annotated, Literal, Optional, Set, TypeAlias
 
-from app.models import KindEvent, KindObject, KindRecurse
+from app.models import KindEvent, KindObject, KindRecurse, LevelStr
+from app.schemas import Level
 from fastapi import Path, Query
 
-QueryUUIDCollection: TypeAlias = Annotated[Set[str], Query(min_length=1)]
-QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
-QueryUUIDDocument: TypeAlias = Annotated[Set[str], Query(min_length=1)]
-QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=1)]
+PathUUIDUser: TypeAlias = Annotated[str, Path(description="User uuids.")]
+PathUUIDCollection: TypeAlias = Annotated[str, Path(description="Collection uuids.")]
+PathUUIDDocument: TypeAlias = Annotated[str, Path(description="Document uuids.")]
+PathUUIDEvent: TypeAlias = Annotated[str, Path(description="Event uuids.")]
+PathUUIDObj: TypeAlias = Annotated[str, Path(description="Object uuids.")]
+PathKindObj: TypeAlias = Annotated[KindObject, Path(description="Object kind.")]
 
-PathUUIDUser: TypeAlias = Annotated[str, Path()]
-PathUUIDCollection: TypeAlias = Annotated[str, Path()]
-PathUUIDDocument: TypeAlias = Annotated[str, Path()]
-PathUUIDEvent: TypeAlias = Annotated[str, Path()]
-PathUUIDObj: TypeAlias = Annotated[str, Path()]
-PathKindObj: TypeAlias = Annotated[KindObject, Path()]
+# --------------------------------------------------------------------------- #
 
 # NOTE: Due to how `q_conds_` works (with empty `set()` versus `None`) the
 #       empty set cannot be allowed. When nothing is passed it ought to be
 #       `None`.
+QueryUUIDCollection: TypeAlias = Annotated[
+    Set[str], 
+    Query(
+        min_length=1,
+        description="Collection uuids to filter by.",
+    )
+]
 QueryUUIDCollectionOptional: TypeAlias = Annotated[
     Optional[Set[str]],
-    Query(min_length=1),
+    Query(
+        min_length=1,
+        description="Optional collection uuids to filter by.",
+    ),
+]
+
+# --------------------------------------------------------------------------- #
+
+# QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
+QueryUUIDDocument: TypeAlias = Annotated[
+    Set[str], 
+    Query(
+        min_length=1,
+        description="Document uuids to filter by.",
+    )
 ]
 QueryUUIDDocumentOptional: TypeAlias = Annotated[
     Optional[Set[str]],
-    Query(min_length=1),
-]
-QueryUUIDUserOptional: TypeAlias = Annotated[
-    Optional[Set[str]],
-    Query(min_length=1),
-]
-QueryUUIDEditOptional: TypeAlias = Annotated[
-    Optional[Set[str]],
-    Query(min_length=1),
+    Query(
+        min_length=1,
+        description="Optional document uuids to filter by.",
+    ),
 ]
 
-QueryLevel: TypeAlias = Annotated[Literal["view", "modify", "own"], Query()]
-QueryRestore: TypeAlias = Annotated[bool, Query()]
-QueryTree: TypeAlias = Annotated[bool, Query()]
-QueryRoots: TypeAlias = Annotated[bool, Query()]
-QueryKindEvent: TypeAlias = Annotated[Optional[KindEvent], Query()]
-QueryKindObject: TypeAlias = Annotated[Optional[KindObject], Query()]
-QueryUUIDEventObject: TypeAlias = Annotated[Optional[str], Query()]
-QueryFlat: TypeAlias = Annotated[bool, Query()]
-QueryKindRecurse: TypeAlias = Annotated[Optional[KindRecurse], Query()]
-QueryForce: TypeAlias = Annotated[bool, Query()]
+# --------------------------------------------------------------------------- #
+
+QueryUUIDUser: TypeAlias = Annotated[Set[str], Query(min_length=1)]
+QueryUUIDUserOptional: TypeAlias = Annotated[
+    Optional[Set[str]],
+    Query(
+        min_length=1,
+        description="Optional user uuids to filter by.",
+    ),
+]
+
+# --------------------------------------------------------------------------- #
+
+QueryUUIDEditOptional: TypeAlias = Annotated[
+    Optional[Set[str]],
+    Query(
+        min_length=1,
+        description="Optional edit uuids to filter by."
+    ),
+]
+
+# --------------------------------------------------------------------------- #
+
+QueryForce: TypeAlias = Annotated[bool, Query(description="When true, objects cannot be restored.")]
+QueryLevel: TypeAlias = Annotated[LevelStr, Query()]
+QueryLevelOptional: TypeAlias = Annotated[LevelStr | None, Query()]

@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
                     Optional, Self, Set, Type, TypeAlias, TypeVar)
 
-from fastapi import Query
+from fastapi import Body, Query
 from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
                       computed_field, field_serializer, field_validator,
                       model_validator)
@@ -55,7 +55,7 @@ UnixTimestampOptional: TypeAlias = Annotated[
     datetime | None,
     Field(
         default=None,
-        description="",
+        description="Optional unix timestamp.",
     ),
 ]
 
@@ -114,7 +114,7 @@ UUIDS = Annotated[
     Field(
         default=None,
         description="UUIDs to filter with.",
-        examples=[set(secrets.token_urlsafe() for _ in range(5))],
+        examples=[set(secrets.token_urlsafe() for _ in range(25))],
     ),
 ]
 ID = Annotated[int, Field(description="Primary key(s) for tables.")]
@@ -325,8 +325,8 @@ class UserUpdateSchema(BaseUpdateSchema):
     # NOTE: `url_image` and `url` already optional.
     name: Optional[Name] = None
     description: Optional[Description] = None
-    url_image: Url
-    url: Url
+    url_image: Url = None
+    url: Url = None
 
 
 class UserSchema(UserBaseSchema):
@@ -555,21 +555,30 @@ class TimespanLimitParams(BaseModel):
 # Grants
 
 
+Pending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
+PendingFrom: TypeAlias = Annotated[models.PendingFrom, Field(description="Grant pending origin.")]
+
 class GrantBaseSchema(BaseSecondarySchema):
     kind_mapped = models.KindObject.grant
 
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
     level: Level
-
     @field_validator("level", mode="before")
     def validate_level(cls, v) -> None | models.Level:
-        if isinstance(v, int):
-            return models.Level._value2member_map_.get(v)
-        elif isinstance(v, str):
-            return models.Level[v]
-        else:
-            return v
+        match v:
+            case int() as level_value:
+                return models.Level._value2member_map_.get(level_value)
+            case str() as level_name:
+                return models.Level[level_name]
+            case models.LevelStr() as levelstr:
+                return models.Level(levelstr.name)
+            case _: 
+                return v
+
+    @field_serializer('level')
+    def enum_as_name(item: enum.Enum):
+        return item.name
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
@@ -584,10 +593,16 @@ class GrantSchema(GrantBaseSchema):
     uuid: UUID
     uuid_document: UUID
     uuid_user: UUID
+    pending: Pending
+    pending_from: PendingFrom
+
+    @field_serializer('level', 'pending_from')
+    def enum_as_name(item: enum.Enum):
+        return item.name
 
     # Metadata
-    uuid_parent: UUID
-    uuid_user_granter: UUID
+    uuid_parent: Optional[UUID] = None
+    uuid_user_granter: Optional[UUID] = None # should it reeally be optional
 
 
 class GrantExtraSchema(GrantSchema):
@@ -894,19 +909,19 @@ class ErrAccessDocumentGrantNone(ErrBase):
     level_grant_required: Level
 
 
+class ErrAccessCannotRejectOwner(ErrBase):
+    uuid_user_revoker: UUID
+    uuid_document: UUID
+    uuid_user_revokees: List[str]
+
+
 class ErrAccessDocument(ErrAccessDocumentGrantNone):
     level_grant: Level
     uuid_grant: UUID
 
 
-T_ErrDetail = TypeVar("T_ErrDetail", bound=BaseModel)
+T_ErrDetail = TypeVar("T_ErrDetail", bound=BaseModel | str)
 
 
 class ErrDetail(BaseModel, Generic[T_ErrDetail]):
     detail: T_ErrDetail
-
-
-# Cause I hate wrapping kwargs in dict.
-def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
-    return M(**kwargs)
-

@@ -10,7 +10,8 @@ from app.schemas import (AsOutput, CollectionCreateSchema, CollectionSchema,
                          DocumentSearchSchema, ErrAccessCollection, ErrDetail,
                          EventSchema, OutputWithEvents, mwargs)
 from app.views import args
-from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
@@ -32,6 +33,7 @@ DependsCollection = Annotated[Collection, Depends(collection)]
 # --------------------------------------------------------------------------- #
 
 OpenApiResponseCollectionUnauthorized = {
+    **OpenApiResponseUnauthorized,
     403: {
         "model": ErrDetail[ErrAccessCollection],
         "description": (
@@ -180,7 +182,6 @@ class CollectionView(BaseView):
             uuid_collection,
             resolve_user_token=update.token_user,
         )
-        print(data.event.uuid)
         return mwargs(
             OutputWithEvents[CollectionSchema],
             data=CollectionSchema.model_validate(*data.data.collections),

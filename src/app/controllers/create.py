@@ -453,7 +453,7 @@ class Create(WithDelete, Generic[T_Create]):
             id_source_name: id_source_value,
             id_target_name: target.id,
         }
-        return Grant(**kwargs, **self.create_data.model_dump(exclude={"kind"}))
+        return Grant(**kwargs, **self.create_data.model_dump())
 
     def grant_user(
         self,
@@ -683,7 +683,6 @@ class Update(WithDelete, Generic[T_Update]):
     ):
         session = self.session
 
-        print(session)
         item: User | Collection | Document
         match data.data:
             case object(users=(User() as item,)):
@@ -724,7 +723,6 @@ class Update(WithDelete, Generic[T_Update]):
             )
 
         if commit:
-            print("committing.")
             session.add(item)
             session.add(data.event)
             session.commit()

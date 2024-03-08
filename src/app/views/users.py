@@ -18,7 +18,8 @@ from app.schemas import (AsOutput, CollectionMetadataSchema,
                          UserExtraSchema, UserSchema, UserSearchSchema,
                          UserUpdateSchema, mwargs)
 from app.views import args
-from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends, HTTPException, Query
 from pydantic import TypeAdapter
 from sqlalchemy import select
@@ -414,10 +415,12 @@ class UserView(BaseView):
         patch_user=dict(
             url="/{uuid_user}",
             name="Update User",
+            responses=OpenApiResponseUnauthorized,
         ),
         delete_user=dict(
             url="/{uuid_user}",
             name="Delete User (and Associated Objects)",
+            responses=OpenApiResponseUnauthorized,
         ),
     )
     view_router_args = dict(

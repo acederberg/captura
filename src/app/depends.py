@@ -106,7 +106,6 @@ def async_session_maker(
     :returns: A ``sqlalchemy.orm.sessionmaker`` for creating sessions.
     """
     logger.debug("Dependency `session_maker` called.")
-    print(async_engine)
     return async_sessionmaker(bind=async_engine, class_=AsyncSession)
 
 
@@ -144,7 +143,7 @@ DependsAuth: TypeAlias = Annotated[Auth, Depends(auth, use_cache=False)]
 @cache
 def token(
     auth: DependsAuth,
-    authorization: Annotated[str, Header()],
+    authorization: Annotated[str, Header(description="Auth0 bearer token.")],
 ) -> Token:
     """Decode and deserialize the bearer JWT specified in the ``Authorization``
     header.
@@ -163,7 +162,7 @@ def token(
 
 def token_optional(
     auth: DependsAuth,
-    authorization: Annotated[str | None, Header()] = None,
+    authorization: Annotated[str | None, Header(description="Optional auth0 bearer token.")] = None,
 ) -> Dict[str, str] | None:
     if authorization is not None:
         return token(auth, authorization)
@@ -236,7 +235,6 @@ def access(
     sessionmaker: DependsSessionMaker, token: DependsTokenOptional, request: Request
 ) -> Access:
     with sessionmaker() as session:
-        print("HERE")
         return Access(session=session, token=token, method=request.method)
 
 

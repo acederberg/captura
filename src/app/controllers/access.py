@@ -5,7 +5,7 @@ from http import HTTPMethod
 from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
                     Tuple, Type, TypeVar, overload)
 
-from app import __version__
+from app import __version__, util
 from app.auth import Token
 from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
                                   DataResolvedGrant, KindData,
@@ -17,10 +17,11 @@ from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
                                   ResolvedObjectEvents, ResolvedUser, T_Data)
 from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
                         Event, Grant, KindObject, Level, Resolvable,
-                        ResolvableMultiple, ResolvableSingular, Singular,
-                        T_Resolvable, Tables, User)
-from app.schemas import (ErrAccessCollection, ErrAccessUser, EventParams,
-                         EventSearchSchema, mwargs)
+                        ResolvableLevel, ResolvableMultiple,
+                        ResolvableSingular, Singular, T_Resolvable, Tables,
+                        User)
+from app.schemas import (ErrAccessCannotRejectOwner, ErrAccessCollection,
+                         ErrAccessUser, EventParams, EventSearchSchema, mwargs)
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -284,6 +285,8 @@ class Access(BaseController):
         # NOTE: When `GET` method, if the user is public, return. Otherwise
         #       always check for a token and check the token uuid.
         def check_one(user: User) -> User:
+            if user.admin:
+                return user
             if exclude_deleted:
                 user.check_not_deleted()
             match self.method:
@@ -472,9 +475,10 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
+        pending: bool = False,
     ) -> Document: ...
 
     @overload
@@ -485,9 +489,10 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
+        pending: bool = False,
     ) -> Tuple[Document, ...]: ...
 
     @overload
@@ -498,9 +503,10 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[True] = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
+        pending: bool = False,
     ) -> Data[ResolvedDocument]: ...
 
     def document(
@@ -510,13 +516,13 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: bool = False,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
+        pending: bool = False,
     ) -> Document | Tuple[Document, ...] | Data[ResolvedDocument]:
         level = level if level is not None else self.level
         token_user = self.token_user_or(resolve_user_token)
-        documents = Document.resolve(self.session, resolve_document)
         if grants is None:
             grants = dict()
 
@@ -527,17 +533,18 @@ class Access(BaseController):
                 level,
                 grants=grants,
                 grants_index=grants_index,
+                pending=pending,
             )
             if exclude_deleted:
                 document = document.check_not_deleted(410)
             return document
 
         documents: Tuple[Document, ...]
-        match documents:
+        match Document.resolve(self.session, resolve_document):
             case tuple() as documents:
                 documents = tuple(map(check_one, documents))
-            case Document():
-                _document = check_one(documents)
+            case Document() as document:
+                _document = check_one(document)
                 if not return_data:
                     return _document
                 documents = (_document,)
@@ -546,7 +553,8 @@ class Access(BaseController):
                 raise ValueError(msg)
 
         if return_data:
-            return Data[ResolvedDocument](
+            return mwargs(
+                Data[ResolvedDocument],
                 data=ResolvedDocument.model_validate(
                     dict(
                         documents=documents,
@@ -565,7 +573,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
     ) -> Data[ResolvedDocument]:
         return self.document(
             resolve_document,
@@ -639,7 +647,8 @@ class Access(BaseController):
             grants=(grants := dict()),
         )
         if return_data:
-            return Data(
+            return mwargs(
+                Data[ResolvedEdit],
                 data=ResolvedEdit.model_validate(
                     dict(
                         edits=res,
@@ -674,43 +683,46 @@ class Access(BaseController):
     def grant_user(  # type: ignore[overload-overlap]
         self,
         resolve_user: ResolvableSingular[User],
-        resolve_documents: ResolvableMultiple[Document],
+        resolve_documents: ResolvableMultiple[Document] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
+        pending: bool = False,
     ) -> Tuple[User, Tuple[Document, ...]]: ...
 
     @overload
     def grant_user(
         self,
         resolve_user: ResolvableSingular[User],
-        resolve_documents: ResolvableMultiple[Document],
+        resolve_documents: ResolvableMultiple[Document] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
+        pending: bool = False,
     ) -> Data[ResolvedGrantUser]: ...
 
     def grant_user(
         self,
         resolve_user: ResolvableSingular[User],
-        resolve_documents: ResolvableMultiple[Document],
+        resolve_documents: ResolvableMultiple[Document] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: bool = False,
+        pending: bool = False,
     ) -> Tuple[User, Tuple[Document, ...]] | Data[ResolvedGrantUser]:
         """When inspecting the user, one must authenticate as the user."""
 
-        level = level if level is not None else self.level
+        level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
         user = self.user(resolve_user, resolve_user_token=user_token)
-        if user.uuid != user_token:
+        if user.uuid != user_token.uuid and not user_token.admin:
             raise HTTPException(
                 403,
                 detail=dict(
@@ -724,22 +736,48 @@ class Access(BaseController):
         match self.method:
             # When posting, user may request only for documents that are
             # public, and when deleting
-            case H.DELETE | H.POST | H.GET:
+            case H.DELETE | H.POST | H.GET if level is not None:
                 level = Level.view
             case _:
                 raise HTTPException(405)
 
         # NOTE: See the equivalent note in `ResolvedGrantUser`. User grants are
         #       not important, only `token_user`.
+        document_kwargs: Dict[str, Any] = dict(
+            exclude_deleted=exclude_deleted,
+            level=level,
+        )
+        if not resolve_documents:
+            q = user.q_select_documents(
+                **document_kwargs,
+                exclude_pending=False,
+                pending=pending,
+            )
+            util.sql(self.session, q)
+            resolve_documents = tuple(self.session.execute(q).scalars())
+
         token_user_grants: Dict[str, Grant] = dict()
         documents = self.document(
             resolve_documents,
-            exclude_deleted=exclude_deleted,
+            **document_kwargs,
             resolve_user_token=user_token,
-            level=level,
             grants=token_user_grants,
             grants_index="uuid_document",
         )
+
+        # NOTE: If the token user is not the user that the data is for then
+        #       it is necessary to find a different set of grants.
+        grants_user: Dict[str, Grant]
+        if user_token.uuid != user.uuid:
+            _ = self.document(
+                documents,
+                **document_kwargs,
+                resolve_user_token=user,
+                grants=(grants_user:=dict()),
+                grants_index="uuid_document",
+            )
+        else:
+            grants_user = token_user_grants
 
         if return_data:
             return mwargs(
@@ -748,6 +786,7 @@ class Access(BaseController):
                     ResolvedGrantUser,
                     documents=documents,
                     user=user,
+                    grants=grants_user,
                     kind="grant_user",
                     token_user=self.token_user,
                     token_user_grants=token_user_grants,
@@ -760,11 +799,12 @@ class Access(BaseController):
     def d_grant_user(
         self,
         resolve_user: ResolvableSingular[User],
-        resolve_documents: ResolvableMultiple[Document],
+        resolve_documents: ResolvableMultiple[Document] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
+        pending: bool = False,
     ) -> Data[ResolvedGrantUser]:
         return self.grant_user(
             resolve_user,
@@ -773,45 +813,49 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             level=level,
             return_data=True,
+            pending=pending
         )
 
     @overload
     def grant_document(
         self,
         resolve_document: ResolvableSingular[Document],
-        resolve_users: ResolvableMultiple[User],
+        resolve_users: ResolvableMultiple[User] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
+        pending: bool = False,
     ) -> Tuple[Document, Tuple[User, ...]]: ...
 
     @overload
     def grant_document(
         self,
         resolve_document: ResolvableSingular[Document],
-        resolve_users: ResolvableMultiple[User],
+        resolve_users: ResolvableMultiple[User] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
+        pending: bool = False,
     ) -> Data[ResolvedGrantDocument]: ...
 
     def grant_document(
         self,
         resolve_document: ResolvableSingular[Document],
-        resolve_users: ResolvableMultiple[User],
+        resolve_users: ResolvableMultiple[User] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: bool = False,
+        pending: bool = False,
     ) -> Tuple[Document, Tuple[User, ...]] | Data[ResolvedGrantDocument]:
         """For document owners only."""
 
-        level = level if level is not None else self.level
+        level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
         token_user_grant: Dict[str, Grant] = dict()
@@ -836,51 +880,83 @@ class Access(BaseController):
         #       3. Accepting requests for access does not require any grant
         #          knowledge bout the target users on the source document.
         #
-        users = self.user(resolve_users)
-
-        # Select owner uuids
-        session = self.session
-        q = document.q_select_grants(
-            uuid_user := User.resolve_uuid(session, users),
-            level=Level.own,
-            exclude_deleted=exclude_deleted,
-        )
-        uuid_owners: Set[str] = set(session.execute(q).scalars())
-        if len(uuid_owners):
-            detail = dict(
-                msg="Owner cannot reject grants of other owners.",
-                uuid_user_revoker=self.token.uuid,
-                uuid_user_revokees=uuid_user,
-                uuid_document=Document.resolve_uuid(session, resolve_document),
+        # NOTE: To get grants just use `ResolvedGrant*.grants`.
+        users: Tuple[User, ...]
+        if resolve_users is None:
+            q = document.q_select_users(
+                level=Level.own,
+                exclude_deleted=exclude_deleted,
+                pending=pending,
+                exclude_pending=False,
             )
-            raise HTTPException(403, detail=detail)
+            users = tuple(self.session.execute(q).scalars())
+        else:
+            users = User.resolve(self.session, resolve_users)
 
+        uuid_users = User.resolve_uuid(self.session, users)
         match self.method:
-            case H.GET | H.POST | H.DELETE | H.PUT:
-                if return_data:
-                    return mwargs(
-                        Data,
-                        data=mwargs(
-                            ResolvedGrantDocument,
-                            document=document,
-                            users=users,
-                            kind="grant_document",
-                            token_user_grant=token_user_grant[user_token.uuid],
-                        ),
-                        token_user=user_token,
+            case H.GET | H.POST | H.PUT:
+                ...
+            case H.DELETE:
+                session = self.session
+                q_owners = document.q_select_grants(
+                    level=Level.own,
+                    exclude_deleted=exclude_deleted,
+                    pending=pending,
+                    exclude_pending=True, # Absolutely necessary, do not rm
+                )
+
+                util.sql(self.session, q_owners)
+                uuid_owners: Set[str] = set(
+                    item.uuid for item in session.execute(q_owners).scalars()
+                )
+                if len(uuid_owners & uuid_users):
+                    detail = ErrAccessCannotRejectOwner(
+                        msg="Owner cannot reject grants of other owners.",
+                        uuid_user_revoker=self.token.uuid,
+                        uuid_user_revokees=list(uuid_owners),
+                        uuid_document=Document.resolve_uuid(session, resolve_document),
                     )
-                return document, users
+                    raise HTTPException(403, detail=detail.model_dump())
             case _:
                 raise HTTPException(405)
+
+        q_user_grants = document.q_select_grants(
+            uuid_users,
+            level=level,
+            pending=pending,
+            exclude_pending=False,
+            exclude_deleted=True,
+        )
+        user_grant: Dict[str, Grant] = {
+            grant.uuid: grant
+            for grant in self.session.execute(q_user_grants).scalars()
+        }
+
+        if return_data:
+            return mwargs(
+                Data,
+                data=mwargs(
+                    ResolvedGrantDocument,
+                    document=document,
+                    grants=user_grant,
+                    users=users,
+                    kind="grant_document",
+                    token_user_grants=token_user_grant,
+                ),
+                token_user=user_token,
+            )
+        return document, users
 
     def d_grant_document(
         self,
         resolve_document: ResolvableSingular[Document],
-        resolve_users: ResolvableMultiple[User],
+        resolve_users: ResolvableMultiple[User] | None,
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
+        pending: bool = False,
     ) -> Data[ResolvedGrantDocument]:
         return self.grant_document(
             resolve_document,
@@ -889,6 +965,7 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             level=level,
             return_data=True,
+            pending=pending,
         )
 
     # ----------------------------------------------------------------------- #
@@ -902,7 +979,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
     ) -> Tuple[Collection, Tuple[Document, ...]]: ...
 
@@ -914,7 +991,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
     ) -> Data[ResolvedAssignmentCollection]: ...
 
@@ -925,7 +1002,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: bool = False,
     ) -> Tuple[Collection, Tuple[Document, ...]] | Data[ResolvedAssignmentCollection]:
         # NOTE: Keep `token_user` here so that the user is checked.
@@ -972,7 +1049,7 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
     ) -> Data[ResolvedAssignmentCollection]:
         return self.assignment_collection(
             resolve_collection,
@@ -991,7 +1068,7 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
     ) -> Tuple[Document, Tuple[Collection, ...]]: ...
 
@@ -1003,7 +1080,7 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
     ) -> Data[ResolvedAssignmentDocument]: ...
 
@@ -1014,7 +1091,7 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         return_data: bool = False,
     ) -> Tuple[Document, Tuple[Collection, ...]] | Data[ResolvedAssignmentDocument]:
         token_user = self.token_user_or(resolve_user_token)
@@ -1060,7 +1137,7 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
     ) -> Data[ResolvedAssignmentDocument]:
         return self.assignment_document(
             resolve_document,
@@ -1078,7 +1155,7 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
     ) -> Data[ResolvedAssignmentDocument] | Data[ResolvedAssignmentCollection]:
         match [source, resolve_target]:
             case [Document() as document, set() | tuple() as targets]:

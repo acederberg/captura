@@ -4,8 +4,8 @@ import secrets
 from datetime import datetime
 from logging import warn
 from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
-                    Generator, Generic, List, Literal, Self, Set, Tuple, Type,
-                    TypeAlias, TypeVar, overload)
+                    ForwardRef, Generator, Generic, List, Literal, Self, Set,
+                    Tuple, Type, TypeAlias, TypeVar, overload)
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -42,17 +42,35 @@ LENGTH_CONTENT: int = 2**15
 LENGTH_FORMAT: int = 8
 
 
+
+
 class Level(enum.Enum):
     # NOTE: Must be consisten with sql, indexes start at 1
     view = 1
     modify = 2
     own = 3
 
+    @classmethod
+    def resolve(cls, v: "ResolvableLevel") -> "Level":
+
+        match v:
+            case LevelStr() as lvlstr:
+                return Level[lvlstr.name]
+            case Level() as self:
+                return self
+            case bad:
+                raise ValueError(f"Cannot resolve level for `{bad}`.")
+
+
 
 class LevelStr(str, enum.Enum):
     view = "view"
     modify = "modify"
     own = "own"
+
+
+ResolvableLevel: TypeAlias = str | Level | LevelStr
+
 
 
 class LevelHTTP(enum.Enum):
@@ -249,7 +267,9 @@ class Base(DeclarativeBase):
             case set():
                 return cls.if_many(session, that)
             case _ as bad:
-                raise ValueError(f"Invalid identifier `{bad}`.")
+                msg = f"Cannot resolve `{bad}` (of type `{bad}`) for mapped "
+                msg += f"class `{cls.__name__}`." 
+                raise ValueError(msg)
 
     @overload
     @classmethod
@@ -946,7 +966,7 @@ class User(SearchableTableMixins, Base):
     def q_conds_grants(
         self,
         document_uuids: None | Set[str] = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         pending: bool | None = None,
         exclude_pending: bool = False,
@@ -960,18 +980,18 @@ class User(SearchableTableMixins, Base):
             )
 
         if document_uuids is not None:
-            cond = and_(
-                cond,
-                AssocUserDocument.id_document.in_(
-                    select(Document.id).where(Document.uuid.in_(document_uuids))
-                ),
-            )
+            q_ids = select(Document.id)
+            q_ids = q_ids.where(Document.uuid.in_(document_uuids))
+            cond = and_(cond, AssocUserDocument.id_document.in_(q_ids))
+
         if level is not None:
+            level = Level.resolve(level)
             cond = and_(cond, Grant.level >= level.value)
 
         match (pending, exclude_pending):
             case (True, True):
-                raise ValueError()
+                msg = "`pending` and `exclude_pending` cannot both be `True`."
+                raise ValueError(msg)
             case (bool() as pending, False):
                 cond = and_(cond, Grant.pending == (true() if pending else false()))
             case (None, True):
@@ -982,7 +1002,7 @@ class User(SearchableTableMixins, Base):
     def q_select_grants(
         self,
         document_uuids: None | Set[str] = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         pending: bool | None = None,
         exclude_pending: bool = True,
@@ -1013,8 +1033,11 @@ class User(SearchableTableMixins, Base):
     def q_select_documents(
         self,
         document_uuids: Set[str] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
+        exclude_pending: bool = True,
+        pending: bool = False,
+
     ) -> Select:
         """Dual to :meth:`q_select_user_uuids`."""
 
@@ -1022,7 +1045,13 @@ class User(SearchableTableMixins, Base):
             select(Document)
             .join(AssocUserDocument)
             .where(
-                self.q_conds_grants(document_uuids, level, exclude_deleted),
+                self.q_conds_grants(
+                    document_uuids,
+                    level,
+                    exclude_deleted,
+                    exclude_pending=exclude_pending,
+                    pending=pending,
+                ),
             )
         )
 
@@ -1036,13 +1065,11 @@ class User(SearchableTableMixins, Base):
 
     def q_select_documents_exclusive(self, document_uuids: Set[str] | None = None):
         level = Level.own
-        print(1)
         q = (
             select(Document.id, func.count(Document.id).label("owner_count"))
             .select_from(self.q_select_documents(document_uuids, level))
             .group_by(Document.id)
         )
-        print(2)
         q = (
             select(Document.id)
             .select_from(q)
@@ -1050,7 +1077,6 @@ class User(SearchableTableMixins, Base):
                 literal_column("owner_count") == 1,
             )
         )
-        print(3)
         q = select(Document).where(Document.id.in_(q))
         return q
 
@@ -1106,13 +1132,15 @@ class User(SearchableTableMixins, Base):
     def check_can_access_document(
         self,
         document: "Document",
-        level: Level,
+        level: ResolvableLevel,
         *,
         grants: Dict[str, "Grant"] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
-        # _session: Session | None = None
+        pending: bool = False,
     ) -> Self:
+
         # If the document is public and the level is view, then don't check.
+        level = Level.resolve(level)
         if document.public and level == Level.view:
             return self
 
@@ -1139,7 +1167,7 @@ class User(SearchableTableMixins, Base):
                 raise HTTPException(403, detail=detail)
             case [
                 Grant(deleted=False, pending=True, pending_from=pending_from) as grant
-            ]:
+            ] if pending:
                 match pending_from:
                     case PendingFrom.grantee:
                         msg = "Grant is pending. Document owner must approve "
@@ -1315,7 +1343,7 @@ class Document(SearchableTableMixins, Base):
     def q_conds_grants(
         self,
         user_uuids: Set[str] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         pending: bool | None = None,
         exclude_pending: bool = True,
@@ -1341,11 +1369,14 @@ class Document(SearchableTableMixins, Base):
                 ),
             )
         if level is not None:
-            cond = and_(cond, AssocUserDocument.level >= level)
+            level = Level.resolve(level)
+            print(level)
+            cond = and_(cond, AssocUserDocument.level >= level.value)
 
         match (pending, exclude_pending):
             case (True, True):
-                raise ValueError()
+                msg ="`pending` and `exclude_pending` cannot both be ``True``." 
+                raise ValueError(msg)
             case (bool() as pending, False):
                 cond = and_(cond, Grant.pending == (true() if pending else false()))
             case (None, True):
@@ -1356,7 +1387,7 @@ class Document(SearchableTableMixins, Base):
     def q_select_grants(
         self,
         user_uuids: Set[str] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
@@ -1380,7 +1411,10 @@ class Document(SearchableTableMixins, Base):
     def q_select_users(
         self,
         user_uuids: Set[str] | None = None,
-        level: Level | None = None,
+        level: ResolvableLevel | None = None,
+        exclude_deleted: bool = True,
+        exclude_pending: bool = True,
+        pending: bool = True,
     ) -> Select:
         """Select user uuids for this document.
 
@@ -1389,7 +1423,14 @@ class Document(SearchableTableMixins, Base):
         q = (
             select(User)
             .join(AssocUserDocument)
-            .where(self.q_conds_grants(user_uuids=user_uuids, level=level))
+            .where(
+                self.q_conds_grants(
+                    user_uuids=user_uuids, level=level,
+                    exclude_deleted=exclude_deleted,
+                    exclude_pending=exclude_pending,
+                    pending=pending,
+                )
+            )
         )
         return q
 

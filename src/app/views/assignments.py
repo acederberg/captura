@@ -11,13 +11,15 @@ from app.models import (Assignment, AssocCollectionDocument,
                         KindEvent, KindObject, Level, User)
 from app.schemas import AssignmentSchema, EventSchema
 from app.views import args
-from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException
 from sqlalchemy import delete, literal_column, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import false, true
 
 OpenApiResponseAssignment = {
+    **OpenApiResponseUnauthorized,
     403: dict(
         model=dict,
         description=(
