@@ -528,12 +528,14 @@ class Access(BaseController):
 
         # NOTE: Exclude deleted is only required for force deletion.
         def check_one(document: Document) -> Document:
+            print("HERE", pending)
             token_user.check_can_access_document(
                 document,
                 level,
                 grants=grants,
                 grants_index=grants_index,
                 pending=pending,
+                exclude_deleted=exclude_deleted,
             )
             if exclude_deleted:
                 document = document.check_not_deleted(410)
@@ -574,6 +576,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
+        pending: bool = True,
     ) -> Data[ResolvedDocument]:
         return self.document(
             resolve_document,
@@ -581,6 +584,7 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             level=level,
             return_data=True,
+            pending=pending,
         )
 
     # ----------------------------------------------------------------------- #
@@ -721,7 +725,7 @@ class Access(BaseController):
         level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
-        user = self.user(resolve_user, resolve_user_token=user_token)
+        user = self.user(resolve_user, resolve_user_token=user_token, exclude_deleted=exclude_deleted,)
         if user.uuid != user_token.uuid and not user_token.admin:
             raise HTTPException(
                 403,
@@ -736,7 +740,7 @@ class Access(BaseController):
         match self.method:
             # When posting, user may request only for documents that are
             # public, and when deleting
-            case H.DELETE | H.POST | H.GET if level is not None:
+            case H.DELETE | H.POST | H.PUT | H.PATCH | H.GET if level is not None:
                 level = Level.view
             case _:
                 raise HTTPException(405)
@@ -746,12 +750,13 @@ class Access(BaseController):
         document_kwargs: Dict[str, Any] = dict(
             exclude_deleted=exclude_deleted,
             level=level,
+            pending=pending,
         )
         if not resolve_documents:
             q = user.q_select_documents(
                 **document_kwargs,
                 exclude_pending=False,
-                pending=pending,
+                exclude_deleted=exclude_deleted,
             )
             util.sql(self.session, q)
             resolve_documents = tuple(self.session.execute(q).scalars())
@@ -895,7 +900,7 @@ class Access(BaseController):
 
         uuid_users = User.resolve_uuid(self.session, users)
         match self.method:
-            case H.GET | H.POST | H.PUT:
+            case H.GET | H.POST | H.PUT | H.PATCH:
                 ...
             case H.DELETE:
                 session = self.session

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
+from tests.dummy import dummy, dummy_lazy
 from tests.test_models import ModelTestMeta
 
 logger = util.get_logger(__name__)

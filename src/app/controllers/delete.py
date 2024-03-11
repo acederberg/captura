@@ -302,7 +302,6 @@ class Delete(WithAccess):
         assoc_data, uuid_assoc_rm, q_del = self._try_force(
             T_assoc, source, uuid_target, force=force
         )
-        data.data.add_q(q_del)
         q_assocs = T_assoc.q_uuid(uuid_assoc_rm)
         assocs = tuple(self.session.execute(q_assocs).scalars())
         return assoc_data, assocs, q_del, T_assoc
@@ -372,6 +371,7 @@ class Delete(WithAccess):
     ]:
         session = self.session
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
+        data.data.add_q(q_del)
 
         data.event = self.create_event_assoc(data, assocs)
         data.commit(session, commit)

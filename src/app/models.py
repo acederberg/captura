@@ -2,23 +2,19 @@
 import enum
 import secrets
 from datetime import datetime
-from logging import warn
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
-                    ForwardRef, Generator, Generic, List, Literal, Self, Set,
-                    Tuple, Type, TypeAlias, TypeVar, overload)
-from uuid import uuid4
+from typing import (Annotated, Callable, ClassVar, Collection, Dict, Generator,
+                    List, Literal, Self, Set, Tuple, TypeAlias, TypeVar,
+                    overload)
 
-from fastapi import HTTPException, status
-from sqlalchemy import (CTE, BinaryExpression, BooleanClauseList, Column,
-                        ColumnClause, ColumnElement, CompoundSelect, Enum,
-                        ForeignKey, Index, Select, String, UniqueConstraint,
-                        and_, func, literal_column, select, text, true, union,
-                        union_all)
+from fastapi import HTTPException
+from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
+                        CompoundSelect, Enum, ForeignKey, Select, String,
+                        UniqueConstraint, and_, func, literal_column, select,
+                        true, union)
 from sqlalchemy.dialects import mysql
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
-                            Session, backref, column_property, mapped_column,
-                            object_session, relationship)
+                            Session, mapped_column, object_session,
+                            relationship)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
@@ -913,8 +909,8 @@ class User(SearchableTableMixins, Base):
 
     # NOTE: This should correspond to `user`. Is all of the collection objects
     #       labeled by their names.
-    collections: Mapped[Dict[str, "Collection"]] = relationship(
-        collection_class=attribute_keyed_dict("uuid"),
+    collections: Mapped[List["Collection"]] = relationship(
+        # collection_class=attribute_keyed_dict("uuid"),
         cascade="all, delete",
         back_populates="user",
         primaryjoin="and_(User.id==Collection.id_user, Collection.deleted == false())",
@@ -926,8 +922,8 @@ class User(SearchableTableMixins, Base):
         primaryjoin="User.id==Edit.id_user",
     )
 
-    documents: Mapped[Dict[str, "Document"]] = relationship(
-        collection_class=attribute_keyed_dict("uuid"),
+    documents: Mapped[List["Document"]] = relationship(
+        # collection_class=attribute_keyed_dict("uuid"),
         secondary=AssocUserDocument.__table__,
         back_populates="users",
         primaryjoin="and_(User.id==AssocUserDocument.id_user, Document.deleted == false())",
@@ -1137,25 +1133,32 @@ class User(SearchableTableMixins, Base):
         grants: Dict[str, "Grant"] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
+        exclude_deleted: bool = True,
     ) -> Self:
+        "Horrific."
 
-        # If the document is public and the level is view, then don't check.
+        # NOTE: If the document is public and the level is view, then don't check.
         level = Level.resolve(level)
         if document.public and level == Level.view:
             return self
 
         session = self.get_session() # if _session is None else _session
 
-        # Deleted and insufficient should be included for better feedback.
+        # NOTE: Deleted, pending, insufficient should be included for better 
+        #       feedback. Do not exclude when adding.
         q = self.q_select_grants(
             {document.uuid},
             exclude_deleted=False,
             exclude_pending=False,
         )
-        q_uuid_grant = select(literal_column("uuid")).select_from(q.subquery())
-        q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
-        res = session.execute(q_grant).scalars()
+
+        # q_uuid_grant = select(literal_column("uuid")).select_from(q.subquery())
+        # q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
+        res = session.execute(q).scalars()
         assocs: List[AssocUserDocument] = list(res)
+
+        print(document.id)
+        print(assocs) 
 
         detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
         match assocs:
@@ -1167,7 +1170,7 @@ class User(SearchableTableMixins, Base):
                 raise HTTPException(403, detail=detail)
             case [
                 Grant(deleted=False, pending=True, pending_from=pending_from) as grant
-            ] if pending:
+            ] if not pending:
                 match pending_from:
                     case PendingFrom.grantee:
                         msg = "Grant is pending. Document owner must approve "
@@ -1182,21 +1185,26 @@ class User(SearchableTableMixins, Base):
 
                 detail.update(msg=msg)
                 raise HTTPException(403, detail=detail)
-            case [Grant(deleted=False) as grant]:
-                if grant.level.value < level.value:
-                    detail.update(
-                        msg="Grant insufficient.",
-                        uuid_grant=grant.uuid,
-                        level_grant=grant.level.name,
-                        level_grant_required=level.name,
-                    )
-                    raise HTTPException(403, detail=detail)
-                if grants is not None:
-                    grants[getattr(grant, grants_index)] = grant
-                return self
-            case [Grant(deleted=True) as grant]:
-                detail.update(msg="Grant is deleted.", uuid_grant=grant.uuid)
-                raise HTTPException(410, detail=detail)
+            case [Grant(deleted=deleted) as grant]:
+                if not deleted:
+                    if grant.level.value < level.value:
+                        detail.update(
+                            msg="Grant insufficient.",
+                            uuid_grant=grant.uuid,
+                            level_grant=grant.level.name,
+                            level_grant_required=level.name,
+                        )
+                        raise HTTPException(403, detail=detail)
+                    if grants is not None:
+                        grants[getattr(grant, grants_index)] = grant
+                    return self
+                elif not exclude_deleted:
+                    if grants is not None:
+                        grants[getattr(grant, grants_index)] = grant
+                    return self
+                else:
+                    detail.update(msg="Grant is deleted.", uuid_grant=grant.uuid)
+                    raise HTTPException(410, detail=detail)
             case _:
                 # Server is a teapot because this is unlikely to ever happen.
                 detail.update(msg="There should only be one grant.")
@@ -1232,8 +1240,8 @@ class Collection(SearchableTableMixins, Base):
 
     # NOTE: Deletion is included here since this used to read collection
     #       documents.
-    documents: Mapped[Dict[str, "Document"]] = relationship(
-        collection_class=attribute_keyed_dict("name"),
+    documents: Mapped[List["Document"]] = relationship(
+        # collection_class=attribute_keyed_dict("name"),
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
         primaryjoin="and_(Collection.id==AssocCollectionDocument.id_collection, AssocCollectionDocument.deleted == false())",
@@ -1324,15 +1332,15 @@ class Document(SearchableTableMixins, Base):
         back_populates="document",
         primaryjoin="Document.id==Edit.id_document",
     )
-    users: Mapped[Dict[str, User]] = relationship(
-        collection_class=attribute_keyed_dict("name"),
+    users: Mapped[List[User]] = relationship(
+        # collection_class=attribute_keyed_dict("name"),
         secondary=AssocUserDocument.__table__,
         back_populates="documents",
         secondaryjoin="User.id==AssocUserDocument.id_user",
         primaryjoin="AssocUserDocument.id_document==Document.id",
     )
-    collections: Mapped[Dict[str, Collection]] = relationship(
-        collection_class=attribute_keyed_dict("name"),
+    collections: Mapped[List[Collection]] = relationship(
+        # collection_class=attribute_keyed_dict("name"),
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
     )
@@ -1699,7 +1707,6 @@ ResolvedRawAny = (
     | ResolvedRawAssignment
     | ResolvedRawGrant
 )
-
 
 def uuids(vs: Resolvable[T_Resolvable]) -> Set[str]:
     match vs:

@@ -1,7 +1,9 @@
-from typing import Annotated, List, Set
+from typing import Annotated, List, Set, Tuple
 
 from app import __version__
-from app.controllers.base import Data, ResolvedGrantDocument, ResolvedGrantUser
+from app.controllers.base import (Data, ResolvedDocument,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser)
 from app.depends import (DependsAccess, DependsCreate, DependsDelete,
                          DependsSessionMaker, DependsToken, DependsUpdate)
 from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
@@ -79,7 +81,7 @@ class DocumentGrantView(BaseView):
             uuid_document,
             uuid_user,
         )
-        data.commit(delete.session, True, delete=delete.force)
+        data.commit(delete.session, True)
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
             data=TypeAdapter(List[GrantSchema]).validate_python(
@@ -160,6 +162,7 @@ class DocumentGrantView(BaseView):
         )
         create.create_data = GrantCreateSchema(level=fr_level)
         create.grant_document(data)
+        data.commit(create.session, True)
     
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
@@ -199,6 +202,7 @@ class UserGrantView(BaseView):
         post_grants_user=dict(
             url="/{uuid_user}",
             name="Request User Access to Documents",
+            response_description="New grants and their events."
         ),
         patch_grants_user=dict(
             url="/{uuid_user}",
@@ -234,6 +238,7 @@ class UserGrantView(BaseView):
         data: Data[ResolvedGrantUser] = delete.a_grant_user(
             uuid_user,
             uuid_document,
+            exclude_deleted=not delete.force,
         )
         data.commit(delete.session, True)
         return mwargs(
@@ -295,8 +300,8 @@ class UserGrantView(BaseView):
         create: DependsCreate,
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocument,
-        create_data: List[GrantCreateSchema],
-    ) -> AsOutput[List[GrantSchema]]:
+        level: args.QueryLevel,
+    ) -> OutputWithEvents[List[GrantSchema]]:
         """Request **user** access to *public* **documents** specified by 
         **uuid_document**. These grants will await approval from a document
         owner or admin view `PATCH /grants/documents/{uuid_document}`.
@@ -304,4 +309,33 @@ class UserGrantView(BaseView):
         This does not have `force` as users will likely never have a use case
         to drop their own **Level**.
         """
-        ...
+
+        # NOTE: Use does not have access to the requested documents typically.
+        #       The only requirement to ask for access is to know the document
+        #       uuid, which would be difficult to geuss in the case of.
+        # NOTE: `token_user_grants` is usually the same as grants. But in this
+        #       case they are not used. `grants` will be updated inside of 
+        #       `create.grant_user`.
+        user: User = create.access.user(uuid_user)
+        data: Data[ResolvedGrantUser] = mwargs(
+            Data[ResolvedGrantUser],
+            data=mwargs(
+                ResolvedGrantUser,
+                user=user,
+                documents=Document.resolve(create.session, uuid_document),
+                grants=dict(),
+                token_user_grants=dict(),
+            ),
+        )
+        create.create_data = GrantCreateSchema(level=level)
+        create.grant_user(data)
+
+        # Get rid of grants that already exist.
+        data.commit(create.session, True)
+        grants = data.data.grants
+        return mwargs(
+            OutputWithEvents[List[GrantSchema]],
+            data=TypeAdapter(List[GrantSchema]).validate_python(grants.values()),
+            events=[EventSchema.model_validate(data.event)],
+        )
+

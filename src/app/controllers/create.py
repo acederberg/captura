@@ -215,7 +215,7 @@ class Create(WithDelete, Generic[T_Create]):
             their source. The requirement that they be active means that doing
             the same `POST` twice should be indempotent.
         """
-        session = self.session
+        print(5)
         force = force if force is not None else self.force
 
         # NOTE: No actual deletion here. Deletion occurs in SPM.
@@ -261,12 +261,11 @@ class Create(WithDelete, Generic[T_Create]):
                         "grants."
                     )
                     raise HTTPException(400, detail=dict(msg=msg))
-                event_rm = self.delete.create_event_assoc(data, rm_assocs)
-                session.add(event_rm)
-                session.execute(rm_q)
-                session.commit()
 
-                # data, _, rm_q, T_assoc = self.delete.assoc(data, force=force)
+                # This makes force possible when committing. It will be necessary
+                # to delete so that ew entries are added without conflicts.
+                event_rm = self.delete.create_event_assoc(data, rm_assocs)
+                data.data.add_q(rm_q)
             case _:
                 raise HTTPException(405)
 
@@ -276,7 +275,8 @@ class Create(WithDelete, Generic[T_Create]):
             for target in targets
             if target.uuid in uuid_target_create
         }
-        session.add_all(assocs.values())
+        # ADD CREATED ASSOCS TO DATA!
+        data.data.assoc.update(assocs)
 
         event_create = self.create_event_assoc(data, assocs)
         if event_rm is not None:
@@ -290,10 +290,6 @@ class Create(WithDelete, Generic[T_Create]):
             data.event = event
         else:
             event = event_create
-
-        session.add(event)
-        session.commit()
-        session.refresh(event)
 
         data.event = event
         return data, rm_assoc_data, rm_q, T_assoc
@@ -409,7 +405,7 @@ class Create(WithDelete, Generic[T_Create]):
     ) -> Grant:
         # NOTE: Grants should be indexed by uuids of documents.
         match data.data.kind_source:
-            case KindObject.user:
+            case KindObject.document:
                 # NOTE: Permission of granter since they are inviting a user in
                 #       this case. This means that the invitor (a user who
                 #       already owns the document) will be the one responsible
@@ -431,7 +427,7 @@ class Create(WithDelete, Generic[T_Create]):
 
                 grant_parent_uuid = grant_parent[0].uuid
                 pending_from = PendingFrom.grantee
-            case KindObject.document:
+            case KindObject.user:
                 grant_parent_uuid = None
                 # ^^^^^^^^^^^^^^^^^ Assigned later by granter who accepts the
                 #                   request. Grant of the granter to remove

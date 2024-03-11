@@ -6,35 +6,19 @@ from typing import Any, ClassVar, Dict, NamedTuple, Set, Tuple, Type
 import pytest
 from app import util
 from app.auth import Auth, Token
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    LevelHTTP,
-    PendingFrom,
-    User,
-    UUIDSplit,
-    uuids,
-)
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
+from app.controllers.base import (Data, ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser)
+from app.models import (Assignment, Collection, Document, Event, Grant,
+                        KindEvent, KindObject, Level, LevelHTTP, PendingFrom,
+                        User, UUIDSplit, uuids)
 from fastapi import HTTPException
 from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
+from tests.dummy import Dummy
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
 # =========================================================================== #
@@ -619,6 +603,9 @@ class TestAccessDocument(BaseTestAccess):
                 raise AssertionError(msg)
 
     def test_check_user_can_access(self, session: Session):
+        # ------------------------------------------------------------------- #
+        # Setup
+
         session.execute(update(User).values(deleted=False, public=True))
         session.execute(update(Document).values(deleted=False, public=False))
 
@@ -654,8 +641,12 @@ class TestAccessDocument(BaseTestAccess):
         init_level = grant.level
         session.add(grant)
         session.commit()
+        session.refresh(grant)
+        assert grant.pending
 
-        # Pending grant should not allow access on private doc
+        # ------------------------------------------------------------------- #
+        # NOTE: Pending grant should not allow access on private doc
+
         detail_common = dict(
             uuid_user="000-000-000",
             uuid_document="aaa-aaa-aaa",
@@ -670,6 +661,9 @@ class TestAccessDocument(BaseTestAccess):
             **detail_common,  # type: ignore
         ):
             raise err
+
+        # ------------------------------------------------------------------- #
+        # NOTE: Changing the enum value should change the message returned.
 
         grant.pending_from = PendingFrom.grantee
         session.add(grant)
@@ -686,6 +680,23 @@ class TestAccessDocument(BaseTestAccess):
         ):
             raise err
 
+        # ------------------------------------------------------------------- #
+        # NOTE: Using the `pending` keyword should negate the above warnings
+        #       and populate `grants` with one grant.
+        grants = dict()
+        user.check_can_access_document(
+            document,
+            Level.view,
+            grants_index="uuid_document",
+            grants=grants,
+            pending=True,
+        )
+        assert len(grants) == 1
+        assert grant.uuid_document in grants
+        assert grants[grant.uuid_document] == grant
+
+        # ------------------------------------------------------------------- #
+        # NOTE: Test orderedness
         grant.pending = False
         session.add(grant)
         session.commit()
@@ -726,8 +737,10 @@ class TestAccessDocument(BaseTestAccess):
                 ):
                     raise err
 
+        # ------------------------------------------------------------------- #
         # NOTE: Deleting the grant should result in an error raised. Grant
         #       exists but is deleted state.
+
         grant.deleted = True
         session.add(grant)
         session.commit()
@@ -745,6 +758,24 @@ class TestAccessDocument(BaseTestAccess):
         ):
             raise err
 
+        # --------------------------------------------------------------------#
+        # NOTE: Using `exclude_deleted` should allow access when the grant is
+        #       in a deleted state. The grants should be added to `grants`.
+
+        grants = dict()
+        user.check_can_access_document(
+            document,
+            Level.view,
+            grants_index="uuid_user",
+            grants=grants,
+            exclude_deleted=False,
+        )
+        assert len(grants) == 1
+        assert grant.uuid_user in grants
+        assert grant == grants[grant.uuid_user]
+
+        # ------------------------------------------------------------------- #
+        # NOTE: Test no grant and respawn.
         session.delete(grant)
         session.commit()
 
@@ -1287,7 +1318,7 @@ class TestAccessAssignment(BaseTestAccess):
                 msg="Grant does not exist.",
                 uuid_document=uuid_doc_ungranted,
                 uuid_user=access.token_user.uuid,
-                level_grant_required=access.level.name,
+                level=access.level.name,
             )
             if err:
                 raise err
@@ -1420,7 +1451,7 @@ class TestAccessGrant(BaseTestAccess):
 
         document_owned = Document.if_exists(session, "draculaflow")
         document_view = Document.if_exists(session, "foobar-spam")
-        document_nogrant = Document.if_exists(session, "0---0---0")
+        document_nogrant = Document.if_exists(session, "-0---0---0-")
 
         grants = Grant.resolve_from_target(
             session, user, (document_owned, document_view, document_nogrant)
@@ -1450,7 +1481,7 @@ class TestAccessGrant(BaseTestAccess):
         user = User.if_exists(session, "000-000-000")
         document_owned = Document.if_exists(session, "draculaflow")
         document_view = Document.if_exists(session, "foobar-spam")
-        document_nogrant = Document.if_exists(session, "0---0---0")
+        document_nogrant = Document.if_exists(session, "-0---0---0-")
 
         grants = Grant.resolve_from_target(
             session, user, (document_owned, document_view, document_nogrant)
@@ -1517,11 +1548,148 @@ class TestAccessGrant(BaseTestAccess):
                 403,
             )
 
-    def test_deleted(self, session: Session):
-        assert False
+    def test_deleted(self, dummy: Dummy):
+        dummy.visability(
+            {KindObject.user, KindObject.document},
+            deleted=True,
+            public=True
+        ).refresh()
+        document_other = dummy.get_document(None)
+        document_not_deleted = dummy.documents[0]
+        document_not_deleted.deleted = False
 
-    def test_dne(self, session: Session):
-        assert False
+        session = dummy.session
+        session.add(document_not_deleted)
+        session.commit()
+        session.refresh(document_not_deleted)
+
+        token = dummy.token
+
+        for method in httpcommon:
+            print(method)
+
+            # NOTE: Trying to access grants for deleted should fail with 410.
+            access = Access(session, token, method)
+            err, httperr = expect_exc(
+                lambda: access.grant_user(dummy.user, dummy.documents),
+                410,
+                msg="Object is deleted.",
+                uuid_obj=dummy.user.uuid,
+                kind_obj="user",
+            )
+            if err:
+                raise err
+
+            # NOTE: Adding `exclude_deleted` should result in no errors raised.
+            access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
+
+            # NOTE: Trying to access deleted documents with active user should 
+            #       raise a similar error.
+            dummy.visability({KindObject.user}, deleted=False, public=True)
+            dummy.refresh()
+            err, httperr = expect_exc(
+                lambda: access.grant_user(dummy.user, dummy.documents),
+                410,
+                msg="Object is deleted.",
+                kind_obj="document",
+                check_length=False,
+            )
+            if err:
+                raise err
+
+            dummy.visability({KindObject.user}, deleted=True, public=True)
+            dummy.refresh()
+
+            # NOTE: Adding `exclude_deleted` should result in no erros raised.
+            access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
+
+    def test_pending(self, dummy: Dummy):
+        session = dummy.session
+        dummy.visability({KindObject.grant, KindObject.user, KindObject.document}, deleted=False, public=False)
+        uuid_document = Document.resolve_uuid(session, dummy.documents)
+
+        msgs = {
+            PendingFrom.grantee: "Grant is pending. Document owner must approve request for access.",
+            PendingFrom.granter: "Grant is pending. User must accept invitation.",
+        }
+        for method in httpcommon:
+            for pending_from in (PendingFrom.grantee, PendingFrom.granter):
+                # NOTE: Should reject pending grants.
+                access = Access(dummy.session, dummy.token, method)
+                for grant in dummy.grants:
+                    grant.pending = True
+                    grant.pending_from = pending_from
+                    session.add(grant)
+                session.commit()
+
+                err, httperr = expect_exc(
+                    lambda: access.grant_user(dummy.user, dummy.documents, pending=False),
+                    403,
+                    msg = msgs[pending_from],
+                    uuid_user=dummy.user.uuid,
+                    check_length=False
+                )
+                if err:
+                    raise err
+
+                assert httperr.detail["uuid_document"] in uuid_document
+
+                # NOTE: If ``exclude_pending`` is ``False`` the no error.
+                access.grant_user(dummy.user, dummy.documents, pending=True)
+                session.commit()
+
+
+    def test_dne(self, dummy: Dummy):
+        dummy.visability(
+            {KindObject.user, KindObject.document, KindObject.grant},
+            deleted=False,
+            public=True,
+        )
+        document = dummy.documents[0]
+        session = dummy.session
+        grant = session.scalar(dummy.user.q_select_grants({document.uuid}))
+        if grant is None:
+            raise AssertionError("Grant should have been created for document.")
+
+        grant.level = Level.own
+        session.add(grant)
+        session.commit()
+
+        for method in httpcommon:
+            access = Access(dummy.session, dummy.token, method)
+            uuid_obj =secrets.token_urlsafe(8) 
+
+            # NOTE: Filters out documents that do not exist.
+            f_user, f_document = access.grant_user(dummy.user, {uuid_obj})
+            assert f_user == dummy.user
+            assert len(f_document) == 0
+
+            f_document, f_user = access.grant_document(document, {uuid_obj})
+            assert f_document == document
+            assert len(f_user) == 0
+
+            # NOTE: Raises when source does not exist.
+            err, httperr = expect_exc(
+                lambda: access.grant_document(uuid_obj, {document.uuid}),
+                404,
+                msg="Object does not exist.",
+                uuid_obj=uuid_obj,
+                kind_obj="document",
+            )
+            if err:
+                raise err
+        
+            err, httperr = expect_exc(
+                lambda: access.grant_user(uuid_obj, {document.uuid}),
+                404,
+                msg="Object does not exist.",
+                uuid_obj=uuid_obj,
+                kind_obj="user",
+            )
+            if err:
+                raise err
+
+
 
 
 def test_with_access(session: Session, auth: Auth):
@@ -1552,6 +1720,21 @@ def test_with_access(session: Session, auth: Auth):
         api_origin="tests",
     )
 
+    assert b.access is not None
+    assert isinstance(b.access, Access)
+    assert callable(b.user)
+
+    data = b.user("000-000-000", resolve_user_token=b.token_user)
+    assert data.event is not None
+    assert data.event.uuid is not None
+
+    sig_access = inspect.signature(Access.d_user)
+    sig_barf = inspect.signature(Barf.user)
+
+    assert "return_data" not in sig_access.parameters
+    assert "return_data" not in sig_barf.parameters
+    assert len(sig_access.parameters) == len(sig_barf.parameters)
+    assert sig_barf.return_annotation == Data
     assert b.access is not None
     assert isinstance(b.access, Access)
     assert callable(b.user)

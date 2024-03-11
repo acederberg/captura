@@ -1,3 +1,4 @@
+import traceback
 from typing import Annotated, Generator, List, Set
 
 from app import __version__
@@ -5,6 +6,7 @@ from app.auth import Auth
 from app.controllers.access import Access, H
 from app.depends import DependsAccess, DependsAuth, DependsSessionMaker
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -41,7 +43,6 @@ Soon the Captura API will support deffering objects to other APIs. More
 or less this model will be 'sharing as a service'.
 """
 
-
 class AppView(BaseView):
     view_router = FastAPI(
         title="Captura Document Automation, Sharing, and Organization API.",
@@ -55,6 +56,17 @@ class AppView(BaseView):
         openapi_tags=OpenApiTagMetadata
 
     )  # type: ignore
+
+    # TODO: This should not show up in prod unless the status `500`. In fact,
+    #       the traceback should be stored somewhere.
+    @view_router.exception_handler(HTTPException) # type: ignore
+    async def http_exception_handler(request, exc: HTTPException):
+        traceback.print_exc()
+        return JSONResponse(
+            exc.detail,
+            exc.status_code,
+        )
+
     view_routes = {
         "get_index": {
             "url": "/",

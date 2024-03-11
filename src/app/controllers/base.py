@@ -524,18 +524,22 @@ class Data(BaseModel, Generic[T_Data]):
     def register(self, session: Session) -> None:
         print("Registering...")
         self.data.register(session)
-        session.add(self.event)
+        if self.event is not None:
+            session.add(self.event)
 
         for child in self.children:
             child.register(session)
 
-
     def commit(self, session: Session, commit: bool=False) -> None:
+        # session api sqlalchemy
         if commit:
             print("Committing...")
             self.register(session)
-            session.commit()
-
+            try:
+                session.commit()
+            except err:
+                session.rollback()
+                raise HTTPException(500, "Database commit failure.")
 
     def types(self) -> Any:
         return kind_type_map[self.kind]  # type: ignore[return-type]
