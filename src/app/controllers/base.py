@@ -163,6 +163,7 @@ class KindData(str, enum.Enum):
 
 class BaseResolved(BaseModel):
     kind: ClassVar[KindData]
+    registry: ClassVar[Dict[KindData, "Type[BaseResolved]"]] = dict() 
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -172,17 +173,26 @@ class BaseResolved(BaseModel):
             return
 
         util.check_enum_opt_attr(cls, "kind", KindData)
+        cls.registry[cls.kind] = cls
+
 
     def register(self, session: Session) -> None: ...
 
     def refresh(self, session: Session) -> None: ...
 
+    @classmethod
+    def get(cls, kind: KindData) -> "Type[BaseResolved]":
+        return BaseResolved.registry[kind]
+
+
 T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
 
 
-class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
+class BaseResolvedPrimary(BaseResolved):
 
     # ----------------------------------------------------------------------- #
+    delete: bool = False
+
     _attr_name_targets: ClassVar[str]
 
     def __init_subclass__(cls) -> None:
@@ -211,7 +221,7 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
 
     # ----------------------------------------------------------------------- #
 
-    def targets(self) -> Tuple[T_ResolvedPrimary, ...]:
+    def targets(self) -> Tuple[Any, ...]:
         return getattr(self, self._attr_name_targets)
 
     def err_nonempty(self) -> ValueError | None:
@@ -230,7 +240,9 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         'all or none'.
         """
 
-        # Add or delete items.
+        if self.delete:
+            return
+
         targets = self.targets()
         session.add_all(targets)
 
@@ -240,6 +252,9 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         # session.commit()
 
     def refresh(self, session: Session) -> None:
+        if self.delete:
+            return
+
         for target in self.targets():
             session.refresh(target)
 
@@ -315,16 +330,15 @@ class BaseResolvedSecondary(BaseResolved):
         if self.delete:
             return
 
-        session.add_all(self.assoc.values())
-        # if self.q:
-        #     for q in self.q:
-        #         util.sql(session, q)
-        #         session.execute(q)
+        if self.assoc:
+            session.add_all(self.assoc.values())
 
     def refresh(self, session: Session) -> None:
-        print(session.deleted)
         if self.delete:
             return
+        if not self.assoc:
+            return
+
         for assoc in self.assoc.values():
             if assoc in session.deleted:
                 continue
@@ -442,7 +456,7 @@ class ResolvedAssignmentCollection(BaseResolvedSecondary):
     kind_assoc = KindObject.assignment
 
     collection: Collection
-    assignments: Dict[str, Assignment]
+    assignments: Dict[str, Assignment] | None
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
     uuid_documents: UuidSetFromModel
@@ -457,7 +471,7 @@ class ResolvedAssignmentDocument(BaseResolvedSecondary):
     kind_assoc = KindObject.assignment
 
     document: Document
-    assignments: Dict[str, Assignment]
+    assignments: Dict[str, Assignment] | None
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
     uuid_collections: UuidSetFromModel

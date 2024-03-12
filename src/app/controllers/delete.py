@@ -369,6 +369,7 @@ class Delete(WithAccess):
         Update[Assignment] | sqaDelete[Grant],
         Type[Assignment] | Type[Grant],
     ]:
+        # assert False
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
         util.sql(self.session, q_del)
         self.session.execute(q_del)
@@ -549,8 +550,10 @@ class Delete(WithAccess):
         collection: Collection,
         # commit: bool = False,
     ) -> Data[ResolvedAssignmentCollection]:
-        q = collection.q_select_documents()
+        q = collection.q_select_documents(exclude_deleted=not self.force)
         documents = set(self.session.execute(q).scalars())
+        # q_assignments = collection.q_select_assignment()
+        # assignments = set(self.)
 
         # Delete assigns and get events before deletion.
         data_assignments = mwargs(
@@ -560,6 +563,7 @@ class Delete(WithAccess):
                 ResolvedAssignmentCollection,
                 collection=collection,
                 documents=documents,
+                assignments=None,
             ),
         )
         if len(documents):
@@ -567,9 +571,15 @@ class Delete(WithAccess):
 
         data.add(data_assignments)
 
-        # NOTE: Hard deletion via `data.data.commit()`.
+        # NOTE: Hard deletion is best done this way due to session.deleted
+        #       strageness.
         if not self.force:
             collection.deleted = True
+        else:
+            data.data.delete = True
+            self.session.delete(collection)
+
+
 
         # Create event
         event_assignments = data_assignments.event
