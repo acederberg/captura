@@ -3,31 +3,72 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Any, Callable, Dict, Generic, Literal, Protocol, Set,
-                    Tuple, Type, TypeAlias, TypeVar, Union, overload)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Literal,
+    Protocol,
+    Set,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser, T_Data)
-from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
-                                    WithDelete)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, PendingFrom,
-                        ResolvableMultiple, ResolvableSingular,
-                        ResolvableSourceAssignment, ResolvableTargetAssignment,
-                        Singular, Tables, User)
-from app.schemas import (AssignmentSchema, CollectionCreateSchema,
-                         CollectionSchema, CollectionUpdateSchema,
-                         DocumentCreateSchema, DocumentUpdateSchema,
-                         EditCreateSchema, EventSchema, GrantCreateSchema,
-                         UserCreateSchema, UserUpdateSchema)
+from app.controllers.base import (
+    Data,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+    T_Data,
+)
+from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    ResolvableMultiple,
+    ResolvableSingular,
+    ResolvableSourceAssignment,
+    ResolvableTargetAssignment,
+    Singular,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AssignmentSchema,
+    CollectionCreateSchema,
+    CollectionSchema,
+    CollectionUpdateSchema,
+    DocumentCreateSchema,
+    DocumentUpdateSchema,
+    EditCreateSchema,
+    EventSchema,
+    GrantCreateSchema,
+    UserCreateSchema,
+    UserUpdateSchema,
+)
 from fastapi import HTTPException
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
@@ -518,7 +559,7 @@ class Create(WithDelete, Generic[T_Create]):
     def document(
         self,
         data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]: 
+    ) -> Data[ResolvedDocument]:
         uuid_document, uuid_grant = (secrets.token_urlsafe(8) for _ in range(2))
         user = data.token_user or self.token_user
         data.data.documents = (
@@ -528,15 +569,17 @@ class Create(WithDelete, Generic[T_Create]):
         )
 
         data.data.token_user_grants = {
-            user.uuid: (grant := Grant(
-                user = user.uuid,
-                document=document,
-                level=Level.own,
-                pending=False,
-                pending_from=PendingFrom.created,
-                uuid=uuid_grant,
-                uuid_user_granter=user.uuid,
-            ))
+            user.uuid: (
+                grant := Grant(
+                    user=user.uuid,
+                    document=document,
+                    level=Level.own,
+                    pending=False,
+                    pending_from=PendingFrom.created,
+                    uuid=uuid_grant,
+                    uuid_user_granter=user.uuid,
+                )
+            )
         }
         data.event = Event(
             **self.event_common,
@@ -553,11 +596,11 @@ class Create(WithDelete, Generic[T_Create]):
                             **self.event_common,
                             kind_obj=KindObject.grant,
                             uuid_obj=uuid_grant,
-                            detail="Ownership created for user."
+                            detail="Ownership created for user.",
                         )
-                    ]
+                    ],
                 )
-            ]
+            ],
         )
         session = self.session
         session.add(data.event)
@@ -567,8 +610,6 @@ class Create(WithDelete, Generic[T_Create]):
         session.refresh(data.event)
         session.refresh(document)
         return data
-
-
 
     e_document = with_empty_data(document)
 
@@ -1014,6 +1055,7 @@ class Update(WithDelete, Generic[T_Update]):
 
         data.event = event_undo
         return data
+
     def assignment_collection(
         self,
         data: Data[ResolvedAssignmentCollection],

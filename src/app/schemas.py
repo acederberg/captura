@@ -17,18 +17,43 @@ foreign keys it is not necessary to specify multiple values).
 import enum
 import secrets
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Type, TypeAlias, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Self,
+    Set,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 
 from fastapi import Body, Query
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
-                      computed_field, field_serializer, field_validator,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app import models
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_URL)
+from app.models import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_URL,
+)
 from app.util import check_enum_opt_attr
 
 # --------------------------------------------------------------------------- #
@@ -166,7 +191,7 @@ KindObject = Annotated[
         examples=[
             models.KindObject.user,
             models.KindObject.collection,
-            models.KindObject.document
+            models.KindObject.document,
         ],
     ),
 ]
@@ -556,7 +581,10 @@ class TimespanLimitParams(BaseModel):
 
 
 Pending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
-PendingFrom: TypeAlias = Annotated[models.PendingFrom, Field(description="Grant pending origin.")]
+PendingFrom: TypeAlias = Annotated[
+    models.PendingFrom, Field(description="Grant pending origin.")
+]
+
 
 class GrantBaseSchema(BaseSecondarySchema):
     kind_mapped = models.KindObject.grant
@@ -564,6 +592,7 @@ class GrantBaseSchema(BaseSecondarySchema):
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
     level: Level
+
     @field_validator("level", mode="before")
     def validate_level(cls, v) -> None | models.Level:
         match v:
@@ -573,10 +602,10 @@ class GrantBaseSchema(BaseSecondarySchema):
                 return models.Level[level_name]
             case models.LevelStr() as levelstr:
                 return models.Level(levelstr.name)
-            case _: 
+            case _:
                 return v
 
-    @field_serializer('level')
+    @field_serializer("level")
     def enum_as_name(item: enum.Enum):
         return item.name
 
@@ -596,13 +625,13 @@ class GrantSchema(GrantBaseSchema):
     pending: Pending
     pending_from: PendingFrom
 
-    @field_serializer('level', 'pending_from')
+    @field_serializer("level", "pending_from")
     def enum_as_name(item: enum.Enum):
         return item.name
 
     # Metadata
     uuid_parent: Optional[UUID] = None
-    uuid_user_granter: Optional[UUID] = None # should it reeally be optional
+    uuid_user_granter: Optional[UUID] = None  # should it reeally be optional
 
 
 class GrantExtraSchema(GrantSchema):

@@ -5,16 +5,33 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedAssignment,
-                                  DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, User)
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -493,7 +510,7 @@ class Delete(WithAccess):
             Data[ResolvedCollection],
             token_user=self.token_user,
             data=mwargs(
-                ResolvedCollection, 
+                ResolvedCollection,
                 collections=collections,
             ),
         )
@@ -582,7 +599,6 @@ class Delete(WithAccess):
         )
         if event_assignments is not None:
             data_assignments.event.children.append(event_assignments)
-
 
         data.data.commit(self.session, commit)
         return data_assignments
@@ -704,7 +720,9 @@ class Delete(WithAccess):
 
     # ----------------------------------------------------------------------- #
 
-    def _edit(self, data: Data[ResolvedEdit], edit: Edit, *, commit: bool=False) -> None:
+    def _edit(
+        self, data: Data[ResolvedEdit], edit: Edit, *, commit: bool = False
+    ) -> None:
         session = self.session
 
         def rm() -> None:
@@ -759,7 +777,9 @@ class Delete(WithAccess):
             case _:
                 raise ValueError()
 
-    def edit(self, data: Data[ResolvedEdit], commit: bool = False) -> Data[ResolvedEdit]:
+    def edit(
+        self, data: Data[ResolvedEdit], commit: bool = False
+    ) -> Data[ResolvedEdit]:
         edits = data.data.edits
 
         # NOTE: Only owners can delete the edits of other contributors.

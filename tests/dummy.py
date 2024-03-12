@@ -1,17 +1,46 @@
 import secrets
 from datetime import datetime
 from random import choice, randint
-from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Self, Set,
-                    Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    List,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 import pytest
 from app import __version__
 from app.auth import Auth, Token
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_TITLE, LENGTH_URL, Assignment,
-                        Base, Collection, Document, Event, Format, Grant,
-                        KindEvent, KindObject, Level, PendingFrom, Singular,
-                        T_Resolvable, Tables, User)
+from app.models import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_TITLE,
+    LENGTH_URL,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Event,
+    Format,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
 from faker import Faker
 from faker.providers import internet
 from sqlalchemy import Column, Select, func, inspect, select, update
@@ -31,7 +60,7 @@ fkit.add_provider(internet)
 _Mk: Dict[str, Callable[[], Any]] = dict(
     kind=lambda: choice(item_kind_event),
     api_version=lambda: __version__,
-    timestamp= lambda: randint(0, NOW),
+    timestamp=lambda: randint(0, NOW),
     uuid=lambda: secrets.token_urlsafe(8),
     name=lambda: fkit.text(LENGTH_NAME),
     description=lambda: fkit.text(LENGTH_DESCRIPTION),
@@ -139,7 +168,6 @@ class Dummy:
         else:
             self.build()
 
-
     def find(self, user: User):
         session = self.session
         self.user = user
@@ -155,9 +183,11 @@ class Dummy:
                 )
             )
         )
-        self.events = tuple(session.scalars(
-            select(Event).where(Event.uuid_user == self.user.uuid).limit(10)
-        ))
+        self.events = tuple(
+            session.scalars(
+                select(Event).where(Event.uuid_user == self.user.uuid).limit(10)
+            )
+        )
 
     def build(self):
         # NOTE: Create dummy users, documents, and collections. Grants and
@@ -263,7 +293,7 @@ class Dummy:
         if level is not None:
             q = self.user.q_select_documents(level=level)
         else:
-            q = select(Document).where(Document.uuid=="ex-parrot")
+            q = select(Document).where(Document.uuid == "ex-parrot")
 
         q = q.limit(1)
         doc = self.session.scalar(q)
@@ -273,7 +303,7 @@ class Dummy:
         return doc
 
     def get_grant(self, document) -> Grant:
-        q = self.user.q_select_grants({document.uuid}) 
+        q = self.user.q_select_grants({document.uuid})
         q = q.limit(1)
         grant = self.session.scalar(q)
         if grant is None:
@@ -291,12 +321,12 @@ class Dummy:
     # ----------------------------------------------------------------------- #
 
     def other(
-        self, 
-        kind: KindObject, 
+        self,
+        kind: KindObject,
         *,
         callback: Annotated[
             Callable[[Select], Select] | None,
-            "This should be used to add filters like `where` statements."
+            "This should be used to add filters like `where` statements.",
         ] = None,
     ):
         match kind:
@@ -367,5 +397,3 @@ def dummy_lazy(auth: Auth, session: Session) -> Dummy:
             raise AssertionError(f"Somehow user `{uuid}` is `None`.")
         return Dummy(auth, session, user=_user)
     return Dummy(auth, session)
-
-

@@ -162,7 +162,9 @@ def token(
 
 def token_optional(
     auth: DependsAuth,
-    authorization: Annotated[str | None, Header(description="Optional auth0 bearer token.")] = None,
+    authorization: Annotated[
+        str | None, Header(description="Optional auth0 bearer token.")
+    ] = None,
 ) -> Dict[str, str] | None:
     if authorization is not None:
         return token(auth, authorization)
@@ -266,6 +268,7 @@ def read(
 def api_origin(request: Request) -> str:
     return f"{request.method} {request.url.path}"
 
+
 DependsApiOrigin = Annotated[str, Depends(api_origin)]
 
 
@@ -290,7 +293,7 @@ def delete(
     access: DependsAccess,
     request: Request,
     api_origin: DependsApiOrigin,
-    force :QueryForce = False,
+    force: QueryForce = False,
 ) -> Delete:
     return Delete(
         session=access.session,

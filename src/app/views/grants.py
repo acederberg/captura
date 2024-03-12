@@ -1,20 +1,51 @@
 from typing import Annotated, List, Set, Tuple
 
 from app import __version__
-from app.controllers.base import (Data, ResolvedDocument,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser)
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsSessionMaker, DependsToken, DependsUpdate)
-from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
-                        KindObject, Level, LevelStr, User)
-from app.schemas import (AsOutput, ErrAccessCannotRejectOwner,
-                         ErrAccessDocument, ErrAccessUser, ErrDetail,
-                         EventSchema, GrantCreateSchema, GrantSchema,
-                         OutputWithEvents, mwargs)
+from app.controllers.base import (
+    Data,
+    ResolvedDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUpdate,
+)
+from app.models import (
+    AssocUserDocument,
+    Document,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    LevelStr,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    ErrAccessCannotRejectOwner,
+    ErrAccessDocument,
+    ErrAccessUser,
+    ErrDetail,
+    EventSchema,
+    GrantCreateSchema,
+    GrantSchema,
+    OutputWithEvents,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy import literal_column, select, update
@@ -35,7 +66,7 @@ class DocumentGrantView(BaseView):
                     description="Cannot revoke grants of other owners.",
                     model=ErrDetail[ErrAccessCannotRejectOwner],
                 )
-            }
+            },
         ),
         post_grants_document=dict(
             url="/{uuid_document}",
@@ -61,8 +92,8 @@ class DocumentGrantView(BaseView):
                 description=(
                     "User is not an owner of the document specified by "
                     "`uuid_document` or an admin."
-                )
-            )
+                ),
+            ),
         },
     )
 
@@ -87,7 +118,7 @@ class DocumentGrantView(BaseView):
             data=TypeAdapter(List[GrantSchema]).validate_python(
                 data.data.grants.values()
             ),
-            events=[data.event]
+            events=[data.event],
         )
 
     @classmethod
@@ -98,11 +129,11 @@ class DocumentGrantView(BaseView):
         uuid_user: args.QueryUUIDUserOptional = None,
         pending: bool = False,
     ) -> AsOutput[List[GrantSchema]]:
-        """List the active grants for a **document**. If `uuid_user` is 
+        """List the active grants for a **document**. If `uuid_user` is
         specified, then filter results by these users; otherwise, return all
         of the grants for **document**.
 
-        To view grant requests set `pending` to be `True`. It is important to 
+        To view grant requests set `pending` to be `True`. It is important to
         note that access to the users is not checked, because, for instance,
         a private user might be assigned to the document.
         """
@@ -121,7 +152,6 @@ class DocumentGrantView(BaseView):
             ),
         )
         return out
-
 
     @classmethod
     def post_grants_document(
@@ -163,14 +193,14 @@ class DocumentGrantView(BaseView):
         create.create_data = GrantCreateSchema(level=fr_level)
         create.grant_document(data)
         data.commit(create.session, True)
-    
+
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
-            data=TypeAdapter(List[GrantSchema]).validate_python(data.data.grants.values()),
-            events=[EventSchema.model_validate(data.event)]
+            data=TypeAdapter(List[GrantSchema]).validate_python(
+                data.data.grants.values()
+            ),
+            events=[EventSchema.model_validate(data.event)],
         )
-
-
 
     @classmethod
     def patch_grants_document(
@@ -187,7 +217,7 @@ class DocumentGrantView(BaseView):
         `POST /grants/users/{uuid_user}` with `force=true`.
         """
         ...
-        
+
 
 class UserGrantView(BaseView):
     view_routes = dict(
@@ -202,11 +232,10 @@ class UserGrantView(BaseView):
         post_grants_user=dict(
             url="/{uuid_user}",
             name="Request User Access to Documents",
-            response_description="New grants and their events."
+            response_description="New grants and their events.",
         ),
         patch_grants_user=dict(
-            url="/{uuid_user}",
-            name="Accept/Reject User Invitations to Documents"
+            url="/{uuid_user}", name="Accept/Reject User Invitations to Documents"
         ),
     )
     view_router_args = dict(
@@ -217,11 +246,10 @@ class UserGrantView(BaseView):
             403: dict(
                 model=ErrDetail[ErrAccessUser],
                 description=(
-                    "User is not the user specified by `uuid_user` or an "
-                    "admin."
-                )
-            )
-        }
+                    "User is not the user specified by `uuid_user` or an " "admin."
+                ),
+            ),
+        },
     )
 
     @classmethod
@@ -231,7 +259,7 @@ class UserGrantView(BaseView):
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocument,
     ) -> OutputWithEvents[List[GrantSchema]]:
-        """Revoke grants for a **user** for the provided **documents**. The 
+        """Revoke grants for a **user** for the provided **documents**. The
         intended use case is for users/admins to revoke their own grants.
         """
 
@@ -246,7 +274,7 @@ class UserGrantView(BaseView):
             data=TypeAdapter(List[GrantSchema]).validate_python(
                 data.data.grants.values()
             ),
-            events=[data.event]
+            events=[data.event],
         )
 
     @classmethod
@@ -258,7 +286,7 @@ class UserGrantView(BaseView):
         level: args.QueryLevel | None = None,
         pending: bool = False,
     ) -> AsOutput[List[GrantSchema]]:
-        """Get grants for a **user**. The indented use case is for users/admins 
+        """Get grants for a **user**. The indented use case is for users/admins
         to view the grants for any user. If **uuid_document** is not specified
         then all grants for the user are returned.
 
@@ -287,7 +315,7 @@ class UserGrantView(BaseView):
         """Approve pending grants for user. The intended use case is for users
         to accept their own grants (this can also be done by admins).
 
-        To invite users to a document you own, use 
+        To invite users to a document you own, use
         `POST /grants/documents/{uuid}`.
 
         Note that grants cannot be updated in place. To replace/update a grant
@@ -302,7 +330,7 @@ class UserGrantView(BaseView):
         uuid_document: args.QueryUUIDDocument,
         level: args.QueryLevel,
     ) -> OutputWithEvents[List[GrantSchema]]:
-        """Request **user** access to *public* **documents** specified by 
+        """Request **user** access to *public* **documents** specified by
         **uuid_document**. These grants will await approval from a document
         owner or admin view `PATCH /grants/documents/{uuid_document}`.
 
@@ -314,7 +342,7 @@ class UserGrantView(BaseView):
         #       The only requirement to ask for access is to know the document
         #       uuid, which would be difficult to geuss in the case of.
         # NOTE: `token_user_grants` is usually the same as grants. But in this
-        #       case they are not used. `grants` will be updated inside of 
+        #       case they are not used. `grants` will be updated inside of
         #       `create.grant_user`.
         user: User = create.access.user(uuid_user)
         data: Data[ResolvedGrantUser] = mwargs(
@@ -338,4 +366,3 @@ class UserGrantView(BaseView):
             data=TypeAdapter(List[GrantSchema]).validate_python(grants.values()),
             events=[EventSchema.model_validate(data.event)],
         )
-

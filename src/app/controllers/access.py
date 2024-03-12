@@ -2,26 +2,68 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
-                    Tuple, Type, TypeVar, overload)
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Dict,
+    Literal,
+    ParamSpec,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    overload,
+)
 
 from app import __version__, util
 from app.auth import Token
-from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
-                                  DataResolvedGrant, KindData,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser, T_Data)
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, Resolvable,
-                        ResolvableLevel, ResolvableMultiple,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
-from app.schemas import (ErrAccessCannotRejectOwner, ErrAccessCollection,
-                         ErrAccessUser, EventParams, EventSearchSchema, mwargs)
+from app.controllers.base import (
+    BaseController,
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    KindData,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+    T_Data,
+)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    Resolvable,
+    ResolvableLevel,
+    ResolvableMultiple,
+    ResolvableSingular,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
+from app.schemas import (
+    ErrAccessCannotRejectOwner,
+    ErrAccessCollection,
+    ErrAccessUser,
+    EventParams,
+    EventSearchSchema,
+    mwargs,
+)
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -287,8 +329,8 @@ class Access(BaseController):
             case tuple() as users:
                 users = tuple(
                     self._user(
-                        user, 
-                        user_token, 
+                        user,
+                        user_token,
                         exclude_public=False,
                         exclude_deleted=exclude_deleted,
                     )
@@ -327,7 +369,7 @@ class Access(BaseController):
         msg_access_user: str = "Cannot modify other user.",
     ) -> User:
         """
-        :param exclude_public: When ``True``, will exclude checking if user is 
+        :param exclude_public: When ``True``, will exclude checking if user is
             public or not in the ``get`` case.
         """
         # if user.admin:
@@ -335,7 +377,6 @@ class Access(BaseController):
         if exclude_deleted:
             user.check_not_deleted()
 
-        print(not exclude_public, not user.public, user_token.uuid != user_token.uuid) 
         match self.method:
             # case _ if not user.public:
             #     return user
@@ -357,7 +398,7 @@ class Access(BaseController):
                     detail = ErrAccessUser(
                         uuid_user=user.uuid,
                         uuid_user_token=user_token.uuid,
-                        msg=msg_access_user
+                        msg=msg_access_user,
                     )
                     raise HTTPException(403, detail.model_dump())
                 return user

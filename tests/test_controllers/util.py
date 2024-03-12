@@ -3,8 +3,7 @@ from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias, TypeVar
 
 import pytest
 from app.models import Assignment, Collection, Document, Grant, User
-from app.schemas import (CollectionSchema, DocumentSchema, GrantSchema,
-                         UserSchema)
+from app.schemas import CollectionSchema, DocumentSchema, GrantSchema, UserSchema
 from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session

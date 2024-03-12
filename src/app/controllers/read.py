@@ -1,18 +1,38 @@
 from http import HTTPMethod
-from typing import (Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar,
-                    overload)
+from typing import Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar, overload
 
 from app import util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess
-from app.controllers.base import (BaseController, Data, ResolvedEvent,
-                                  ResolvedObjectEvents, ResolvedUser)
-from app.models import (Base, Collection, Document, Edit, Event, KindObject,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
-from app.schemas import (AsOutput, CollectionSearchSchema,
-                         DocumentSearchSchema, EditSearchSchema, EventParams,
-                         EventSearchSchema, UserSearchSchema)
+from app.controllers.base import (
+    BaseController,
+    Data,
+    ResolvedEvent,
+    ResolvedObjectEvents,
+    ResolvedUser,
+)
+from app.models import (
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    KindObject,
+    ResolvableSingular,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    CollectionSearchSchema,
+    DocumentSearchSchema,
+    EditSearchSchema,
+    EventParams,
+    EventSearchSchema,
+    UserSearchSchema,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -106,5 +126,3 @@ class Read(BaseController):
         # util.sql(self.session, q)
         res = self.session.execute(q)
         return tuple(res)  # type: ignore
-
-

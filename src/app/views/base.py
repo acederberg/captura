@@ -49,20 +49,17 @@ OpenApiTagMetadata = [
     },
     {
         "name": "grants",
-        "description": "View and manage document access and access invitations."
+        "description": "View and manage document access and access invitations.",
     },
     {
         "name": "assignments",
-        "description": "View and manage assignments of documents to collections."
+        "description": "View and manage assignments of documents to collections.",
     },
     {
         "name": "events",
         "description": "View and manage object events.",
     },
-    {
-        "name": "auth0",
-        "description": "Auth0 and token tools."
-    },
+    {"name": "auth0", "description": "Auth0 and token tools."},
     {
         "name": "html",
         "description": "For humans.",
@@ -82,7 +79,6 @@ OpenApiResponseCommon = {
 OpenApiResponseUnauthorized = {
     401: dict(
         model=ErrDetail[Literal["Token required"]],
-
     ),
 }
 
@@ -112,7 +108,7 @@ class ViewMeta(type):
     def add_route(cls, T, fn_name: str, fn_info_raw: str | Dict[str, Any]):
         name = T.__name__
 
-        # Build info 
+        # Build info
         info: Dict[str, Any]
         url: str
         match fn_info_raw:

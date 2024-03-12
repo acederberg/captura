@@ -26,7 +26,8 @@ class AppRouteInfo(BaseModel):
     name: Annotated[str, Field()]
     methods: Annotated[Set[H], Field()]
 
-description: str ="""
+
+description: str = """
 An API for storing, rendering, editting, and sharing text documents and other 
 deffered objects. 
 
@@ -43,6 +44,7 @@ Soon the Captura API will support deffering objects to other APIs. More
 or less this model will be 'sharing as a service'.
 """
 
+
 class AppView(BaseView):
     view_router = FastAPI(
         title="Captura Document Automation, Sharing, and Organization API.",
@@ -53,13 +55,12 @@ class AppView(BaseView):
             url="https://github.com/acederberg",
             email="adrn.cederberg123@gmail.com",
         ),
-        openapi_tags=OpenApiTagMetadata
-
+        openapi_tags=OpenApiTagMetadata,
     )  # type: ignore
 
     # TODO: This should not show up in prod unless the status `500`. In fact,
     #       the traceback should be stored somewhere.
-    @view_router.exception_handler(HTTPException) # type: ignore
+    @view_router.exception_handler(HTTPException)  # type: ignore
     async def http_exception_handler(request, exc: HTTPException):
         traceback.print_exc()
         return JSONResponse(
@@ -78,8 +79,8 @@ class AppView(BaseView):
             "url": "/routes",
             "tags": [OpenApiTags.admin],
             "name": "Routes Directory",
-            "description": "For text based clients that won't like using help."
-        }
+            "description": "For text based clients that won't like using help.",
+        },
     }
     view_children = {
         "": EventSearchView,

@@ -96,6 +96,7 @@ PATH_CONFIG_TEST_CLIENT = Path.config("client.test.yaml")
 # =========================================================================== #
 # Enum Stuff
 
+
 def check_enum_opt_attr(
     cls: Type[Any],
     field: str,

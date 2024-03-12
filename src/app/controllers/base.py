@@ -7,19 +7,54 @@ import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
-                    Literal, Self, Set, Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, LevelHTTP,
-                        ResolvableSingular, ResolvedRawAny, Singular, User,
-                        uuids)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    LevelHTTP,
+    ResolvableSingular,
+    ResolvedRawAny,
+    Singular,
+    User,
+    uuids,
+)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
-                      ValidationInfo, computed_field, field_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Tag,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy.orm import Session
 
 logger = util.get_logger(__name__)
@@ -171,8 +206,7 @@ class BaseResolved(BaseModel):
 
         util.check_enum_opt_attr(cls, "kind", KindData)
 
-    def register(self, session: Session, refresh: bool = False) -> None:
-        ...
+    def register(self, session: Session, refresh: bool = False) -> None: ...
 
 
 T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
@@ -224,8 +258,8 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         return ValueError(msg)
 
     def register(
-        self, 
-        session: Session, 
+        self,
+        session: Session,
         refresh: bool = False,
     ) -> None:
         """Because writing commit/refresh logic and wrapping to avoid breaking
@@ -236,12 +270,12 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         targets = self.targets()
         session.add_all(targets)
 
-
         # Commit and refresh.
         session.commit()
         if refresh:
             for target in targets:
                 session.refresh(target)
+
 
 class BaseResolvedSecondary(BaseResolved):
     kind: ClassVar[KindData]
@@ -329,7 +363,6 @@ class ResolvedCollection(BaseResolvedPrimary):
     uuid_collections: UuidSetFromModel
 
 
-
 class ResolvedDocument(BaseResolvedPrimary):
     kind = KindData.document
 
@@ -383,7 +416,9 @@ class ResolvedGrantUser(BaseResolvedSecondary):
     documents: Tuple[Document, ...]
     grants: Annotated[
         Dict[str, Grant],
-        Field(description="A map from `document` uuids to their respective `grant`s for `user`.")
+        Field(
+            description="A map from `document` uuids to their respective `grant`s for `user`."
+        ),
     ]
     uuid_user: UuidFromModel
     uuid_documents: UuidSetFromModel
@@ -408,11 +443,13 @@ class ResolvedGrantDocument(BaseResolvedSecondary):
     users: Tuple[User, ...]
     grants: Annotated[
         Dict[str, Grant],
-        Field(description="A map from `user` uuids to their respective `grant`s for `document`.")
+        Field(
+            description="A map from `user` uuids to their respective `grant`s for `document`."
+        ),
     ]
     uuid_document: UuidFromModel
     uuid_users: UuidSetFromModel
-    uuid_grants: UuidSetFromModel 
+    uuid_grants: UuidSetFromModel
 
     # NOTE: See note inside of `Access.grant_document` about `token_user_grants`.
     token_user_grants: Dict[str, Grant]
@@ -505,7 +542,6 @@ class Data(BaseModel, Generic[T_Data]):
     token_user: Annotated[User | None, Field(default=None)]
     children: Annotated["List[Data]", Field(default_factory=list)]
 
-
     @field_validator("data", mode="before")
     def validate_raw(cls, v):
         return v
@@ -530,7 +566,7 @@ class Data(BaseModel, Generic[T_Data]):
         for child in self.children:
             child.register(session)
 
-    def commit(self, session: Session, commit: bool=False) -> None:
+    def commit(self, session: Session, commit: bool = False) -> None:
         # session api sqlalchemy
         if commit:
             print("Committing...")
@@ -543,6 +579,7 @@ class Data(BaseModel, Generic[T_Data]):
 
     def types(self) -> Any:
         return kind_type_map[self.kind]  # type: ignore[return-type]
+
 
 #
 # T_OutputKind = TypeVar("T_OutputKind", AsOutput, OutputWithEvents)

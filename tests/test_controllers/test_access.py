@@ -7,14 +7,32 @@ import pytest
 from app import util
 from app.auth import Auth, Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEvent, ResolvedGrantDocument,
-                                  ResolvedGrantUser, ResolvedUser)
-from app.models import (Assignment, Collection, Document, Event, Grant,
-                        KindEvent, KindObject, Level, LevelHTTP, PendingFrom,
-                        User, UUIDSplit, uuids)
+from app.controllers.base import (
+    Data,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    LevelHTTP,
+    PendingFrom,
+    User,
+    UUIDSplit,
+    uuids,
+)
 from fastapi import HTTPException
 from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
@@ -393,7 +411,7 @@ class TestAccessUser(BaseTestAccess):
                 403,
                 uuid_user_token="000-000-000",
                 uuid_user="99d-99d-99d",
-                msg=msg
+                msg=msg,
             ):
                 raise err
 
@@ -1400,15 +1418,14 @@ class TestAccessGrant(BaseTestAccess):
             )
             if err is not None:
                 raise err
-                
-            access.grant_user(dummy.user.uuid, {"aaa-aaa-aaa"})
 
+            access.grant_user(dummy.user.uuid, {"aaa-aaa-aaa"})
 
     def test_owner_access_only(self, auth: Auth, session: Session):
         """For ``/grants/documents/{uuid_document}`` only."""
 
         def doit(access: Access, doc: Document):
-            return access.grant_document(doc.uuid, { "000-000-000"})
+            return access.grant_document(doc.uuid, {"000-000-000"})
 
         dummy = Dummy(auth, session, user=User.if_exists(session, "000-000-000"))
         document_own = dummy.get_document(Level.own)
@@ -1416,18 +1433,15 @@ class TestAccessGrant(BaseTestAccess):
         document_view = dummy.get_document(Level.view)
         document_other = Document.if_exists(session, "-0---0---0-")
         print("document_other")
-        common_insufficient : Dict[str, Any] = dict(
-                msg="Grant insufficient.",
-                uuid_user="000-000-000",
-                level_grant_required="own",
-            check_length= False,
-                )
-
+        common_insufficient: Dict[str, Any] = dict(
+            msg="Grant insufficient.",
+            uuid_user="000-000-000",
+            level_grant_required="own",
+            check_length=False,
+        )
 
         # NOTE: Invariance with method
         for method in httpcommon:
-            print(method)
-
             # Cannot access other
             access = self.create_access(session, method)
             err, _ = expect_exc(
@@ -1436,7 +1450,7 @@ class TestAccessGrant(BaseTestAccess):
                 msg="Grant does not exist.",
                 uuid_user="000-000-000",
                 uuid_document=document_other.uuid,
-                level="own"
+                level="own",
             )
             if err:
                 raise err
@@ -1444,11 +1458,11 @@ class TestAccessGrant(BaseTestAccess):
             # Cannot access with only view.
             access = self.create_access(session, method)
             err, _ = expect_exc(
-                lambda: doit(access,document_view),
+                lambda: doit(access, document_view),
                 403,
                 level_grant="view",
                 uuid_document=document_view.uuid,
-                **common_insufficient
+                **common_insufficient,
             )
             if err:
                 raise err
@@ -1456,29 +1470,26 @@ class TestAccessGrant(BaseTestAccess):
             # Cannot access with only modify
             access = self.create_access(session, method)
             err, _ = expect_exc(
-                lambda: doit(access,document_modify),
+                lambda: doit(access, document_modify),
                 403,
                 level_grant="modify",
                 uuid_document=document_modify.uuid,
-                **common_insufficient
+                **common_insufficient,
             )
             if err:
                 raise err
 
             # Can access with own
-            doit(access,document_own)
+            doit(access, document_own)
 
-
-
-
-    def test_overloads(self, session: Session): 
+    def test_overloads(self, session: Session):
 
         access = self.create_access(session)
 
         res = access.grant_user("000-000-000", {"aaa-aaa-aaa"})
         assert len(res) == 2
         assert isinstance(res, tuple)
-        
+
         uu, dd = res
         assert isinstance(uu, User)
         assert isinstance(dd, tuple)
@@ -1487,7 +1498,7 @@ class TestAccessGrant(BaseTestAccess):
         assert isinstance(res, Data)
         assert isinstance(res.data, ResolvedGrantUser)
 
-        #-------------------------------------------------------------------- #
+        # -------------------------------------------------------------------- #
 
         res = access.grant_document("aaa-aaa-aaa", {"000-000-000"})
         assert len(res) == 2
@@ -1500,7 +1511,6 @@ class TestAccessGrant(BaseTestAccess):
         res = access.grant_document("aaa-aaa-aaa", {"000-000-000"}, return_data=True)
         assert isinstance(res, Data)
         assert isinstance(res.data, ResolvedGrantDocument)
-
 
     def check_result(
         self,
@@ -1556,33 +1566,33 @@ class TestAccessGrant(BaseTestAccess):
     @pytest.mark.skip
     def test_private(self, dummy: Dummy):
         """
-        Why is this test empty? 
+        Why is this test empty?
         =======================================================================
 
         Please read the following.
 
-        GET /grants/{kind_source}/{uuid_source} 
+        GET /grants/{kind_source}/{uuid_source}
         -----------------------------------------------------------------------
 
-        The parameter ``uuid_target`` is used as a filter on results. It does 
+        The parameter ``uuid_target`` is used as a filter on results. It does
         not matter that the specified resources are private or public or not
         as
 
         1. Document owners should only be able to use these routes in the case
            where ``kind_source`` is ``document``.
-        2. Users should only be able to access their own routes in the case 
+        2. Users should only be able to access their own routes in the case
            where ``kind_source`` is ``user``.
 
         DELETE | POST | PATCH /grants/{kind_source}/{uuid_source}
         -----------------------------------------------------------------------
 
-        The parameter ``uuid_target`` is used in ``POST`` requests to 
+        The parameter ``uuid_target`` is used in ``POST`` requests to
 
         1. Select which users are to be invited to the ``document`` (
            ``kind_source='document'`` in this case).
         2. Select which documents a user wants to request access for.
 
-        and for patch it respectively is used to approve or accept pending 
+        and for patch it respectively is used to approve or accept pending
         grants.
 
         Conclusion
@@ -1591,19 +1601,19 @@ class TestAccessGrant(BaseTestAccess):
         It is not necessary to check anything pertaining to the ``target``
         parameter, only the source really.
 
-        Further, since a user can only access their own grants with 
-        `/grants/users/{uuid_user}` private/public does not matter in this 
+        Further, since a user can only access their own grants with
+        `/grants/users/{uuid_user}` private/public does not matter in this
         case.
 
-        Finally, since only document owners can user 
-        `/grants/documents/{uuid_document}` this is not subject to any 
+        Finally, since only document owners can user
+        `/grants/documents/{uuid_document}` this is not subject to any
         conditions concerning the ``public`` column.
         """
         ...
 
     @pytest.mark.skip
     def test_modify(self, session: Session):
-        """See the note on `test_private`` about access. 
+        """See the note on `test_private`` about access.
 
         Tl;dr: Access is determined by the source. Thus this test is the same
                as the access rules for the source of the grants.
@@ -1611,9 +1621,7 @@ class TestAccessGrant(BaseTestAccess):
 
     def test_deleted(self, dummy: Dummy):
         dummy.visability(
-            {KindObject.user, KindObject.document},
-            deleted=True,
-            public=True
+            {KindObject.user, KindObject.document}, deleted=True, public=True
         ).refresh()
         document_other = dummy.get_document(None)
         document_not_deleted = dummy.documents[0]
@@ -1654,7 +1662,7 @@ class TestAccessGrant(BaseTestAccess):
             # NOTE: Adding `exclude_deleted` should result in no errors raised.
             access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
 
-            # NOTE: Trying to access deleted documents with active user should 
+            # NOTE: Trying to access deleted documents with active user should
             #       raise a similar error.
             dummy.visability({KindObject.user}, deleted=False, public=True)
             dummy.refresh()
@@ -1674,9 +1682,13 @@ class TestAccessGrant(BaseTestAccess):
             # NOTE: Adding `exclude_deleted` should result in no erros raised.
             access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
 
-    def test_pending(self, dummy: Dummy ):
+    def test_pending(self, dummy: Dummy):
         session = dummy.session
-        dummy.visability({KindObject.grant, KindObject.user, KindObject.document}, deleted=False, public=False)
+        dummy.visability(
+            {KindObject.grant, KindObject.user, KindObject.document},
+            deleted=False,
+            public=False,
+        )
         uuid_document = Document.resolve_uuid(session, dummy.documents)
 
         document = dummy.get_document(Level.own)
@@ -1693,8 +1705,8 @@ class TestAccessGrant(BaseTestAccess):
         for method in httpcommon:
             for pending_from in (PendingFrom.grantee, PendingFrom.granter):
                 # NOTE: Should reject pending grants. It is important to note
-                #       that the grants for a user on their own original 
-                #       documents will never be pending hence the mutations 
+                #       that the grants for a user on their own original
+                #       documents will never be pending hence the mutations
                 #       here.
                 access = Access(dummy.session, dummy.token, method)
                 for grant in dummy.grants:
@@ -1706,9 +1718,9 @@ class TestAccessGrant(BaseTestAccess):
                 err, httperr = expect_exc(
                     lambda: access.grant_user(dummy.user, dummy.documents),
                     403,
-                    msg = msgs[pending_from],
+                    msg=msgs[pending_from],
                     uuid_user=dummy.user.uuid,
-                    check_length=False
+                    check_length=False,
                 )
                 if err:
                     raise err
@@ -1718,19 +1730,17 @@ class TestAccessGrant(BaseTestAccess):
                 err, httperr = expect_exc(
                     lambda: access.grant_document(document, {dummy.user.uuid}),
                     403,
-                    msg = msgs[pending_from],
+                    msg=msgs[pending_from],
                     uuid_user=dummy.user.uuid,
                     uuid_document=document.uuid,
-                    check_length=False
+                    check_length=False,
                 )
                 if err:
                     raise err
 
-
                 # NOTE: If ``exclude_pending`` is ``False`` the no error.
                 access.grant_user(dummy.user, dummy.documents, pending=True)
                 access.grant_document(document, {dummy.user.uuid}, pending=True)
-
 
     def test_dne(self, dummy: Dummy):
         dummy.visability(
@@ -1744,7 +1754,7 @@ class TestAccessGrant(BaseTestAccess):
 
         for method in httpcommon:
             access = Access(dummy.session, dummy.token, method)
-            uuid_obj =secrets.token_urlsafe(8) 
+            uuid_obj = secrets.token_urlsafe(8)
 
             # NOTE: Filters out documents that do not exist.
             f_user, f_document = access.grant_user(dummy.user, {uuid_obj})
@@ -1765,7 +1775,7 @@ class TestAccessGrant(BaseTestAccess):
             )
             if err:
                 raise err
-        
+
             err, httperr = expect_exc(
                 lambda: access.grant_user(uuid_obj, {document.uuid}),
                 404,
@@ -1833,7 +1843,7 @@ class TestAccessEvent(BaseTestAccess):
             # `exclude_deleted=False` should result in no error.
             access.event(event, exclude_deleted=False)
 
-    def test_dne(self, dummy: Dummy): 
+    def test_dne(self, dummy: Dummy):
 
         for method in httpcommon:
             access = Access(dummy.session, dummy.token, method)

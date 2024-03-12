@@ -4,26 +4,55 @@ from typing import Annotated, List, Tuple, overload
 from app import __version__
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedDocument
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsRead, DependsSessionMaker, DependsToken,
-                         DependsTokenOptional, DependsUpdate)
-from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
-                        Document, Level, User)
-from app.schemas import (AsOutput, DocumentCreateSchema,
-                         DocumentMetadataSchema, DocumentSchema,
-                         DocumentSearchSchema, DocumentUpdateSchema,
-                         EditSchema, EditSearchSchema, ErrAccessDocument,
-                         ErrAccessDocumentGrantNone, ErrDetail, EventSchema,
-                         OutputWithEvents, TimespanLimitParams, mwargs)
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+    DependsTokenOptional,
+    DependsUpdate,
+)
+from app.models import (
+    AssocCollectionDocument,
+    AssocUserDocument,
+    Collection,
+    Document,
+    Level,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    DocumentCreateSchema,
+    DocumentMetadataSchema,
+    DocumentSchema,
+    DocumentSearchSchema,
+    DocumentUpdateSchema,
+    EditSchema,
+    EditSearchSchema,
+    ErrAccessDocument,
+    ErrAccessDocumentGrantNone,
+    ErrDetail,
+    EventSchema,
+    OutputWithEvents,
+    TimespanLimitParams,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
-OpenApiResponseDocumentUnauthorized = {403: dict(
+OpenApiResponseDocumentUnauthorized = {
+    403: dict(
         model=ErrDetail[ErrAccessDocument] | ErrAccessDocumentGrantNone,
         description=(
             "For read, cannot access document because no grants exist and "
@@ -31,12 +60,14 @@ OpenApiResponseDocumentUnauthorized = {403: dict(
             "regardless of private/public status of document."
         ),
     ),
-                                       **OpenApiResponseUnauthorized,
+    **OpenApiResponseUnauthorized,
 }
 OpenApiResponseDocument = {
     **OpenApiResponseCommon,
-    **OpenApiResponseDocumentUnauthorized
+    **OpenApiResponseDocumentUnauthorized,
 }
+
+
 class DocumentSearchView(BaseView):
     view_routes = dict(
         get_recent_documents=dict(
@@ -46,14 +77,14 @@ class DocumentSearchView(BaseView):
         get_recent_document_edits=dict(
             url="/{uuid_document}/edits",
             name="Read Recents Edits for a Document",
-        )
+        ),
     )
     view_router_args = dict(
         tags=[OpenApiTags.documents],
         responses=OpenApiResponseDocument,
     )
 
-    # NOTE: Return the most recently editted  
+    # NOTE: Return the most recently editted
     @classmethod
     def get_recent_documents(
         cls,
@@ -87,7 +118,7 @@ class DocumentSearchView(BaseView):
         """Recent edits to a particular document."""
 
         data: Data[ResolvedDocument] = read.access.d_document(uuid_document)
-        document, = data.data.documents
+        (document,) = data.data.documents
 
         q = document.q_select_edits(
             before=param.before_timestamp,
@@ -98,7 +129,7 @@ class DocumentSearchView(BaseView):
         edits = tuple(res.scalars())
         return mwargs(
             AsOutput[EditSchema],
-            data=TypeAdapter(List[EditSchema]).validate_python(edits)
+            data=TypeAdapter(List[EditSchema]).validate_python(edits),
         )
 
 
@@ -127,7 +158,7 @@ class DocumentView(BaseView):
             url="/{uuid_document}",
             name="Delete Document and Associated Objects",
             responses=OpenApiResponseDocumentUnauthorized,
-        )
+        ),
     )
     view_children = {"": DocumentSearchView}
     view_router_args = dict(
@@ -147,8 +178,7 @@ class DocumentView(BaseView):
         """
         document: Document = access.document(uuid_document, level=Level.view)
         return mwargs(
-            AsOutput[DocumentSchema],
-            data=DocumentSchema.model_validate(document)
+            AsOutput[DocumentSchema], data=DocumentSchema.model_validate(document)
         )
 
     @classmethod
@@ -181,12 +211,12 @@ class DocumentView(BaseView):
         return mwargs(
             OutputWithEvents[DocumentSchema],
             events=[EventSchema.model_validate(data.event)],
-            data=DocumentSchema.model_validate(data.data.documents)
+            data=DocumentSchema.model_validate(data.data.documents),
         )
 
     @classmethod
     def patch_document(
-        cls, 
+        cls,
         uuid_document: args.PathUUIDDocument,
         update: DependsUpdate,
         update_data: Annotated[DocumentUpdateSchema, Body()],
@@ -194,10 +224,10 @@ class DocumentView(BaseView):
         uuid_rollback: args.QueryUUIDEditOptional = None,
     ) -> OutputWithEvents[DocumentSchema]:
         """Update document. Updating **content** will result in the current
-        document content being moved to an edit. 
+        document content being moved to an edit.
 
-        To undo updates of the `content` field use **rollback** to revert to 
-        the most recent edit, or use `uuid_rollback` to specify the exact edit 
+        To undo updates of the `content` field use **rollback** to revert to
+        the most recent edit, or use `uuid_rollback` to specify the exact edit
         uuid to rollback to.
 
         To read the edits for a document use
@@ -210,7 +240,7 @@ class DocumentView(BaseView):
         return mwargs(
             OutputWithEvents[DocumentSchema],
             events=[EventSchema.model_validate(data.event)],
-            data=DocumentSchema.model_validate(*data.data.documents)
+            data=DocumentSchema.model_validate(*data.data.documents),
         )
 
     @classmethod
@@ -227,7 +257,7 @@ class DocumentView(BaseView):
         `POST /events/objects/documents/{uuid_deleted}/restore`.
 
         To remove a document with no chance of restoration, use **force**. A
-        record of the deletion (an `event`) will be kept for some time and 
+        record of the deletion (an `event`) will be kept for some time and
         then eventually pruned.
         """
 

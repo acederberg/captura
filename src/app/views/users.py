@@ -6,35 +6,55 @@ from uuid import uuid4
 from app import __version__, util
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedUser
-from app.depends import (DependsAccess, DependsDelete, DependsRead,
-                         DependsSessionMaker, DependsToken, DependsUpdate)
-from app.models import (Collection, Document, Edit, Event, KindEvent,
-                        KindObject, User)
-from app.schemas import (AsOutput, CollectionMetadataSchema,
-                         CollectionSearchSchema, DocumentMetadataSchema,
-                         DocumentSearchSchema, EditMetadataSchema,
-                         EditSearchSchema, ErrAccessUser, ErrDetail,
-                         EventSchema, OutputWithEvents, UserCreateSchema,
-                         UserExtraSchema, UserSchema, UserSearchSchema,
-                         UserUpdateSchema, mwargs)
+from app.depends import (
+    DependsAccess,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUpdate,
+)
+from app.models import Collection, Document, Edit, Event, KindEvent, KindObject, User
+from app.schemas import (
+    AsOutput,
+    CollectionMetadataSchema,
+    CollectionSearchSchema,
+    DocumentMetadataSchema,
+    DocumentSearchSchema,
+    EditMetadataSchema,
+    EditSearchSchema,
+    ErrAccessUser,
+    ErrDetail,
+    EventSchema,
+    OutputWithEvents,
+    UserCreateSchema,
+    UserExtraSchema,
+    UserSchema,
+    UserSearchSchema,
+    UserUpdateSchema,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import Body, Depends, HTTPException, Query
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
 OpenApiResponseUser = {
-
-            **OpenApiResponseCommon,
-            403: {
-                "model": ErrDetail[ErrAccessUser],
-                "description": (
-                    "User must be logged in as the user specified in the url "
-                    "or an admin to not raise this status."
-                ),
-            }
-        }
+    **OpenApiResponseCommon,
+    403: {
+        "model": ErrDetail[ErrAccessUser],
+        "description": (
+            "User must be logged in as the user specified in the url "
+            "or an admin to not raise this status."
+        ),
+    },
+}
 
 
 class DemoUserView(BaseView):
@@ -86,10 +106,10 @@ class DemoUserView(BaseView):
     ) -> List[OutputWithEvents[UserExtraSchema]]:
         """Get requests for demo accounts.
 
-        Optionally filter by **invitation_email**, **invitation_code**, or 
+        Optionally filter by **invitation_email**, **invitation_code**, or
         **invitation_uuid**.
         """
-        
+
         if not access.token.admin:
             raise HTTPException(
                 403,
@@ -127,9 +147,9 @@ class DemoUserView(BaseView):
     ) -> OutputWithEvents[UserExtraSchema]:
         """Create a user.
 
-        If the user has no token or has a valid token but is not an admin, the 
-        `user` created will await approval from an admin. If the token exists 
-        and is an for an `admin`, then the `user` created will only await 
+        If the user has no token or has a valid token but is not an admin, the
+        `user` created will await approval from an admin. If the token exists
+        and is an for an `admin`, then the `user` created will only await
         activation via `PATCH /users/extensions/demo/{invitation_code}`
         """
         is_admin = access.token.admin
@@ -423,10 +443,7 @@ class UserView(BaseView):
             responses=OpenApiResponseUnauthorized,
         ),
     )
-    view_router_args = dict(
-        responses=OpenApiResponseUser,
-        tags=[OpenApiTags.users]
-    )
+    view_router_args = dict(responses=OpenApiResponseUser, tags=[OpenApiTags.users])
     view_children = {
         "/extensions/demos": DemoUserView,
         "": UserSearchView,
@@ -466,9 +483,9 @@ class UserView(BaseView):
             resolve_user_token=update.token_user,
         )
         return mwargs(
-            OutputWithEvents[UserSchema], 
+            OutputWithEvents[UserSchema],
             data=UserSchema.model_validate(data.data.users[0]),
-            events=[data.event]
+            events=[data.event],
         )
 
     @classmethod

@@ -4,15 +4,29 @@ from typing import Callable, Set, Tuple, Type
 
 import pytest
 from app import util
-from app.controllers.base import (Data, DataResolvedAssignment,
-                                  DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedGrantDocument, ResolvedGrantUser)
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+)
 from app.controllers.create import Create
 from app.controllers.delete import AssocData, Delete
-from app.models import (Assignment, AssocUserDocument, Collection, Document,
-                        Grant, KindEvent, KindObject, Plural, Singular, User)
+from app.models import (
+    Assignment,
+    AssocUserDocument,
+    Collection,
+    Document,
+    Grant,
+    KindEvent,
+    KindObject,
+    Plural,
+    Singular,
+    User,
+)
 from app.schemas import EventSchema
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, update

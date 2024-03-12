@@ -6,13 +6,26 @@ from app.controllers.access import Access
 from app.controllers.create import Create
 from app.controllers.delete import Delete
 from app.depends import DependsSessionMaker, DependsToken
-from app.models import (Assignment, AssocCollectionDocument,
-                        ChildrenAssignment, Collection, Document, Event,
-                        KindEvent, KindObject, Level, User)
+from app.models import (
+    Assignment,
+    AssocCollectionDocument,
+    ChildrenAssignment,
+    Collection,
+    Document,
+    Event,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import AssignmentSchema, EventSchema
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import HTTPException
 from sqlalchemy import delete, literal_column, select, update
 from sqlalchemy.orm import Session
@@ -26,8 +39,8 @@ OpenApiResponseAssignment = {
             "Raised when a user does not own any of the collections in "
             "question or when a user cannot at least view a document in "
             "question."
-        )
-    )
+        ),
+    ),
 }
 
 
@@ -35,13 +48,13 @@ OpenApiResponseAssignment = {
 #       collection.
 class DocumentAssignmentView(BaseView):
     view_router_args = dict(
-        tags=[OpenApiTags.assignments],
-        responses= OpenApiResponseAssignment)
+        tags=[OpenApiTags.assignments], responses=OpenApiResponseAssignment
+    )
 
     view_routes = dict(
         delete_assignment_document=dict(
             url="/{uuid_document}",
-            name="Remove Document from Collections by Deleting Assignments"
+            name="Remove Document from Collections by Deleting Assignments",
         ),
         post_assignment_document=dict(
             url="/{uuid_document}",
@@ -62,8 +75,7 @@ class DocumentAssignmentView(BaseView):
         uuid_collection: args.QueryUUIDCollection,
         force: args.QueryForce = False,
     ) -> EventSchema:
-        """
-        """
+        """ """
         with sessionmaker() as session:
             access = Access(session, token, HTTPMethod.DELETE)
             collection, documents = access.assignment_document(
@@ -118,6 +130,7 @@ class DocumentAssignmentView(BaseView):
             res = session.execute(q).scalars()
             return list(AssignmentSchema.model_validate(item) for item in res)
 
+
 class CollectionAssignmentView(BaseView):
     view_routes = dict(
         delete_assignment_collection=dict(
@@ -131,11 +144,10 @@ class CollectionAssignmentView(BaseView):
         get_assignment_collection=dict(
             url="/{uuid_collection}",
             description="Read Documents for Collection.",
-        )
+        ),
     )
     view_router_args = dict(
-        tags=[OpenApiTags.assignments],
-        responses=OpenApiResponseAssignment
+        tags=[OpenApiTags.assignments], responses=OpenApiResponseAssignment
     )
 
     @classmethod
@@ -200,4 +212,3 @@ class CollectionAssignmentView(BaseView):
             res = session.execute(q).scalars()
 
             return list(AssignmentSchema.model_validate(item) for item in res)
-

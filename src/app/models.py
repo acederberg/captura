@@ -2,19 +2,52 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import (Annotated, Callable, ClassVar, Collection, Dict, Generator,
-                    List, Literal, Self, Set, Tuple, TypeAlias, TypeVar,
-                    overload)
+from typing import (
+    Annotated,
+    Callable,
+    ClassVar,
+    Collection,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    TypeAlias,
+    TypeVar,
+    overload,
+)
 
 from fastapi import HTTPException
-from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
-                        CompoundSelect, Enum, ForeignKey, Select, String,
-                        UniqueConstraint, and_, func, literal_column, select,
-                        true, union)
+from sqlalchemy import (
+    CTE,
+    BooleanClauseList,
+    Column,
+    ColumnElement,
+    CompoundSelect,
+    Enum,
+    ForeignKey,
+    Select,
+    String,
+    UniqueConstraint,
+    and_,
+    func,
+    literal_column,
+    select,
+    true,
+    union,
+)
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
-                            Session, mapped_column, object_session,
-                            relationship)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+    Mapped,
+    Session,
+    mapped_column,
+    object_session,
+    relationship,
+)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
@@ -38,8 +71,6 @@ LENGTH_CONTENT: int = 2**15
 LENGTH_FORMAT: int = 8
 
 
-
-
 class Level(enum.Enum):
     # NOTE: Must be consisten with sql, indexes start at 1
     view = 1
@@ -58,7 +89,6 @@ class Level(enum.Enum):
                 raise ValueError(f"Cannot resolve level for `{bad}`.")
 
 
-
 class LevelStr(str, enum.Enum):
     view = "view"
     modify = "modify"
@@ -66,7 +96,6 @@ class LevelStr(str, enum.Enum):
 
 
 ResolvableLevel: TypeAlias = str | Level | LevelStr
-
 
 
 class LevelHTTP(enum.Enum):
@@ -264,7 +293,7 @@ class Base(DeclarativeBase):
                 return cls.if_many(session, that)
             case _ as bad:
                 msg = f"Cannot resolve `{bad}` (of type `{bad}`) for mapped "
-                msg += f"class `{cls.__name__}`." 
+                msg += f"class `{cls.__name__}`."
                 raise ValueError(msg)
 
     @overload
@@ -1033,7 +1062,6 @@ class User(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
-
     ) -> Select:
         """Dual to :meth:`q_select_user_uuids`."""
 
@@ -1121,7 +1149,7 @@ class User(SearchableTableMixins, Base):
                     msg="Cannot access private collection.",
                     uuid_user=self.uuid,
                     uuid_collection=collection.uuid,
-                )
+                ),
             )
         return self
 
@@ -1142,9 +1170,9 @@ class User(SearchableTableMixins, Base):
         if document.public and level == Level.view:
             return self
 
-        session = self.get_session() # if _session is None else _session
+        session = self.get_session()  # if _session is None else _session
 
-        # NOTE: Deleted, pending, insufficient should be included for better 
+        # NOTE: Deleted, pending, insufficient should be included for better
         #       feedback. Do not exclude when adding.
         q = self.q_select_grants(
             {document.uuid},
@@ -1380,7 +1408,7 @@ class Document(SearchableTableMixins, Base):
 
         match (pending, exclude_pending):
             case (True, True):
-                msg ="`pending` and `exclude_pending` cannot both be ``True``." 
+                msg = "`pending` and `exclude_pending` cannot both be ``True``."
                 raise ValueError(msg)
             case (bool() as pending, False):
                 cond = and_(cond, Grant.pending == (true() if pending else false()))
@@ -1430,7 +1458,8 @@ class Document(SearchableTableMixins, Base):
             .join(AssocUserDocument)
             .where(
                 self.q_conds_grants(
-                    user_uuids=user_uuids, level=level,
+                    user_uuids=user_uuids,
+                    level=level,
                     exclude_deleted=exclude_deleted,
                     exclude_pending=exclude_pending,
                     pending=pending,
@@ -1532,12 +1561,16 @@ class Document(SearchableTableMixins, Base):
         if after is not None:
             conds.append(Event.timestamp >= after)
 
-        q_uuids = select(Event.uuid_obj).where(
-            Event.kind_obj == KindObject.document,
-            Event.kind == KindEvent.update,
-            Event.detail == Event.detail_document_editted,
-            *conds,
-        ).distinct()
+        q_uuids = (
+            select(Event.uuid_obj)
+            .where(
+                Event.kind_obj == KindObject.document,
+                Event.kind == KindEvent.update,
+                Event.detail == Event.detail_document_editted,
+                *conds,
+            )
+            .distinct()
+        )
         if limit is not None:
             q_uuids = q_uuids.limit(limit)
 
@@ -1704,6 +1737,7 @@ ResolvedRawAny = (
     | ResolvedRawAssignment
     | ResolvedRawGrant
 )
+
 
 def uuids(vs: Resolvable[T_Resolvable]) -> Set[str]:
     match vs:

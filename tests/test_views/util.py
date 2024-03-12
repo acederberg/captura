@@ -1,8 +1,7 @@
 import functools
 import json
 from http import HTTPMethod
-from typing import (Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple,
-                    Type)
+from typing import Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple, Type
 
 import httpx
 import pytest

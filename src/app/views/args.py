@@ -17,11 +17,11 @@ PathKindObj: TypeAlias = Annotated[KindObject, Path(description="Object kind.")]
 #       empty set cannot be allowed. When nothing is passed it ought to be
 #       `None`.
 QueryUUIDCollection: TypeAlias = Annotated[
-    Set[str], 
+    Set[str],
     Query(
         min_length=1,
         description="Collection uuids to filter by.",
-    )
+    ),
 ]
 QueryUUIDCollectionOptional: TypeAlias = Annotated[
     Optional[Set[str]],
@@ -35,11 +35,11 @@ QueryUUIDCollectionOptional: TypeAlias = Annotated[
 
 # QueryUUIDOwner: TypeAlias = Annotated[Set[str], Query(min_length=1)]
 QueryUUIDDocument: TypeAlias = Annotated[
-    Set[str], 
+    Set[str],
     Query(
         min_length=1,
         description="Document uuids to filter by.",
-    )
+    ),
 ]
 QueryUUIDDocumentOptional: TypeAlias = Annotated[
     Optional[Set[str]],
@@ -64,14 +64,13 @@ QueryUUIDUserOptional: TypeAlias = Annotated[
 
 QueryUUIDEditOptional: TypeAlias = Annotated[
     Optional[Set[str]],
-    Query(
-        min_length=1,
-        description="Optional edit uuids to filter by."
-    ),
+    Query(min_length=1, description="Optional edit uuids to filter by."),
 ]
 
 # --------------------------------------------------------------------------- #
 
-QueryForce: TypeAlias = Annotated[bool, Query(description="When true, objects cannot be restored.")]
+QueryForce: TypeAlias = Annotated[
+    bool, Query(description="When true, objects cannot be restored.")
+]
 QueryLevel: TypeAlias = Annotated[LevelStr, Query()]
 QueryLevelOptional: TypeAlias = Annotated[LevelStr | None, Query()]

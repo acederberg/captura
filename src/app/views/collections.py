@@ -2,16 +2,28 @@ from typing import Annotated, List, Tuple
 
 from app import __version__
 from app.controllers.base import Data, ResolvedCollection
-from app.depends import (DependsCreate, DependsDelete, DependsRead,
-                         DependsUpdate)
+from app.depends import DependsCreate, DependsDelete, DependsRead, DependsUpdate
 from app.models import Collection
-from app.schemas import (AsOutput, CollectionCreateSchema, CollectionSchema,
-                         CollectionUpdateSchema, DocumentMetadataSchema,
-                         DocumentSearchSchema, ErrAccessCollection, ErrDetail,
-                         EventSchema, OutputWithEvents, mwargs)
+from app.schemas import (
+    AsOutput,
+    CollectionCreateSchema,
+    CollectionSchema,
+    CollectionUpdateSchema,
+    DocumentMetadataSchema,
+    DocumentSearchSchema,
+    ErrAccessCollection,
+    ErrDetail,
+    EventSchema,
+    OutputWithEvents,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
@@ -70,17 +82,15 @@ class CollectionSearchView(BaseView):
         read: DependsRead,
         param: Annotated[DocumentSearchSchema, Depends()],
     ) -> AsOutput[List[DocumentMetadataSchema]]:
-        """Return metadata for `documents` (document `JSON` without `content`) 
-        in the `collection` specified by **uuid_collection** matching search 
+        """Return metadata for `documents` (document `JSON` without `content`)
+        in the `collection` specified by **uuid_collection** matching search
         params.
         """
 
-        res: Tuple[Collection, ...] = read.search_collection(collection, param) 
+        res: Tuple[Collection, ...] = read.search_collection(collection, param)
         return mwargs(
             AsOutput[List[DocumentMetadataSchema]],
-            data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(
-                res
-            )
+            data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(res),
         )
 
     # @classmethod
@@ -97,7 +107,6 @@ class CollectionSearchView(BaseView):
     #             res
     #         )
     #     )
-
 
 
 class CollectionView(BaseView):
@@ -122,7 +131,7 @@ class CollectionView(BaseView):
         post_collection=dict(
             url="",
             name="Create a New Collection",
-        )
+        ),
     )
     view_children = {"": CollectionSearchView}
     view_router_args = dict(
@@ -132,8 +141,7 @@ class CollectionView(BaseView):
 
     @classmethod
     def get_collection(
-        cls,
-        collection: DependsCollection
+        cls, collection: DependsCollection
     ) -> AsOutput[CollectionSchema]:
         """Read a collection.
 
@@ -141,8 +149,7 @@ class CollectionView(BaseView):
         `GET /collections/{uuid_collection}/documents`.
         """
         return mwargs(
-            AsOutput[CollectionSchema],
-            data=CollectionSchema.model_validate(collection)
+            AsOutput[CollectionSchema], data=CollectionSchema.model_validate(collection)
         )
 
     @classmethod
@@ -153,13 +160,12 @@ class CollectionView(BaseView):
     ) -> AsOutput[EventSchema]:
         """Remove a `collection`.
 
-        This will not remove the `documents` in a `collection` but will remove 
+        This will not remove the `documents` in a `collection` but will remove
         their respective `assignments`."""
 
         data: Data[ResolvedCollection] = delete.a_collection(uuid_collection)
         return mwargs(
-            AsOutput[EventSchema],
-            data=EventSchema.model_validate(data.event)
+            AsOutput[EventSchema], data=EventSchema.model_validate(data.event)
         )
 
     @classmethod
@@ -172,9 +178,9 @@ class CollectionView(BaseView):
         """Update a collection/transfer collection ownership.
 
         When **uuid_user** is specified, the `collection` will be transfered to
-        this user. Doing this will not change the `document` permissions such 
-        that the new owner of the `collection` will be able to access the 
-        `collection` and in fact the new owner will not see that such 
+        this user. Doing this will not change the `document` permissions such
+        that the new owner of the `collection` will be able to access the
+        `collection` and in fact the new owner will not see that such
         `documents` exist.
         """
         update.update_data = updates
@@ -186,17 +192,17 @@ class CollectionView(BaseView):
             OutputWithEvents[CollectionSchema],
             data=CollectionSchema.model_validate(*data.data.collections),
             events=[EventSchema.model_validate(data.event)],
-        ) 
+        )
 
     @classmethod
     def post_collection(
         cls,
         create: DependsCreate,
-        create_data:  Annotated[CollectionCreateSchema, Body()],
+        create_data: Annotated[CollectionCreateSchema, Body()],
     ) -> OutputWithEvents[CollectionSchema]:
         """Create a new collection.
 
-        To add documents to this collection use 
+        To add documents to this collection use
         `POST /assignments/collection/{uuid_collection}`.
         """
 
@@ -204,11 +210,10 @@ class CollectionView(BaseView):
         create.create_data = create_data
         create.e_collection
         data = create.e_collection(None)
-        collection, = data.data.collections
+        (collection,) = data.data.collections
 
         return mwargs(
             OutputWithEvents,
             events=[EventSchema.model_validate(data.event)],
-            data=CollectionSchema.model_validate(collection)
+            data=CollectionSchema.model_validate(collection),
         )
-

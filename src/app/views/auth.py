@@ -47,4 +47,4 @@ class AuthView(BaseView):
                 409,
                 detail="Login is not available in pytest mode.",
             )
-        raise HTTPException(400, detail = "Not implemented.")
+        raise HTTPException(400, detail="Not implemented.")
