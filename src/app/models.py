@@ -1157,9 +1157,6 @@ class User(SearchableTableMixins, Base):
         res = session.execute(q).scalars()
         assocs: List[AssocUserDocument] = list(res)
 
-        print(document.id)
-        print(assocs) 
-
         detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
         match assocs:
             case []:

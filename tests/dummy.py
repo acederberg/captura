@@ -1,18 +1,20 @@
 import secrets
+from datetime import datetime
 from random import choice, randint
-from typing import (Any, Callable, ClassVar, Dict, List, Self, Set, Tuple,
-                    Type, TypeVar)
+from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Self, Set,
+                    Tuple, Type, TypeVar)
 
 import pytest
+from app import __version__
 from app.auth import Auth, Token
 from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
                         LENGTH_NAME, LENGTH_TITLE, LENGTH_URL, Assignment,
-                        Base, Collection, Document, Format, Grant, KindEvent,
-                        KindObject, Level, PendingFrom, Singular, T_Resolvable,
-                        Tables, User)
+                        Base, Collection, Document, Event, Format, Grant,
+                        KindEvent, KindObject, Level, PendingFrom, Singular,
+                        T_Resolvable, Tables, User)
 from faker import Faker
 from faker.providers import internet
-from sqlalchemy import Column, func, inspect, select, update
+from sqlalchemy import Column, Select, func, inspect, select, update
 from sqlalchemy.orm import Session
 
 # https://faker.readthedocs.io/en/master/providers/faker.providers.internet.html
@@ -23,9 +25,13 @@ item_format: List[Format] = list(Format)
 item_pending_from: List[PendingFrom] = list(PendingFrom)
 item_level: List[Level] = list(Level)
 
+NOW = int(datetime.timestamp(datetime.utcnow()))
 
 fkit.add_provider(internet)
 _Mk: Dict[str, Callable[[], Any]] = dict(
+    kind=lambda: choice(item_kind_event),
+    api_version=lambda: __version__,
+    timestamp= lambda: randint(0, NOW),
     uuid=lambda: secrets.token_urlsafe(8),
     name=lambda: fkit.text(LENGTH_NAME),
     description=lambda: fkit.text(LENGTH_DESCRIPTION),
@@ -66,7 +72,7 @@ def get_mk(column: Column):
 from typing import Protocol
 
 T_ResolvableContra = TypeVar(
-    "T_ResolvableContra", Collection, User, Document, Grant, covariant=True
+    "T_ResolvableContra", Collection, User, Document, Grant, Event, covariant=True
 )
 
 
@@ -97,6 +103,7 @@ class Mk:
     collection = staticmethod(create_mk_dummy(Collection))
     document = staticmethod(create_mk_dummy(Document))
     grant = staticmethod(create_mk_dummy(Grant))
+    event = staticmethod(create_mk_dummy(Event))
 
 
 # NOTE: I tried to avoid this but I'm sick of tests with annoying database
@@ -110,6 +117,7 @@ class Dummy:
         KindObject.document,
         KindObject.grant,
         KindObject.assignment,
+        KindObject.event,
     }
 
     auth: Auth
@@ -119,6 +127,7 @@ class Dummy:
     documents: Tuple[Document, ...]
     grants: Tuple[Grant, ...]
     assignments: Tuple[Assignment, ...]
+    events: Tuple[Event, ...]
 
     # ----------------------------------------------------------------------- #
 
@@ -133,6 +142,7 @@ class Dummy:
 
     def find(self, user: User):
         session = self.session
+        self.user = user
         self.documents = tuple(session.scalars(user.q_select_documents()))
         self.collections = tuple(user.collections)
         self.grants = tuple(session.scalars(user.q_select_grants()))
@@ -145,6 +155,9 @@ class Dummy:
                 )
             )
         )
+        self.events = tuple(session.scalars(
+            select(Event).where(Event.uuid_user == self.user.uuid).limit(10)
+        ))
 
     def build(self):
         # NOTE: Create dummy users, documents, and collections. Grants and
@@ -152,6 +165,7 @@ class Dummy:
         session = self.session
         session.add(user := Mk.user())
         user.admin = False
+        user.deleted = False
         self.user = user
 
         documents: Tuple[Document, ...]
@@ -215,6 +229,7 @@ class Dummy:
                 grant_init.id_document: grant_init
                 for grant_init in grants_share
                 if grant_init.id_user != user.id
+                and grant_init.uuid_document != "ex-parrot"
             }
 
             session.add_all(
@@ -234,6 +249,8 @@ class Dummy:
             )
             self.grants += more_grants
 
+        self.events = tuple(Mk.event(uuid_user=user.uuid) for _ in range(10))
+        session.add_all(self.events)
         session.commit()
 
         return user
@@ -243,11 +260,10 @@ class Dummy:
 
     def get_document(self, level: Level) -> Document:
 
-        q = select(Document).join(Grant).join(User)
         if level is not None:
-            q = q.where(Grant.level == level, Grant.id_user == self.user.id)
+            q = self.user.q_select_documents(level=level)
         else:
-            q = q.where(Grant.id_user != self.user.id)
+            q = select(Document).where(Document.uuid=="ex-parrot")
 
         q = q.limit(1)
         doc = self.session.scalar(q)
@@ -255,6 +271,14 @@ class Dummy:
             raise ValueError(f"Could not find document with level `{level}`.")
 
         return doc
+
+    def get_grant(self, document) -> Grant:
+        q = self.user.q_select_grants({document.uuid}) 
+        q = q.limit(1)
+        grant = self.session.scalar(q)
+        if grant is None:
+            raise AssertionError("Grant should have been created for document.")
+        return grant
 
     @property
     def token(self) -> Token:
@@ -264,6 +288,34 @@ class Dummy:
     def token_encoded(self) -> str:
         return self.auth.encode(Token)
 
+    # ----------------------------------------------------------------------- #
+
+    def other(
+        self, 
+        kind: KindObject, 
+        *,
+        callback: Annotated[
+            Callable[[Select], Select] | None,
+            "This should be used to add filters like `where` statements."
+        ] = None,
+    ):
+        match kind:
+            case KindObject.event:
+                q = select(Event).where(Event.uuid_user != self.user.uuid)
+            case KindObject.document | KindObject.grant | KindObject.assignment:
+                raise ValueError("`other` only supports `KindObject.event`.")
+            case _:
+                raise ValueError(f"Invalid value `{kind}` for `kind`.")
+
+        if callback is not None:
+            q = callback(q)
+
+        q = q.limit(1)
+        res = self.session.scalar(q)
+        if res is None:
+            msg = f"`Dummy.other` could not find a suitable `{kind.name}`."
+            raise ValueError(msg)
+        return res
 
     # ----------------------------------------------------------------------- #
     # Chainables and their helpers.
@@ -281,7 +333,7 @@ class Dummy:
         for kind in kinds:
             T_Model = Tables[Singular(kind.name).name].value
             values = dict(deleted=deleted, public=public)
-            if T_Model.__tablename__.startswith("_assoc"):
+            if not hasattr(T_Model, "public"):
                 values.pop("public")
 
             session.execute(update(T_Model).values(**values))

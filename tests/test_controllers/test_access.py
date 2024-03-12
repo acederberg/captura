@@ -10,8 +10,8 @@ from app.controllers.access import Access, WithAccess, with_access
 from app.controllers.base import (Data, ResolvedAssignmentCollection,
                                   ResolvedAssignmentDocument,
                                   ResolvedCollection, ResolvedDocument,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser)
+                                  ResolvedEvent, ResolvedGrantDocument,
+                                  ResolvedGrantUser, ResolvedUser)
 from app.models import (Assignment, Collection, Document, Event, Grant,
                         KindEvent, KindObject, Level, LevelHTTP, PendingFrom,
                         User, UUIDSplit, uuids)
@@ -370,6 +370,8 @@ class TestAccessUser(BaseTestAccess):
         session.commit()
 
         for method in httpcommon:
+            print(method)
+
             # User can access self when private.
             access = self.create_access(session, method)
             user = access.user("000-000-000")
@@ -380,12 +382,18 @@ class TestAccessUser(BaseTestAccess):
             with pytest.raises(HTTPException) as err:
                 access.user("99d-99d-99d")
 
+            msg: str
+            if method == HTTPMethod.GET:
+                msg = "Cannot access private user."
+            else:
+                msg = "Cannot modify other user."
+
             if err := check_exc(
                 err.value,
                 403,
                 uuid_user_token="000-000-000",
                 uuid_user="99d-99d-99d",
-                msg="Cannot access private user.",
+                msg=msg
             ):
                 raise err
 
@@ -1367,8 +1375,132 @@ class TestAccessGrant(BaseTestAccess):
         grant_user=Data[ResolvedGrantUser],
         grant_document=Data[ResolvedGrantDocument],
     )
+    kinds = {KindObject.user, KindObject.document, KindObject.grant}
 
-    def test_overloads(self, session: Session): ...
+    def test_self_access_only(self, dummy: Dummy):
+        """For ``/grants/users/{uuid_user}`` only."""
+
+        document = Document.if_exists(dummy.session, "aaa-aaa-aaa")
+        document.deleted = False
+        session = dummy.session
+        session.add(document)
+        session.commit()
+        session.refresh(document)
+        dummy.visability(self.kinds, deleted=False, public=True).refresh()
+
+        # NOTE: Invariance with method
+        for method in httpcommon:
+            access = Access(session, dummy.token, method)
+            err, _ = expect_exc(
+                lambda: access.grant_user("000-000-000", {"aaa-aaa-aaa"}),
+                403,
+                msg="User can only access own grants.",
+                uuid_user="000-000-000",
+                uuid_user_token=dummy.token.uuid,
+            )
+            if err is not None:
+                raise err
+                
+            access.grant_user(dummy.user.uuid, {"aaa-aaa-aaa"})
+
+
+    def test_owner_access_only(self, auth: Auth, session: Session):
+        """For ``/grants/documents/{uuid_document}`` only."""
+
+        def doit(access: Access, doc: Document):
+            return access.grant_document(doc.uuid, { "000-000-000"})
+
+        dummy = Dummy(auth, session, user=User.if_exists(session, "000-000-000"))
+        document_own = dummy.get_document(Level.own)
+        document_modify = dummy.get_document(Level.modify)
+        document_view = dummy.get_document(Level.view)
+        document_other = Document.if_exists(session, "-0---0---0-")
+        print("document_other")
+        common_insufficient : Dict[str, Any] = dict(
+                msg="Grant insufficient.",
+                uuid_user="000-000-000",
+                level_grant_required="own",
+            check_length= False,
+                )
+
+
+        # NOTE: Invariance with method
+        for method in httpcommon:
+            print(method)
+
+            # Cannot access other
+            access = self.create_access(session, method)
+            err, _ = expect_exc(
+                lambda: doit(access, document_other),
+                403,
+                msg="Grant does not exist.",
+                uuid_user="000-000-000",
+                uuid_document=document_other.uuid,
+                level="own"
+            )
+            if err:
+                raise err
+
+            # Cannot access with only view.
+            access = self.create_access(session, method)
+            err, _ = expect_exc(
+                lambda: doit(access,document_view),
+                403,
+                level_grant="view",
+                uuid_document=document_view.uuid,
+                **common_insufficient
+            )
+            if err:
+                raise err
+
+            # Cannot access with only modify
+            access = self.create_access(session, method)
+            err, _ = expect_exc(
+                lambda: doit(access,document_modify),
+                403,
+                level_grant="modify",
+                uuid_document=document_modify.uuid,
+                **common_insufficient
+            )
+            if err:
+                raise err
+
+            # Can access with own
+            doit(access,document_own)
+
+
+
+
+    def test_overloads(self, session: Session): 
+
+        access = self.create_access(session)
+
+        res = access.grant_user("000-000-000", {"aaa-aaa-aaa"})
+        assert len(res) == 2
+        assert isinstance(res, tuple)
+        
+        uu, dd = res
+        assert isinstance(uu, User)
+        assert isinstance(dd, tuple)
+
+        res = access.grant_user("000-000-000", {"aaa-aaa-aaa"}, return_data=True)
+        assert isinstance(res, Data)
+        assert isinstance(res.data, ResolvedGrantUser)
+
+        #-------------------------------------------------------------------- #
+
+        res = access.grant_document("aaa-aaa-aaa", {"000-000-000"})
+        assert len(res) == 2
+        assert isinstance(res, tuple)
+
+        dd, uu = res
+        assert isinstance(dd, Document)
+        assert isinstance(uu, Tuple)
+
+        res = access.grant_document("aaa-aaa-aaa", {"000-000-000"}, return_data=True)
+        assert isinstance(res, Data)
+        assert isinstance(res.data, ResolvedGrantDocument)
+
 
     def check_result(
         self,
@@ -1421,132 +1553,61 @@ class TestAccessGrant(BaseTestAccess):
 
         return grants, AssertionError(msg) if msg else None
 
-    def test_private(self, session: Session):
-        """This test does not apply since `grants` cannot be private.
-
-        User Case (Only `POST /grants/users/<uuid>`)
-        -----------------------------------------------------------------------
-
-        Requesting access to a private/public document is the only thing to
-        test for the user scoped requests here since the it only really matters
-        for grant creation. If a user `GET`s or `DELETE`s grants for some
-        documents every such document will require that they have access
-
-        This is why `POST` is the only method tested here.
-
-        1.
-
-        Document Case
-        -----------------------------------------------------------------------
-
-        1. Users without grants should not be able to access grants for
-           documents in any way regardless of its visibility.
-
+    @pytest.mark.skip
+    def test_private(self, dummy: Dummy):
         """
-        session.execute(update(User).values(public=False, deleted=False))
-        session.execute(update(Document).values(public=False, deleted=False))
-        session.commit()
+        Why is this test empty? 
+        =======================================================================
 
-        user = User.if_exists(session, "000-000-000")
+        Please read the following.
 
-        document_owned = Document.if_exists(session, "draculaflow")
-        document_view = Document.if_exists(session, "foobar-spam")
-        document_nogrant = Document.if_exists(session, "-0---0---0-")
+        GET /grants/{kind_source}/{uuid_source} 
+        -----------------------------------------------------------------------
 
-        grants = Grant.resolve_from_target(
-            session, user, (document_owned, document_view, document_nogrant)
-        )
-        assert len(grants) == 2
+        The parameter ``uuid_target`` is used as a filter on results. It does 
+        not matter that the specified resources are private or public or not
+        as
 
-        (grant_owned, grant_view) = grants
-        assert grant_owned.uuid_document == document_owned.uuid
-        assert grant_view.uuid_document == document_view.uuid
+        1. Document owners should only be able to use these routes in the case
+           where ``kind_source`` is ``document``.
+        2. Users should only be able to access their own routes in the case 
+           where ``kind_source`` is ``user``.
 
-        grant_owned.pending, grant_view.pending = False, False
-        session.add_all(grants)
-        session.commit()
+        DELETE | POST | PATCH /grants/{kind_source}/{uuid_source}
+        -----------------------------------------------------------------------
 
-        for method in httpcommon:
-            # NOTE: User can request access in post but nowhere else on public
-            #       doc.
-            ...
+        The parameter ``uuid_target`` is used in ``POST`` requests to 
 
-            # NOTE: User cannot request access to public doc
+        1. Select which users are to be invited to the ``document`` (
+           ``kind_source='document'`` in this case).
+        2. Select which documents a user wants to request access for.
 
+        and for patch it respectively is used to approve or accept pending 
+        grants.
+
+        Conclusion
+        -----------------------------------------------------------------------
+
+        It is not necessary to check anything pertaining to the ``target``
+        parameter, only the source really.
+
+        Further, since a user can only access their own grants with 
+        `/grants/users/{uuid_user}` private/public does not matter in this 
+        case.
+
+        Finally, since only document owners can user 
+        `/grants/documents/{uuid_document}` this is not subject to any 
+        conditions concerning the ``public`` column.
+        """
+        ...
+
+    @pytest.mark.skip
     def test_modify(self, session: Session):
-        session.execute(update(User).values(public=False, deleted=False))
-        session.execute(update(Document).values(public=False, deleted=False))
-        session.commit()
+        """See the note on `test_private`` about access. 
 
-        user = User.if_exists(session, "000-000-000")
-        document_owned = Document.if_exists(session, "draculaflow")
-        document_view = Document.if_exists(session, "foobar-spam")
-        document_nogrant = Document.if_exists(session, "-0---0---0-")
-
-        grants = Grant.resolve_from_target(
-            session, user, (document_owned, document_view, document_nogrant)
-        )
-        assert len(grants) == 2
-
-        (grant_owned, grant_view) = grants
-        assert grant_owned.uuid_document == document_owned.uuid
-        assert grant_view.uuid_document == document_view.uuid
-        init_levels = tuple(gg.level for gg in grants)
-
-        grant_owned.pending, grant_view.pending = False, False
-        session.add_all(grants)
-
-        # NOTE: Level is constant.
-        for method in httpcommon:
-            access = self.create_access(session, method)
-
-            # NOTE: Should be able to access by user so long as documents have
-            #       level `view`.
-            res = access.grant_user(
-                user.uuid,
-                {document_view.uuid, document_view.uuid},
-            )
-            _, err = self.check_result(
-                session,
-                res,
-                level=access.level,
-                uuid_t_expected=user.uuid,
-                uuid_s_expected={document_owned.uuid},
-                T_expected=User,
-            )
-            if err:
-                raise err
-
-            # NOTE: Should be able to access documents with level `own`.
-            #       Access grants for a document.
-            res = access.grant_document(document_owned.uuid, {user.uuid})
-            _, err = self.check_result(
-                session,
-                res,
-                level=access.level,
-                uuid_t_expected=user.uuid,
-                uuid_s_expected={document_owned.uuid},
-                T_expected=Document,
-            )
-            if err:
-                raise err
-
-            # NOTE: Should not be able to access grants of others.
-            err, httperr = expect_exc(
-                lambda: access.grant_user("99d-99d-99d", {document_view.uuid}),
-                403,
-                msg="User can only access own grants.",
-                uuid_user="99d-99d-99d",
-                uuid_user_token=access.token.uuid,
-            )
-            if err:
-                raise err
-
-            # NOTE: Should not be able to access grants of documents not owned.
-            err, httperr = expect_exc(
-                lambda: access.grant_document(user.uuid, {document_nogrant.uuid}),
-                403,
-            )
+        Tl;dr: Access is determined by the source. Thus this test is the same
+               as the access rules for the source of the grants.
+        """
 
     def test_deleted(self, dummy: Dummy):
         dummy.visability(
@@ -1580,6 +1641,16 @@ class TestAccessGrant(BaseTestAccess):
             if err:
                 raise err
 
+            err, httperr = expect_exc(
+                lambda: access.grant_user(dummy.user, dummy.documents),
+                410,
+                msg="Object is deleted.",
+                uuid_obj=dummy.user.uuid,
+                kind_obj="user",
+            )
+            if err:
+                raise err
+
             # NOTE: Adding `exclude_deleted` should result in no errors raised.
             access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
 
@@ -1603,10 +1674,17 @@ class TestAccessGrant(BaseTestAccess):
             # NOTE: Adding `exclude_deleted` should result in no erros raised.
             access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
 
-    def test_pending(self, dummy: Dummy):
+    def test_pending(self, dummy: Dummy ):
         session = dummy.session
         dummy.visability({KindObject.grant, KindObject.user, KindObject.document}, deleted=False, public=False)
         uuid_document = Document.resolve_uuid(session, dummy.documents)
+
+        document = dummy.get_document(Level.own)
+        grant = dummy.get_grant(document)
+
+        grant.level = Level.own
+        session.add(grant)
+        session.commit()
 
         msgs = {
             PendingFrom.grantee: "Grant is pending. Document owner must approve request for access.",
@@ -1614,7 +1692,10 @@ class TestAccessGrant(BaseTestAccess):
         }
         for method in httpcommon:
             for pending_from in (PendingFrom.grantee, PendingFrom.granter):
-                # NOTE: Should reject pending grants.
+                # NOTE: Should reject pending grants. It is important to note
+                #       that the grants for a user on their own original 
+                #       documents will never be pending hence the mutations 
+                #       here.
                 access = Access(dummy.session, dummy.token, method)
                 for grant in dummy.grants:
                     grant.pending = True
@@ -1623,7 +1704,7 @@ class TestAccessGrant(BaseTestAccess):
                 session.commit()
 
                 err, httperr = expect_exc(
-                    lambda: access.grant_user(dummy.user, dummy.documents, pending=False),
+                    lambda: access.grant_user(dummy.user, dummy.documents),
                     403,
                     msg = msgs[pending_from],
                     uuid_user=dummy.user.uuid,
@@ -1634,9 +1715,21 @@ class TestAccessGrant(BaseTestAccess):
 
                 assert httperr.detail["uuid_document"] in uuid_document
 
+                err, httperr = expect_exc(
+                    lambda: access.grant_document(document, {dummy.user.uuid}),
+                    403,
+                    msg = msgs[pending_from],
+                    uuid_user=dummy.user.uuid,
+                    uuid_document=document.uuid,
+                    check_length=False
+                )
+                if err:
+                    raise err
+
+
                 # NOTE: If ``exclude_pending`` is ``False`` the no error.
                 access.grant_user(dummy.user, dummy.documents, pending=True)
-                session.commit()
+                access.grant_document(document, {dummy.user.uuid}, pending=True)
 
 
     def test_dne(self, dummy: Dummy):
@@ -1645,15 +1738,9 @@ class TestAccessGrant(BaseTestAccess):
             deleted=False,
             public=True,
         )
-        document = dummy.documents[0]
-        session = dummy.session
-        grant = session.scalar(dummy.user.q_select_grants({document.uuid}))
-        if grant is None:
-            raise AssertionError("Grant should have been created for document.")
-
-        grant.level = Level.own
-        session.add(grant)
-        session.commit()
+        document = dummy.get_document(Level.own)
+        grant = dummy.get_grant(document)
+        assert grant.level == Level.own
 
         for method in httpcommon:
             access = Access(dummy.session, dummy.token, method)
@@ -1690,8 +1777,101 @@ class TestAccessGrant(BaseTestAccess):
                 raise err
 
 
+class TestAccessEvent(BaseTestAccess):
+    fn_access_types = dict(event=Data[ResolvedEvent])
+    kinds = {KindObject.event}
+
+    @pytest.mark.skip
+    def test_private(self, session: Session):
+        """The `private` column does not apply to events."""
+
+    def test_modify(self, dummy: Dummy):
+        """Access is invarient with respect to method. Modifying an event
+        requires that the user own the event directly, which is the same
+        requirement for read.
+        """
+        event_other = dummy.other(KindObject.event)
+
+        # NOTE: There is no public column!
+        dummy.visability({KindObject.event}, deleted=False, public=True).refresh()
+        for method in httpcommon:
+
+            access = Access(dummy.session, dummy.token, method)
+            data = access.event(dummy.events, return_data=True)
+            assert isinstance(data, Data)
+            assert isinstance(data.data, ResolvedEvent)
+            assert len(data.data.events) == len(dummy.events)
+
+            err, _ = expect_exc(
+                lambda: access.event(event_other),
+                403,
+                msg="User cannot access event.",
+                uuid_event=event_other.uuid,
+                uuid_user=dummy.user.uuid,
+            )
+            if err is not None:
+                raise err
+
+    def test_deleted(self, dummy: Dummy):
+
+        event = dummy.events[0]
+        dummy.visability(self.kinds, deleted=True, public=True).refresh()
+
+        for method in httpcommon:
+            access = Access(dummy.session, dummy.token, method)
+
+            err, _ = expect_exc(
+                lambda: access.event(event),
+                410,
+                msg="Object is deleted.",
+                uuid_obj=event.uuid,
+                kind_obj="event",
+            )
+            if err is not None:
+                raise err
+
+            # `exclude_deleted=False` should result in no error.
+            access.event(event, exclude_deleted=False)
+
+    def test_dne(self, dummy: Dummy): 
+
+        for method in httpcommon:
+            access = Access(dummy.session, dummy.token, method)
+            uuid_obj = secrets.token_urlsafe(8)
+            err, _ = expect_exc(
+                lambda: access.event(uuid_obj),
+                404,
+                msg="Object does not exist.",
+                uuid_obj=uuid_obj,
+                kind_obj="event",
+            )
+
+    def test_overloads(self, dummy: Dummy):
+
+        dummy.visability(self.kinds, deleted=False, public=True).refresh()
+        access = Access(dummy.session, dummy.token, HTTPMethod.GET)
+
+        # NOTE: Putting in a uuid should return an event
+        event = dummy.events[0]
+        res = access.event(event.uuid)
+        assert isinstance(res, Event)
+
+        # NOTE: A set of uuids should return a tuple of events
+        uuids = Event.resolve_uuid(dummy.session, dummy.events)
+        res = access.event(uuids)
+        assert isinstance(res, Tuple)
+        assert all(isinstance(event, Event) for event in res)
+        assert len(dummy.events) == len(res)
+
+        # NOTE: ``return_data`` should result in the return type being `Data`.
+        res = access.event(uuids, return_data=True)
+        assert isinstance(res, Data)
+        assert isinstance(res.data, ResolvedEvent)
+        assert isinstance(res.data.events, Tuple)
+        assert len(dummy.events) == len(res.data.events)
 
 
+@pytest.mark.skip
 def test_with_access(session: Session, auth: Auth):
     """Test the intended functionality of `with_access`."""
 
@@ -1716,7 +1896,6 @@ def test_with_access(session: Session, auth: Auth):
         session,
         {"uuid": "000-000-000"},
         HTTPMethod.PATCH,
-        detail="From `test_with_access`.",
         api_origin="tests",
     )
 

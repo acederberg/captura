@@ -146,8 +146,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedObjectEvents]:
-        ...
+    ) -> Data[ResolvedObjectEvents]: ...
 
     @overload
     def object_events(
@@ -159,8 +158,7 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]:
-        ...
+    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]: ...
 
     def object_events(
         self,
@@ -177,12 +175,15 @@ class Access(BaseController):
         resolve_user_token = self.token_user_or(resolve_user_token)
         T_Mapped: Type[Base]  # [T_Resolvable]
         T_Mapped = Tables[Singular(object_kind.name).name].value
-        object_: T_Resolvable = T_Mapped.resolve(self.session, object_resolvable,)  # type: ignore
+        object_: T_Resolvable = T_Mapped.resolve(
+            self.session,
+            object_resolvable,
+        )  # type: ignore
 
         # NOTE: Check access to the object.
         _ = self(
             KindData[object_kind.name],
-            object_, 
+            object_,
             resolve_user_token=resolve_user_token,
             exclude_deleted=exclude_deleted,
             return_data=False,
@@ -211,7 +212,7 @@ class Access(BaseController):
                     obj=object_,
                     kind_obj=object_kind,
                     events=events,
-                )
+                ),
             )
 
         return object_, events
@@ -281,47 +282,28 @@ class Access(BaseController):
         """
 
         user_token = self.token_user_or(resolve_user_token)
-
-        # NOTE: When `GET` method, if the user is public, return. Otherwise
-        #       always check for a token and check the token uuid.
-        def check_one(user: User) -> User:
-            if user.admin:
-                return user
-            if exclude_deleted:
-                user.check_not_deleted()
-            match self.method:
-                case _ if not user.public:
-                    if self.token.uuid != user.uuid:
-                        detail = ErrAccessUser(
-                            uuid_user_token=user_token.uuid,
-                            uuid_user=user.uuid,
-                            msg="Cannot access private user.",
-                        )
-                        raise HTTPException(403, detail=detail.model_dump())
-                    return user
-                case H.GET:
-                    return user
-                case H.POST | H.PATCH | H.PUT | H.DELETE:
-                    if user.uuid != user_token.uuid:
-                        detail = ErrAccessUser(
-                            uuid_user=user.uuid,
-                            uuid_user_token=user_token.uuid,
-                            msg="Cannot modify other user.",
-                        )
-                        raise HTTPException(403, detail.model_dump())
-                    return user
-                case _ as bad:
-                    raise ValueError(f"Cannot yet method `{bad}`.")
-
         users: Tuple[User, ...]
         match res := User.resolve(self.session, resolve_user):
-            case tuple():
-                users = tuple(map(check_one, res))
-            case User():
-                _user = check_one(res)
+            case tuple() as users:
+                users = tuple(
+                    self._user(
+                        user, 
+                        user_token, 
+                        exclude_public=False,
+                        exclude_deleted=exclude_deleted,
+                    )
+                    for user in users
+                )
+            case User() as user:
+                user = self._user(
+                    user,
+                    user_token,
+                    exclude_deleted=exclude_deleted,
+                    exclude_public=False,
+                )
                 if not return_data:
-                    return _user
-                users = (_user,)
+                    return user
+                users = (user,)
             case _:
                 raise HTTPException(405)
 
@@ -332,6 +314,55 @@ class Access(BaseController):
                 event=None,
             )
         return res
+
+    # NOTE: When `GET` method, if the user is public, return. Otherwise
+    #       always check for a token and check the token uuid.
+    def _user(
+        self,
+        user: User,
+        user_token: User,
+        *,
+        exclude_public: bool = False,
+        exclude_deleted: bool = True,
+        msg_access_user: str = "Cannot modify other user.",
+    ) -> User:
+        """
+        :param exclude_public: When ``True``, will exclude checking if user is 
+            public or not in the ``get`` case.
+        """
+        # if user.admin:
+        #     return user
+        if exclude_deleted:
+            user.check_not_deleted()
+
+        print(not exclude_public, not user.public, user_token.uuid != user_token.uuid) 
+        match self.method:
+            # case _ if not user.public:
+            #     return user
+            case H.GET if not exclude_public:
+                if (
+                    # not exclude_public
+                    not user.public
+                    and user_token.uuid != user.uuid
+                ):
+                    detail = ErrAccessUser(
+                        uuid_user_token=user_token.uuid,
+                        uuid_user=user.uuid,
+                        msg="Cannot access private user.",
+                    )
+                    raise HTTPException(403, detail=detail.model_dump())
+                return user
+            case H.POST | H.PATCH | H.PUT | H.DELETE | H.GET:
+                if user.uuid != user_token.uuid:
+                    detail = ErrAccessUser(
+                        uuid_user=user.uuid,
+                        uuid_user_token=user_token.uuid,
+                        msg=msg_access_user
+                    )
+                    raise HTTPException(403, detail.model_dump())
+                return user
+            case _ as bad:
+                raise ValueError(f"Cannot yet method `{bad}`.")
 
     # NOTE: Tried partials. Makes typing hell worse. Easier just to write out.
     #       Tried many other solutions, just do this for now. Should have used
@@ -411,7 +442,7 @@ class Access(BaseController):
 
                         # Not sure how this happens on occasion.
                         if collection.id_user is None:
-                            detail.msg="Collection has no owner."
+                            detail.msg = "Collection has no owner."
                             raise HTTPException(418, detail=detail.model_dump())
 
                         raise HTTPException(403, detail=detail.model_dump())
@@ -725,16 +756,22 @@ class Access(BaseController):
         level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
-        user = self.user(resolve_user, resolve_user_token=user_token, exclude_deleted=exclude_deleted,)
-        if user.uuid != user_token.uuid and not user_token.admin:
-            raise HTTPException(
-                403,
-                detail=dict(
-                    uuid_user_token=user.uuid,
-                    uuid_user=user_token.uuid,
-                    msg="User can only access own grants.",
-                ),
-            )
+        # NOTE: Resolve user here because this should supercede the `cannot
+        #       modify other user.` error message raised in :meth:`user`.
+        user = User.resolve(self.session, resolve_user)
+        user = self._user(
+            user,
+            user_token,
+            exclude_deleted=exclude_deleted,
+            msg_access_user="User can only access own grants.",
+            exclude_public=True,
+        )
+
+        user = self.user(
+            user,
+            resolve_user_token=user_token,
+            exclude_deleted=exclude_deleted,
+        )
 
         # User can read, request, and remove all of their invitations.
         match self.method:
@@ -778,7 +815,7 @@ class Access(BaseController):
                 documents,
                 **document_kwargs,
                 resolve_user_token=user,
-                grants=(grants_user:=dict()),
+                grants=(grants_user := dict()),
                 grants_index="uuid_document",
             )
         else:
@@ -818,7 +855,7 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             level=level,
             return_data=True,
-            pending=pending
+            pending=pending,
         )
 
     @overload
@@ -870,9 +907,11 @@ class Access(BaseController):
             resolve_user_token=user_token,
             return_data=False,
             level=Level.own,
+            pending=pending,
             grants=token_user_grant,
             grants_index="uuid_user",
         )
+        print("==================================")
 
         # NOTE: Permissions of users do not matter for CRUD of grants because
         #       they're always url params that are filtered out. Notice:
@@ -907,8 +946,8 @@ class Access(BaseController):
                 q_owners = document.q_select_grants(
                     level=Level.own,
                     exclude_deleted=exclude_deleted,
-                    pending=pending,
-                    exclude_pending=True, # Absolutely necessary, do not rm
+                    # pending=pending,
+                    exclude_pending=True,  # Absolutely necessary, do not rm
                 )
 
                 util.sql(self.session, q_owners)
@@ -934,8 +973,7 @@ class Access(BaseController):
             exclude_deleted=True,
         )
         user_grant: Dict[str, Grant] = {
-            grant.uuid: grant
-            for grant in self.session.execute(q_user_grants).scalars()
+            grant.uuid: grant for grant in self.session.execute(q_user_grants).scalars()
         }
 
         if return_data:
