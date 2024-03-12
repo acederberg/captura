@@ -1,4 +1,5 @@
 """Api routers and functions. 
+
 This includes a metaclass so that undecorated functions may be tested.
 
 """
@@ -7,55 +8,21 @@ import enum
 import logging
 from functools import cached_property
 from http import HTTPMethod
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from traceback import print_tb
+from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
+                    Literal, Self, Set, Tuple, Type, TypeVar)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    LevelHTTP,
-    ResolvableSingular,
-    ResolvedRawAny,
-    Singular,
-    User,
-    uuids,
-)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, LevelHTTP,
+                        ResolvableSingular, ResolvedRawAny, Singular, User,
+                        uuids)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    Tag,
-    ValidationInfo,
-    computed_field,
-    field_validator,
-)
-from sqlalchemy.orm import Session
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
+                      ValidationInfo, computed_field, field_validator)
+from sqlalchemy.orm import Session, make_transient
 
 logger = util.get_logger(__name__)
 logger.level = logging.INFO
@@ -206,8 +173,9 @@ class BaseResolved(BaseModel):
 
         util.check_enum_opt_attr(cls, "kind", KindData)
 
-    def register(self, session: Session, refresh: bool = False) -> None: ...
+    def register(self, session: Session) -> None: ...
 
+    def refresh(self, session: Session) -> None: ...
 
 T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
 
@@ -257,11 +225,7 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         msg += f"`{attr_name}`)."
         return ValueError(msg)
 
-    def register(
-        self,
-        session: Session,
-        refresh: bool = False,
-    ) -> None:
+    def register(self, session: Session) -> None:
         """Because writing commit/refresh logic and wrapping to avoid breaking
         'all or none'.
         """
@@ -270,14 +234,18 @@ class BaseResolvedPrimary(BaseResolved, Generic[T_ResolvedPrimary]):
         targets = self.targets()
         session.add_all(targets)
 
+        # NOTE: DO NOT COMMIT HERE! All commits should occur before `data` is 
+        #       destroyed.
         # Commit and refresh.
-        session.commit()
-        if refresh:
-            for target in targets:
-                session.refresh(target)
+        # session.commit()
+
+    def refresh(self, session: Session) -> None:
+        for target in self.targets():
+            session.refresh(target)
 
 
 class BaseResolvedSecondary(BaseResolved):
+    delete: bool = False
     kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]
@@ -286,14 +254,14 @@ class BaseResolvedSecondary(BaseResolved):
     _attr_name_target: ClassVar[str]
     _attr_name_assoc: ClassVar[str]
 
-    q: Annotated[List[Any] | None, Field(default=None)]
-
-    def add_q(self, q) -> None:
-        if self.q is None:
-            self.q = [q]
-            return
-        self.q.append(q)
-
+    # q: Annotated[List[Any] | None, Field(default=None)]
+    #
+    # def add_q(self, q) -> None:
+    #     if self.q is None:
+    #         self.q = [q]
+    #         return
+    #     self.q.append(q)
+    #
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
         if "Base" in cls.__name__:
@@ -336,24 +304,31 @@ class BaseResolvedSecondary(BaseResolved):
     def uuid_assoc(self) -> Set[str]:
         return getattr(self, "uuid_" + self._attr_name_assoc)
 
-    def register(self, session: Session, refresh: bool = False) -> None:
+    def register(self, session: Session) -> None:
         """Because writing commit/refresh logic and wrapping to avoid breaking
-        'all or none'.
+        'all or none' of ACID.
         """
-        # NOTE: Should not commit targets or sources since they should not
+        # NOTE: Should not add targets or sources since they should not
         #       be modified in any of the functions that accept this `kind`
         #       of data. Instead, child data should be appended to data.
 
-        session.add_all(self.assoc.values())
-        if self.q:
-            for q in self.q:
-                util.sql(session, q)
-                session.execute(q)
+        if self.delete:
+            return
 
-        session.commit()
-        if refresh:
-            for assoc in self.assoc.values():
-                session.refresh(assoc)
+        session.add_all(self.assoc.values())
+        # if self.q:
+        #     for q in self.q:
+        #         util.sql(session, q)
+        #         session.execute(q)
+
+    def refresh(self, session: Session) -> None:
+        print(session.deleted)
+        if self.delete:
+            return
+        for assoc in self.assoc.values():
+            if assoc in session.deleted:
+                continue
+            session.refresh(assoc)
 
 
 class ResolvedCollection(BaseResolvedPrimary):
@@ -566,16 +541,30 @@ class Data(BaseModel, Generic[T_Data]):
         for child in self.children:
             child.register(session)
 
-    def commit(self, session: Session, commit: bool = False) -> None:
-        # session api sqlalchemy
-        if commit:
-            print("Committing...")
-            self.register(session)
-            try:
-                session.commit()
-            except err:
-                session.rollback()
-                raise HTTPException(500, "Database commit failure.")
+    def refresh(self, session: Session) -> None:
+        # session.expire_all()
+        print("Refreshing...")
+        self.data.refresh(session)
+        if self.event is not None:
+            session.refresh(self.event)
+        for child in self.children:
+            child.refresh(session)
+
+
+    def commit(self, session: Session, commit: Any = None) -> None:
+        if commit is not None:
+            logger.warning()
+        print("Committing...")
+        self.register(session)
+        try:
+            session.commit()
+        except Exception as err:
+            print_tb(err.__traceback__)
+            session.rollback()
+            raise HTTPException(500, "Database commit failure.")
+
+        self.refresh(session)
+
 
     def types(self) -> Any:
         return kind_type_map[self.kind]  # type: ignore[return-type]

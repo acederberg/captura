@@ -5,33 +5,16 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedObjectEvents,
-    ResolvedUser,
-)
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.controllers.base import (Data, DataResolvedAssignment,
+                                  DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, User)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -121,25 +104,25 @@ class Delete(WithAccess):
     def event(
         self,
         data: Data[ResolvedEvent],
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedEvent]: ...
 
     @overload
     def event(
         self,
         data: Data[ResolvedObjectEvents],
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedObjectEvents]: ...
 
     def event(
         self,
         data: Data[ResolvedEvent] | Data[ResolvedObjectEvents],
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedEvent] | Data[ResolvedObjectEvents]:
         obj_info = set()
         n = sum(self._event(item, obj_info) for item in data.data.events)
         data.event = self.event_event(data, n, obj_info)
-        data.commit(self.session, commit)
+        # data.commit(self.session, commit)
 
         return data
 
@@ -328,7 +311,7 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedGrantUser],
         force: bool | None = None,
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Tuple[
         Data[ResolvedGrantUser],
         AssocData,
@@ -341,7 +324,7 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedGrantDocument],
         force: bool | None = None,
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Tuple[
         Data[ResolvedGrantDocument],
         AssocData,
@@ -354,7 +337,7 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedAssignmentDocument],
         force: bool | None = None,
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Tuple[
         Data[ResolvedAssignmentDocument],
         AssocData,
@@ -367,7 +350,7 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedAssignmentCollection],
         force: bool | None = None,
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Tuple[
         Data[ResolvedAssignmentCollection],
         AssocData,
@@ -379,19 +362,18 @@ class Delete(WithAccess):
         self,
         data: DataResolvedAssignment | DataResolvedGrant,
         force: bool | None = None,
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Tuple[
         DataResolvedAssignment | DataResolvedGrant,
         AssocData,
         Update[Assignment] | sqaDelete[Grant],
         Type[Assignment] | Type[Grant],
     ]:
-        session = self.session
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
-        data.data.add_q(q_del)
-
+        util.sql(self.session, q_del)
+        self.session.execute(q_del)
+        data.data.delete = self.force
         data.event = self.create_event_assoc(data, assocs)
-        data.commit(session, commit)
 
         return data, assoc_data, q_del, T_assoc
 
@@ -444,15 +426,15 @@ class Delete(WithAccess):
     def assignment_collection(
         self,
         data: Data[ResolvedAssignmentCollection],
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedAssignmentCollection]:
-        data, *_ = self.assoc(data, commit=commit)
+        data, *_ = self.assoc(data) #, commit=commit)
         return data
 
     def assignment_document(
-        self, data: Data[ResolvedAssignmentDocument], commit: bool = False
+        self, data: Data[ResolvedAssignmentDocument] #, commit: bool = False
     ) -> Data[ResolvedAssignmentDocument]:
-        data, *_ = self.assoc(data, commit=commit)
+        data, *_ = self.assoc(data)#, commit=commit)
         return data
 
     a_assignment_document = with_access(Access.d_assignment_document)(
@@ -466,15 +448,15 @@ class Delete(WithAccess):
     # Grants
 
     def grant_user(
-        self, data: Data[ResolvedGrantUser], commit: bool = False
+        self, data: Data[ResolvedGrantUser]#, commit: bool = False
     ) -> Data[ResolvedGrantUser]:
-        data, *_ = self.assoc(data, commit=commit)
+        data, *_ = self.assoc(data) #, commit=commit)
         return data
 
     def grant_document(
-        self, data: Data[ResolvedGrantDocument], commit: bool = False
+        self, data: Data[ResolvedGrantDocument]# , commit: bool = False
     ) -> Data[ResolvedGrantDocument]:
-        data, *_ = self.assoc(data, commit=commit)
+        data, *_ = self.assoc(data) #, commit=commit)
         return data
 
     a_grant_document = with_access(Access.d_grant_document)(grant_user)
@@ -483,7 +465,7 @@ class Delete(WithAccess):
     # ----------------------------------------------------------------------- #
 
     def _user(
-        self, data: Data[ResolvedUser], user: User, commit: bool = False
+        self, data: Data[ResolvedUser], user: User#, commit: bool = False
     ) -> Data[ResolvedUser]:
         session = self.session
 
@@ -536,12 +518,12 @@ class Delete(WithAccess):
                 if (ee := data_item.event) is not None
             ],
         )
-        data.data.commit(session, commit, delete=self.force)
+        # data.data.commit(session, commit, delete=self.force)
 
         return data
 
     def user(
-        self, data: Data[ResolvedUser], commit: bool = False
+        self, data: Data[ResolvedUser], #commit: bool = False
     ) -> Data[ResolvedUser]:
         users = data.data.users
 
@@ -553,7 +535,7 @@ class Delete(WithAccess):
             children=[dd.event for dd in data_users],
         )
         data.add(*data_users)
-        data.data.commit(self.session, commit)
+        # data.data.commit(self.session, commit)
 
         return data
 
@@ -565,7 +547,7 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedCollection],
         collection: Collection,
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedAssignmentCollection]:
         q = collection.q_select_documents()
         documents = set(self.session.execute(q).scalars())
@@ -600,13 +582,13 @@ class Delete(WithAccess):
         if event_assignments is not None:
             data_assignments.event.children.append(event_assignments)
 
-        data.data.commit(self.session, commit)
+        # data.data.commit(self.session, commit)
         return data_assignments
 
     def collection(
         self,
         data: Data[ResolvedCollection],
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedCollection]:
         collections = data.data.collections
         if not len(collections):
@@ -623,7 +605,7 @@ class Delete(WithAccess):
             detail="Bulk deletion of `collection`s.",
         )
 
-        data.commit(self.session, commit)
+        # data.commit(self.session, commit)
         return data
 
     a_collection = with_access(Access.collection)(collection)
@@ -634,8 +616,8 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedDocument],
         document: Document,
-        *,
-        commit: bool = False,
+        # *,
+        # commit: bool = False,
     ) -> Tuple[
         Data[ResolvedGrantDocument],
         Data[ResolvedAssignmentDocument],
@@ -682,14 +664,14 @@ class Delete(WithAccess):
         )
         self.edit(data_edit)
         data.add(data_edit)
-        data.commit(self.session, commit)
+        # data.commit(self.session, commit)
 
         return data_grant, data_assignment, data_edit
 
     def document(
         self,
         data: Data[ResolvedDocument],
-        commit: bool = False,
+        # commit: bool = False,
     ) -> Data[ResolvedDocument]:
 
         documents = data.data.documents
@@ -712,7 +694,7 @@ class Delete(WithAccess):
                 for data_assoc in data_assocs
             ],
         )
-        data.commit(self.session, commit)
+        # data.commit(self.session, commit)
 
         return data
 
@@ -721,7 +703,7 @@ class Delete(WithAccess):
     # ----------------------------------------------------------------------- #
 
     def _edit(
-        self, data: Data[ResolvedEdit], edit: Edit, *, commit: bool = False
+        self, data: Data[ResolvedEdit], edit: Edit, #*, commit: bool = False
     ) -> None:
         session = self.session
 
@@ -741,7 +723,7 @@ class Delete(WithAccess):
             else:
                 data.event = event
 
-            data.commit(session, commit)
+            # data.commit(session, commit)
 
         user_token = data.token_user or self.token_user
         user_token_grant = data.data.token_user_grants[user_token.uuid]
@@ -778,7 +760,7 @@ class Delete(WithAccess):
                 raise ValueError()
 
     def edit(
-        self, data: Data[ResolvedEdit], commit: bool = False
+        self, data: Data[ResolvedEdit], #commit: bool = False
     ) -> Data[ResolvedEdit]:
         edits = data.data.edits
 
@@ -789,7 +771,7 @@ class Delete(WithAccess):
             **self.event_common,
         )
         tuple(self._edit(data, edit) for edit in edits)
-        data.commit(self.session, commit)
+        # data.commit(self.session, commit)
 
         return data
 

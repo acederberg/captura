@@ -4,29 +4,15 @@ from typing import Callable, Set, Tuple, Type
 
 import pytest
 from app import util
-from app.controllers.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-)
+from app.controllers.base import (Data, DataResolvedAssignment,
+                                  DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedGrantDocument, ResolvedGrantUser)
 from app.controllers.create import Create
 from app.controllers.delete import AssocData, Delete
-from app.models import (
-    Assignment,
-    AssocUserDocument,
-    Collection,
-    Document,
-    Grant,
-    KindEvent,
-    KindObject,
-    Plural,
-    Singular,
-    User,
-)
+from app.models import (Assignment, AssocUserDocument, Collection, Document,
+                        Grant, KindEvent, KindObject, Plural, Singular, User)
 from app.schemas import EventSchema
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update, update
@@ -34,7 +20,7 @@ from sqlalchemy.orm import Session, make_transient
 from sqlalchemy.orm.attributes import Event
 from tests.test_views import util
 
-TEST_DETAIL = "From `test_delete.py`."
+# TEST_DETAIL = "From `test_delete.py`."
 TEST_API_ORIGIN = "./tests/test_controllers/test_delete.py"
 
 
@@ -48,7 +34,7 @@ def delete(session: Session) -> Delete:
     )
 
 
-def as_data(
+def create_data_from_params(
     delete: Delete | Create,
     T_source: Type,
     uuid_source: str,
@@ -63,23 +49,28 @@ def as_data(
     kind_source = KindObject(T_source.__tablename__)
     kind_target = KindObject(T_target.__tablename__)
     kind_assignment = KindObject(T_assoc.__tablename__)
+
+    kind = f"{kind_assignment.name}_{kind_source.name}"
     data_resolved = {
         kind_source.name: source,
         Singular(kind_target.name).name: targets,
-        "kind": (kind := f"{kind_assignment.name}_{kind_source.name}"),
-        "kind_target": kind_target,
-        "kind_source": kind_source,
-        "kind_assignment": kind_assignment,
+        # "kind": (kind := f"{kind_assignment.name}_{kind_source.name}"),
+        # "kind_target": kind_target,
+        # "kind_source": kind_source,
+        # "kind_assignment": kind_assignment,
     }
+    assocs = {
+        getattr(assoc, f"uuid_{kind_target.name}"): assoc
+        for assoc in T_assoc.if_many(delete.session, uuid_assoc)
+    }
+    assoc_name = Singular(kind_assignment.name).name
 
     if "grant" in kind:
-        assocs = {
-            getattr(assoc, f"uuid_{kind_target.name}"): assoc
-            for assoc in T_assoc.if_many(delete.session, uuid_assoc)
-        }
-        assoc_name = Singular(kind_assignment.name).name
-        data_resolved.update({f"token_user_{assoc_name}": assocs})
+        data_resolved.update({f"token_user_{assoc_name}": assocs, assoc_name: assocs})
+    else:
+        data_resolved.update({assoc_name: assocs})
 
+    print(data_resolved)
     match kind:
         case "assignment_document":
             res = ResolvedAssignmentDocument(**data_resolved)
@@ -235,7 +226,8 @@ class BaseTestAssoc:
         if sig.parameters.get("data") is None:
             raise AssertionError("Missing parameter `data`.")
         elif len(sig.parameters) == 2 and "self" not in sig.parameters:
-            msg = "Expected exactly two parameters, `self` and `data`."
+            msg = "Expected exactly two parameters, `self` and `data` in "
+            msg += f"signature `{sig}` "
             raise AssertionError(msg)
         elif (return_t := sig.return_annotation) == Data:
             msg = f"Expect return annotation to be `Data`, got `{return_t}`."
@@ -330,7 +322,7 @@ class TestDeleteAssoc(BaseTestAssoc):
         session.commit()
 
         # data = Data(data=data_resolved)  # type: ignore[generalType]
-        data = as_data(
+        data = create_data_from_params(
             delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
         )
         res = delete.try_force(data)
@@ -368,7 +360,7 @@ class TestDeleteAssoc(BaseTestAssoc):
         T_assoc: Type,
         uuid_assoc: Set[str],
     ):
-        data = as_data(
+        data = create_data_from_params(
             delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
         )
         session = delete.session
@@ -379,9 +371,22 @@ class TestDeleteAssoc(BaseTestAssoc):
         assert data.event is None
         assert delete.force is False
         assoc_data, *_, T_assoc_recieved = delete.try_force(data)
+
         _ = mthd(data)
+        data.commit(session)
+        assert data.event is not None
+        assert data.event.uuid is not None, "Event should have been refreshed."
+
+        # print(data.children)
+        # print(data.event.children)
+        #
+        # event1, event2 = data.event.children
+        # assert event1.uuid and event2.uuid
+        #
+        # assert event1.children[0].uuid
+        # assert event2.children[0].uuid
         assert T_assoc_recieved == T_assoc
-        self.check_event(delete, assoc_data, data)
+        self.check_event(delete, assoc_data, data, _event=data.event)
 
         # Check the changes in the database. Assocs should be removed.
         assocs_found = T_assoc.resolve(session, uuid_assoc)
@@ -398,7 +403,8 @@ class TestDeleteAssoc(BaseTestAssoc):
         # Run the method with force
         delete.force = True
         _ = mthd(data)
-        self.check_event(delete, assoc_data, data)
+        data.commit(session)
+        self.check_event(delete, assoc_data, data, _event=data.event)
         assocs = T_assoc.resolve(session, uuid_assoc)
         assert not len(assocs)
 
