@@ -2,22 +2,57 @@ import secrets
 from datetime import datetime
 from http import HTTPMethod
 from random import choice, randint, sample
-from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Self, Set,
-                    Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    List,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 import pytest
 from app import __version__
 from app.auth import Auth, Token
 from app.controllers.access import Access
-from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
-                                  BaseResolvedSecondary, Data, KindData,
-                                  ResolvedDocument, ResolvedUser)
+from app.controllers.base import (
+    BaseResolved,
+    BaseResolvedPrimary,
+    BaseResolvedSecondary,
+    Data,
+    KindData,
+    ResolvedDocument,
+    ResolvedUser,
+)
 from app.controllers.delete import Delete
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_TITLE, LENGTH_URL, Assignment,
-                        Base, Collection, Document, Event, Format, Grant,
-                        KindEvent, KindObject, Level, PendingFrom, Singular,
-                        T_Resolvable, Tables, User)
+from app.models import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_TITLE,
+    LENGTH_URL,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Event,
+    Format,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
 from app.schemas import mwargs
 from faker import Faker
 from faker.providers import internet
@@ -299,47 +334,65 @@ class Dummy:
     def access(self, *, method: HTTPMethod = HTTPMethod.GET) -> Access:
         return Access(self.session, self.token, method)
 
-    def delete(self, *, api_origin: str, force: bool = True, method: HTTPMethod = HTTPMethod.GET) -> Delete:
+    def delete(
+        self,
+        *,
+        api_origin: str,
+        force: bool = True,
+        method: HTTPMethod = HTTPMethod.GET,
+    ) -> Delete:
         return Delete(
             self.session,
             self.token,
             method,
             api_origin=api_origin,
             access=self.access(method=method),
-            force=force
+            force=force,
         )
 
-    # NOTE: `User` will always be the the same as 
+    # NOTE: `User` will always be the the same as
     def data(self, kind: KindData) -> Data:
-        T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary] = BaseResolved.get(kind)
+        T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary] = (
+            BaseResolved.get(kind)
+        )
 
         kwargs: Dict[str, Any]
         # if issubclass(T_resolved, BaseResolvedSecondary):
         #     ...
         # elif issubclass(T_resolved, BaseResolvedPrimary):
 
-        if T_resolved == ResolvedUser:
+        if T_resolved.kind == KindData.user:
             kwargs = {"users": (self.user,)}
-        elif T_resolved.kind in {KindData.collection, KindData.document, KindData.edit}:
+        elif T_resolved.kind in {
+            KindData.collection,
+            KindData.document,
+            KindData.edit,
+            KindData.event,
+        }:
             assert issubclass(T_resolved, BaseResolvedPrimary)
             attr = T_resolved._attr_name_targets
             try:
-                attr_value =  getattr(self, attr)
+                attr_value = getattr(self, attr)
             except AttributeError as err:
                 msg = f"`Dummy` probably missing attribute named `{attr}`."
                 raise AttributeError(msg) from err
 
             if T_resolved.kind == KindData.document:
-                items = {aa.uuid: aa for aa in attr_value if randint(0,1)}
+                items = {aa.uuid: aa for aa in attr_value if randint(0, 2)}
                 grants = {
-                    gg.uuid_document: gg for gg in self.grants
+                    gg.uuid_document: gg
+                    for gg in self.grants
                     if gg.uuid_document not in items
                 }
-                kwargs = {attr: items, "grants": grants}
-            elif T_resolved.kind == KindData.edit:
-                items = {aa.document.uuid: aa for aa in attr_value if randint(0,1)}
                 kwargs = {
-                    attr: items,
+                    attr: tuple(items.values()),
+                    "grants": grants,
+                    "token_user_grants": grants,
+                }
+            elif T_resolved.kind == KindData.edit:
+                items = {aa.document.uuid: aa for aa in attr_value if randint(0, 2)}
+                kwargs = {
+                    attr: tuple(items.values()),
                     "grants": {
                         gg.uuid_document: gg
                         for gg in self.grants
@@ -347,21 +400,15 @@ class Dummy:
                     },
                 }
             else:
-                kwargs = {attr: tuple(aa for aa in attr_value if randint(0, 1))}
+                kwargs = {attr: tuple(aa for aa in attr_value if randint(0, 2))}
         else:
             raise ValueError(f"No implementation for data kind `{kind}`.")
 
         return mwargs(
             Data,
-            data=mwargs(
-                T_resolved,
-                **kwargs
-            ),
+            data=mwargs(T_resolved, **kwargs),
             user_token=self.user,
         )
-        # else:
-        #     ...
-
 
     # ----------------------------------------------------------------------- #
 

@@ -17,18 +17,43 @@ foreign keys it is not necessary to specify multiple values).
 import enum
 import secrets
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Type, TypeAlias, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Self,
+    Set,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 
 from fastapi import Body, Query
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
-                      computed_field, field_serializer, field_validator,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app import models
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_URL)
+from app.models import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_URL,
+)
 from app.util import check_enum_opt_attr
 
 # --------------------------------------------------------------------------- #

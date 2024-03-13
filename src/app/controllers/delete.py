@@ -5,16 +5,33 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedAssignment,
-                                  DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, User)
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -38,9 +55,14 @@ class Delete(WithAccess):
         # Pruning events should not create any more events besides one marking
         # that the pruning was performed.
 
+        meth = (
+            self.session.delete
+            if self.force
+            else lambda child: setattr(child, "deleted", True)
+        )
         _ = tuple(
             (
-                self.session.delete(child),
+                meth(child),
                 info.add(
                     (
                         child.kind_obj,
@@ -68,24 +90,22 @@ class Delete(WithAccess):
             detail=f"User pruned `{n}` events.",
         )
 
-        kind_obj: KindObject
-        uuid_obj: str | None
+        specs: Tuple[Tuple[KindObject, str | None], ...]
         match data.data:
-            case ResolvedEvent(events=(Event(kind_obj=kind_obj, uuid_obj=uuid_obj),)):
-                pass
+            case ResolvedEvent(events=events):
+                specs = tuple((ee.kind_obj, ee.uuid_obj) for ee in events)
             case ResolvedObjectEvents(kind_obj=kind_obj, uuid_obj=uuid_obj):
-                pass
+                specs = ((kind_obj, uuid_obj),)
             case _:
-                raise ValueError("Invalid data of kind `{data.kind}`.")
+                raise ValueError(f"Invalid data of kind `{data.kind}`.")
 
-        detail = f"Events pruned by pruning object of kind `{kind_obj.name}` "
-        detail += f"with uuid `{uuid_obj}`."
+        ff = "Events pruned by pruning object of kind `{0}` with uuid `{1}`."
         event.children = [
             Event(
                 **self.event_common,
                 kind_obj=kind_obj,
                 uuid_obj=uuid_obj,
-                detail=detail,
+                detail=(detail := ff.format(kind_obj, uuid_obj)),
                 # Every object should have a record.
                 children=[
                     Event(
@@ -97,6 +117,7 @@ class Delete(WithAccess):
                     for collatoral_kind_obj, collatoral_uuid_obj in info
                 ],
             )
+            for kind_obj, uuid_obj in specs
         ]
         return event
 
@@ -122,8 +143,7 @@ class Delete(WithAccess):
         obj_info = set()
         n = sum(self._event(item, obj_info) for item in data.data.events)
         data.event = self.event_event(data, n, obj_info)
-        # data.commit(self.session, commit)
-
+        data.data.delete = True
         return data
 
     def object_events(
@@ -371,7 +391,7 @@ class Delete(WithAccess):
     ]:
         # assert False
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
-        util.sql(self.session, q_del)
+        # util.sql(self.session, q_del)
         self.session.execute(q_del)
         data.data.delete = self.force
         data.event = self.create_event_assoc(data, assocs)
@@ -429,13 +449,13 @@ class Delete(WithAccess):
         data: Data[ResolvedAssignmentCollection],
         # commit: bool = False,
     ) -> Data[ResolvedAssignmentCollection]:
-        data, *_ = self.assoc(data) #, commit=commit)
+        data, *_ = self.assoc(data)  # , commit=commit)
         return data
 
     def assignment_document(
-        self, data: Data[ResolvedAssignmentDocument] #, commit: bool = False
+        self, data: Data[ResolvedAssignmentDocument]  # , commit: bool = False
     ) -> Data[ResolvedAssignmentDocument]:
-        data, *_ = self.assoc(data)#, commit=commit)
+        data, *_ = self.assoc(data)  # , commit=commit)
         return data
 
     a_assignment_document = with_access(Access.d_assignment_document)(
@@ -449,15 +469,15 @@ class Delete(WithAccess):
     # Grants
 
     def grant_user(
-        self, data: Data[ResolvedGrantUser]#, commit: bool = False
+        self, data: Data[ResolvedGrantUser]  # , commit: bool = False
     ) -> Data[ResolvedGrantUser]:
-        data, *_ = self.assoc(data) #, commit=commit)
+        data, *_ = self.assoc(data)  # , commit=commit)
         return data
 
     def grant_document(
-        self, data: Data[ResolvedGrantDocument]# , commit: bool = False
+        self, data: Data[ResolvedGrantDocument]  # , commit: bool = False
     ) -> Data[ResolvedGrantDocument]:
-        data, *_ = self.assoc(data) #, commit=commit)
+        data, *_ = self.assoc(data)  # , commit=commit)
         return data
 
     a_grant_document = with_access(Access.d_grant_document)(grant_user)
@@ -466,7 +486,7 @@ class Delete(WithAccess):
     # ----------------------------------------------------------------------- #
 
     def _user(
-        self, data: Data[ResolvedUser], user: User#, commit: bool = False
+        self, data: Data[ResolvedUser], user: User  # , commit: bool = False
     ) -> Data[ResolvedUser]:
         session = self.session
 
@@ -524,7 +544,8 @@ class Delete(WithAccess):
         return data
 
     def user(
-        self, data: Data[ResolvedUser], #commit: bool = False
+        self,
+        data: Data[ResolvedUser],  # commit: bool = False
     ) -> Data[ResolvedUser]:
         users = data.data.users
 
@@ -579,8 +600,6 @@ class Delete(WithAccess):
             data.data.delete = True
             self.session.delete(collection)
 
-
-
         # Create event
         event_assignments = data_assignments.event
         data_assignments.event = Event(
@@ -628,55 +647,70 @@ class Delete(WithAccess):
         document: Document,
         # *,
         # commit: bool = False,
-    ) -> Tuple[
-        Data[ResolvedGrantDocument],
-        Data[ResolvedAssignmentDocument],
-        Data[ResolvedEdit],
-    ]:
+    ) -> None:
+        # print("===========================================================")
+        # print(document.uuid)
+
         # Delete grants
         session = self.session
-        q_users = document.q_select_users()
-        users = tuple(session.execute(q_users).scalars())
-        data_grant = mwargs(
-            Data[ResolvedGrantDocument],
-            token_user=self.token_user,
-            data=mwargs(
-                ResolvedGrantDocument,
-                token_user_grants=data.data.token_user_grants,
-                document=document,
-                users=users,
-            ),
-        )
-        self.grant_document(data_grant)
-        data.add(data_grant)
+        if not self.force:
+            document.deleted = True
+        else:
+            data.data.delete = True
+            self.session.delete(document)
 
-        q_collections = document.q_select_collections()
-        collections = tuple(session.execute(q_collections).scalars())
-        data_assignment = mwargs(
-            Data[ResolvedAssignmentDocument],
-            token_user=self.token_user,
-            data=mwargs(
-                ResolvedAssignmentDocument,
-                document=document,
-                collections=collections,
-            ),
+        q_users = document.q_select_users(
+            exclude_deleted=not self.force, exclude_pending=False, pending=False
         )
-        self.assignment_document(data_assignment)
-        data.add(data_assignment)
+        # util.sql(self.session, q_users)
+        if users := tuple(session.execute(q_users).scalars()):
+            data_grant = mwargs(
+                Data[ResolvedGrantDocument],
+                token_user=self.token_user,
+                data=mwargs(
+                    ResolvedGrantDocument,
+                    token_user_grants=data.data.token_user_grants,
+                    grants=data.data.token_user_grants,
+                    document=document,
+                    users=users,
+                ),
+            )
+            # print("users", users)
+            self.grant_document(data_grant)
+            data.add(data_grant)
+
+        q_collections = document.q_select_collections(
+            exclude_deleted=not self.force,
+        )
+        # util.sql(self.session, q_collections)
+        if collections := tuple(session.execute(q_collections).scalars()):
+            data_assignment = mwargs(
+                Data[ResolvedAssignmentDocument],
+                token_user=self.token_user,
+                data=mwargs(
+                    ResolvedAssignmentDocument,
+                    document=document,
+                    collections=collections,
+                    assignments=None,
+                ),
+            )
+            self.assignment_document(data_assignment)
+            data.add(data_assignment)
 
         edits = document.edits
-        data_edit = mwargs(
-            Data[ResolvedEdit],
-            token_user=self.token_user,
-            data=mwargs(
-                ResolvedEdit, edits=edits, token_user_grants=data.data.token_user_grants
-            ),
-        )
-        self.edit(data_edit)
-        data.add(data_edit)
-        # data.commit(self.session, commit)
-
-        return data_grant, data_assignment, data_edit
+        if edits:
+            data_edit = mwargs(
+                Data[ResolvedEdit],
+                token_user=self.token_user,
+                data=mwargs(
+                    ResolvedEdit,
+                    edits=edits,
+                    token_user_grants=data.data.token_user_grants,
+                    grants=data.data.token_user_grants,
+                ),
+            )
+            self.edit(data_edit)
+            data.add(data_edit)
 
     def document(
         self,
@@ -688,24 +722,16 @@ class Delete(WithAccess):
         if not len(documents):
             return data
 
-        data_grants: Tuple[Data[ResolvedGrantDocument], ...]
-        data_assignments: Tuple[Data[ResolvedAssignmentDocument], ...]
-        data_edits: Tuple[Data[ResolvedAssignmentDocument], ...]
-        data_grants, data_assignments, data_edits = tuple(
-            zip(*(self._document(data, dd) for dd in documents))
-        )  # type: ignore[reportGeneralTypeErrors]
+        for document in data.data.documents:
+            self._document(data, document)
 
+        # print(*(type(item) for item in data.children))
         data.event = Event(
             **self.event_common,
             kind_obj=KindObject.bulk,
-            children=[
-                data_assoc.event
-                for data_assocs in (data_grants, data_assignments, data_edits)
-                for data_assoc in data_assocs
-            ],
+            children=[data_child.event for data_child in data.children],
         )
-        # data.commit(self.session, commit)
-
+        data.data.delete = True
         return data
 
     a_document = with_access(Access.d_document)(document)
@@ -713,7 +739,9 @@ class Delete(WithAccess):
     # ----------------------------------------------------------------------- #
 
     def _edit(
-        self, data: Data[ResolvedEdit], edit: Edit, #*, commit: bool = False
+        self,
+        data: Data[ResolvedEdit],
+        edit: Edit,  # *, commit: bool = False
     ) -> None:
         session = self.session
 
@@ -770,7 +798,8 @@ class Delete(WithAccess):
                 raise ValueError()
 
     def edit(
-        self, data: Data[ResolvedEdit], #commit: bool = False
+        self,
+        data: Data[ResolvedEdit],  # commit: bool = False
     ) -> Data[ResolvedEdit]:
         edits = data.data.edits
 

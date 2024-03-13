@@ -9,19 +9,54 @@ import logging
 from functools import cached_property
 from http import HTTPMethod
 from traceback import print_tb
-from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
-                    Literal, Self, Set, Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, LevelHTTP,
-                        ResolvableSingular, ResolvedRawAny, Singular, User,
-                        uuids)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    LevelHTTP,
+    ResolvableSingular,
+    ResolvedRawAny,
+    Singular,
+    User,
+    uuids,
+)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
-                      ValidationInfo, computed_field, field_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Tag,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy.orm import Session, make_transient
 
 logger = util.get_logger(__name__)
@@ -105,7 +140,13 @@ class BaseController:
                 raise ValueError(f"Invalid input `{bad}` for token.")
 
 
-def uuid_set_from_model(data: Any, info: ValidationInfo) -> Set[str]:
+def _uuid_set_from_model(
+    data: Any,
+    info: ValidationInfo,
+    *,
+    optional: bool = True,
+) -> Set[str] | None:
+
     if data is not None:
         return data
 
@@ -118,16 +159,34 @@ def uuid_set_from_model(data: Any, info: ValidationInfo) -> Set[str]:
         raise ValueError(f"Invalid source `{data_key_source}` for uuids.")
 
     match info.data[data_key_source]:
+        case None if optional:
+            return None
         case tuple() as resolved:
             return uuids(resolved)
         case dict() as resovled:
             return uuids(tuple(resovled.values()))
-        # case (*other,):
-        #     return set(other)
         case Base() as other:
             return {other.uuid}
         case bad:
             return bad
+
+
+def uuid_set_from_model(
+    data: Any,
+    info: ValidationInfo,
+) -> Set[str]:
+    res = _uuid_set_from_model(data, info)
+    if res is None:
+        raise ValueError()
+    return res
+
+
+def uuid_set_from_model_optional(
+    data: Any,
+    info: ValidationInfo,
+) -> Set[str] | None:
+    res = _uuid_set_from_model(data, info)
+    return res
 
 
 def uuid_from_model(data: Any, info: ValidationInfo) -> str:
@@ -137,6 +196,11 @@ def uuid_from_model(data: Any, info: ValidationInfo) -> str:
     return res.pop()
 
 
+UuidSetFromModelOptional = Annotated[
+    Set[str] | None,
+    Field(default=None, validate_default=True),
+    BeforeValidator(uuid_set_from_model_optional),
+]
 UuidSetFromModel = Annotated[
     Set[str],
     Field(default=None, validate_default=True),
@@ -150,6 +214,7 @@ UuidFromModel = Annotated[
 
 
 class KindData(str, enum.Enum):
+    object_event = enum.auto()
     event = "event"
     collection = "collection"
     document = "document"
@@ -163,7 +228,7 @@ class KindData(str, enum.Enum):
 
 class BaseResolved(BaseModel):
     kind: ClassVar[KindData]
-    registry: ClassVar[Dict[KindData, "Type[BaseResolved]"]] = dict() 
+    registry: ClassVar[Dict[KindData, "Type[BaseResolved]"]] = dict()
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -173,8 +238,14 @@ class BaseResolved(BaseModel):
             return
 
         util.check_enum_opt_attr(cls, "kind", KindData)
+        if cls.kind in cls.registry:
+            cls_existing = cls.registry[cls.kind].__name__
+            raise ValueError(
+                f"`registry` already has a resolved class `{cls_existing}` for"
+                f"`{cls.kind}`. There should be exactly one class marked with "
+                "any given kind."
+            )
         cls.registry[cls.kind] = cls
-
 
     def register(self, session: Session) -> None: ...
 
@@ -200,7 +271,10 @@ class BaseResolvedPrimary(BaseResolved):
         if "Base" in cls.__name__:
             return
 
-        cls._attr_name_targets = Singular(cls.kind.name).name
+        if cls.kind == KindData.object_event:
+            cls._attr_name_targets = "events"
+        else:
+            cls._attr_name_targets = Singular(cls.kind.name).name
 
         # NOTE: How to check that a particular field is defined? `model_fields`
         #       is empty here but not when using the class otherwise. A
@@ -246,7 +320,7 @@ class BaseResolvedPrimary(BaseResolved):
         targets = self.targets()
         session.add_all(targets)
 
-        # NOTE: DO NOT COMMIT HERE! All commits should occur before `data` is 
+        # NOTE: DO NOT COMMIT HERE! All commits should occur before `data` is
         #       destroyed.
         # Commit and refresh.
         # session.commit()
@@ -365,7 +439,7 @@ class ResolvedEdit(BaseResolvedPrimary):
     kind = KindData.edit
 
     edits: Tuple[Edit, ...]
-    uuid_edit: UuidSetFromModel
+    uuid_edits: UuidSetFromModel
 
     token_user_grants: Dict[str, Grant]
 
@@ -385,7 +459,7 @@ class ResolvedEvent(BaseResolvedPrimary):
 
 
 class ResolvedObjectEvents(ResolvedEvent):
-    # kind = KindData.event
+    kind = KindData.object_event
     #
     # events: Tuple[Event, ...]
     # uuid_events: UuidSetFromModel
@@ -459,6 +533,7 @@ class ResolvedAssignmentCollection(BaseResolvedSecondary):
     assignments: Dict[str, Assignment] | None
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
+    uuid_assignments: UuidSetFromModelOptional
     uuid_documents: UuidSetFromModel
 
     # These are very helpful for handling cases in general
@@ -474,6 +549,7 @@ class ResolvedAssignmentDocument(BaseResolvedSecondary):
     assignments: Dict[str, Assignment] | None
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
+    uuid_assignments: UuidSetFromModelOptional
     uuid_collections: UuidSetFromModel
 
 
@@ -544,7 +620,7 @@ class Data(BaseModel, Generic[T_Data]):
 
     def add(self, *items: "Data") -> None:
         for item in items:
-            self.children.append(item.data)
+            self.children.append(item)
 
     def register(self, session: Session) -> None:
         print("Registering...")
@@ -564,7 +640,6 @@ class Data(BaseModel, Generic[T_Data]):
         for child in self.children:
             child.refresh(session)
 
-
     def commit(self, session: Session, commit: Any = None) -> None:
         if commit is not None:
             logger.warning()
@@ -578,7 +653,6 @@ class Data(BaseModel, Generic[T_Data]):
             raise HTTPException(500, "Database commit failure.")
 
         self.refresh(session)
-
 
     def types(self) -> Any:
         return kind_type_map[self.kind]  # type: ignore[return-type]
