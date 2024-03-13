@@ -112,6 +112,6 @@ def check_enum_opt_attr(
         case bad:
             raise ValueError(
                 f"`{cls.__name__}` has incorrect type for `{field}`."
-                f"Expected `{Enum}` or `None` (got `{bad}` of type "
+                f"Expected `{T_enum}` or `None` (got `{bad}` of type "
                 f"`{type(bad)}`)."
             )

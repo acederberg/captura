@@ -2,57 +2,22 @@ import secrets
 from datetime import datetime
 from http import HTTPMethod
 from random import choice, randint, sample
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    ClassVar,
-    Dict,
-    List,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Self, Set,
+                    Tuple, Type, TypeVar)
 
 import pytest
 from app import __version__
 from app.auth import Auth, Token
 from app.controllers.access import Access
-from app.controllers.base import (
-    BaseResolved,
-    BaseResolvedPrimary,
-    BaseResolvedSecondary,
-    Data,
-    KindData,
-    ResolvedDocument,
-    ResolvedUser,
-)
+from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
+                                  BaseResolvedSecondary, Data, KindData,
+                                  ResolvedDocument, ResolvedUser)
 from app.controllers.delete import Delete
-from app.models import (
-    LENGTH_CONTENT,
-    LENGTH_DESCRIPTION,
-    LENGTH_MESSAGE,
-    LENGTH_NAME,
-    LENGTH_TITLE,
-    LENGTH_URL,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Event,
-    Format,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    PendingFrom,
-    Singular,
-    T_Resolvable,
-    Tables,
-    User,
-)
+from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
+                        LENGTH_NAME, LENGTH_TITLE, LENGTH_URL, Assignment,
+                        Base, Collection, Document, Event, Format, Grant,
+                        KindEvent, KindObject, Level, PendingFrom, Singular,
+                        T_Resolvable, Tables, User)
 from app.schemas import mwargs
 from faker import Faker
 from faker.providers import internet
@@ -361,8 +326,20 @@ class Dummy:
         #     ...
         # elif issubclass(T_resolved, BaseResolvedPrimary):
 
-        if T_resolved.kind == KindData.user:
+        print(T_resolved.kind)
+        if T_resolved.kind in {KindData.user}:
             kwargs = {"users": (self.user,)}
+        elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
+            print("=====================================================")
+            document = self.get_document(level = Level.own)
+            grant = self.get_grant(document)
+
+            if T_resolved.kind == KindData.grant_document:
+                grants = {grant.uuid_user: grant}
+                kwargs = dict(document=document, users=(self.user,), grants=grants, token_user_grants=grants)
+            else:
+                grants = {grant.uuid_document: grant}
+                kwargs = dict(documents=(document,), user=self.user, grants=grants, token_user_grants=grants)
         elif T_resolved.kind in {
             KindData.collection,
             KindData.document,
@@ -404,6 +381,8 @@ class Dummy:
         else:
             raise ValueError(f"No implementation for data kind `{kind}`.")
 
+        print(T_resolved)
+        print(kwargs)
         return mwargs(
             Data,
             data=mwargs(T_resolved, **kwargs),
@@ -474,18 +453,3 @@ class Dummy:
 
         return self
 
-
-@pytest.fixture
-def dummy(auth: Auth, session: Session) -> Dummy:
-    return Dummy(auth, session)
-
-
-@pytest.fixture
-def dummy_lazy(auth: Auth, session: Session) -> Dummy:
-    if Dummy.dummy_user_uuids:
-        uuid = choice(Dummy.dummy_user_uuids)
-        _user = session.scalar(select(User).where(User.uuid == uuid))
-        if _user is None:
-            raise AssertionError(f"Somehow user `{uuid}` is `None`.")
-        return Dummy(auth, session, user=_user)
-    return Dummy(auth, session)

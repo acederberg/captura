@@ -1,3 +1,4 @@
+from random import choice
 from typing import Annotated, Any, AnyStr, AsyncGenerator, Dict
 
 import httpx
@@ -6,19 +7,20 @@ import pytest_asyncio
 from app import util
 from app.auth import Auth
 from app.config import Config
-from app.models import Base
+from app.models import Base, User
 from app.views import AppView
 from client.config import Config as ClientConfig
 from client.config import ProfileConfig
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
-from tests.dummy import dummy, dummy_lazy
 from tests.test_models import ModelTestMeta
+
+from .dummy import Dummy
 
 logger = util.get_logger(__name__)
 
@@ -191,3 +193,29 @@ async def async_client(
 @pytest.fixture(scope="session")
 def auth(config: Config) -> Auth:
     return Auth.forPyTest(config)
+
+
+# =========================================================================== #
+
+
+@pytest.fixture
+def dummy(auth: Auth, session: Session) -> Dummy:
+    return Dummy(auth, session)
+
+
+@pytest.fixture
+def default(auth: Auth, session: Session) -> Dummy:
+    user = session.get(User, 2)
+    return Dummy(auth, session, user)
+
+
+@pytest.fixture
+def dummy_lazy(auth: Auth, session: Session) -> Dummy:
+    if Dummy.dummy_user_uuids:
+        uuid = choice(Dummy.dummy_user_uuids)
+        _user = session.scalar(select(User).where(User.uuid == uuid))
+        if _user is None:
+            raise AssertionError(f"Somehow user `{uuid}` is `None`.")
+        return Dummy(auth, session, user=_user)
+    return Dummy(auth, session)
+

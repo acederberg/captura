@@ -46,6 +46,14 @@ or less this model will be 'sharing as a service'.
 
 
 class AppView(BaseView):
+    # NOTE: The following are helpful, I don't want to do this right now but
+    #       it will be useful for later.
+    #
+    #       - https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/
+    #       - https://fastapi.tiangolo.com/how-to/configure-swagger-ui/?h=swagger
+    #
+    # TODO: Make swagger docs better. Add better examples for requests and
+    #       responses, etc.
     view_router = FastAPI(
         title="Captura Document Automation, Sharing, and Organization API.",
         description=description,
@@ -56,6 +64,7 @@ class AppView(BaseView):
             email="adrn.cederberg123@gmail.com",
         ),
         openapi_tags=OpenApiTagMetadata,
+        swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"},
     )  # type: ignore
 
     # TODO: This should not show up in prod unless the status `500`. In fact,

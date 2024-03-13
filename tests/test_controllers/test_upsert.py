@@ -13,10 +13,10 @@ from app.controllers.delete import AssocData, Delete
 from fastapi import HTTPException
 from sqlalchemy import Update, select
 from sqlalchemy.orm import make_transient
-from tests.test_controllers.test_delete import (
+from tests.test_controllers.test_delete_assoc import (
     CASES_ASSOCS,
     BaseTestAssoc,
-    as_data,
+    create_data_from_params,
     delete,
 )
 
@@ -71,7 +71,7 @@ class TestAssoc(BaseTestAssoc):
         T_assoc: Type,
         uuid_assoc: Set[str],
     ) -> None:
-        data = as_data(
+        data = create_data_from_params(
             upsert, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
         )
         assert data.data.uuid_source == uuid_source

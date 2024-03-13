@@ -9,54 +9,19 @@ import logging
 from functools import cached_property
 from http import HTTPMethod
 from traceback import print_tb
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
+                    Literal, Self, Set, Tuple, Type, TypeVar)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    LevelHTTP,
-    ResolvableSingular,
-    ResolvedRawAny,
-    Singular,
-    User,
-    uuids,
-)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, LevelHTTP,
+                        ResolvableSingular, ResolvedRawAny, Singular, User,
+                        uuids)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    Tag,
-    ValidationInfo,
-    computed_field,
-    field_validator,
-)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
+                      ValidationInfo, computed_field, field_validator)
 from sqlalchemy.orm import Session, make_transient
 
 logger = util.get_logger(__name__)
@@ -67,13 +32,13 @@ T_BaseController = TypeVar("T_BaseController", bound="BaseController")
 
 
 class BaseController:
-    """This is going to be required.
+    """Base for :class:`Access`, :class:`Delete`, etc.
 
     :attr method: The ``http.HTTPMethod``. In some controllers this will be
         constant. In the access controller this will be used to check the
         levels of grants required to perform particular operations.
     :attr session: A ``Session``.
-    :attr token: A ``_token``.
+    :attr token: A ``Token``.
     """
 
     method: HTTPMethod
@@ -85,6 +50,7 @@ class BaseController:
     def level(self) -> Level:
         return LevelHTTP[self.method.name].value
 
+    # TODO: Move  `token_user` and `user` to `Data`.
     @cached_property
     def token(self) -> Token:
         if self._token is None:
@@ -100,6 +66,7 @@ class BaseController:
         self._token_user = token_user
         return token_user
 
+    # TODO: Rename this function.
     def then(self, type_: Type[T_BaseController], **kwargs) -> T_BaseController:
         "For chainable controllers."
         return type_(self.session, self._token, self.method, **kwargs)
@@ -124,12 +91,13 @@ class BaseController:
         self._token_user = None
 
         match method:
-            case str():
+            case str() if method in HTTPMethod._member_map_:
                 self.method = HTTPMethod(method)
             case HTTPMethod():
                 self.method = method
             case _:
-                raise ValueError(f"Invalid input `{method}` for method.")
+                msg = f"Invalid input `{method}` for parameter `method`." 
+                raise ValueError(msg)
 
         match token:
             case dict() | None as raw:
@@ -137,7 +105,8 @@ class BaseController:
             case Token() as token:
                 self._token = token
             case bad:
-                raise ValueError(f"Invalid input `{bad}` for token.")
+                msg = f"Invalid input `{bad}` for parameter `token`." 
+                raise ValueError(msg)
 
 
 def _uuid_set_from_model(
@@ -214,7 +183,7 @@ UuidFromModel = Annotated[
 
 
 class KindData(str, enum.Enum):
-    object_event = enum.auto()
+    object_event = "object_event"
     event = "event"
     collection = "collection"
     document = "document"
@@ -229,6 +198,9 @@ class KindData(str, enum.Enum):
 class BaseResolved(BaseModel):
     kind: ClassVar[KindData]
     registry: ClassVar[Dict[KindData, "Type[BaseResolved]"]] = dict()
+
+    delete: bool = False
+    _attr_name_targets: ClassVar[str]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -262,9 +234,6 @@ T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edi
 class BaseResolvedPrimary(BaseResolved):
 
     # ----------------------------------------------------------------------- #
-    delete: bool = False
-
-    _attr_name_targets: ClassVar[str]
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -317,13 +286,9 @@ class BaseResolvedPrimary(BaseResolved):
         if self.delete:
             return
 
+        # NOTE: DO NOT COMMIT HERE! Commits occurs in `data.commit`
         targets = self.targets()
         session.add_all(targets)
-
-        # NOTE: DO NOT COMMIT HERE! All commits should occur before `data` is
-        #       destroyed.
-        # Commit and refresh.
-        # session.commit()
 
     def refresh(self, session: Session) -> None:
         if self.delete:
@@ -334,23 +299,16 @@ class BaseResolvedPrimary(BaseResolved):
 
 
 class BaseResolvedSecondary(BaseResolved):
-    delete: bool = False
+    
     kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]
     kind_assoc: ClassVar[KindObject]
     _attr_name_source: ClassVar[str]
-    _attr_name_target: ClassVar[str]
     _attr_name_assoc: ClassVar[str]
+    # delete: bool = False
+    # _attr_name_target: ClassVar[str]
 
-    # q: Annotated[List[Any] | None, Field(default=None)]
-    #
-    # def add_q(self, q) -> None:
-    #     if self.q is None:
-    #         self.q = [q]
-    #         return
-    #     self.q.append(q)
-    #
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
         if "Base" in cls.__name__:
