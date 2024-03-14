@@ -17,43 +17,18 @@ foreign keys it is not necessary to specify multiple values).
 import enum
 import secrets
 from datetime import datetime, timedelta
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    Optional,
-    Self,
-    Set,
-    Type,
-    TypeAlias,
-    TypeVar,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
+                    Optional, Self, Set, Type, TypeAlias, TypeVar)
 
 from fastapi import Body, Query
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    computed_field,
-    field_serializer,
-    field_validator,
-    model_validator,
-)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
+                      computed_field, field_serializer, field_validator,
+                      model_validator)
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app import models
-from app.models import (
-    LENGTH_CONTENT,
-    LENGTH_DESCRIPTION,
-    LENGTH_MESSAGE,
-    LENGTH_NAME,
-    LENGTH_URL,
-)
+from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
+                        LENGTH_NAME, LENGTH_URL)
 from app.util import check_enum_opt_attr
 
 # --------------------------------------------------------------------------- #
@@ -166,6 +141,7 @@ NameLike = Annotated[
     Field(
         description="Search objects for a name like this.",
         examples=["foobar", "billy mays"],
+        default=None,
     ),
 ]
 DescriptionLike = Annotated[
@@ -173,6 +149,7 @@ DescriptionLike = Annotated[
     Field(
         description="Search objects for a description like this.",
         examples=["dolor sit amit,"],
+        default=None,
     ),
 ]
 Level = Annotated[models.Level, Field(description="Access level for grant.")]
@@ -288,7 +265,7 @@ class BaseSearchSchema(BaseSchema):
     kind_mapped: ClassVar[models.KindObject]
     kind_schema: ClassVar[KindSchema]
 
-    uuid: UUIDOptional
+    uuid: UUIDOptional = None
     limit: LimitOptional
     name_like: NameLike
     description_like: DescriptionLike

@@ -1,11 +1,12 @@
 import traceback
 from typing import Annotated, Generator, List, Set
 
-from app import __version__
+from app import __version__, util
 from app.auth import Auth
 from app.controllers.access import Access, H
 from app.depends import DependsAccess, DependsAuth, DependsSessionMaker
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -45,6 +46,8 @@ or less this model will be 'sharing as a service'.
 """
 
 
+from starlette.routing import Mount
+
 class AppView(BaseView):
     # NOTE: The following are helpful, I don't want to do this right now but
     #       it will be useful for later.
@@ -54,6 +57,14 @@ class AppView(BaseView):
     #
     # TODO: Make swagger docs better. Add better examples for requests and
     #       responses, etc.
+    #
+    # NOTE: About static files:
+    #
+    #       - https://fastapi.tiangolo.com/tutorial/static-files/
+    #
+    #       I'm aware the using `routes` is a bit taboo, but I think this is a 
+    #       cleaner pattern.
+    view_static = StaticFiles(directory=util.Path.app("static"))
     view_router = FastAPI(
         title="Captura Document Automation, Sharing, and Organization API.",
         description=description,
@@ -65,6 +76,7 @@ class AppView(BaseView):
         ),
         openapi_tags=OpenApiTagMetadata,
         swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"},
+        routes=[Mount("/static", view_static)],
     )  # type: ignore
 
     # TODO: This should not show up in prod unless the status `500`. In fact,

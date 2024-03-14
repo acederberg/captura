@@ -581,7 +581,7 @@ class Data(BaseModel, Generic[T_Data]):
             self.children.append(item)
 
     def register(self, session: Session) -> None:
-        print("Registering...")
+        # print("Registering...")
         self.data.register(session)
         if self.event is not None:
             session.add(self.event)
@@ -591,7 +591,7 @@ class Data(BaseModel, Generic[T_Data]):
 
     def refresh(self, session: Session) -> None:
         # session.expire_all()
-        print("Refreshing...")
+        # print("Refreshing...")
         self.data.refresh(session)
         if self.event is not None:
             session.refresh(self.event)
@@ -600,8 +600,8 @@ class Data(BaseModel, Generic[T_Data]):
 
     def commit(self, session: Session, commit: Any = None) -> None:
         if commit is not None:
-            logger.warning()
-        print("Committing...")
+            logger.warning("The `commit` argument is being removed.")
+        # print("Committing...")
         self.register(session)
         try:
             session.commit()

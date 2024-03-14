@@ -1,51 +1,20 @@
 from typing import Annotated, List, Set, Tuple
 
 from app import __version__
-from app.controllers.base import (
-    Data,
-    ResolvedDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
-from app.depends import (
-    DependsAccess,
-    DependsCreate,
-    DependsDelete,
-    DependsSessionMaker,
-    DependsToken,
-    DependsUpdate,
-)
-from app.models import (
-    AssocUserDocument,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    LevelStr,
-    User,
-)
-from app.schemas import (
-    AsOutput,
-    ErrAccessCannotRejectOwner,
-    ErrAccessDocument,
-    ErrAccessUser,
-    ErrDetail,
-    EventSchema,
-    GrantCreateSchema,
-    GrantSchema,
-    OutputWithEvents,
-    mwargs,
-)
+from app.controllers.base import (Data, ResolvedDocument,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser)
+from app.depends import (DependsAccess, DependsCreate, DependsDelete,
+                         DependsSessionMaker, DependsToken, DependsUpdate)
+from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
+                        KindObject, Level, LevelStr, User)
+from app.schemas import (AsOutput, ErrAccessCannotRejectOwner,
+                         ErrAccessDocument, ErrAccessUser, ErrDetail,
+                         EventSchema, GrantCreateSchema, GrantSchema,
+                         OutputWithEvents, mwargs)
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy import literal_column, select, update

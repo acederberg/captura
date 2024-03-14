@@ -5,33 +5,16 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedObjectEvents,
-    ResolvedUser,
-)
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.controllers.base import (Data, DataResolvedAssignment,
+                                  DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, User)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -648,8 +631,6 @@ class Delete(WithAccess):
         # *,
         # commit: bool = False,
     ) -> None:
-        # print("===========================================================")
-        # print(document.uuid)
 
         # Delete grants
         session = self.session
@@ -675,7 +656,6 @@ class Delete(WithAccess):
                     users=users,
                 ),
             )
-            # print("users", users)
             self.grant_document(data_grant)
             data.add(data_grant)
 
@@ -725,7 +705,6 @@ class Delete(WithAccess):
         for document in data.data.documents:
             self._document(data, document)
 
-        # print(*(type(item) for item in data.children))
         data.event = Event(
             **self.event_common,
             kind_obj=KindObject.bulk,

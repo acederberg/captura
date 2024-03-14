@@ -2,52 +2,19 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import (
-    Annotated,
-    Callable,
-    ClassVar,
-    Collection,
-    Dict,
-    Generator,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    TypeAlias,
-    TypeVar,
-    overload,
-)
+from typing import (Annotated, Callable, ClassVar, Collection, Dict, Generator,
+                    List, Literal, Self, Set, Tuple, TypeAlias, TypeVar,
+                    overload)
 
 from fastapi import HTTPException
-from sqlalchemy import (
-    CTE,
-    BooleanClauseList,
-    Column,
-    ColumnElement,
-    CompoundSelect,
-    Enum,
-    ForeignKey,
-    Select,
-    String,
-    UniqueConstraint,
-    and_,
-    func,
-    literal_column,
-    select,
-    true,
-    union,
-)
+from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
+                        CompoundSelect, Enum, ForeignKey, Select, String,
+                        UniqueConstraint, and_, func, literal_column, select,
+                        true, union)
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    InstrumentedAttribute,
-    Mapped,
-    Session,
-    mapped_column,
-    object_session,
-    relationship,
-)
+from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
+                            Session, mapped_column, object_session,
+                            relationship)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
@@ -1166,9 +1133,11 @@ class User(SearchableTableMixins, Base):
         "Horrific."
 
         # NOTE: If the document is public and the level is view, then don't check.
+        #       These lines can cause an issue where grants are not correctly 
+        #       added,
         level = Level.resolve(level)
-        if document.public and level == Level.view:
-            return self
+        # if document.public and level == Level.view:
+        #     return self
 
         session = self.get_session()  # if _session is None else _session
 
@@ -1403,7 +1372,6 @@ class Document(SearchableTableMixins, Base):
             )
         if level is not None:
             level = Level.resolve(level)
-            print(level)
             cond = and_(cond, AssocUserDocument.level >= level.value)
 
         match (pending, exclude_pending):

@@ -2,68 +2,26 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (
-    Any,
-    Callable,
-    Concatenate,
-    Dict,
-    Literal,
-    ParamSpec,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    overload,
-)
+from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
+                    Tuple, Type, TypeVar, overload)
 
 from app import __version__, util
 from app.auth import Token
-from app.controllers.base import (
-    BaseController,
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedObjectEvents,
-    ResolvedUser,
-    T_Data,
-)
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    Resolvable,
-    ResolvableLevel,
-    ResolvableMultiple,
-    ResolvableSingular,
-    Singular,
-    T_Resolvable,
-    Tables,
-    User,
-)
-from app.schemas import (
-    ErrAccessCannotRejectOwner,
-    ErrAccessCollection,
-    ErrAccessUser,
-    EventParams,
-    EventSearchSchema,
-    mwargs,
-)
+from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
+                                  DataResolvedGrant, KindData,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser, T_Data)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, Resolvable,
+                        ResolvableLevel, ResolvableMultiple,
+                        ResolvableSingular, Singular, T_Resolvable, Tables,
+                        User)
+from app.schemas import (ErrAccessCannotRejectOwner, ErrAccessCollection,
+                         ErrAccessUser, EventParams, EventSearchSchema, mwargs)
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -600,7 +558,6 @@ class Access(BaseController):
 
         # NOTE: Exclude deleted is only required for force deletion.
         def check_one(document: Document) -> Document:
-            print("HERE", pending)
             token_user.check_can_access_document(
                 document,
                 level,
@@ -834,7 +791,7 @@ class Access(BaseController):
             q = user.q_select_documents(
                 **document_kwargs,
                 exclude_pending=False,
-                exclude_deleted=exclude_deleted,
+                # exclude_deleted=exclude_deleted,
             )
             util.sql(self.session, q)
             resolve_documents = tuple(self.session.execute(q).scalars())
@@ -952,7 +909,6 @@ class Access(BaseController):
             grants=token_user_grant,
             grants_index="uuid_user",
         )
-        print("==================================")
 
         # NOTE: Permissions of users do not matter for CRUD of grants because
         #       they're always url params that are filtered out. Notice:

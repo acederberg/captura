@@ -61,6 +61,10 @@ class Path:
         return path.join(PATH_BASE, v)
 
     @classmethod
+    def app(cls, v: str) -> str:
+        return path.join(PATH_APP, v)
+
+    @classmethod
     def tests(cls, v: str) -> str:
         return path.join(PATH_TESTS, v)
 
