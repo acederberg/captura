@@ -1,71 +1,134 @@
+from typing import Any, ClassVar, Dict
+
 import httpx
-from client import flags
-from typing import Any, Dict
-from client.requests.base import BaseRequest
 from app.models import LevelStr
+from client import flags
+from client.requests.base import BaseRequest, params
+
+__all__ = ("DocumentGrantRequests", "UserGrantRequests",)
 
 
-__all__ = ("GrantRequests",)
-
-
-class GrantRequests(BaseRequest):
+# NOTE: For management of document grants. Notice the duality between the
+#       command names. This will be put on document requests, so it will be
+#       used like `client documents grants ...`.
+class DocumentGrantRequests(BaseRequest):
+    fmt_url: ClassVar[str] = "/grants/documents/{}"
+    commands_check_verbage = False
     command = "grants"
-    commands = ("read_document", "read_user", "create", "delete")
+    commands = ("read", "invite", "revoke", "approve")
 
-    async def read_user(
+    async def read(
         self,
-        uuid_user: flags.ArgUUIDUser,
-        uuid_document: flags.FlagUUIDDocumentsOptional = None,
+        uuid_document: flags.ArgUUIDDocument,
+        level: flags.FlagLevel = LevelStr.view,
+        uuid_user: flags.FlagUUIDUsersOptional = None,
+        pending: flags.FlagPending = False,
     ) -> httpx.Response:
-        params: Dict[str, Any] = dict()
-        if uuid_document is not None:
-            params.update(uuid_document=uuid_document)
         return await self.client.get(
-            f"/grants/users/{uuid_user}",
-            params=params,
+            self.fmt_url.format(uuid_document),
+            params=params(
+                uuid_user=uuid_user, 
+                level=level.name, 
+                pending=pending
+            ),
             headers=self.headers,
         )
 
-    async def read_document(
+    async def invite(
         self,
         uuid_document: flags.ArgUUIDDocument,
+        level: flags.FlagLevel = LevelStr.view,
         uuid_user: flags.FlagUUIDUsersOptional = None,
     ) -> httpx.Response:
-        params: Dict[str, Any] = dict()
-        if uuid_user:
-            params.update(uuid_user=uuid_user)
-        return await self.client.get(
-            f"/grants/documents/{uuid_document}",
-            params=params,
-            headers=self.headers,
-        )
-
-    async def create(
-        self,
-        uuid_document: flags.ArgUUIDDocument,
-        uuid_user: flags.FlagUUIDUsers,
-        level: flags.FlagLevel = LevelStr.view,
-    ) -> httpx.Response:
         return await self.client.post(
-            f"/grants/documents/{uuid_document}",
-            json=[
-                dict(
-                    uuid_user=uu,
-                    level=level.name,
-                )
-                for uu in uuid_user
-            ],
+            self.fmt_url.format(uuid_document),
+            params=params(uuid_user=uuid_user, level=level.name),
             headers=self.headers,
         )
 
-    async def delete(
+    async def revoke(
         self,
         uuid_document: flags.ArgUUIDDocument,
         uuid_user: flags.FlagUUIDUsers,
         force: flags.FlagForce = False,
     ) -> httpx.Response:
         return await self.client.delete(
-            f"/grants/documents/{uuid_document}",
+            self.fmt_url.format(uuid_document),
             headers=self.headers,
             params=dict(uuid_user=uuid_user, force=force),
+        )
+
+    async def approve(
+        self,
+        uuid_document: flags.ArgUUIDDocument,
+        uuid_user: flags.FlagUUIDUsers,
+    ) -> httpx.Response:
+        return await self.client.patch(
+            self.fmt_url.format(uuid_document),
+            params=params(uuid_user=uuid_user),
+        )
+
+
+class UserGrantRequests(BaseRequest):
+    fmt_url: ClassVar[str] = "/grants/users/{}"
+    commands_check_verbage = False
+    command = "grants"
+    commands = ("read", "request", "reject", "accept")
+
+    async def read(
+        self,
+        uuid_user: flags.ArgUUIDUser,
+        level: LevelStr = LevelStr.view,
+        uuid_document: flags.FlagUUIDDocumentsOptional = None,
+        pending: flags.FlagPending = False,
+    ) -> httpx.Response:
+        return await self.client.get(
+            self.fmt_url.format(uuid_user),
+            params=params(
+                level=level.name,
+                uuid_document=uuid_document,
+                pending=pending,
+            ),
+            headers=self.headers,
+        )
+
+    async def accept(
+        self,
+        uuid_user: flags.ArgUUIDUser,
+        uuid_document: flags.FlagUUIDDocumentsOptional = None,
+    ) -> httpx.Response:
+        return await self.client.patch(
+            self.fmt_url.format(uuid_user),
+            params=params(uuid_document=uuid_document),
+            headers=self.headers,
+        )
+
+    async def reject(
+        self,
+        uuid_user: flags.ArgUUIDUser,
+        uuid_document: flags.FlagUUIDDocumentsOptional = None,
+        force: flags.FlagForce = False,
+    ) -> httpx.Response:
+        return await self.client.delete(
+            self.fmt_url.format(uuid_user),
+            params=params(
+                uuid_document=uuid_document,
+                force=force,
+            ),
+            headers=self.headers,
+        )
+
+    async def request(
+        self,
+        uuid_user: flags.ArgUUIDUser,
+        level: LevelStr = LevelStr.view,
+        uuid_document: flags.FlagUUIDDocumentsOptional = None,
+    ) -> httpx.Response:
+        return await self.client.post(
+            self.fmt_url.format(uuid_user),
+            params=params(
+                level=level.name,
+                uuid_document=uuid_document,
+            ),
+            headers=self.headers,
         )

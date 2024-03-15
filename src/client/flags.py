@@ -42,6 +42,7 @@ FlagUUIDs: TypeAlias = Annotated[Optional[List[str]], typer.Option("--uuid")]
 # User
 
 ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument(help="User uuid.")]
+ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument(help="User uuid.")]
 FlagUUIDUserOptional: TypeAlias = Annotated[
     Optional[str],
     typer.Option(
@@ -284,3 +285,8 @@ FlagAdmin: TypeAlias = Annotated[
 ArgTokenPayload: TypeAlias = Annotated[
     str, typer.Option(help="Data for token payload.")
 ]
+
+FlagPending: TypeAlias = Annotated[
+    bool, typer.Option(help="Get only pending grants."),
+]
+

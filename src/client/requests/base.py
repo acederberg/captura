@@ -112,6 +112,9 @@ class RequestMeta(type):
             for command in commands
         )
 
+    @classmethod
+    def check_attrs(cls, T):
+        name = T.__name__
         command, commands = T.command, T.commands
         if command is None:
             raise ValueError(f"Missing command for `{name}`.")

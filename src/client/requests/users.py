@@ -1,4 +1,5 @@
 from typing import Optional
+from client.requests.grants import UserGrantRequests
 
 import httpx
 import typer
@@ -78,7 +79,7 @@ class DemoRequests(BaseRequest):
 class UserRequests(BaseRequest):
     command = "users"
     commands = ("read", "search", "update", "create", "delete")
-    children = DemoRequests,
+    children = DemoRequests, UserGrantRequests,
 
     async def search(
         self,

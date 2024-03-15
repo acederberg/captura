@@ -1,3 +1,5 @@
+from client.requests.assignments import DocumentAssignmentRequests
+from client.requests.grants import DocumentGrantRequests
 import httpx
 from client import flags
 from client.requests.base import BaseRequest, params
@@ -8,6 +10,7 @@ __all__ = ("DocumentRequests",)
 class DocumentRequests(BaseRequest):
     command = "documents"
     commands = ("read", "search", "delete", "update", "create")
+    children = (DocumentGrantRequests, DocumentAssignmentRequests)
 
     async def delete(self, uuid_document: flags.ArgUUIDDocument) -> httpx.Response:
         url = f"/documents/{uuid_document}"

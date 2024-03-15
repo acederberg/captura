@@ -7,12 +7,11 @@ from client import flags
 from client.flags import Output
 from client.handlers import CONSOLE
 
-from .assignments import AssignmentRequests
+# from .assignments import AssignmentRequests
 from .base import BaseRequest
 from .collections import CollectionRequests
 from .documents import DocumentRequests
 from .events import EventsRequests
-from .grants import GrantRequests
 from .tokens import TokenRequests
 from .users import UserRequests
 
@@ -23,8 +22,6 @@ class RequestsEnum(enum.Enum):
     users = UserRequests
     collections = CollectionRequests
     documents = DocumentRequests
-    grants = GrantRequests
-    assignments = AssignmentRequests
     events = EventsRequests
     tokens = TokenRequests
 
@@ -37,10 +34,8 @@ class Requests(BaseRequest):
     users: UserRequests
     collections: CollectionRequests
     documents: DocumentRequests
-    grants: GrantRequests
-    assignments: AssignmentRequests
     events: EventsRequests
-    tokenss: TokenRequests
+    tokens: TokenRequests
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -86,8 +81,8 @@ __all__ = (
     "UserRequests",
     "CollectionRequests",
     "DocumentRequests",
-    "GrantRequests",
-    "AssignmentRequests",
+    # "GrantRequests",
+    # "AssignmentRequests",
     "EventsRequests",
     "RequestsEnum",
     "Requests",

@@ -1,4 +1,5 @@
 from typing import Any, Dict
+from client.requests.assignments import CollectionAssignmentRequests
 
 import httpx
 import typer
@@ -13,6 +14,7 @@ __all__ = ("CollectionRequests",)
 class CollectionRequests(BaseRequest):
     command = "collections"
     commands = ("read", "create", "delete", "update", "search")
+    children = (CollectionAssignmentRequests,)
 
     async def search(
         self,

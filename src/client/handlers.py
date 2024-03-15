@@ -88,10 +88,10 @@ class ConsoleHandler(BaseModel):
         res: httpx.Response,
         data=None,
     ) -> httpx.Response:
-        status = await self.handle(res, data)
+        status = self.handle(res, data)
         raise typer.Exit(status)
 
-    async def handle(
+    def handle(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] = None,

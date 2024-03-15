@@ -6,8 +6,8 @@ from client import flags
 from client.requests.base import BaseRequest
 
 
-class AssignmentCollectionRequests(BaseRequest):
-    command = "collections"
+class CollectionAssignmentRequests(BaseRequest):
+    command = "assignments"
     commands = ("read", "create", "delete")
 
     async def read(
@@ -49,8 +49,8 @@ class AssignmentCollectionRequests(BaseRequest):
         )
 
 
-class AssignmentDocumentRequests(BaseRequest):
-    command = "documents"
+class DocumentAssignmentRequests(BaseRequest):
+    command = "assignments"
     commands = ("read", "create", "delete")
 
     async def read(
@@ -91,14 +91,14 @@ class AssignmentDocumentRequests(BaseRequest):
         )
 
 
-class AssignmentRequests(BaseRequest):
-    command = "assignments"
-    children = (AssignmentCollectionRequests, AssignmentDocumentRequests)
-
-    collections: AssignmentCollectionRequests
-    documents: AssignmentDocumentRequests
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.documents = AssignmentDocumentRequests.from_(self)
-        self.collections = AssignmentCollectionRequests.from_(self)
+# class AssignmentRequests(BaseRequest):
+#     command = "assignments"
+#     children = (AssignmentCollectionRequests, AssignmentDocumentRequests)
+#
+#     collections: AssignmentCollectionRequests
+#     documents: AssignmentDocumentRequests
+#
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.documents = AssignmentDocumentRequests.from_(self)
+#         self.collections = AssignmentCollectionRequests.from_(self)
