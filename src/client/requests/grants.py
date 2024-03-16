@@ -1,134 +1,230 @@
 from typing import Any, ClassVar, Dict
 
 import httpx
+import typer
 from app.models import LevelStr
 from client import flags
-from client.requests.base import BaseRequest, params
-
-__all__ = ("DocumentGrantRequests", "UserGrantRequests",)
+from client.requests.base import BaseRequest, ContextData, methodize, params
 
 
 # NOTE: For management of document grants. Notice the duality between the
 #       command names. This will be put on document requests, so it will be
 #       used like `client documents grants ...`.
 class DocumentGrantRequests(BaseRequest):
-    fmt_url: ClassVar[str] = "/grants/documents/{}"
-    commands_check_verbage = False
-    command = "grants"
-    commands = ("read", "invite", "revoke", "approve")
-
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         level: flags.FlagLevel = LevelStr.view,
         uuid_user: flags.FlagUUIDUsersOptional = None,
         pending: flags.FlagPending = False,
-    ) -> httpx.Response:
-        return await self.client.get(
-            self.fmt_url.format(uuid_document),
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url(cls.fmt_url.format(uuid_document)),
             params=params(
-                uuid_user=uuid_user, 
-                level=level.name, 
-                pending=pending
+                uuid_user=uuid_user,
+                level=level.name,
+                pending=pending,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def invite(
-        self,
+    @classmethod
+    def req_invite(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         level: flags.FlagLevel = LevelStr.view,
         uuid_user: flags.FlagUUIDUsersOptional = None,
-    ) -> httpx.Response:
-        return await self.client.post(
-            self.fmt_url.format(uuid_document),
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url(cls.fmt_url.format(uuid_document)),
             params=params(uuid_user=uuid_user, level=level.name),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def revoke(
-        self,
+    @classmethod
+    def req_revoke(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         uuid_user: flags.FlagUUIDUsers,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        return await self.client.delete(
-            self.fmt_url.format(uuid_document),
-            headers=self.headers,
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "DELETE",
+            context.url(cls.fmt_url.format(uuid_document)),
+            headers=context.headers,
             params=dict(uuid_user=uuid_user, force=force),
         )
 
-    async def approve(
-        self,
+    @classmethod
+    def req_approve(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         uuid_user: flags.FlagUUIDUsers,
-    ) -> httpx.Response:
-        return await self.client.patch(
-            self.fmt_url.format(uuid_document),
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "PATCH",
+            context.url(cls.fmt_url.format(uuid_document)),
             params=params(uuid_user=uuid_user),
         )
 
 
-class UserGrantRequests(BaseRequest):
-    fmt_url: ClassVar[str] = "/grants/users/{}"
-    commands_check_verbage = False
-    command = "grants"
-    commands = ("read", "request", "reject", "accept")
 
-    async def read(
-        self,
+    fmt_url: ClassVar[str] = "/grants/documents/{}"
+    typer_check_verbage = False
+    typer_commands = dict(
+        read="req_read",
+        invite="req_invite",
+        revoke="req_revoke",
+        approve="req_approve",
+    )
+    approve = methodize(req_approve, __func__=req_approve.__func__) # type: ignore 
+    invite = methodize(req_invite, __func__=req_invite.__func__) # type: ignore
+    revoke = methodize(req_revoke, __func__=req_revoke.__func__) # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__) # type: ignore
+
+
+class UserGrantRequests(BaseRequest):
+
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser,
+        *,
         level: LevelStr = LevelStr.view,
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
         pending: flags.FlagPending = False,
-    ) -> httpx.Response:
-        return await self.client.get(
-            self.fmt_url.format(uuid_user),
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url(cls.fmt_url.format(uuid_user)),
             params=params(
                 level=level.name,
                 uuid_document=uuid_document,
                 pending=pending,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def accept(
-        self,
+    @classmethod
+    def req_accept(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser,
+        *,
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
-    ) -> httpx.Response:
-        return await self.client.patch(
-            self.fmt_url.format(uuid_user),
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "PATCH",
+            context.url(cls.fmt_url.format(uuid_user)),
             params=params(uuid_document=uuid_document),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def reject(
-        self,
+    @classmethod
+    def req_reject(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser,
+        *,
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        return await self.client.delete(
-            self.fmt_url.format(uuid_user),
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "DELETE",
+            context.url(cls.fmt_url.format(uuid_user)),
             params=params(
                 uuid_document=uuid_document,
                 force=force,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def request(
-        self,
+    @classmethod
+    def req_request(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser,
+        *,
         level: LevelStr = LevelStr.view,
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
-    ) -> httpx.Response:
-        return await self.client.post(
-            self.fmt_url.format(uuid_user),
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url(cls.fmt_url.format(uuid_user)),
             params=params(
                 level=level.name,
                 uuid_document=uuid_document,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
+
+    fmt_url: ClassVar[str] = "/grants/users/{}"
+    typer_check_verbage = False
+    typer_commands = dict(
+        read="req_read",
+        request="req_request",
+        reject="req_reject",
+        accept="req_accept",
+    )
+
+    read = methodize(req_read , __func__=req_read.__func__) # type: ignore
+    request = methodize(req_request , __func__=req_request.__func__) # type: ignore
+    reject = methodize(req_reject , __func__=req_reject.__func__) # type: ignore
+    accept = methodize(req_accept , __func__=req_accept.__func__) # type: ignore
+
+
+class GrantRequests(BaseRequest):
+
+    typer_children = dict(
+        documents=DocumentGrantRequests,
+        users=UserGrantRequests,
+    )
+    documents: DocumentGrantRequests
+    users: UserGrantRequests
+
+    def __init__(
+        self,
+        context: ContextData,
+        client: httpx.AsyncClient,
+        *,
+        grants_documents: DocumentGrantRequests | None = None,
+        grants_users: UserGrantRequests | None = None,
+    ):
+        super().__init__(context, client)
+        self.documents = grants_documents or DocumentGrantRequests.spawn_from(self)
+        self.users = grants_users or UserGrantRequests.spawn_from(self)
+
+
+__all__ = (
+    "DocumentGrantRequests",
+    "UserGrantRequests",
+    "GrantRequests",
+)
+
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+
+    grants = typerize(GrantRequests)
+    grants()

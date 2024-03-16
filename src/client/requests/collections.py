@@ -1,41 +1,63 @@
 from typing import Any, Dict
-from client.requests.assignments import CollectionAssignmentRequests
 
 import httpx
 import typer
 from app.models import ChildrenCollection
 from client import flags
 from client.handlers import CONSOLE
-from client.requests.base import BaseRequest, params
+from client.requests.assignments import CollectionAssignmentRequests
+from client.requests.base import BaseRequest, ContextData, params
 
 __all__ = ("CollectionRequests",)
 
 
 class CollectionRequests(BaseRequest):
-    command = "collections"
-    commands = ("read", "create", "delete", "update", "search")
-    children = (CollectionAssignmentRequests,)
+    typer_commands = dict(
+        read="req_read",
+        create="req_create",
+        delete="req_delete",
+        update="req_update",
+        search="req_search",
+    )
+    typer_children = dict(
+        assignments=CollectionAssignmentRequests,
+    )
 
-    async def search(
-        self,
+    assignments: CollectionAssignmentRequests
+
+    def __init__(self, context: ContextData, client: httpx.AsyncClient):
+        super().__init__(context, client)
+        self.assignments = CollectionAssignmentRequests.spawn_from(self)
+
+    @classmethod
+    def req_search(
+        cls,
+        _context: typer.Context,
+        *,
         name_like: flags.FlagNameLike = None,
         description_like: flags.FlagDescriptionLike = None,
-    ) -> httpx.Response:
-        return await self.client.get(
-            "/collections",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url("/collections"),
             params=params(
                 name_like=name_like,
                 description_like=description_like,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
+        *,
         child: flags.FlagChildrenCollection | None = None,
         uuid_child: flags.FlagUUIDs = list(),
-    ) -> httpx.Response:
+    ) -> httpx.Request:
         params: Dict[str, Any] = dict()
         match [child, not len(uuid_child)]:
             case [None, True]:
@@ -51,54 +73,80 @@ class CollectionRequests(BaseRequest):
                 )
                 raise typer.Exit(1)
 
+        context = ContextData.resolve(_context)
+
         # Determine URL
         url_parts = ["collections", uuid_collection]
         if child is not None:
             url_parts.append(child)
-        url = "/" + "/".join(url_parts)
-        return await self.client.get(url, params=params, headers=self.headers)
+        url = context.url("/" + "/".join(url_parts))
+        return httpx.Request("GET", url, params=params, headers=context.headers)
 
-    async def create(
-        self,
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
+        *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
         public: flags.FlagPublicOptional = None,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
-    ) -> httpx.Response:
-        return await self.client.post(
-            "/collections",
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url("/collections"),
             params=dict(uuid_document=uuid_document),
             json=dict(name=name, description=description, public=public),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def delete(
-        self,
+    @classmethod
+    def req_delete(
+        cls,
+        _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
+        *,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        return await self.client.delete(
-            f"/collections/{uuid_collection}",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "DELETE",
+            context.url(f"/collections/{uuid_collection}"),
             params=dict(force=force),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def update(
-        self,
+    @classmethod
+    def req_update(
+        cls,
+        _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
+        *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
         public: flags.FlagPublicOptional = None,
         uuid_user: flags.FlagUUIDUserOptional = None,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
         data = params(
             name=name,
             description=description,
             public=public,
             uuid_user=uuid_user,
         )
-        return await self.client.patch(
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "PATCH",
             f"/collections/{uuid_collection}",
             json=data,
-            headers=self.headers,
+            headers=context.headers,
         )
+
+__all__ = ("DocumentRequests",)
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+    collections = typerize(CollectionRequests)
+    collections()
+

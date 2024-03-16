@@ -1,51 +1,67 @@
-from client.requests.assignments import DocumentAssignmentRequests
-from client.requests.grants import DocumentGrantRequests
 import httpx
+import typer
 from client import flags
-from client.requests.base import BaseRequest, params
-
-__all__ = ("DocumentRequests",)
+from client.requests.assignments import DocumentAssignmentRequests
+from client.requests.base import BaseRequest, ContextData, params
+from client.requests.grants import DocumentGrantRequests
 
 
 class DocumentRequests(BaseRequest):
-    command = "documents"
-    commands = ("read", "search", "delete", "update", "create")
-    children = (DocumentGrantRequests, DocumentAssignmentRequests)
+    typer_commands = dict(read="req_read",
+         search="req_search",
+         delete="req_delete",
+         update="req_update",
+         create="req_create",
+        )
+    typer_children = dict(grants=DocumentGrantRequests, assignments=DocumentAssignmentRequests)
 
-    async def delete(self, uuid_document: flags.ArgUUIDDocument) -> httpx.Response:
+    @classmethod
+    def req_delete(
+        cls, _context: typer.Context, *, uuid_document: flags.ArgUUIDDocument
+    ) -> httpx.Request:
         url = f"/documents/{uuid_document}"
-        return await self.client.delete(url, headers=self.headers)
+        context = ContextData.resolve(_context)
+        return httpx.Request("DELETE", url, headers=context.headers)
 
-    async def create(
-        self,
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
+        *,
         name: flags.FlagName,
         description: flags.FlagDescription,
         format: flags.FlagFormat,
         content: flags.FlagContent,
-    ) -> httpx.Response:
-        return await self.client.post(
-            "/documents",
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url("/documents"),
             json=dict(
                 name=name,
                 description=description,
                 format=format,
                 content=content,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def update(
-        self,
+    @classmethod
+    def req_update(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
         format: flags.FlagFormatOptional = None,
         content: flags.FlagContentOptional = None,
         message: flags.FlagMessageOptional = None,
-    ) -> httpx.Response:
-        url = f"/documents/{uuid_document}"
-        return await self.client.patch(
-            url,
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "PATCH",
+            context.url ( f"/documents/{uuid_document}"),
             json=params(
                 name=name,
                 description=description,
@@ -53,25 +69,43 @@ class DocumentRequests(BaseRequest):
                 content=content,
                 message=message,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def read(self, uuid_document: flags.ArgUUIDDocument) -> httpx.Response:
-        url = f"/documents/{uuid_document}"
-        return await self.client.get(url, headers=self.headers)
+    @classmethod
+    def req_read(
+        cls, _context: typer.Context, uuid_document: flags.ArgUUIDDocument
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        url = context.url(f"/documents/{uuid_document}")
+        return httpx.Request("GET", url, headers=context.headers)
 
-    async def search(
-        self,
+    @classmethod
+    def req_search(
+        cls,
+        _context: typer.Context,
+        *,
         limit: flags.FlagLimit = 10,
         name_like: flags.FlagNameLike = None,
         description_like: flags.FlagDescriptionLike = None,
     ):
-        return await self.client.get(
-            "/documents",
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url("/documents"),
             params=params(
                 limit=limit,
                 name_like=name_like,
                 description_like=description_like,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
+
+
+__all__ = ("DocumentRequests",)
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+
+    documents = typerize(DocumentRequests)
+    documents()

@@ -4,47 +4,63 @@ from client import flags
 from client.config import ProfileConfig
 from client.handlers import CONSOLE
 
-from .base import BaseRequest, params
+from .base import BaseRequest, ContextData, params
 
 
 class TokenRequests(BaseRequest):
 
-    command = "token"
-    commands = ("read", "create")
+    typer_commands = dict(
+        read="req_read",
+        create="req_create",
+    )
 
-    @property
-    def uuid_user(self) -> ProfileConfig:
-        if self.config.profile is None:
-            raise ValueError("Profile is not set.")
-        return self.config.profile  # type: ignore
-
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         token: flags.FlagTokenOptional = None,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
         """Verify current token (as specified by configuration) or, when
         provided, the token provided by `--token`."""
 
-        token = token if token is not None else self.token
+        context = ContextData.resolve(_context)
+        token = token if token is not None else context.config.token
         if token is None:
             CONSOLE.print("[red]No token to check.")
             raise typer.Exit(1)
 
-        return await self.client.get(
-            "/auth/token",
+        return httpx.Request(
+            "GET",
+            context.url("/auth/token"),
             params=params(data=token),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def create(
-        self, 
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.FlagUUIDUserOptional = None,
         admin: flags.FlagAdmin = None,
-    ) -> httpx.Response:
-        uuid = uuid_user if uuid_user is not None else self.uuid_user
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        uuid = uuid_user if uuid_user is not None else context.config.profile
+        if not uuid:
+            raise ValueError("Profile not set.")
+
         token_payload = dict(uuid=uuid, admin=admin)
-        return await self.client.post(
-            "/auth/token",
+        return httpx.Request(
+            "POST",
+            context.url("/auth/token"),
             json=token_payload,
-            headers=self.headers,
+            headers=context.headers,
         )
+
+__all__ = ("TokenRequests",)
+
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+    tokens = typerize(TokenRequests)
+    tokens()

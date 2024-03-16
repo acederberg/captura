@@ -1,39 +1,53 @@
 from typing import Optional
-from client.requests.grants import UserGrantRequests
 
 import httpx
+import rich
 import typer
 import yaml
 from app.models import ChildrenUser
 from client import flags
 from client.config import ProfileConfig
 from client.handlers import CONSOLE
-from client.requests.base import BaseRequest, params
+from client.requests.base import BaseRequest, ContextData, methodize, params
+from client.requests.grants import UserGrantRequests
+from fastapi import Request
 
 
 class DemoRequests(BaseRequest):
-    command = "demo"
-    commands = ("read", "create", "activate",)
+    typer_commands = dict(
+        read="req_read", 
+        create="req_create", 
+        activate="req_activate",
+    )
 
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         *,
         invitation_uuid: flags.FlagUUIDUserOptional = None,
         invitation_code: flags.FlagInvitationCodesOptional = None,
         invitation_email: flags.FlagInvitationEmailsOptional = None,
-    ) -> httpx.Response:
-        return await self.client.get(
-            "/users/extensions/demos",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            url=context.url("/users/extensions/demos"),
             params=params(
                 invitation_code=invitation_code,
                 invitation_uuid=invitation_uuid,
                 invitation_email=invitation_email,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def create(
-        self,
+    read = methodize(req_read, __func__=req_read.__func__)
+
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
         *,
         invitation_email: flags.FlagInvitationEmail,
         name: flags.FlagNameOptional,
@@ -42,62 +56,74 @@ class DemoRequests(BaseRequest):
         url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = True,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        json_data = dict(
-            name=name,
-            description=description,
-            url=url,
-            url_image=url_image,
-            public=public,
-        )
-        return await self.client.post(
-            "/users/extensions/demos",
-            json=json_data,
-            params=params(invitation_email=invitation_email,
-                          force=force),
-            headers=self.headers,
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url("/users/extensions/demos"),
+            json=dict(
+                name=name,
+                description=description,
+                url=url,
+                url_image=url_image,
+                public=public,
+            ),
+            params=params(invitation_email=invitation_email, force=force),
+            headers=context.headers,
         )
 
-    async def activate(
-        self,
+    create = methodize(req_read, __func__=req_read.__func__)
+
+    @classmethod
+    def req_activate(
+        cls,
+        _context: typer.Context,
         *,
         invitation_uuid: flags.ArgUUIDUser,
         invitation_code: flags.FlagInvitationCode,
         invitation_email: flags.FlagInvitationEmail,
-    ) -> httpx.Response:
-        return await self.client.patch(
-            f"/users/extensions/demos/{invitation_uuid}",
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "PATCH",
+            context.url(f"/users/extensions/demos/{invitation_uuid}"),
             params=dict(
                 invitation_uuid=invitation_uuid,
                 invitation_code=invitation_code,
                 invitation_email=invitation_email,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
+
+    activate = methodize(req_activate, __func__=req_activate.__func__)
 
 
 class UserRequests(BaseRequest):
-    command = "users"
-    commands = ("read", "search", "update", "create", "delete")
-    children = DemoRequests, UserGrantRequests,
-
-    async def search(
-        self,
+    @classmethod
+    def req_search(
+        cls,
+        _context: typer.Context,
+        uuid_user: flags.ArgUUIDUser,
+        *,
         child: flags.FlagChildrenUser = None,
-        uuid_user: Optional[str] = None,
         uuids: flags.FlagUUIDs = None,
         name_like: flags.FlagNameLike = None,
         description_like: flags.FlagDescriptionLike = None,
         limit: flags.FlagLimit = 10,
         include_public: flags.FlagIncludePublic = True,
-    ):
-        if uuid_user is None:
-            uuid_user = self.config.profile.uuid_user # type: ignore
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+
+        # 
+        # if uuid_user is None:
+        #     uuid_user = context.config.profile.uuid_user  # type: ignore
 
         child_name = child.name if child is not None else "users"
-        return await self.client.get(
-            f"/users/{uuid_user}/{child_name}",
-            headers=self.headers,
+        return httpx.Request(
+            "GET",
+            context.url(f"/users/{uuid_user}/{child_name}"),
+            headers=context.headers,
             params=params(
                 uuid=uuids,
                 limit=limit, 
@@ -107,24 +133,37 @@ class UserRequests(BaseRequest):
             ),
         )
 
-    async def read(
-        self,
+    search = methodize(req_search , __func__=req_search.__func__)
+
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser
-    ) -> httpx.Response:
-        return await self.client.get(
-            f"/users/{uuid_user}",
-            headers=self.headers,
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url(f"/users/{uuid_user}"),
+            headers=context.headers,
         )
 
-    async def update(
-        self,
+    read = methodize(req_read , __func__=req_read.__func__)
+
+    @classmethod
+    def req_update(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser,
+        *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
         url: flags.FlagUrlOptional = None,
         url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = None,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
         json = dict(
             name=name,
             description=description,
@@ -132,53 +171,105 @@ class UserRequests(BaseRequest):
             url_image=url_image,
             public=public,
         )
-        return await self.client.patch(
-            f"/users/{uuid_user}",
+        return httpx.Request(
+            "PATCH",
+            context.url(f"/users/{uuid_user}"),
             json=json,
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def create(
-        self,
+
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
         *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
         url: flags.FlagUrlOptional = None,
         url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = True,
-    ) -> httpx.Response:
-        json_data = dict(
-            name=name,
-            description=description,
-            url=url,
-            url_image=url_image,
-            public=public,
-        )
-        # if filepath is not None:
-        #     with open(filepath, "r") as file:
-        #         json_data_file = yaml.safe_load(file)
-        #     json_data_file.update(params)
-        #     json_data = json_data_file
+    ) -> httpx.Request:
 
-        return await self.client.post(
-            "/users",
-            json=json_data,
-            headers=self.headers,
-        )
+        # context = ContextData.resolve(_context)
+        # json_data = dict(
+        #     name=name,
+        #     description=description,
+        #     url=url,
+        #     url_image=url_image,
+        #     public=public,
+        # )
+        rich.print("[red]Not implemented.")
+        raise typer.Exit(1)
 
-    async def delete(
-        self,
+
+    @classmethod
+    def req_delete(
+        cls,
+        _context: typer.Context,
         uuid_user: flags.ArgUUIDUser,
+        *,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        return await self.client.delete(
-            f"/users/{uuid_user}",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "DELETE",
+            context.url(f"/users/{uuid_user}"),
             params=dict(
                 uuid_user=uuid_user,
                 force=force,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
+
+    typer_commands = dict(
+        read="req_read",
+        search="req_search",
+        update="req_update",
+        create="req_create",
+        delete="req_delete",
+    )
+    typer_children = {
+        "demos": DemoRequests, 
+        "grants": UserGrantRequests,
+    }
+
+    demos: DemoRequests
+    grants: UserGrantRequests
+    update = methodize(req_update, __func__=req_update.__func__) # type: ignore
+    create = methodize(req_create, __func__=req_create.__func__) # type: ignore 
+    delete = methodize(req_delete, __func__=req_delete.__func__) # type: ignore 
+
+    def __init__(self, context: ContextData, client: httpx.AsyncClient):
+        super().__init__(context, client)
+        self.demos = DemoRequests.spawn_from(self)
+        self.grants = UserGrantRequests.spawn_from(self)
+
+
+
 
 __all__ = ("UserRequests", "DemoRequests")
 
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+    users = typerize(UserRequests)
+    users()
+
+# from app.schemas import mwargs
+# from client.config import Config
+# from client.handlers import ConsoleHandler
+#
+#
+# async def main():
+#     context = ContextData(config=Config(), console_handler=mwargs(ConsoleHandler))
+#     async with httpx.AsyncClient() as client:
+#
+#         u = DemoRequests(context=context, client=client)
+#         res = await u.read()
+#         print("HERE", res)
+#
+# import asyncio
+#
+# asyncio.run(main())

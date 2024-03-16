@@ -3,102 +3,149 @@ from typing import Any, Dict
 import httpx
 import typer
 from client import flags
-from client.requests.base import BaseRequest
+from client.requests.base import BaseRequest, ContextData
 
 
 class CollectionAssignmentRequests(BaseRequest):
-    command = "assignments"
-    commands = ("read", "create", "delete")
+    typer_commands = dict(
+        read="req_read",
+        create="req_create",
+        delete="req_delete",
+    )
 
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
+        *,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
-    ) -> httpx.Response:
-        print("assign-collections-read", self.client)
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
         params: Dict[str, Any] = dict()
         if uuid_document:
             params.update(uuid_document=uuid_document)
-        return await self.client.get(
-            f"/assignments/collections/{uuid_collection}",
+        return httpx.Request(
+            "GET",
+            context.url(f"/assignments/collections/{uuid_collection}"),
             params=params,
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def delete(
-        self,
+    @classmethod
+    def req_delete(
+        cls,
+        _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
+        *,
         uuid_document: flags.FlagUUIDDocuments,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        return await self.client.delete(
-            f"/assignments/collections/{uuid_collection}",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "DELETE",
+            context.url(f"/assignments/collections/{uuid_collection}"),
             params=dict(uuid_document=uuid_document, force=force),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def create(
-        self,
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
+        *,
         uuid_document: flags.FlagUUIDDocuments,
-    ) -> httpx.Response:
-        return await self.client.post(
-            f"/assignments/collections/{uuid_collection}",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url(f"/assignments/collections/{uuid_collection}"),
             params=dict(uuid_document=uuid_document),
-            headers=self.headers,
+            headers=context.headers,
         )
 
 
 class DocumentAssignmentRequests(BaseRequest):
-    command = "assignments"
-    commands = ("read", "create", "delete")
+    typer_commands = dict(
+        read="req_read",
+        create="req_create",
+        delete="req_delete",
+    )
 
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         uuid_collection: flags.FlagUUIDCollectionsOptional = list(),
-    ) -> httpx.Response:
+    ) -> httpx.Request:
         params: Dict[str, Any] = dict()
         if uuid_collection:
             params.update(uuid_collection=uuid_collection)
-        return await self.client.get(
-            f"/assignments/documents/{uuid_document}",
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url(f"/assignments/documents/{uuid_document}"),
             params=params,
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def delete(
-        self,
+    @classmethod
+    def req_delete(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         uuid_collection: flags.FlagUUIDCollections,
         force: flags.FlagForce = False,
-    ) -> httpx.Response:
-        return await self.client.delete(
-            f"/assignments/documents/{uuid_document}",
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "DELETE",
+            context.url(f"/assignments/documents/{uuid_document}"),
             params=dict(uuid_collection=uuid_collection, force=force),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    async def create(
-        self,
+    @classmethod
+    def req_create(
+        cls,
+        _context: typer.Context,
         uuid_document: flags.ArgUUIDDocument,
+        *,
         uuid_collection: flags.FlagUUIDCollections,
-    ) -> httpx.Response:
-        return await self.client.post(
-            f"/assignments/documents/{uuid_document}",
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "POST",
+            context.url(f"/assignments/documents/{uuid_document}"),
             params=dict(uuid_collection=uuid_collection),
-            headers=self.headers,
+            headers=context.headers,
         )
 
 
-# class AssignmentRequests(BaseRequest):
-#     command = "assignments"
-#     children = (AssignmentCollectionRequests, AssignmentDocumentRequests)
-#
-#     collections: AssignmentCollectionRequests
-#     documents: AssignmentDocumentRequests
-#
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self.documents = AssignmentDocumentRequests.from_(self)
-#         self.collections = AssignmentCollectionRequests.from_(self)
+class AssignmentRequests(BaseRequest):
+    typer_children = dict(collections=CollectionAssignmentRequests, documents=DocumentAssignmentRequests,)
+
+    collections: CollectionAssignmentRequests
+    documents: DocumentAssignmentRequests
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.documents = DocumentAssignmentRequests.spawn_from(self)
+        self.collections = CollectionAssignmentRequests.spawn_from(self)
+
+
+__all__ = ("CollectionAssignmentRequests", "DocumentAssignmentRequests", "AssignmentRequests")
+
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+    assignments = typerize(AssignmentRequests)
+    assignments()

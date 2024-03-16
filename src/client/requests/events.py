@@ -2,118 +2,146 @@ from datetime import datetime
 
 import httpx
 import typer
-from app.models import KindObject, KindRecurse, Singular
+from app.models import Assignment, KindObject, KindRecurse, Singular
 from client import flags
 from client.flags import Output
 from client.handlers import CONSOLE, ConsoleHandler
-from client.requests.base import BaseRequest, params
+from client.requests.base import BaseRequest, ContextData, params
 
 __all__ = ("EventsRequests",)
 
 
 class EventsRequests(BaseRequest):
-    command = "events"
-    commands_check_verbage = False
-    commands = ("prune", "read", "search", "restore", "objects")
+    typer_check_verbage = False
+    typer_commands = dict(
+        prune="req_prune",
+        read="req_read",
+        search="req_search",
+        restore="req_restore",
+        objects="req_objects",
+    )
 
-    def callback(
-        self,
+    def req_callback(
+        cls,
         output: flags.FlagOutput = Output.yaml,
         columns: flags.FlagColumns = list(),
     ):
         """Specify request output format."""
-        self.output = output
+        cls.output = output
         if not columns:
             columns = ["api_origin", "timestamp", "uuid_root"]
             columns += ["uuid_parent", "uuid", "kind", "kind_obj"]
             columns += ["uuid_obj", "detail"]
-            self.columns = columns
+            cls.columns = columns
 
-        self.handler = ConsoleHandler(output=output, columns=columns, data=None)
+        cls.handler = ConsoleHandler(output=output, columns=columns, data=None)
 
-
-    async def prune(
-        self, 
+    @classmethod
+    def req_prune(
+        cls,
+        _context: typer.Context,
         kind_obj: flags.ArgKindObject,
         uuid_obj: flags.ArgUUIDEvent,
+        *,
         root: bool = False,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
         p = params(root=root)
         if kind_obj == KindObject.event:
-            return await self.client.delete(
-                f"/events/{uuid_obj}",
-                headers=self.headers,
-                params=p
+            return httpx.Request(
+                "DELETE", f"/events/{uuid_obj}", headers=context.headers, params=p
             )
-        return await self.client.delete(
-            f"/events/{Singular(kind_obj.name).name}/{uuid_obj}",
-            headers=self.headers,
+        return httpx.Request(
+            "DELETE",
+            context.url(f"/events/{Singular(kind_obj.name).name}/{uuid_obj}"),
+            headers=context.headers,
             params=p,
         )
 
-    async def read(
-        self,
+    @classmethod
+    def req_read(
+        cls,
+        _context: typer.Context,
         kind_obj: flags.ArgKindObject,
         uuid_obj: flags.ArgUUIDEvent,
+        *,
         root: bool = False,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
         if kind_obj == KindObject.event:
-            return await self.client.get(
-                f"/events/{uuid_obj}",
-                headers=self.headers,
+            return httpx.Request(
+                "GET",
+                context.url(f"/events/{uuid_obj}"),
+                headers=context.headers,
                 params=dict(root=root),
             )
 
         # NOTE: Across many controllers.
         kind_object_plural = Singular(kind_obj.name).name
-        return await self.client.get(
-            f"/{kind_object_plural}/{uuid_obj}/events",
+        return httpx.Request(
+            "GET",
+            context.url(f"/{kind_object_plural}/{uuid_obj}/events"),
             params=params(root=root),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-
-    async def search(
-        self,
-        # recurse: flags.FlagKindRecurse = KindRecurse.depth_firsut, 
+    @classmethod
+    def req_search(
+        cls,
+        # recurse: flags.FlagKindRecurse = KindRecurse.depth_firsut,
         # flatten: flags.FlagFlatten = True,
+        _context: typer.Context,
+        *,
         kind: flags.FlagKind = None,
         kind_obj: flags.FlagKindObjectOptional = None,
         uuid_obj: flags.FlagUUIDEventObjectOptional = None,
         uuid_event: flags.FlagUUIDEventsOptional = None,
         before: flags.FlagBefore = None,
         after: flags.FlagAfter = None,
-    ) -> httpx.Response:
-        res = await self.client.get(
-            "/events",
-            headers=self.headers,
-            params=(p:=params(
-                # flatten=flatten,
-                # recurse=recurse.value if recurse is not None else None,
-                before=datetime.timestamp(before) if before is not None else before,
-                after=datetime.timestamp(after) if after is not None else after,
-                uuid_event=uuid_event,
-                uuid_obj=uuid_obj,
-                kind=kind.value if kind is not None else None,
-                kind_obj=kind_obj.value if kind_obj is not None else None,
-            ))
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        res = httpx.Request(
+            "GET",
+            context.url("/events"),
+            headers=context.headers,
+            params=(
+                p := params(
+                    # flatten=flatten,
+                    # recurse=recurse.value if recurse is not None else None,
+                    before=datetime.timestamp(before) if before is not None else before,
+                    after=datetime.timestamp(after) if after is not None else after,
+                    uuid_event=uuid_event,
+                    uuid_obj=uuid_obj,
+                    kind=kind.value if kind is not None else None,
+                    kind_obj=kind_obj.value if kind_obj is not None else None,
+                )
+            ),
         )
         return res
 
-    async def restore(
-        self,
+    @classmethod
+    def req_restore(
+        cls,
+        _context: typer.Context,
+        *,
         uuid_object: flags.FlagUUIDEventObjectOptional = None,
         uuid_event: flags.FlagUUIDEventOptional = None,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
         res = None
         match [uuid_object is None, uuid_event is None]:
             case [True, False]:
-                res = await self.client.patch(
-                    f"/events/{uuid_event}/objects", headers=self.headers
+                res = httpx.Request(
+                    "PATCH",
+                    context.url(f"/events/{uuid_event}/objects"),
+                    headers=context.headers,
                 )
             case [False, True]:
-                res = await self.client.patch(
-                    f"/events/objects/{uuid_object}", headers=self.headers
+                res = httpx.Request(
+                    "PATCH",
+                    context.url(f"/events/objects/{uuid_object}"),
+                    headers=context.headers,
                 )
             case [True, True] | [False | False] | _:
                 CONSOLE.print(
@@ -124,65 +152,26 @@ class EventsRequests(BaseRequest):
 
         return res
 
-    async def objects(
-        self,
+    @classmethod
+    def req_objects(
+        cls,
+        _context: typer.Context,
+        *,
         uuid_event: flags.ArgUUIDEvent,
         root: bool = False,
-    ) -> httpx.Response:
+    ) -> httpx.Request:
 
-        return await self.client.get(
-            f"/events/{uuid_event}/objects",
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url(f"/events/{uuid_event}/objects"),
             params=params(root=root),
+            headers=context.headers,
         )
 
-    # async def ws_watch(
-    #     self,
-    #     watcher: Callable[
-    #         [websockets.WebSocketClientProtocol, Any],
-    #         Awaitable[None],
-    #     ],
-    #     flatten: flags.FlagFlatten = True,
-    #     kind: flags.FlagKind = None,
-    #     kind_obj: flags.FlagKindObject = None,
-    #     uuid_obj: flags.FlagUUIDEventObjectOptional = None,
-    #     recurse: flags.FlagKindRecurse = KindRecurse.depth_first,
-    # ) -> None:
-    #     url = f"{self.config.host}/events"
-    #     params = dict(
-    #         flatten=flatten,
-    #         kind=kind,
-    #         kind_obj=kind_obj,
-    #         uuid_obj=uuid_obj,
-    #         recurse=recurse,
-    #     )
-    #     async with websockets.connect(url) as websocket:
-    #         await websocket.send(params)
-    #
-    #         while res := await websocket.recv():
-    #             await watcher(websocket, res)
-    #
-    # async def cmd_watch(
-    #     self,
-    #     flatten: flags.FlagFlatten = True,
-    #     kind: flags.FlagKind = None,
-    #     kind_obj: flags.FlagKindObject = None,
-    #     uuid_obj: flags.FlagUUIDEventObjectOptional = None,
-    #     recurse: flags.FlagKindRecurse = KindRecurse.depth_first,
-    # ):
-    #     async def console_watcher(
-    #         websocket: websockets.WebSocketClientProtocol,
-    #         res: Any,
-    #     ) -> None:
-    #         CONSOLE.print("[green]===================================================")
-    #         CONSOLE.print(f"[green]Message Recv: {res}")
-    #         req = CONSOLE.input("[green]Message Sent: ")
-    #         await websocket.send(req)
-    #
-    #     params = dict(
-    #         flatten=flatten,
-    #         kind=kind,
-    #         kind_obj=kind_obj,
-    #         uuid_obj=uuid_obj,
-    #         recurse=recurse,
-    #     )
-    #     return self.ws_watch(console_watcher, *params)
+
+if __name__ == "__main__":
+    from client.requests.base import typerize
+    events = typerize(EventsRequests)
+    events()
+

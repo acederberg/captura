@@ -7,58 +7,88 @@ from client import flags
 # from client.apply import ApplyMixins, ApplyMode, ApplyState, apply
 from client.config import Config
 from client.handlers import Output
-from client.requests import Requests
-from client.requests.base import params
+from client.requests.assignments import AssignmentRequests
+from client.requests.base import BaseRequest, ContextData, params
+from client.requests.collections import CollectionRequests
+from client.requests.documents import DocumentRequests
+from client.requests.grants import GrantRequests
+from client.requests.tokens import TokenRequests
+from client.requests.users import UserRequests
 
 
-class It(Requests): 
+class It(BaseRequest):
 
-    commands_check_verbage = False
-    commands = ("routes", )
+    typer_check_verbage = False
+    typer_commands = dict(req_routes="routes")
+    typer_children = dict(
+        assignments=AssignmentRequests,
+        collections=CollectionRequests,
+        documents=DocumentRequests,
+        grants=GrantRequests,
+        users=UserRequests,
+        tokens=TokenRequests,
+    )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._state = None
+    assignments: AssignmentRequests
+    collections: CollectionRequests
+    documents: DocumentRequests
+    grants: GrantRequests
+    users: UserRequests
+    tokens: TokenRequests
 
-    async def routes(
-        self, 
+    def __init__(self, context: ContextData, client: httpx.AsyncClient):
+        super().__init__(context, client)
+        self.assignents = AssignmentRequests.spawn_from(self)
+        self.collections = CollectionRequests.spawn_from(self)
+        self.docuents = DocumentRequests.spawn_from(self)
+        self.grants = GrantRequests.spawn_from(self)
+        self.users = UserRequests.spawn_from(self)
+        self.tokens = TokenRequests.spawn_from(self)
+
+    @classmethod
+    def routes(
+        cls,
+        _context: typer.Context,
+        *,
         methods: Annotated[List[str] | None, typer.Option()] = None,
         names: Annotated[List[str] | None, typer.Option()] = None,
         names_fragment: Annotated[Optional[str], typer.Option] = None,
         paths_fragment: Annotated[Optional[str], typer.Option] = None,
-    ) -> httpx.Response:
-        return await self.client.get(
-            "/routes",
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        return httpx.Request(
+            "GET",
+            context.url("/routes"),
             params=params(
-                methods=methods, 
+                methods=methods,
                 names=names,
                 names_fragment=names_fragment,
                 paths_fragment=paths_fragment,
             ),
-            headers=self.headers,
+            headers=context.headers,
         )
 
-    def callback(
-        self,
-        output: flags.FlagOutput = Output.table,
-        columns: flags.FlagColumns = list(),
-        *,
-        profile: flags.FlagProfile = None,
-        host: flags.FlagHost = None,
-    ) -> None:
-        super().callback(output, columns, profile=profile, host=host)
-        assert self.handler is not None
-        self.handler.column_configs = {
-            "path": {"justify": "left", "style": typer.colors.CYAN},
-            "methods": {"justify": "left", "style": typer.colors.BRIGHT_CYAN},
-            "name": {"justify": "left", "style": typer.colors.CYAN},
-        }
-        self.handler.columns = ("path", "methods", "name", )
-        # self._state = ApplyState(
-        #     handler=self.handler,
-        #     mode=ApplyMode.apply,
-        #     requests=self,
-        # )
+    # def callback(
+    #     self,
+    #     output: flags.FlagOutput = Output.table,
+    #     columns: flags.FlagColumns = list(),
+    #     *,
+    #     profile: flags.FlagProfile = None,
+    #     host: flags.FlagHost = None,
+    # ) -> None:
+    #     super().callback(output, columns, profile=profile, host=host)
+    #     assert self.handler is not None
+    #     self.handler.column_configs = {
+    #         "path": {"justify": "left", "style": typer.colors.CYAN},
+    #         "methods": {"justify": "left", "style": typer.colors.BRIGHT_CYAN},
+    #         "name": {"justify": "left", "style": typer.colors.CYAN},
+    #     }
+    #     self.handler.columns = ("path", "methods", "name", )
+    # self._state = ApplyState(
+    #     handler=self.handler,
+    #     mode=ApplyMode.apply,
+    #     requests=self,
+    # )
 
     # def apply(
     #     self, filepath: flags.ArgFilePath, mode: ApplyMode = ApplyMode.read
@@ -86,13 +116,9 @@ class It(Requests):
 #
 
 
-def main(_config: Config | None = None):
-    config = _config or Config()  # type: ignore
+def main():
+    from client.requests.base import typerize
 
-    it = It(config=config)
-
-    typer = it.typer
-
-    # typer.command("apply")(it.apply)
-
-    typer()
+    it = typerize(It)
+    it()
+    it()
