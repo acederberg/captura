@@ -6,12 +6,12 @@ from app.models import Assignment, KindObject, KindRecurse, Singular
 from client import flags
 from client.flags import Output
 from client.handlers import CONSOLE, ConsoleHandler
-from client.requests.base import BaseRequest, ContextData, params
+from client.requests.base import BaseRequests, ContextData, params
 
 __all__ = ("EventsRequests",)
 
 
-class EventsRequests(BaseRequest):
+class EventsRequests(BaseRequests):
     typer_check_verbage = False
     typer_commands = dict(
         prune="req_prune",

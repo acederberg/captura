@@ -4,13 +4,13 @@ import httpx
 import typer
 from app.models import LevelStr
 from client import flags
-from client.requests.base import BaseRequest, ContextData, methodize, params
+from client.requests.base import BaseRequests, ContextData, methodize, params
 
 
 # NOTE: For management of document grants. Notice the duality between the
 #       command names. This will be put on document requests, so it will be
 #       used like `client documents grants ...`.
-class DocumentGrantRequests(BaseRequest):
+class DocumentGrantRequests(BaseRequests):
     @classmethod
     def req_read(
         cls,
@@ -98,7 +98,7 @@ class DocumentGrantRequests(BaseRequest):
     read = methodize(req_read, __func__=req_read.__func__) # type: ignore
 
 
-class UserGrantRequests(BaseRequest):
+class UserGrantRequests(BaseRequests):
 
     @classmethod
     def req_read(
@@ -194,7 +194,7 @@ class UserGrantRequests(BaseRequest):
     accept = methodize(req_accept , __func__=req_accept.__func__) # type: ignore
 
 
-class GrantRequests(BaseRequest):
+class GrantRequests(BaseRequests):
 
     typer_children = dict(
         documents=DocumentGrantRequests,

@@ -2,11 +2,11 @@ import httpx
 import typer
 from client import flags
 from client.requests.assignments import DocumentAssignmentRequests
-from client.requests.base import BaseRequest, ContextData, params
+from client.requests.base import BaseRequests, ContextData, params
 from client.requests.grants import DocumentGrantRequests
 
 
-class DocumentRequests(BaseRequest):
+class DocumentRequests(BaseRequests):
     typer_commands = dict(read="req_read",
          search="req_search",
          delete="req_delete",

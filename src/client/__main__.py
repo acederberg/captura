@@ -3,12 +3,8 @@ from typing import Annotated, List, Optional
 import httpx
 import typer
 
-from client import flags
-# from client.apply import ApplyMixins, ApplyMode, ApplyState, apply
-from client.config import Config
-from client.handlers import Output
 from client.requests.assignments import AssignmentRequests
-from client.requests.base import BaseRequest, ContextData, params
+from client.requests.base import BaseRequests, ContextData, params
 from client.requests.collections import CollectionRequests
 from client.requests.documents import DocumentRequests
 from client.requests.grants import GrantRequests
@@ -16,7 +12,7 @@ from client.requests.tokens import TokenRequests
 from client.requests.users import UserRequests
 
 
-class It(BaseRequest):
+class It(BaseRequests):
 
     typer_check_verbage = False
     typer_commands = dict(req_routes="routes")

@@ -6,12 +6,12 @@ from app.models import ChildrenCollection
 from client import flags
 from client.handlers import CONSOLE
 from client.requests.assignments import CollectionAssignmentRequests
-from client.requests.base import BaseRequest, ContextData, params
+from client.requests.base import BaseRequests, ContextData, params
 
 __all__ = ("CollectionRequests",)
 
 
-class CollectionRequests(BaseRequest):
+class CollectionRequests(BaseRequests):
     typer_commands = dict(
         read="req_read",
         create="req_create",

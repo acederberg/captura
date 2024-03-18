@@ -4,10 +4,10 @@ from client import flags
 from client.config import ProfileConfig
 from client.handlers import CONSOLE
 
-from .base import BaseRequest, ContextData, params
+from .base import BaseRequests, ContextData, params
 
 
-class TokenRequests(BaseRequest):
+class TokenRequests(BaseRequests):
 
     typer_commands = dict(
         read="req_read",

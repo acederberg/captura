@@ -3,10 +3,10 @@ from typing import Any, Dict
 import httpx
 import typer
 from client import flags
-from client.requests.base import BaseRequest, ContextData
+from client.requests.base import BaseRequests, ContextData
 
 
-class CollectionAssignmentRequests(BaseRequest):
+class CollectionAssignmentRequests(BaseRequests):
     typer_commands = dict(
         read="req_read",
         create="req_create",
@@ -69,7 +69,7 @@ class CollectionAssignmentRequests(BaseRequest):
         )
 
 
-class DocumentAssignmentRequests(BaseRequest):
+class DocumentAssignmentRequests(BaseRequests):
     typer_commands = dict(
         read="req_read",
         create="req_create",
@@ -130,7 +130,7 @@ class DocumentAssignmentRequests(BaseRequest):
         )
 
 
-class AssignmentRequests(BaseRequest):
+class AssignmentRequests(BaseRequests):
     typer_children = dict(collections=CollectionAssignmentRequests, documents=DocumentAssignmentRequests,)
 
     collections: CollectionAssignmentRequests

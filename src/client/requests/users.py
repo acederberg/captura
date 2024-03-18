@@ -8,12 +8,12 @@ from app.models import ChildrenUser
 from client import flags
 from client.config import ProfileConfig
 from client.handlers import CONSOLE
-from client.requests.base import BaseRequest, ContextData, methodize, params
+from client.requests.base import BaseRequests, ContextData, methodize, params
 from client.requests.grants import UserGrantRequests
 from fastapi import Request
 
 
-class DemoRequests(BaseRequest):
+class DemoRequests(BaseRequests):
     typer_commands = dict(
         read="req_read", 
         create="req_create", 
@@ -99,7 +99,7 @@ class DemoRequests(BaseRequest):
     activate = methodize(req_activate, __func__=req_activate.__func__)
 
 
-class UserRequests(BaseRequest):
+class UserRequests(BaseRequests):
     @classmethod
     def req_search(
         cls,
