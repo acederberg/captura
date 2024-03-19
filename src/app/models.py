@@ -2,9 +2,9 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import (Annotated, Callable, ClassVar, Collection, Dict, Generator,
-                    List, Literal, Self, Set, Tuple, TypeAlias, TypeVar,
-                    overload)
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
+                    Generator, List, Literal, Self, Set, Tuple, TypeAlias,
+                    TypeVar, overload)
 
 from fastapi import HTTPException
 from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
@@ -18,7 +18,14 @@ from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
-from app import __version__, util
+from app import __version__, fields, util
+from app.err import (ErrAccessDocument, ErrAccessEvent, ErrEventGeneral,
+                     ErrEventKind, ErrEventUndone, ErrObjMinSchema)
+from app.fields import (ChildrenAssignment, ChildrenCollection,
+                        ChildrenDocument, ChildrenGrant, ChildrenUser, Format,
+                        KindEvent, KindObject, KindRecurse, Level, LevelHTTP,
+                        LevelStr, PendingFrom, Plural, ResolvableLevel,
+                        Singular)
 
 # =========================================================================== #
 # CONSTANTS, ENUMS, ETC.
@@ -27,139 +34,7 @@ from app import __version__, util
 #       to create the types needed by fastapi and typer.
 #
 
-
 UUIDSplit = Tuple[Set[str], Set[str]]
-LENGTH_NAME: int = 96
-LENGTH_TITLE: int = 128
-LENGTH_DESCRIPTION: int = 256
-LENGTH_URL: int = 256
-LENGTH_MESSAGE: int = 1024
-LENGTH_CONTENT: int = 2**15
-LENGTH_FORMAT: int = 8
-
-
-class Level(enum.Enum):
-    # NOTE: Must be consisten with sql, indexes start at 1
-    view = 1
-    modify = 2
-    own = 3
-
-    @classmethod
-    def resolve(cls, v: "ResolvableLevel") -> "Level":
-
-        match v:
-            case LevelStr() as lvlstr:
-                return Level[lvlstr.name]
-            case Level() as self:
-                return self
-            case bad:
-                raise ValueError(f"Cannot resolve level for `{bad}`.")
-
-
-class LevelStr(str, enum.Enum):
-    view = "view"
-    modify = "modify"
-    own = "own"
-
-
-ResolvableLevel: TypeAlias = str | Level | LevelStr
-
-
-class LevelHTTP(enum.Enum):
-    DELETE = Level.own
-    PUT = Level.modify
-    POST = Level.modify
-    PATCH = Level.modify
-    GET = Level.view
-
-
-class Format(str, enum.Enum):
-    md = "md"
-    rst = "rst"
-    tEx = "tEx"
-    txt = "txt"
-    docs = "docs"
-
-
-class KindEvent(str, enum.Enum):
-    create = "create"
-    upsert = "upsert"
-    update = "update"
-    delete = "delete"
-    grant = "grant"
-    restore = "restore"
-
-
-class PendingFrom(str, enum.Enum):
-    created = 3
-    granter = 2
-    grantee = 1
-
-
-# NOTE: This maps table names to their corresponding API names. It is important
-#       to note that this uses singular names and not plural names.
-class KindObject(str, enum.Enum):
-    bulk = "bulk"
-    user = "users"
-    document = "documents"
-    collection = "collections"
-    edit = "edits"
-    event = "events"
-    assignment = "_assocs_collections_documents"
-    grant = "_assocs_users_documents"
-
-
-class Plural(str, enum.Enum):
-    user = "users"
-    document = "documents"
-    collection = "collections"
-    edit = "edits"
-    event = "events"
-    assignment = "assignments"
-    grant = "grants"
-
-
-class Singular(str, enum.Enum):
-    events = "event"
-    users = "user"
-    documents = "document"
-    collections = "collection"
-    edits = "edit"
-    assignments = "assignment"
-    grants = "grant"
-
-
-class KindRecurse(str, enum.Enum):
-    depth_first = "depth-first"
-    bredth_first = "bredth_first"
-
-
-class ChildrenUser(str, enum.Enum):
-    users = "users"
-    collections = "collections"
-    documents = "documents"
-    edits = "edits"
-
-
-class ChildrenCollection(str, enum.Enum):
-    documents = "documents"
-    edits = "edits"
-
-
-class ChildrenDocument(str, enum.Enum):
-    edits = "edits"
-
-
-class ChildrenAssignment(str, enum.Enum):
-    documents = "documents"
-    collections = "collections"
-
-
-class ChildrenGrant(str, enum.Enum):
-    documents = "documents"
-    users = "users"
-
-
 # NOTE: Indexing is important as it is how the front end will get most data.
 #       This is done to keep relationships opaque (by keeping the primary keys
 #       out of the users views) and to avoid having to specify multiple primary
@@ -204,14 +79,19 @@ class Base(DeclarativeBase):
 
     @classmethod
     def if_exists(
-        cls, session: Session, uuid: str, status: int = 404, msg=None
+        cls, session: Session, uuid: str
+        #status: int = 404, msg=None
     ) -> Self:
+
         m = session.execute(select(cls).where(cls.uuid == uuid)).scalar()
         if m is None:
-            msg = msg if msg is not None else "Object does not exist."
-            kind = KindObject(cls.__tablename__).name
-            detail = dict(uuid_obj=uuid, msg=msg, kind_obj=kind)
-            raise HTTPException(status, detail=detail)
+            err = ErrObjMinSchema.httpexception(
+                "_msg_dne",
+                404,
+                uuid_obj=uuid, 
+                kind_obj=KindObject(cls.__tablename__)
+            )
+            raise err
         return m
 
     @classmethod
@@ -316,16 +196,17 @@ class Base(DeclarativeBase):
 
     def check_not_deleted(
         self,
-        status_code: int = 410,
+        # status_code: int = 410,
         # deleted: bool = True,
     ) -> Self:
         if self.deleted:
-            detail = dict(
-                msg="Object is deleted.",
+            err = ErrObjMinSchema.httpexception(
+                "_msg_deleted",
+                410,
                 uuid_obj=self.uuid,
                 kind_obj=KindObject(self.__tablename__).name,
             )
-            raise HTTPException(status_code, detail=detail)
+            raise err
         return self
 
 
@@ -482,7 +363,7 @@ class Event(Base):
     kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))
     kind_obj: Mapped[KindObject] = mapped_column(Enum(KindObject))
     detail: Mapped[str | None] = mapped_column(
-        String(LENGTH_DESCRIPTION), nullable=True
+        String(fields.LENGTH_DESCRIPTION), nullable=True
     )
 
     def update(
@@ -640,27 +521,33 @@ class Event(Base):
     def check_kind(
         self, kind: KindEvent | None = None, kind_obj: KindObject | None = None
     ) -> Self:
-        detail = dict(uuid_event=self.uuid)
-        fmt = "Expected event of kind `{}`."
         if kind is not None and self.kind != kind:
-            msg = fmt.format(kind.name)
-            detail.update(kind_event=self.kind, kind_expected=kind, msg=msg)
-            raise HTTPException(400, detail=detail)
+            raise ErrEventKind.httpexception(
+                "_msg_kind_obj",
+                400,
+                kind_event=self.kind,
+                kind_expected=kind,
+                uuid_event=self.uuid
+            )
         if kind_obj is not None and self.kind_obj != kind_obj:
-            msg = fmt.format(kind_obj.name)
-            detail.update(
+            raise ErrEventKind.httpexception(
+                "_msg_kind_event",
+                400,
                 kind_obj_event=self.kind_obj,
                 kind_obj_expected=kind_obj,
-                msg=fmt.format(kind_obj.name),
+                uuid_event=self.uuid
             )
-            raise HTTPException(400, detail=detail)
         return self
 
     def check_not_undone(self):
         if self.uuid_undo is not None:
-            msg = "Cannot undo event that has already been undone."
-            detail = dict(uuid_event=self.uuid, uuid_undo=self.uuid_undo, detail=msg)
-            raise HTTPException(400, detail=detail)
+            err = ErrEventUndone.httpexception(
+                "_msg_undone",
+                400,
+                uuid_event=self.uuid,
+                uuid_event_undo=self.uuid_undo,
+            )
+            raise err
         return self
 
     def find_root(self, session: Session | None = None) -> "Event":
@@ -672,9 +559,7 @@ class Event(Base):
             select(Event).where(Event.uuid == self.uuid_parent),
         ).scalar()
         if next_ is None:
-            msg = "Could not find parent event. Inconcievable!"
-            detail = dict(uuid_event=self.uuid, msg=msg)
-            raise HTTPException(418, detail=detail)
+            raise ErrEventGeneral.httpexception("_msg_undone", 400, uuid_event=self.uuid,)
 
         return next_
 
@@ -877,10 +762,10 @@ class User(SearchableTableMixins, Base):
         primary_key=True,
         autoincrement=True,
     )
-    name: Mapped[str] = mapped_column(String(LENGTH_NAME), unique=True)
-    description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
-    url_image: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
-    url: Mapped[str] = mapped_column(String(LENGTH_URL), nullable=True)
+    name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME), unique=True)
+    description: Mapped[str] = mapped_column(String(fields.LENGTH_DESCRIPTION))
+    url_image: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
+    url: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
     admin: Mapped[bool] = mapped_column(default=False)
 
     # NOTE: This will be used to implement use by invitation for users. More or
@@ -1108,17 +993,8 @@ class User(SearchableTableMixins, Base):
     # Chainables for endpoints.
 
     # NOTE: Chainable methods should be prefixed with `check_`.
-    def check_can_access_collection(self, collection: "Collection") -> Self:
-        if not collection.public and collection.id_user != self.id:
-            raise HTTPException(
-                403,
-                detail=dict(
-                    msg="Cannot access private collection.",
-                    uuid_user=self.uuid,
-                    uuid_collection=collection.uuid,
-                ),
-            )
-        return self
+    # def check_can_access_collection(self, collection: "Collection") -> Self:
+        # return self
 
     def check_can_access_document(
         self,
@@ -1154,14 +1030,15 @@ class User(SearchableTableMixins, Base):
         res = session.execute(q).scalars()
         assocs: List[AssocUserDocument] = list(res)
 
-        detail = dict(uuid_user=self.uuid, uuid_document=document.uuid)
+        detail: Dict[str, Any] = dict(uuid_user=self.uuid, uuid_document=document.uuid)
         match assocs:
             case []:
-                detail.update(
-                    msg="Grant does not exist.",
+                raise ErrAccessDocument.httpexception(
+                    "_msg_grant_dne",
+                    403,
                     level=level.name,
+                    **detail,
                 )
-                raise HTTPException(403, detail=detail)
             case [
                 Grant(deleted=False, pending=True, pending_from=pending_from) as grant
             ] if not pending:
@@ -1208,9 +1085,12 @@ class User(SearchableTableMixins, Base):
 
     def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
         if self.uuid != event.uuid_user:
-            detail = dict(uuid_event=event.uuid, uuid_user=self.uuid)
-            detail.update(msg="User cannot access event.")
-            raise HTTPException(status_code, detail=detail)
+            raise ErrAccessEvent.httpexception(
+                "_msg_not_owner",
+                403,
+                uuid_event=event.uuid,
+                uuid_user=self.uuid
+            )
 
         return self
 
@@ -1220,9 +1100,9 @@ class Collection(SearchableTableMixins, Base):
 
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(LENGTH_NAME))
+    name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
     description: Mapped[str] = mapped_column(
-        String(LENGTH_DESCRIPTION),
+        String(fields.LENGTH_DESCRIPTION),
         nullable=True,
     )
 
@@ -1316,9 +1196,9 @@ class Document(SearchableTableMixins, Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(LENGTH_NAME))
-    description: Mapped[str] = mapped_column(String(LENGTH_DESCRIPTION))
-    content: Mapped[str] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
+    name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
+    description: Mapped[str] = mapped_column(String(fields.LENGTH_DESCRIPTION))
+    content: Mapped[str] = mapped_column(mysql.BLOB(fields.LENGTH_CONTENT))
     format: Mapped[Format] = mapped_column(Enum(Format))
 
     edits: Mapped[List["Edit"]] = relationship(
@@ -1575,8 +1455,8 @@ class Edit(PrimaryTableMixins, Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     id_document: Mapped[int] = mapped_column(ForeignKey("documents.id"))
-    content: Mapped[int] = mapped_column(mysql.BLOB(LENGTH_CONTENT))
-    message: Mapped[str] = mapped_column(String(LENGTH_MESSAGE), nullable=True)
+    content: Mapped[int] = mapped_column(mysql.BLOB(fields.LENGTH_CONTENT))
+    message: Mapped[str] = mapped_column(String(fields.LENGTH_MESSAGE), nullable=True)
 
     user: Mapped[User] = relationship(
         primaryjoin="User.id==Edit.id_user",

@@ -1,7 +1,7 @@
 from typing import Annotated, Literal, Optional, Set, TypeAlias
 
-from app.models import KindEvent, KindObject, KindRecurse, LevelStr
-from app.schemas import Level
+# from app.fields import FieldLevel, KindEvent, KindObject, KindRecurse, LevelStr
+from app import fields
 from fastapi import Path, Query
 
 PathUUIDUser: TypeAlias = Annotated[str, Path(description="User uuids.")]
@@ -9,7 +9,7 @@ PathUUIDCollection: TypeAlias = Annotated[str, Path(description="Collection uuid
 PathUUIDDocument: TypeAlias = Annotated[str, Path(description="Document uuids.")]
 PathUUIDEvent: TypeAlias = Annotated[str, Path(description="Event uuids.")]
 PathUUIDObj: TypeAlias = Annotated[str, Path(description="Object uuids.")]
-PathKindObj: TypeAlias = Annotated[KindObject, Path(description="Object kind.")]
+PathKindObj: TypeAlias = Annotated[fields.FieldKindEvent, Path(description="Object kind.")]
 
 # --------------------------------------------------------------------------- #
 
@@ -72,5 +72,5 @@ QueryUUIDEditOptional: TypeAlias = Annotated[
 QueryForce: TypeAlias = Annotated[
     bool, Query(description="When true, objects cannot be restored.")
 ]
-QueryLevel: TypeAlias = Annotated[LevelStr, Query()]
-QueryLevelOptional: TypeAlias = Annotated[LevelStr | None, Query()]
+QueryLevel: TypeAlias = Annotated[fields.LevelStr, Query()]
+QueryLevelOptional: TypeAlias = Annotated[fields.LevelStr | None, Query()]

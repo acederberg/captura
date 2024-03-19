@@ -135,10 +135,11 @@ class CollectionRequests(BaseRequests):
             public=public,
             uuid_user=uuid_user,
         )
+        print(data)
         context = ContextData.resolve(_context)
         return httpx.Request(
             "PATCH",
-            f"/collections/{uuid_collection}",
+            context.url(f"/collections/{uuid_collection}"),
             json=data,
             headers=context.headers,
         )

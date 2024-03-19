@@ -6,11 +6,11 @@ from app.controllers.base import (Data, ResolvedDocument,
                                   ResolvedUser)
 from app.depends import (DependsAccess, DependsCreate, DependsDelete,
                          DependsSessionMaker, DependsToken, DependsUpdate)
+from app.err import (ErrAccessDocument, ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessUser, ErrDetail)
 from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
                         KindObject, Level, LevelStr, User)
-from app.schemas import (AsOutput, ErrAccessCannotRejectOwner,
-                         ErrAccessDocument, ErrAccessUser, ErrDetail,
-                         EventSchema, GrantCreateSchema, GrantSchema,
+from app.schemas import (AsOutput, EventSchema, GrantCreateSchema, GrantSchema,
                          OutputWithEvents, mwargs)
 from app.views import args
 from app.views.base import (BaseView, OpenApiResponseCommon,
@@ -33,7 +33,7 @@ class DocumentGrantView(BaseView):
             responses={
                 403: dict(
                     description="Cannot revoke grants of other owners.",
-                    model=ErrDetail[ErrAccessCannotRejectOwner],
+                    model=ErrDetail[ErrAccessDocumentCannotRejectOwner],
                 )
             },
         ),

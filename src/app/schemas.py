@@ -1,21 +1,22 @@
 """Note: None of these schemas should include ``id`` fields. Instead they 
-should return UUID fields. This is done because, by design, the UUIDS of 
+should return err.UUID fields. This is done because, by design, the err.UUIDS of 
 objects must known if they are to be got. Take for instance the following flow:
 
-1. The ``GET /user`` endpoint gets a users UUID from their JWT. The uuid is 
+1. The ``GET /user`` endpoint gets a users err.UUID from their JWT. The uuid is 
     sent in the response.
 2. The ``GET /user/collections`` endpoint returns the collections for the user 
    returned from the above request.
 3. The ``GET /collections/<collection_id>/documents`` endpoint can be used to 
-   get some UUIDs to make queries to the document collection.
+   get some err.UUIDs to make queries to the document collection.
 
-From a mathmatical standpoint, this is 'good enough' because UUIDs should map
+From a mathmatical standpoint, this is 'good enough' because err.UUIDs should map
 uniquely to a corresponding database row (further, for tables with multiple 
 foreign keys it is not necessary to specify multiple values).
 """
 
 import enum
 import secrets
+from dataclasses import field
 from datetime import datetime, timedelta
 from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
                     Optional, Self, Set, Type, TypeAlias, TypeVar)
@@ -26,152 +27,10 @@ from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
                       model_validator)
 from pydantic_core.core_schema import FieldValidationInfo
 
-from app import models
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_URL)
+from app import fields
 from app.util import check_enum_opt_attr
 
 # --------------------------------------------------------------------------- #
-
-UUID = Annotated[
-    str,
-    _FieldUUID := Field(
-        min_length=4,
-        max_length=16,
-        description="Universally unique identifier for an object.",
-        examples=[secrets.token_urlsafe(8) for _ in range(10)],
-    ),
-]
-UUIDOptional = Annotated[str | None, _FieldUUID]
-
-UnixTimestamp = Annotated[
-    None | int,
-    Field(
-        description="Unix timestamp.",
-        examples=[int(datetime.now().timestamp())],
-    ),
-]
-UnixTimestampOptional: TypeAlias = Annotated[
-    datetime | None,
-    Field(
-        default=None,
-        description="Optional unix timestamp.",
-    ),
-]
-
-Name = Annotated[
-    str,
-    Field(
-        min_length=1,
-        max_length=LENGTH_NAME,
-        description="Object name.",
-        examples=["New Mexican Recipes", "Trails", "Software"],
-    ),
-]
-Description = Annotated[
-    str,
-    Field(
-        min_length=1,
-        max_length=LENGTH_DESCRIPTION,
-        description="Object description",
-        examples=["This is a document/user/collection description."],
-    ),
-]
-Url = Annotated[
-    str | None,
-    Field(
-        min_length=8,
-        max_length=LENGTH_URL,
-        description="User url.",
-        examples=["https://github.com/acederberg"],
-    ),
-]
-Content = Annotated[
-    str,
-    Field(
-        max_length=LENGTH_CONTENT,
-        description="Document content.",
-        examples=[
-            "orem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
-        ],
-    ),
-]
-Format = Annotated[
-    models.Format,
-    Field(default=models.Format.md, description="Document format."),
-]
-Message = Annotated[
-    str,
-    Field(
-        min_length=0,
-        max_length=LENGTH_MESSAGE,
-        description="Edit message.",
-        examples=["The following changes were made to the document: ..."],
-    ),
-]
-UUIDS = Annotated[
-    Set[str] | None,
-    Field(
-        default=None,
-        description="UUIDs to filter with.",
-        examples=[set(secrets.token_urlsafe() for _ in range(25))],
-    ),
-]
-ID = Annotated[int, Field(description="Primary key(s) for tables.")]
-
-Pending = Annotated[
-    bool,
-    Field(description="Grant awaiting approval (or not)."),
-]
-PendingFrom = Annotated[
-    models.PendingFrom,
-    Field(description="Grant initiator."),
-]
-Deleted = Annotated[
-    bool,
-    Field(description="Object pending deletion or not."),
-]
-Detail = Annotated[
-    str | None,
-    Field(default=None, description="Event detail."),
-]
-LimitOptional: TypeAlias = Annotated[int | None, Field(default=None)]
-NameLike = Annotated[
-    str | None,
-    Field(
-        description="Search objects for a name like this.",
-        examples=["foobar", "billy mays"],
-        default=None,
-    ),
-]
-DescriptionLike = Annotated[
-    str | None,
-    Field(
-        description="Search objects for a description like this.",
-        examples=["dolor sit amit,"],
-        default=None,
-    ),
-]
-Level = Annotated[models.Level, Field(description="Access level for grant.")]
-KindEvent = Annotated[
-    models.KindEvent | None,
-    Field(
-        default=None,
-        description="Event opperation tag.",
-    ),
-]
-KindObject = Annotated[
-    models.KindObject | None,
-    Field(
-        default=None,
-        description="Target object type. Often this is the name of corresponding table.",
-        examples=[
-            models.KindObject.user,
-            models.KindObject.collection,
-            models.KindObject.document,
-        ],
-    ),
-]
 
 
 # NOTE: Could use partials but I like this pattern more.
@@ -208,7 +67,7 @@ class KindNesting(str, enum.Enum):
 
 class Registry:
 
-    schemas: Dict[KindObject, Dict[KindSchema, Type["BaseSchema"]]]
+    schemas: Dict[fields.FieldKindObject, Dict[KindSchema, Type["BaseSchema"]]]
 
     def __init__(self):
         self.schemas = dict()
@@ -230,7 +89,7 @@ class Registry:
 
         schemas_for_kind[kind_schema] = schema
 
-    def get(self, kind: KindObject, kind_schema: KindSchema) -> "BaseSchema":
+    def get(self, kind: fields.KindObject, kind_schema: KindSchema,) -> "Type[BaseSchema]":
         schemas = self.schemas
         if (schemas_for_kind := schemas.get(kind)) is None:
             raise ValueError(f"No schemas for kind `{kind.name}`.")
@@ -248,7 +107,7 @@ class BaseSchema(BaseModel):
     model_config = ConfigDict(use_enum_values=False, from_attributes=True)
 
     # NOT FIELDS SINCE THEY ARE CONSTANT. METADATA FOR CONSUMERS!
-    kind_mapped: ClassVar[models.KindObject]
+    kind_mapped: ClassVar[fields.FieldKindObject]
     kind_schema: ClassVar[KindSchema]
     registry: ClassVar[Registry] = registry
 
@@ -256,19 +115,19 @@ class BaseSchema(BaseModel):
         if "Base" in cls.__name__:
             return
 
-        check_enum_opt_attr(cls, "kind_mapped", models.KindObject)
+        check_enum_opt_attr(cls, "kind_mapped", fields.KindObject)
         check_enum_opt_attr(cls, "kind_schema", KindSchema)
         registry.add(cls)
 
 
 class BaseSearchSchema(BaseSchema):
-    kind_mapped: ClassVar[models.KindObject]
+    kind_mapped: ClassVar[fields.FieldKindObject]
     kind_schema: ClassVar[KindSchema]
 
-    uuid: UUIDOptional = None
-    limit: LimitOptional
-    name_like: NameLike
-    description_like: DescriptionLike
+    uuid: fields.FieldUUIDOptional = None
+    limit: fields.FieldLimitOptional
+    name_like: fields.FieldNameLike
+    description_like: fields.FieldDescriptionLike
     include_public: Annotated[bool, Field(default=True)]
 
 
@@ -278,7 +137,7 @@ class BaseUpdateSchema(BaseSchema):
     will have to be explicit.
     """
 
-    kind_mapped: ClassVar[models.KindObject]
+    kind_mapped: ClassVar[fields.FieldKindObject]
     kind_schema: ClassVar[KindSchema]
 
     @model_validator(mode="after")
@@ -299,8 +158,8 @@ class BaseSecondarySchema(BaseSchema): ...
 
 class BasePrimaryTableExtraSchema(BaseSchema):
 
-    id: ID
-    deleted: Deleted
+    id: fields.FieldID
+    deleted: fields.FieldDeleted
 
 
 # --------------------------------------------------------------------------- #
@@ -308,12 +167,12 @@ class BasePrimaryTableExtraSchema(BaseSchema):
 
 class UserBaseSchema(BasePrimarySchema):
     # _mapped_class = User
-    kind_mapped = models.KindObject.user
+    kind_mapped = fields.KindObject.user
 
-    name: Name
-    description: Description
-    url_image: Url
-    url: Url
+    name: fields.FieldName
+    description: fields.FieldDescription
+    url_image: fields.FieldUrl
+    url: fields.FieldUrl
 
 
 class UserCreateSchema(UserBaseSchema):
@@ -321,20 +180,20 @@ class UserCreateSchema(UserBaseSchema):
 
 
 class UserUpdateSchema(BaseUpdateSchema):
-    kind_mapped = models.KindObject.user
+    kind_mapped = fields.KindObject.user
     kind_schema = KindSchema.update
 
     # NOTE: `url_image` and `url` already optional.
-    name: Optional[Name] = None
-    description: Optional[Description] = None
-    url_image: Url = None
-    url: Url = None
+    name: Optional[fields.FieldName] = None
+    description: Optional[fields.FieldDescription] = None
+    url_image: fields.FieldUrl = None
+    url: fields.FieldUrl = None
 
 
 class UserSchema(UserBaseSchema):
     kind_schema = KindSchema.default
 
-    uuid: UUID
+    uuid: fields.FieldUUID
 
 
 class UserExtraSchema(BasePrimaryTableExtraSchema, UserSchema):
@@ -371,7 +230,7 @@ class UserExtraSchema(BasePrimaryTableExtraSchema, UserSchema):
 
 
 class UserSearchSchema(BaseSearchSchema):
-    kind_mapped = models.KindObject.user
+    kind_mapped = fields.KindObject.user
     kind_schema = KindSchema.search
 
 
@@ -380,10 +239,10 @@ class UserSearchSchema(BaseSearchSchema):
 
 
 class CollectionBaseSchema(BasePrimarySchema):
-    kind_mapped = models.KindObject.collection
+    kind_mapped = fields.KindObject.collection
 
-    name: Name
-    description: Description
+    name: fields.FieldName
+    description: fields.FieldDescription
 
 
 class CollectionCreateSchema(CollectionBaseSchema):
@@ -391,18 +250,18 @@ class CollectionCreateSchema(CollectionBaseSchema):
 
 
 class CollectionUpdateSchema(BaseUpdateSchema):
-    kind_mapped = models.KindObject.collection
+    kind_mapped = fields.KindObject.collection
     kind_schema = KindSchema.update
 
-    uuid_user: Optional[UUID] = None
-    name: Optional[Name] = None
-    description: Optional[Description] = None
+    uuid_user: Optional[fields.FieldUUID] = None
+    name: Optional[fields.FieldName] = None
+    description: Optional[fields.FieldDescription] = None
 
 
 class CollectionMetadataSchema(CollectionBaseSchema):
     kind_schema = KindSchema.metadata
-    uuid_user: UUID
-    uuid: UUID
+    uuid_user: fields.FieldUUID
+    uuid: fields.FieldUUID
 
 
 class CollectionSchema(CollectionMetadataSchema):
@@ -415,9 +274,9 @@ class CollectionExtraSchema(BasePrimaryTableExtraSchema, CollectionSchema):
 
 class CollectionSearchSchema(BaseSearchSchema):
     kind_schema = KindSchema.search
-    kind_mapped = models.KindObject.collection
+    kind_mapped = fields.KindObject.collection
 
-    uuid_collection: UUIDS
+    uuid_collection: fields.FieldUUIDS
 
 
 # =========================================================================== #
@@ -425,7 +284,7 @@ class CollectionSearchSchema(BaseSearchSchema):
 
 
 class AssignmentBaseSchema(BaseSecondarySchema):
-    kind_mapped = models.KindObject.assignment
+    kind_mapped = fields.KindObject.assignment
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED. MOST FIELDS NOT UPDATABLE
@@ -436,17 +295,17 @@ class AssignmentCreateSchema(AssignmentBaseSchema):
 class AssignmentSchema(AssignmentBaseSchema):
     kind_schema = KindSchema.default
 
-    uuid: UUID
-    uuid_collection: UUID
-    uuid_document: UUID
+    uuid: fields.FieldUUID
+    uuid_collection: fields.FieldUUID
+    uuid_document: fields.FieldUUID
 
 
 class AssignmentExtraSchema(AssignmentSchema):
     kind_schema = KindSchema.extra
 
-    deleted: Deleted
-    id_collection: ID
-    id_document: ID
+    deleted: fields.FieldDeleted
+    id_collection: fields.FieldID
+    id_document: fields.FieldID
 
 
 # =========================================================================== #
@@ -454,30 +313,30 @@ class AssignmentExtraSchema(AssignmentSchema):
 
 
 class DocumentBaseSchema(BasePrimarySchema):
-    kind_mapped = models.KindObject.document
+    kind_mapped = fields.KindObject.document
 
-    name: Name
-    description: Description
-    format: Format
+    name: fields.FieldName
+    description: fields.FieldDescription
+    format: fields.FieldFormat
 
 
 class DocumentCreateSchema(DocumentBaseSchema):
     kind_schema = KindSchema.create
 
-    content: Content
-    # uuid_collection: UUIDS
-    # uuid_user: UUIDS
+    content: fields.FieldContent
+    # uuid_collection: fields.FieldUUIDS
+    # uuid_user: fields.FieldUUIDS
 
 
 class DocumentUpdateSchema(BaseUpdateSchema):
-    kind_mapped = models.KindObject.document
+    kind_mapped = fields.KindObject.document
     kind_schema = KindSchema.update
 
-    name: Optional[Name] = None
-    description: Optional[Description] = None
-    format: Optional[Format] = None
-    content: Optional[Content] = None
-    message: Optional[Message] = None
+    name: Optional[fields.FieldName] = None
+    description: Optional[fields.FieldDescription] = None
+    format: Optional[fields.FieldFormat] = None
+    content: Optional[fields.FieldContent] = None
+    message: Optional[fields.FieldMessage] = None
 
     @field_validator("content", mode="before")
     def check_message_only_when_content(
@@ -501,13 +360,13 @@ class DocumentUpdateSchema(BaseUpdateSchema):
 class DocumentMetadataSchema(DocumentBaseSchema):
     kind_schema = KindSchema.metadata
 
-    uuid: UUID
+    uuid: fields.FieldUUID
 
 
 class DocumentSchema(DocumentMetadataSchema):
     kind_schema = KindSchema.default
 
-    content: Content
+    content: fields.FieldContent
     public: bool = True
 
 
@@ -516,17 +375,17 @@ class DocumentExtraSchema(BasePrimaryTableExtraSchema, DocumentSchema):
 
 
 class DocumentSearchSchema(BaseSearchSchema):
-    kind_mapped = models.KindObject.document
+    kind_mapped = fields.KindObject.document
     kind_schema = KindSchema.search
 
-    uuid_document: UUIDS
+    uuid_document: fields.FieldUUIDS
 
 
 class TimespanLimitParams(BaseModel):
 
-    limit: LimitOptional
-    before: UnixTimestampOptional
-    after: UnixTimestampOptional
+    limit: fields.FieldLimitOptional
+    before: fields.FieldUnixTimestampOptional
+    after: fields.FieldUnixTimestampOptional
 
     @computed_field
     @property
@@ -557,33 +416,28 @@ class TimespanLimitParams(BaseModel):
 # Grants
 
 
-Pending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
-PendingFrom: TypeAlias = Annotated[
-    models.PendingFrom, Field(description="Grant pending origin.")
-]
-
 
 class GrantBaseSchema(BaseSecondarySchema):
-    kind_mapped = models.KindObject.grant
+    kind_mapped = fields.KindObject.grant
 
     # NOTE: `uuid_document` is not included here because this is only used in
     #       `POST /grants/users/<uuid>`.
-    level: Level
+    level: fields.FieldLevel
 
     @field_validator("level", mode="before")
-    def validate_level(cls, v) -> None | models.Level:
+    def validate_level(cls, v) -> None | fields.FieldLevel:
         match v:
             case int() as level_value:
-                return models.Level._value2member_map_.get(level_value)
+                return fields.FieldLevel._value2member_map_.get(level_value)
             case str() as level_name:
-                return models.Level[level_name]
-            case models.LevelStr() as levelstr:
-                return models.Level(levelstr.name)
+                return fields.FieldLevel[level_name]
+            case fields.LevelStr() as levelstr:
+                return fields.FieldLevel(levelstr.name)
             case _:
                 return v
 
     @field_serializer("level")
-    def enum_as_name(item: enum.Enum):
+    def enum_as_name(item: enum.Enum): # type: ignore
         return item.name
 
 
@@ -596,29 +450,29 @@ class GrantSchema(GrantBaseSchema):
     kind_schema = KindSchema.default
 
     # Useful
-    uuid: UUID
-    uuid_document: UUID
-    uuid_user: UUID
-    pending: Pending
-    pending_from: PendingFrom
+    uuid: fields.FieldUUID
+    uuid_document: fields.FieldUUID
+    uuid_user: fields.FieldUUID
+    pending: fields.FieldPending
+    pending_from: fields.FieldPendingFrom
 
     @field_serializer("level", "pending_from")
-    def enum_as_name(item: enum.Enum):
+    def enum_as_name(item: enum.Enum): # type: ignore
         return item.name
 
     # Metadata
-    uuid_parent: Optional[UUID] = None
-    uuid_user_granter: Optional[UUID] = None  # should it reeally be optional
+    uuid_parent: Optional[fields.FieldUUID] = None
+    uuid_user_granter: Optional[fields.FieldUUID] = None  # should it reeally be optional
 
 
 class GrantExtraSchema(GrantSchema):
     kind_schema = KindSchema.extra
 
-    deleted: Deleted
-    id_document: ID
-    id_user: ID
-    pending: Pending
-    pending_from: PendingFrom
+    deleted: fields.FieldDeleted
+    id_document: fields.FieldID
+    id_user: fields.FieldID
+    pending: fields.FieldPending
+    pending_from: fields.FieldPendingFrom
 
     children: Annotated["List[GrantExtraSchema]", Field()]
 
@@ -628,10 +482,10 @@ class GrantExtraSchema(GrantSchema):
 
 
 class EditBaseSchema(BaseSchema):
-    kind_mapped = models.KindObject.edit
+    kind_mapped = fields.KindObject.edit
 
-    content: Content
-    message: Message
+    content: fields.FieldContent
+    message: fields.FieldMessage
 
 
 # NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED.
@@ -646,17 +500,17 @@ class EditMetadataSchema(EditBaseSchema):
 class EditSchema(EditMetadataSchema):
     kind_schema = KindSchema.default
 
-    uuid_document: UUID
+    uuid_document: fields.FieldUUID
 
 
 class EditExtraSchema(BasePrimaryTableExtraSchema, EditSchema):
     kind_schema = KindSchema.extra
 
-    id_document: ID
+    id_document: fields.FieldID
 
 
 class EditSearchSchema(BaseSearchSchema):
-    kind_mapped = models.KindObject.edit
+    kind_mapped = fields.KindObject.edit
     kind_schema = KindSchema.search
 
 
@@ -665,18 +519,18 @@ class EditSearchSchema(BaseSearchSchema):
 
 
 class EventBaseSchema(BaseSchema):
-    kind_mapped = models.KindObject.event
+    kind_mapped = fields.KindObject.event
 
     api_origin: str
     api_version: str
-    uuid_parent: UUIDOptional
-    uuid: UUID
-    uuid_obj: UUID
-    uuid_user: UUID
-    kind: KindEvent
-    kind_obj: KindObject
-    timestamp: UnixTimestamp
-    detail: Detail
+    uuid_parent: fields.FieldUUIDOptional
+    uuid: fields.FieldUUID
+    uuid_obj: fields.FieldUUID
+    uuid_user: fields.FieldUUID
+    kind: fields.FieldKindEvent
+    kind_obj: fields.FieldKindObject
+    timestamp: fields.FieldUnixTimestamp
+    detail: fields.FieldDetail
 
     @computed_field
     @property
@@ -688,12 +542,12 @@ class EventBaseSchema(BaseSchema):
         return v.name
 
     @field_validator("kind_obj", mode="before")
-    def validate_kind(cls, v: None | str | KindObject) -> None | KindObject:
+    def validate_kind(cls, v: None | str | fields.FieldKindObject) -> None | fields.FieldKindObject:
         if isinstance(v, str):
             try:
-                w = models.KindObject[v]
+                w = fields.FieldKindObject[v]
             except KeyError:
-                w = models.KindObject._value2member_map_.get(v)
+                w = fields.FieldKindObject._value2member_map_.get(v)
                 if w is None:
                     msg = f"Could not find enum value associated with `{v}`."
                     raise ValueError(msg)
@@ -720,8 +574,8 @@ class EventExtraSchema(EventBaseSchema):
 
 
 class BaseEventParams(BaseModel):
-    limit: LimitOptional
-    before: UnixTimestampOptional
+    limit: fields.FieldLimitOptional
+    before: fields.FieldUnixTimestampOptional
     after: Annotated[
         datetime,
         Field(validate_default=True, default=None),
@@ -741,7 +595,7 @@ class BaseEventParams(BaseModel):
 
 
 class EventSearchSchema(BaseEventParams):
-    kind_mapped: ClassVar[models.KindObject] = models.KindObject.event
+    kind_mapped: ClassVar[fields.FieldKindObject] = fields.KindObject.event
     kind_schema: ClassVar[KindSchema] = KindSchema.search
 
     # NOTE: It appears that using `Query(None)` as the field default is what
@@ -751,9 +605,9 @@ class EventSearchSchema(BaseEventParams):
     #       signature worked.
     uuid_event: Annotated[Set[str] | None, Field(default=Query(None))]
 
-    kind: KindEvent
-    kind_obj: KindObject
-    uuid_obj: UUID | None = None
+    kind: fields.FieldKindEvent
+    kind_obj: fields.FieldKindObject
+    uuid_obj: fields.FieldUUID | None = None
 
 
 class EventParams(BaseEventParams):
@@ -817,12 +671,12 @@ T_Output = TypeVar(
 
 # This is the primary response. See https://youtu.be/HBH6qnj0trU?si=7YIqUkPl4gB5S_sP
 class AsOutput(BaseModel, Generic[T_Output]):
-    # : Annotated[KindObject, BeforeValidator(kind), Field()]
+    # : Annotated[fields.FieldKindObject, BeforeValidator(kind), Field()]
     data: Annotated[T_Output, Field(desciption="Wrapped data.")]
 
     @computed_field
     @property
-    def kind(self) -> models.KindObject | None:
+    def kind(self) -> fields.FieldKindObject | None:
         if (ff := self.first()) is not None:
             return ff.kind_mapped
 
@@ -879,55 +733,3 @@ T_mwargs = TypeVar("T_mwargs", bound=type(BaseModel))
 # Cause I hate wrapping kwargs in dict.
 def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
     return M(**kwargs)
-
-
-# --------------------------------------------------------------------------- #
-# Error Message Schemas.
-
-
-class ErrBase(BaseModel):
-    msg: str
-
-
-class ErrObjMinSchema(ErrBase):
-    uuid_obj: UUID
-    kind_obj: KindObject
-
-
-class ErrAccessUser(ErrBase):
-    uuid_user: UUID
-    uuid_user_token: UUID
-
-
-class ErrAccessCollection(ErrBase):
-    uuid_user: UUID
-    uuid_collection: UUID
-
-
-class ErrAccessEvent(ErrBase):
-    uuid_user: UUID
-    uuid_event: UUID
-
-
-class ErrAccessDocumentGrantNone(ErrBase):
-    uuid_document: UUID
-    uuid_user: UUID
-    level_grant_required: Level
-
-
-class ErrAccessCannotRejectOwner(ErrBase):
-    uuid_user_revoker: UUID
-    uuid_document: UUID
-    uuid_user_revokees: List[str]
-
-
-class ErrAccessDocument(ErrAccessDocumentGrantNone):
-    level_grant: Level
-    uuid_grant: UUID
-
-
-T_ErrDetail = TypeVar("T_ErrDetail", bound=BaseModel | str)
-
-
-class ErrDetail(BaseModel, Generic[T_ErrDetail]):
-    detail: T_ErrDetail

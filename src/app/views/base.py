@@ -4,13 +4,12 @@ This includes a metaclass so that undecorated functions may be tested.
 """
 
 import enum
-import logging
 from http import HTTPMethod
 from typing import Any, ClassVar, Dict, Generic, Literal, TypeVar
 
 from app import __version__, util
+from app.err import ErrDetail, ErrObjMinSchema
 from app.models import KindObject
-from app.schemas import ErrDetail, ErrObjMinSchema
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from pydantic import BaseModel

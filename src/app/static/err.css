@@ -25,13 +25,14 @@ h1 {
   min-height: 100%;
   height: auto !important;
   height: 100%;
-  background: var(--nord0);
+  /* background: var(--nord0); */
 }
 
 .container section {
   min-height: 128px;
   padding-bottom: 128px;
-  background: var(--nord1);
+  background: null;
+  /* background: var(--nord1); */
 }
 
 .container .info {

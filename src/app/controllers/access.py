@@ -15,13 +15,14 @@ from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
                                   ResolvedEdit, ResolvedEvent,
                                   ResolvedGrantDocument, ResolvedGrantUser,
                                   ResolvedObjectEvents, ResolvedUser, T_Data)
+from app.err import (ErrAccessCollection, ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessUser)
 from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
                         Event, Grant, KindObject, Level, Resolvable,
                         ResolvableLevel, ResolvableMultiple,
                         ResolvableSingular, Singular, T_Resolvable, Tables,
                         User)
-from app.schemas import (ErrAccessCannotRejectOwner, ErrAccessCollection,
-                         ErrAccessUser, EventParams, EventSearchSchema, mwargs)
+from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -102,7 +103,7 @@ class Access(BaseController):
         def check_one(event: Event) -> Event:
             token_user.check_can_access_event(event)
             if exclude_deleted:
-                event.check_not_deleted(410)
+                event.check_not_deleted()
             return event
 
         match events:
@@ -424,27 +425,37 @@ class Access(BaseController):
         # NOTE: `exclude_deleted` should only be ``True`` when a force
         #       deletion is occuring.
         def check_one(collection: Collection) -> Collection:
-            token_user.check_can_access_collection(collection)
+            if not collection.public and collection.id_user != token_user.id:
+                raise ErrAccessCollection.httpexception(
+                    "_msg_private",
+                    403,
+                    uuid_user_token=token_user.uuid,
+                    uuid_collection=collection.uuid,
+                )
             if exclude_deleted:
-                collection = collection.check_not_deleted(410)
+                collection = collection.check_not_deleted()
+
+            # Not sure how this happens on occasion.
+            if collection.id_user is None:
+                raise ErrAccessCollection.httpexception(
+                    "_msg_homeless",
+                    418,
+                    uuid_user_token=token_user.uuid,
+                    uuid_collection=collection.uuid,
+                )
 
             match self.method:
                 case H.GET:
                     return collection
                 case H.POST | H.DELETE | H.PUT | H.PATCH:
+
                     if token_user.id != collection.id_user:
-                        detail = ErrAccessCollection(
+                        raise ErrAccessCollection.httpexception(
+                            "_msg_modify",
+                            403,
                             uuid_user=token_user.uuid,
                             uuid_collection=collection.uuid,
-                            msg="Cannot modify collection.",
                         )
-
-                        # Not sure how this happens on occasion.
-                        if collection.id_user is None:
-                            detail.msg = "Collection has no owner."
-                            raise HTTPException(418, detail=detail.model_dump())
-
-                        raise HTTPException(403, detail=detail.model_dump())
                     return collection
                 case _:
                     msg = f"Cannot handle HTTPMethod `{self.method}`."
@@ -567,7 +578,7 @@ class Access(BaseController):
                 exclude_deleted=exclude_deleted,
             )
             if exclude_deleted:
-                document = document.check_not_deleted(410)
+                document = document.check_not_deleted()
             return document
 
         documents: Tuple[Document, ...]
@@ -952,7 +963,7 @@ class Access(BaseController):
                     item.uuid for item in session.execute(q_owners).scalars()
                 )
                 if len(uuid_owners & uuid_users):
-                    detail = ErrAccessCannotRejectOwner(
+                    detail = ErrAccessDocumentCannotRejectOwner(
                         msg="Owner cannot reject grants of other owners.",
                         uuid_user_revoker=self.token.uuid,
                         uuid_user_revokees=list(uuid_owners),
