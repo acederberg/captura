@@ -283,10 +283,25 @@ FlagAdmin: TypeAlias = Annotated[
 ]
 
 ArgTokenPayload: TypeAlias = Annotated[
-    str, typer.Option(help="Data for token payload.")
+    str, typer.Option(
+        "--payload",
+        help="Data for token payload.")
 ]
 
 FlagPending: TypeAlias = Annotated[
-    bool, typer.Option(help="Get only pending grants."),
+    bool, typer.Option("--pending", help="Get only pending grants."),
+]
+
+FlagOpenApi: TypeAlias = Annotated[
+    bool,
+    typer.Option("--openapi", help="Get the OpenAPI information for the specified request."),
+]
+
+FlagShowRequest: TypeAlias = Annotated[
+    bool,
+    typer.Option(
+        "--request-show",
+        help="Show the full request (still executes request).",
+    ),
 ]
 

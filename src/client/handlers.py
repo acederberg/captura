@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Any, Dict, Iterable, Protocol, Tuple, overload
+from typing import Annotated, Any, ClassVar, Dict, Iterable, Protocol, Tuple, overload
 
 import httpx
 import typer
@@ -26,6 +26,7 @@ class HandlerError(Exception): ...
 
 
 class Handler(Protocol):
+
     @overload
     async def __call__(
         self,
@@ -76,6 +77,7 @@ class ConsoleHandler(BaseModel):
 
     This should be built by a handler somewhere.
     """
+    console: ClassVar[Console] = CONSOLE
 
     output: Annotated[flags.FlagOutput, Field(default=Output.yaml)]
     columns: Annotated[flags.FlagColumns, Field(default_factory=list)]
@@ -91,9 +93,10 @@ class ConsoleHandler(BaseModel):
         status = self.handle(res, data)
         raise typer.Exit(status)
 
+
     def handle(
         self,
-        res: httpx.Response | Tuple[httpx.Response, ...],
+        res: httpx.Response | Tuple[httpx.Response, ...] | None = None,
         data: Any | Tuple[Any, ...] = None,
     ) -> int:
         match [res, data]:
@@ -102,32 +105,36 @@ class ConsoleHandler(BaseModel):
                     data = [None for _ in range(len(items))]
                 zipped = zip(items, data)
                 return sum((self.handle_one(*item) for item in zipped))
-            case [httpx.Response(), _ as data]:
+            case [httpx.Response() | None, _ as data]:
                 return self.handle_one(res, data)  # type: ignore
             case _:
                 raise HandlerError(f"Failed to match `{[res, data]=}`.")
 
     def handle_one(
         self,
-        res: httpx.Response,
+        res: httpx.Response | None = None,
         data: Any | None = None,
     ) -> int:
-        try:
-            data = data if data is not None else res.json()
-        except json.JSONDecodeError:
-            data = None
+        if res is not None:
+            try:
+                data = data if data is not None else res.json()
+            except json.JSONDecodeError:
+                data = None
 
-        if not (200 <= res.status_code < 300):
+        if res is not None and not (200 <= res.status_code < 300):
             self.print_err(res, data)
             return 1
 
         match self.output:
             case Output.json:
-                return self.print_json(res, data)
+                return self.print_json(data)
             case Output.table:
+                if res is None:
+                    msg = "`res` must be specified for table output."
+                    raise ValueError(msg)
                 return self.print_table(res, data)
             case Output.yaml:
-                return self.print_yaml(res, data)
+                return self.print_yaml(data)
             case _ as bad:
                 CONSOLE.print(f"[red]Unknown output format `{bad}`.")
                 return 1
@@ -138,8 +145,8 @@ class ConsoleHandler(BaseModel):
         CONSOLE.print(msg)
         return 1
 
-    def print_json(self, res: httpx.Response, data=None) -> int:
-        data = res.json() or data
+    def print_json(self,  data=None) -> int:
+        # data = res.json() or data
         try:
             stringified = json.dumps(data, indent=2)
         except TypeError as err:
@@ -150,8 +157,8 @@ class ConsoleHandler(BaseModel):
         CONSOLE.print(s)
         return 0
 
-    def print_yaml(self, res: httpx.Response, data=None) -> int:
-        data = res.json() or data
+    def print_yaml(self, data=None) -> int:
+        # data = res.json() or data
         try:
             stringified = yaml.dump(data)
         except yaml.YAMLError as err:

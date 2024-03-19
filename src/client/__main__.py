@@ -12,10 +12,49 @@ from client.requests.tokens import TokenRequests
 from client.requests.users import UserRequests
 
 
+class Config:
+    @classmethod
+    def profiles(cls, _context: typer.Context) -> None:
+        context = ContextData.resolve(_context)
+
+        profiles = context.config.profiles
+        context.console_handler.handle(data={
+            pp: qq.model_dump(mode="json") for pp, qq in profiles.items()})
+
+        return
+
+    @classmethod
+    def hosts(cls, _context: typer.Context) -> None:
+        context = ContextData.resolve(_context)
+
+        hosts = context.config.hosts
+        context.console_handler.handle(data={
+            pp: qq.model_dump(mode="json") for pp, qq in hosts.items()})
+
+        return
+
+    @classmethod
+    def show(cls, _context: typer.Context) -> None:
+        context = ContextData.resolve(_context)
+        config = context.config
+        profile = None if config.profile is None else config.profile.model_dump(mode="json")
+        host =  None if config.host is None else config.host.model_dump(mode="json") 
+        data = {config.use.profile: profile, config.use.host: host}
+        context.console_handler.handle(data=data)
+
+    @classmethod
+    def typer(cls) -> typer.Typer:
+        cli = typer.Typer()
+        cli.command("profiles")(cls.profiles)
+        cli.command("hosts")(cls.hosts)
+        cli.command("show")(cls.show)
+        return cli
+
+
 class It(BaseRequests):
 
     typer_check_verbage = False
-    typer_commands = dict(req_routes="routes")
+    typer_commands = dict(routes="req_routes", openapi="req_openapijson")
     typer_children = dict(
         assignments=AssignmentRequests,
         collections=CollectionRequests,
@@ -42,7 +81,7 @@ class It(BaseRequests):
         self.tokens = TokenRequests.spawn_from(self)
 
     @classmethod
-    def routes(
+    def req_routes(
         cls,
         _context: typer.Context,
         *,
@@ -63,6 +102,16 @@ class It(BaseRequests):
             ),
             headers=context.headers,
         )
+
+    @classmethod
+    def req_openapijson(
+        cls,
+        _context: typer.Context,
+    ) -> httpx.Request:
+        context = ContextData.resolve(_context)
+        res = context.req_openapijson()
+        return res
+
 
     # def callback(
     #     self,
@@ -110,11 +159,9 @@ class It(BaseRequests):
 #
 # test_it()
 #
-
-
 def main():
     from client.requests.base import typerize
 
     it = typerize(It)
-    it()
+    it.add_typer(Config.typer(), name="config")
     it()
