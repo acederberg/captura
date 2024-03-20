@@ -7,7 +7,11 @@ from app.controllers.base import Data, ResolvedDocument
 from app.depends import (DependsAccess, DependsCreate, DependsDelete,
                          DependsRead, DependsSessionMaker, DependsToken,
                          DependsTokenOptional, DependsUpdate)
-from app.err import ErrAccessDocument, ErrAccessDocumentGrantNone, ErrDetail
+from app.err import (AnyErrDetailAccessDocumentGrant,
+                     ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrDetail)
 from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
                         Document, Level, User)
 from app.schemas import (AsOutput, DocumentCreateSchema,
@@ -17,26 +21,15 @@ from app.schemas import (AsOutput, DocumentCreateSchema,
                          OutputWithEvents, TimespanLimitParams, mwargs)
 from app.views import args
 from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseDocumentForbidden,
                             OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
-from sqlalchemy import select
 
-OpenApiResponseDocumentUnauthorized = {
-    403: dict(
-        model=ErrDetail[ErrAccessDocument] | ErrAccessDocumentGrantNone,
-        description=(
-            "For read, cannot access document because no grants exist and "
-            "the document is private. Otherwise because grants do not exist"
-            "regardless of private/public status of document."
-        ),
-    ),
-    **OpenApiResponseUnauthorized,
-}
 OpenApiResponseDocument = {
     **OpenApiResponseCommon,
-    **OpenApiResponseDocumentUnauthorized,
+    **OpenApiResponseDocumentForbidden,
 }
 
 
@@ -110,12 +103,12 @@ class DocumentView(BaseView):
         get_document=dict(
             url="/{uuid_document}",
             name="Get Document JSON",
-            responses=OpenApiResponseDocumentUnauthorized,
+            responses=OpenApiResponseDocument,
         ),
         get_document_rendered=dict(
             url="/{uuid_document}/rendered",
             name="Get Rendered Document",
-            responses=OpenApiResponseDocumentUnauthorized,
+            responses=OpenApiResponseDocument,
         ),
         post_document=dict(
             url="",
@@ -124,12 +117,12 @@ class DocumentView(BaseView):
         patch_document=dict(
             url="/{uuid_document}",
             name="Update Document",
-            responses=OpenApiResponseDocumentUnauthorized,
+            responses=OpenApiResponseDocument,
         ),
         delete_document=dict(
             url="/{uuid_document}",
             name="Delete Document and Associated Objects",
-            responses=OpenApiResponseDocumentUnauthorized,
+            responses=OpenApiResponseDocument,
         ),
     )
     view_children = {"": DocumentSearchView}

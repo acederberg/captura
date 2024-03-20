@@ -1,8 +1,8 @@
 import enum
 import secrets
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Type, TypeAlias, TypeVar)
+from typing import (Annotated, Any, Callable, ClassVar, Dict, Generic, List,
+                    Literal, Optional, Self, Set, Type, TypeAlias, TypeVar)
 
 from fastapi import Body, Query
 from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
@@ -265,7 +265,42 @@ FieldDescriptionLike = Annotated[
         default=None,
     ),
 ]
-FieldLevel = Annotated[Level, Field(description="Access level for grant.")]
+
+def int_enum_from_name(EnumSubclass: Type[enum.Enum], callback: Callable[[Any], Any] | None = None) -> Callable[[Any], Any]:
+    def wrapper(v: Any) -> Any:
+        match v:
+            case EnumSubclass():
+                return v
+            case str() as v_str:
+                return EnumSubclass[v_str]
+            case int() as v_int:
+                return EnumSubclass(v_int)
+
+        if callback is not None:
+            v = callback(v)
+        return v
+
+    return wrapper
+
+
+def int_enum_from_name_callback(v) -> None | Level:
+    if isinstance(v, LevelStr):
+        return FieldLevel(v.name)
+    return v
+
+
+FieldLevel = Annotated[
+    Level, 
+    Field(description="Access level for grant."),
+    BeforeValidator(int_enum_from_name(Level, int_enum_from_name_callback)),
+]
+
+FieldPendingFrom: TypeAlias = Annotated[
+    PendingFrom, 
+    Field(description="Grant pending origin."),
+    BeforeValidator(int_enum_from_name(PendingFrom)),
+]
+
 FieldKindEvent = Annotated[
     KindEvent | None,
     Field(
@@ -273,6 +308,7 @@ FieldKindEvent = Annotated[
         description="Event opperation tag.",
     ),
 ]
+
 FieldKindObject = Annotated[
     KindObject | None,
     Field(
@@ -288,9 +324,6 @@ FieldKindObject = Annotated[
 
 
 FieldPending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
-FieldPendingFrom: TypeAlias = Annotated[
-    PendingFrom, Field(description="Grant pending origin.")
-]
 
 __all__ = (
     "ChildrenAssignment",

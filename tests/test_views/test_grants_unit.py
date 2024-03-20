@@ -1,0 +1,240 @@
+import abc
+import secrets
+from random import random
+from typing import Any, AsyncGenerator, Callable, ClassVar, Generator, List
+
+import httpx
+import pytest
+import pytest_asyncio
+from app.auth import Auth
+from app.fields import KindObject, Level, LevelStr, PendingFrom
+from app.models import Grant
+from app.schemas import AsOutput, GrantSchema, KindNesting, KindSchema
+from client.handlers import CONSOLE
+from client.requests import Requests
+from fastapi import FastAPI
+from pydantic import TypeAdapter
+from sqlalchemy.orm import Session
+from tests.conftest import PytestClientConfig
+from tests.dummy import Dummy
+from tests.test_views.util import check_status
+
+N_CASES: int = 1
+
+
+class BaseEndpointTest(abc.ABC):
+    """Use this template to save some time:
+
+    .. code:: python
+
+        async def test_unauthorized_401(self, dummy: Dummy, requests: Requests):
+            "Test unauthorized access."
+            ...
+
+        async def test_not_found_404(self, dummy: Dummy, requests: Requests): 
+            "Test not found response."
+            ...
+
+        async def test_deleted_410(self, dummy: Dummy, requests: Requests): 
+            "Test deleted object"
+            ...
+    """
+
+    adapter: ClassVar[TypeAdapter]
+
+    @pytest.fixture(scope="class")
+    def dummy(self, sessionmaker, auth: Auth) -> Generator[Dummy, None, None]:
+        with sessionmaker() as session:
+            yield Dummy(auth, session)
+
+    @pytest_asyncio.fixture(scope="function")
+    async def requests(self, app: FastAPI | None, dummy: Dummy, client_config: PytestClientConfig, async_client: httpx.AsyncClient,) -> AsyncGenerator[Requests, Any]:
+
+        async with httpx.AsyncClient(app=app) as client:
+            yield dummy.requests(client_config, client)
+
+    # ----------------------------------------------------------------------- #
+    # Errors
+
+    @abc.abstractmethod
+    async def test_unauthorized_401(self, dummy: Dummy, requests: Requests):
+        "Test unauthorized access."
+        ...
+
+    @abc.abstractmethod
+    async def test_not_found_404(self, dummy: Dummy, requests: Requests):
+        "Test not found response."
+        ...
+
+    @abc.abstractmethod
+    async def test_deleted_410(self, dummy: Dummy, requests: Requests):
+        "Test deleted object"
+        ...
+
+
+# NOTE: Test classes will be per endpoint. They will be parameterized with many
+#       dummies. I found it helpful to look directly at the documentation to 
+#       come up with tests. The goal here is to test at a very fine scale.
+# @pytest.mark.parametrize(
+#     "dummy, requests",
+#     [(None, None) for _ in range(N_CASES)],
+#     indirect=["dummy", "requests"],
+# )
+@pytest.mark.asyncio
+class TestDocumentGrants(BaseEndpointTest):
+
+    adapter = TypeAdapter(AsOutput[List[GrantSchema]])
+
+    def fn(self, requests: Requests):
+        return requests.grants.documents.read
+
+    # ----------------------------------------------------------------------- #
+    # Features
+
+    def check_success(
+        self,
+        dummy: Dummy,
+        res: httpx.Response,
+        *,
+        pending: bool = False,
+        level: Level | None = None,
+        allow_empty: bool=False
+    ) -> AsOutput[List[GrantSchema]]:
+        if err := check_status(res, 200):
+            raise err
+
+        data: AsOutput[List[GrantSchema]]
+        data = self.adapter.validate_json(res.content)
+
+        if allow_empty and data.kind == None:
+            return data
+
+        assert data.kind == KindObject.grant
+        assert data.kind_nesting == KindNesting.array
+
+        # NOTE: Does not serve pending grants unless specified. Never serves
+        #       deleted grants.
+        for item in data.data:
+            _item_loaded = dummy.session.get(Grant, item.uuid)
+            assert _item_loaded is not None
+            assert not _item_loaded.deleted, "Item should not be deleted."
+
+            item_loaded = GrantSchema.model_validate(_item_loaded)
+            assert item.pending is pending
+            assert item_loaded.pending is pending
+
+            if level is None:
+                continue
+
+            assert item.level.value >= level.value
+
+        return data
+
+    async def test_success_200(self, dummy: Dummy, requests: Requests):
+        "Test a successful response."
+
+        fn = self.fn(requests)
+        document = dummy.get_document(Level.own, exclude_pending=True)
+        assert not document.deleted
+
+        res = await fn(document.uuid)
+        self.check_success(dummy, res, pending=False)
+
+    async def test_success_200_pending(self, dummy: Dummy, requests: Requests):
+        "Test the pending query parameter."
+
+        fn = self.fn(requests)
+        document = dummy.get_document(Level.own, exclude_pending=True)
+
+        res = await fn(document.uuid, pending=True)
+        self.check_success(dummy, res, pending=True)
+
+    async def test_success_200_level(self, dummy: Dummy, requests: Requests):
+        "Test the pending query parameter."
+
+        # NOTE: Documents without grants are not generated by `dummy` as every
+        #       document generated has an ownership grant, just like those that
+        #       should be generated by the API.
+
+        document = dummy.get_document(Level.own, exclude_pending=False)
+        assert not document.deleted
+
+        fn = self.fn(requests)
+        mt_count = 0
+        for level in list(Level):
+            for pending in (True, False):
+                res = await fn(
+                    document.uuid,
+                    pending=pending,
+                    level=LevelStr(level.name),
+                )
+                data = self.check_success(
+                    dummy, res, level=level, pending=pending, allow_empty=True
+                )
+                if data.kind is None:
+                    mt_count += 1
+
+        if mt_count == 6:
+            raise AssertionError("All empty! Check dummy data.")
+
+    # ----------------------------------------------------------------------- #
+    # Errors
+
+    async def test_forbidden_403_pending(self, dummy: Dummy, requests: Requests,):
+        "Test cannot use when ownership is pending."
+        document = dummy.get_document(Level.modify, pending=True, exclude_pending=False)
+        assert not document.deleted
+
+        fn = self.fn(requests)
+        res = await fn(document.uuid)
+        if err := check_status(res, 403):
+            raise err
+
+
+    async def test_forbidden_410_deleted(self, dummy: Dummy, requests: Requests,):
+        "Test cannot use grant is deleted."
+        document = dummy.get_document(Level.own, exclude_pending=False, exclude_deleted=False)
+        assert not document.deleted
+
+        # NOTE: Deletedness should supercede pendingness.
+        grant = dummy.get_grant(document)
+        grant.deleted = True
+        grant.pending = True
+        assert grant.level == Level.own
+
+        session = dummy.session
+        session.add(grant)
+        session.commit()
+
+        fn = self.fn(requests)
+        res = await fn(document.uuid)
+        if err := check_status(res, 410):
+            raise err
+
+    async def test_forbidden_403_insufficient(self, dummy: Dummy, requests: Requests, ):
+        "Test cannot access when not an owner."
+        document = dummy.get_document(Level.modify)
+        assert not document.deleted
+
+
+    async def test_unauthorized_401(self, dummy: Dummy, requests: Requests,):
+        "Test unauthorized access."
+        ...
+
+    async def test_not_found_404(self, dummy: Dummy, requests: Requests,): 
+        "Test not found response."
+        fn = self.fn(requests)
+        res = await fn(secrets.token_urlsafe(9)) 
+        if err := check_status(res, 404):
+            raise err
+
+    async def test_deleted_410(self, dummy: Dummy, requests: Requests,): 
+        "Test deleted document"
+
+        document = dummy.get_document(Level.view, deleted=True)
+        assert document.deleted
+
+        fn = self.fn(requests)
+        res = await fn(document.uuid)
+        if err := check_status(res, 410):
+            raise err

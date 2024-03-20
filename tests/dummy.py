@@ -2,9 +2,10 @@ import secrets
 from datetime import datetime
 from http import HTTPMethod
 from random import choice, randint, sample
-from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Self, Set,
-                    Tuple, Type, TypeVar)
+from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Protocol,
+                    Self, Set, Tuple, Type, TypeVar)
 
+import httpx
 import pytest
 from app import __version__
 from app.auth import Auth, Token
@@ -19,10 +20,15 @@ from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
                         KindEvent, KindObject, Level, PendingFrom, Singular,
                         T_Resolvable, Tables, User)
 from app.schemas import mwargs
+from client import ConsoleHandler, ContextData, Requests
+from client.config import ProfileConfig, UseConfig
+from client.flags import Output
 from faker import Faker
 from faker.providers import internet
 from sqlalchemy import Column, Select, func, inspect, select, update
 from sqlalchemy.orm import Session
+
+from tests.config import PytestClientConfig, PyTestClientProfileConfig
 
 # https://faker.readthedocs.io/en/master/providers/faker.providers.internet.html
 fkit = Faker()
@@ -76,7 +82,6 @@ def get_mk(column: Column):
             return _Mk[column.name]  # type: ignore
 
 
-from typing import Protocol
 
 T_ResolvableContra = TypeVar(
     "T_ResolvableContra", Collection, User, Document, Grant, Event, covariant=True
@@ -139,6 +144,7 @@ class Dummy:
     # ----------------------------------------------------------------------- #
 
     def __init__(self, auth: Auth, session: Session, user: User | None = None):
+        assert user is None
         self.auth = auth
         self.session = session
         if user is not None:
@@ -249,7 +255,7 @@ class Dummy:
                         id_document=grant_init.id_document,
                         uuid_parent=grant_init.uuid,
                         deleted=bool(randint(0, 1)),
-                        pending=False,
+                        pending=bool(randint(0, 2)),
                         pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
                     )
                     for id_document, grant_init in grants_share_id_documents.items()
@@ -266,22 +272,26 @@ class Dummy:
     # ----------------------------------------------------------------------- #
     # Getters
 
-    def get_document(self, level: Level) -> Document:
+    def get_document(self, level: Level, deleted: bool = False, **kwargs) -> Document:
 
+        kwargs.update(exclude_deleted=not deleted)
         if level is not None:
-            q = self.user.q_select_documents(level=level)
+            q = self.user.q_select_documents(level=level, **kwargs)
+            if deleted:
+                q = q.where(Document.deleted)
         else:
-            q = select(Document).where(Document.uuid == "ex-parrot")
-
-        q = q.limit(1)
+            raise ValueError()
+            # q = select(Document).where(Document.uuid == "ex-parrot")
+        
+        q = q.order_by(func.random()).limit(1)
         doc = self.session.scalar(q)
         if doc is None:
             raise ValueError(f"Could not find document with level `{level}`.")
-
+        
         return doc
 
-    def get_grant(self, document) -> Grant:
-        q = self.user.q_select_grants({document.uuid})
+    def get_grant(self, document: Document, **kwargs) -> Grant:
+        q = self.user.q_select_grants({document.uuid}, **kwargs)
         q = q.limit(1)
         grant = self.session.scalar(q)
         if grant is None:
@@ -315,22 +325,32 @@ class Dummy:
             force=force,
         )
 
+    def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
+        profile =  PyTestClientProfileConfig(
+                    token=self.auth.encode(dict(uuid=self.user.uuid, admin=self.user.admin,)),
+                    uuid_user=self.user.uuid,
+                )
+
+        context = ContextData(
+            config=PytestClientConfig(
+                use=UseConfig(host="default", profile="default"),
+                hosts=dict(default=client_config.host),
+                profiles=dict(default=profile),
+            ),
+            console_handler=ConsoleHandler(output=Output.yaml),  # type: ignore
+        )
+        return Requests(context, client)
+
     # NOTE: `User` will always be the the same as
     def data(self, kind: KindData) -> Data:
-        T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary] = (
-            BaseResolved.get(kind)
-        )
+        T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary]
+        T_resolved = BaseResolved.get(kind) # type: ignore
 
         kwargs: Dict[str, Any]
-        # if issubclass(T_resolved, BaseResolvedSecondary):
-        #     ...
-        # elif issubclass(T_resolved, BaseResolvedPrimary):
 
-        print(T_resolved.kind)
         if T_resolved.kind in {KindData.user}:
             kwargs = {"users": (self.user,)}
         elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
-            print("=====================================================")
             document = self.get_document(level = Level.own)
             grant = self.get_grant(document)
 
@@ -381,8 +401,6 @@ class Dummy:
         else:
             raise ValueError(f"No implementation for data kind `{kind}`.")
 
-        print(T_resolved)
-        print(kwargs)
         return mwargs(
             Data,
             data=mwargs(T_resolved, **kwargs),
@@ -443,6 +461,8 @@ class Dummy:
 
         return self
 
+    # def randomize_visibility(
+
     def refresh(self) -> Self:
 
         self.session.refresh(self.user)
@@ -452,4 +472,6 @@ class Dummy:
                 self.session.refresh(item)
 
         return self
+
+
 

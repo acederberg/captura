@@ -27,6 +27,7 @@ class ErrBase(BaseModel):
 
 
 class ErrObjMinSchema(ErrBase):
+    _msg_deleted_grant: ClassVar[str] = "Grant has been deleted."
     _msg_deleted: ClassVar[str] = "Object has been deleted."
     _msg_dne: ClassVar[str] = "Object does not exist."
 
@@ -85,23 +86,33 @@ class ErrEventUndone(ErrEventGeneral):
 # --------------------------------------------------------------------------- #
 
 
-class ErrAccessDocumentGrantNone(ErrBase):
+class ErrAccessDocumentGrantBase(ErrBase):
+    _msg_dne: ClassVar[str] = "Grant does not exist."
+    _msg_inconcievable: ClassVar[str] = "Inconcievable!"
+
     uuid_document: fields.FieldUUID
     uuid_user: fields.FieldUUID
     level_grant_required: fields.FieldLevel
 
 
+class ErrAccessDocumentGrantInsufficient(ErrAccessDocumentGrantBase):
+    _msg_insufficient: ClassVar[str] = "Grant insufficient."
+
+    uuid_grant: fields.FieldUUID
+    level_grant: fields.FieldLevel
+
+
+class ErrAccessDocumentPending(ErrAccessDocumentGrantInsufficient):
+    _msg_grant: ClassVar[str] = "Grant is pending."
+    _msg_grant_created_pending: ClassVar[str] = "Grant is pending with `pending_from=created`."
+
+    pending_from: fields.FieldPendingFrom
+
+
 class ErrAccessDocumentCannotRejectOwner(ErrBase):
     uuid_user_revoker: fields.FieldUUID
     uuid_document: fields.FieldUUID
-    uuid_user_revokees: List[str]
-
-
-class ErrAccessDocument(ErrAccessDocumentGrantNone):
-    _msg_grant_dne: ClassVar[str] = "Grant does not exist."
-
-    level_grant: fields.FieldLevel
-    uuid_grant: fields.FieldUUID
+    uuid_user_revokees: fields.FieldUUIDS
 
 
 # --------------------------------------------------------------------------- #
@@ -112,4 +123,11 @@ T_ErrDetail = TypeVar("T_ErrDetail", bound=BaseModel | str)
 
 class ErrDetail(BaseModel, Generic[T_ErrDetail]):
     detail: T_ErrDetail
+
+
+AnyErrDetailAccessDocumentGrant = (ErrDetail[ErrAccessDocumentGrantBase] |
+    ErrDetail[ErrAccessDocumentGrantInsufficient] |
+    ErrDetail[ErrAccessDocumentPending])
+
+
 

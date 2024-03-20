@@ -12,7 +12,8 @@ import typer
 from app.models import Singular
 from app.schemas import mwargs
 from click.core import Context as ClickContext
-from client.config import Config, flags
+from client import flags
+from client.config import Config
 from client.flags import Output, Verbage
 from client.handlers import CONSOLE, ConsoleHandler
 from fastapi.openapi.models import OpenAPI, PathItem
@@ -20,7 +21,7 @@ from pydantic import BaseModel, TypeAdapter, computed_field
 from rich.console import Console
 
 # =========================================================================== #
-# Data for `ClickContext`.
+# Helpers for decorators.
 
 url_chunks_accepted = {"users", "documents", "collections", "assignments"}
 url_chunks_accepted |= {"grants", "extensions", "demos"}
@@ -71,6 +72,9 @@ def openapi_find(openapi: OpenAPI, req: httpx.Request) -> PathItem:
         )
         raise typer.Exit(1) from err
 
+
+# =========================================================================== #
+# Data for `ClickContext`.
 
 class ContextData(BaseModel):
     config: Config
@@ -164,6 +168,12 @@ MkRequestInstance = Callable[
 ]
 
 
+# --------------------------------------------------------------------------- #
+# Test client stuff.
+
+# NOTE: The type hint of fn cannot include `ContextData | typer.Context` bc 
+#       typer. ``__func__`` is included because classmethods are processed 
+#       after the end of the class definition.
 def methodize(
     fn: MkRequestCls[T_Wrapped, P_Wrapped],
     __func__: Callable | None = None,
@@ -177,7 +187,6 @@ def methodize(
         *args: P_Wrapped.args,
         **kwargs: P_Wrapped.kwargs,
     ) -> httpx.Response:
-        # The type hint cannot include `ContextData | typer.Context` bc typer.
         req = fn(self.__class__, self.context, *args, **kwargs)  # type: ignore
         res = await self.client.send(req)
         return res
@@ -230,7 +239,7 @@ def typerize_fn(
     return wrapper
 
 
-def typerize(cls: Type["Base"], *, is_recurse: bool = False) -> typer.Typer:
+def typerize(cls: Type["BaseTyperizable"], *, is_recurse: bool = False) -> typer.Typer:
     tt = typer.Typer(callback=ContextData.for_typer if not is_recurse else None)
 
     for command_name, command_name_fn in cls.typer_commands.items():
@@ -241,7 +250,9 @@ def typerize(cls: Type["Base"], *, is_recurse: bool = False) -> typer.Typer:
         if (command_fn := getattr(cls, command_name_fn, None)) is None:
             raise ValueError(f"No function `{command_name_fn}`.")
 
-        tt.command(command_name)(typerize_fn(command_fn))
+        if cls.typer_decorate:
+            command_fn = typerize_fn(command_fn)
+        tt.command(command_name)(command_fn)
 
     for group_name, group_cls in cls.typer_children.items():
         tt.add_typer(typerize(group_cls, is_recurse=True), name=group_name)
@@ -252,8 +263,15 @@ def typerize(cls: Type["Base"], *, is_recurse: bool = False) -> typer.Typer:
 # =========================================================================== #
 # BaseRequests
 
+class BaseTyperizable:
+    typer_decorate: ClassVar[bool] = True
+    typer_check_verbage: ClassVar[bool] = True
+    typer_commands: ClassVar[Dict[str, str]] = dict()
+    typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()
 
-class BaseRequests:
+
+class BaseRequests(BaseTyperizable):
+    typer_decorate: ClassVar[bool] = True
     typer_check_verbage: ClassVar[bool] = True
     typer_commands: ClassVar[Dict[str, str]] = dict()
     typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()

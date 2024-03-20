@@ -1,38 +1,23 @@
-from asyncio import gather
 import asyncio
+from asyncio import gather
 from http import HTTPMethod
 from typing import Any, Dict, List
 
 import httpx
-from app.auth import Auth
 import pytest
 from app import __version__, util
-from app.models import (
-    AssocUserDocument,
-    ChildrenUser,
-    Document,
-    KindEvent,
-    Level,
-    KindObject,
-    User,
-)
-from app.schemas import (
-    DocumentSchema,
-    EventSchema,
-    GrantSchema,
-)
-from client.requests import (
-    GrantRequests,
-    Requests,
-)
+from app.auth import Auth
+from app.models import (AssocUserDocument, ChildrenUser, Document, KindEvent,
+                        KindObject, Level, User)
+from app.schemas import DocumentSchema, EventSchema, GrantSchema
+from client.requests import GrantRequests, Requests
 from fastapi import HTTPException
 from sqlalchemy import delete, literal_column, select
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from . import util
-
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import requests, BaseTestViews
+from .util import BaseTestViews, requests
 
 
 class TestGrantView(BaseTestViews):
@@ -64,13 +49,13 @@ class TestGrantView(BaseTestViews):
             case [HTTPMethod.POST]:
                 expect_common.update(
                     api_origin="POST /grants/documents/<uuid>",
-                    detail=f"Grants issued.",
+                    detail="Grants issued.",
                     kind=KindEvent.grant,
                 )
             case [HTTPMethod.DELETE]:
                 expect_common.update(
                     api_origin="DELETE /grants/documents/<uuid>",
-                    detail=f"Grants revoked.",
+                    detail="Grants revoked.",
                     kind=KindEvent.grant,
                 )
             case _:

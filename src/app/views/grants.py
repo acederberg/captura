@@ -6,14 +6,18 @@ from app.controllers.base import (Data, ResolvedDocument,
                                   ResolvedUser)
 from app.depends import (DependsAccess, DependsCreate, DependsDelete,
                          DependsSessionMaker, DependsToken, DependsUpdate)
-from app.err import (ErrAccessDocument, ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessUser, ErrDetail)
+from app.err import (AnyErrDetailAccessDocumentGrant,
+                     ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrAccessUser, ErrDetail)
 from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
                         KindObject, Level, LevelStr, User)
 from app.schemas import (AsOutput, EventSchema, GrantCreateSchema, GrantSchema,
                          OutputWithEvents, mwargs)
 from app.views import args
 from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseDocumentForbidden,
                             OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
@@ -56,13 +60,7 @@ class DocumentGrantView(BaseView):
         responses={
             **OpenApiResponseCommon,
             **OpenApiResponseUnauthorized,
-            403: dict(
-                model=ErrDetail[ErrAccessDocument],
-                description=(
-                    "User is not an owner of the document specified by "
-                    "`uuid_document` or an admin."
-                ),
-            ),
+            **OpenApiResponseDocumentForbidden,
         },
     )
 
@@ -113,7 +111,6 @@ class DocumentGrantView(BaseView):
             level=Level.view,
             pending=pending,
         )
-        # data.commit(access.session, True)
         out = mwargs(
             AsOutput,
             data=TypeAdapter(List[GrantSchema]).validate_python(

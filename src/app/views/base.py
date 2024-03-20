@@ -8,7 +8,7 @@ from http import HTTPMethod
 from typing import Any, ClassVar, Dict, Generic, Literal, TypeVar
 
 from app import __version__, util
-from app.err import ErrDetail, ErrObjMinSchema
+from app.err import AnyErrDetailAccessDocumentGrant, ErrDetail, ErrObjMinSchema
 from app.models import KindObject
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
@@ -78,6 +78,16 @@ OpenApiResponseCommon = {
 OpenApiResponseUnauthorized = {
     401: dict(
         model=ErrDetail[Literal["Token required"]],
+    ),
+}
+OpenApiResponseDocumentForbidden = {
+    403: dict(
+        model=AnyErrDetailAccessDocumentGrant,
+        description=(
+            "For read, cannot access document because no grants exist and "
+            "the document is private. Otherwise grants do not exist or they "
+            "are pending."
+        ),
     ),
 }
 

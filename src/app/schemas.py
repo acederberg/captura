@@ -424,17 +424,6 @@ class GrantBaseSchema(BaseSecondarySchema):
     #       `POST /grants/users/<uuid>`.
     level: fields.FieldLevel
 
-    @field_validator("level", mode="before")
-    def validate_level(cls, v) -> None | fields.FieldLevel:
-        match v:
-            case int() as level_value:
-                return fields.FieldLevel._value2member_map_.get(level_value)
-            case str() as level_name:
-                return fields.FieldLevel[level_name]
-            case fields.LevelStr() as levelstr:
-                return fields.FieldLevel(levelstr.name)
-            case _:
-                return v
 
     @field_serializer("level")
     def enum_as_name(item: enum.Enum): # type: ignore

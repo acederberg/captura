@@ -941,6 +941,7 @@ class Access(BaseController):
                 pending=pending,
                 exclude_pending=False,
             )
+            util.sql(self.session, q)
             users = tuple(self.session.execute(q).scalars())
         else:
             users = User.resolve(self.session, resolve_users)

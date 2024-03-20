@@ -19,9 +19,13 @@ from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
 from app import __version__, fields, util
-from app.err import (ErrAccessDocument, ErrAccessEvent, ErrEventGeneral,
+from app.err import (ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrAccessEvent, ErrEventGeneral,
                      ErrEventKind, ErrEventUndone, ErrObjMinSchema)
-from app.fields import (ChildrenAssignment, ChildrenCollection,
+from app.fields import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_FORMAT,
+                        LENGTH_MESSAGE, LENGTH_NAME, LENGTH_TITLE, LENGTH_URL,
+                        ChildrenAssignment, ChildrenCollection,
                         ChildrenDocument, ChildrenGrant, ChildrenUser, Format,
                         KindEvent, KindObject, KindRecurse, Level, LevelHTTP,
                         LevelStr, PendingFrom, Plural, ResolvableLevel,
@@ -204,7 +208,7 @@ class Base(DeclarativeBase):
                 "_msg_deleted",
                 410,
                 uuid_obj=self.uuid,
-                kind_obj=KindObject(self.__tablename__).name,
+                kind_obj=KindObject(self.__tablename__),
             )
             raise err
         return self
@@ -846,6 +850,7 @@ class User(SearchableTableMixins, Base):
         level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         pending: bool | None = None,
+        # pending_from: PendingFrom | None,
         exclude_pending: bool = False,
     ) -> ColumnElement[bool]:
         cond = AssocUserDocument.id_user == self.id
@@ -1006,66 +1011,58 @@ class User(SearchableTableMixins, Base):
         pending: bool = False,
         exclude_deleted: bool = True,
     ) -> Self:
-        "Horrific."
+        "Less horrific."
 
         # NOTE: If the document is public and the level is view, then don't check.
         #       These lines can cause an issue where grants are not correctly 
         #       added,
-        level = Level.resolve(level)
-        # if document.public and level == Level.view:
-        #     return self
-
-        session = self.get_session()  # if _session is None else _session
-
         # NOTE: Deleted, pending, insufficient should be included for better
         #       feedback. Do not exclude when adding.
+        level, session = Level.resolve(level), self.get_session()
         q = self.q_select_grants(
             {document.uuid},
             exclude_deleted=False,
-            exclude_pending=False,
+            exclude_pending=False
         )
 
-        # q_uuid_grant = select(literal_column("uuid")).select_from(q.subquery())
-        # q_grant = select(Grant).where(Grant.uuid.in_(q_uuid_grant))
-        res = session.execute(q).scalars()
-        assocs: List[AssocUserDocument] = list(res)
+        res: Grant | None = session.execute(q).scalar()  # type: ignore
+        detail: Dict[str, Any] = dict(
+            uuid_user=self.uuid, 
+            uuid_document=document.uuid,
+            level_grant_required=level,
+        )
 
-        detail: Dict[str, Any] = dict(uuid_user=self.uuid, uuid_document=document.uuid)
-        match assocs:
-            case []:
-                raise ErrAccessDocument.httpexception(
+        match res:
+            case None:
+                raise ErrAccessDocumentGrantBase.httpexception(
                     "_msg_grant_dne",
                     403,
                     level=level.name,
                     **detail,
                 )
-            case [
-                Grant(deleted=False, pending=True, pending_from=pending_from) as grant
-            ] if not pending:
-                match pending_from:
-                    case PendingFrom.grantee:
-                        msg = "Grant is pending. Document owner must approve "
-                        msg += "request for access."
-                    case PendingFrom.granter:
-                        msg = "Grant is pending. User must accept invitation."
-                    case _:
-                        msg = "Grant is pending while in `pending_from` is "
-                        msg += "`created`."
-                        detail.update(msg=msg)
-                        raise HTTPException(500, detail=detail)
+            case Grant(deleted=False, pending=True, pending_from=pending_from) as grant if not pending:
+                status, msg = 403, "_msg_grant"
+                if pending_from == PendingFrom.created:
+                    status, msg = 500, "_msg_grant_created_pending"
 
-                detail.update(msg=msg)
-                raise HTTPException(403, detail=detail)
-            case [Grant(deleted=deleted) as grant]:
+                raise ErrAccessDocumentPending.httpexception(
+                    msg,
+                    status,
+                    uuid_grant=grant.uuid,
+                    level_grant=grant.level,
+                    pending_from=pending_from,
+                    **detail,
+                )
+            case Grant(deleted=deleted) as grant:
                 if not deleted:
                     if grant.level.value < level.value:
-                        detail.update(
-                            msg="Grant insufficient.",
+                        raise ErrAccessDocumentGrantInsufficient.httpexception(
+                            "_msg_insufficient",
+                            403,
                             uuid_grant=grant.uuid,
-                            level_grant=grant.level.name,
-                            level_grant_required=level.name,
+                            level_grant=grant.level,
+                            **detail
                         )
-                        raise HTTPException(403, detail=detail)
                     if grants is not None:
                         grants[getattr(grant, grants_index)] = grant
                     return self
@@ -1074,12 +1071,19 @@ class User(SearchableTableMixins, Base):
                         grants[getattr(grant, grants_index)] = grant
                     return self
                 else:
-                    detail.update(msg="Grant is deleted.", uuid_grant=grant.uuid)
-                    raise HTTPException(410, detail=detail)
+                    raise ErrAccessDocumentGrantBase.httpexception(
+                        "_msg_dne",
+                        410,
+                        **detail,
+                    )
+            # NOTE: Server has become a teapot: Should never happen!
             case _:
-                # Server is a teapot because this is unlikely to ever happen.
-                detail.update(msg="There should only be one grant.")
-                raise HTTPException(418, detail=detail)
+                raise ErrAccessDocumentGrantBase.httpexception(
+                    "_msg_inconcievable",
+                    418,
+                    **detail,
+                    level_grant_required=Level.own,
+                )
 
     def check_sole_owner_document(self, document: "Document") -> Self: ...
 

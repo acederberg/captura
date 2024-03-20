@@ -1,7 +1,8 @@
 import functools
 import json
 from http import HTTPMethod
-from typing import Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple, Type
+from typing import (Any, Callable, Concatenate, Dict, ParamSpec, Set, Tuple,
+                    Type)
 
 import httpx
 import pytest
@@ -12,7 +13,7 @@ from app.auth import Auth
 from app.models import KindEvent
 from app.schemas import EventSchema
 from client.requests import Requests
-from client.requests.base import BaseRequest
+from client.requests.base import BaseRequests
 
 from ..conftest import PytestClientConfig
 
@@ -188,7 +189,7 @@ def check_status(
 
 
 class BaseTestViews:
-    T: Type[BaseRequest]
+    T: Type[BaseRequests]
 
     @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
     async def client(
@@ -235,7 +236,7 @@ async def requests(
     async_client: httpx.AsyncClient,
     auth: Auth,
     request,
-) -> BaseRequest:
+) -> BaseRequests:
     token = auth.encode(DEFAULT_TOKEN_PAYLOAD)
     handler = request.param
     return Requests(client_config, async_client, token=token, handler=handler)

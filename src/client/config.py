@@ -4,8 +4,6 @@ from app import util
 from pydantic import BaseModel, Field, computed_field, model_validator
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
-from client import flags
-
 
 class ProfileConfig(BaseModel):
     # name: Annotated[str, Field()]
@@ -49,4 +47,6 @@ class Config(BaseYamlSettings):
             # raise ValueError("No profile to get token from.")
 
         return pp.token
+
+
 
