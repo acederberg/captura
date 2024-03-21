@@ -7,7 +7,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from app.auth import Auth
-from app.config import MySqlConfig
+from app.config import MySqlConfig, MySqlHostConfig
 from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from app.models import Document, Grant, User
 from app.schemas import (AsOutput, EventSchema, GrantSchema, KindNesting,
@@ -20,19 +20,12 @@ from sqlalchemy import Tuple, false, func, literal_column, select, true
 from sqlalchemy.orm import Session
 from tests.config import PytestConfig
 from tests.conftest import PytestClientConfig
-from tests.dummy import Dummy
+from tests.dummy import DummyProvider
 from tests.test_views.util import check_status
 
 N_CASES: int = 1
 
 # Keeps manual assets out and bypasses reloading of other tables.
-@pytest.fixture(scope="session")
-def sessionmaker_dummy(config: PytestConfig):
-    kwargs_host = config.mysql.host.model_dump()
-    kwargs_host["database"]
-    MySqlConfig(host=MySqlHostConfig.model_validate(kwargs_host))
-
-
 
 
 class BaseEndpointTest(abc.ABC):
@@ -40,15 +33,15 @@ class BaseEndpointTest(abc.ABC):
 
     .. code:: python
 
-        async def test_unauthorized_401(self, dummy: Dummy, requests: Requests):
+        async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
             "Test unauthorized access."
             ...
 
-        async def test_not_found_404(self, dummy: Dummy, requests: Requests):
+        async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
             "Test not found response."
             ...
 
-        async def test_deleted_410(self, dummy: Dummy, requests: Requests):
+        async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
             "Test deleted object"
             ...
     """
@@ -57,15 +50,15 @@ class BaseEndpointTest(abc.ABC):
 
 
     @pytest.fixture(scope="class")
-    def dummy(self, sessionmaker_dummy, auth: Auth) -> Generator[Dummy, None, None]:
-        with sessionmaker_dummy() as session:
-            yield Dummy(auth, session, use_existing=True)
+    def dummy(self, sessionmaker, auth: Auth) -> Generator[DummyProvider, None, None]:
+        with sessionmaker() as session:
+            yield DummyProvider(auth, session, use_existing=True)
 
     @pytest_asyncio.fixture(scope="function")
     async def requests(
         self,
         app: FastAPI | None,
-        dummy: Dummy,
+        dummy: DummyProvider,
         client_config: PytestClientConfig,
         async_client: httpx.AsyncClient,
     ) -> AsyncGenerator[Requests, Any]:
@@ -76,22 +69,22 @@ class BaseEndpointTest(abc.ABC):
     # Errors
 
     @abc.abstractmethod
-    async def test_unauthorized_401(self, dummy: Dummy, requests: Requests):
+    async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
         "Test unauthorized access."
         ...
 
     @abc.abstractmethod
-    async def test_not_found_404(self, dummy: Dummy, requests: Requests):
+    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
         "Test not found response."
         ...
 
     @abc.abstractmethod
-    async def test_deleted_410(self, dummy: Dummy, requests: Requests):
+    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
         "Test deleted object"
         ...
 
 
-    def document_user_uuids(self, dummy: Dummy, document: Document, limit: int | None = None, **kwargs) -> List[str]:
+    def document_user_uuids(self, dummy: DummyProvider, document: Document, limit: int | None = None, **kwargs) -> List[str]:
         q_users = document.q_select_users(**kwargs).where(Grant.level < Level.own).order_by(func.random()).limit(limit or 10)
         users = tuple(dummy.session.scalars(q_users))
         return list(User.resolve_uuid(dummy.session, users))
@@ -110,7 +103,7 @@ class CommonDocumentGrantsTests(BaseEndpointTest):
     @pytest.mark.asyncio
     async def test_unauthorized_401(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         requests: Requests,
     ):
         "Test unauthorized access."
@@ -118,7 +111,7 @@ class CommonDocumentGrantsTests(BaseEndpointTest):
     @pytest.mark.asyncio
     async def test_forbidden_403_insufficient(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         requests: Requests,
     ):
         "Test cannot access when not an owner."
@@ -142,7 +135,7 @@ class CommonDocumentGrantsTests(BaseEndpointTest):
     @pytest.mark.asyncio
     async def test_forbidden_403_pending(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         requests: Requests,
     ):
         "Test cannot use when ownership is pending."
@@ -168,7 +161,7 @@ class CommonDocumentGrantsTests(BaseEndpointTest):
     @pytest.mark.asyncio
     async def test_not_found_404(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         requests: Requests,
     ):
         "Test not found response with bad document uuid."
@@ -180,7 +173,7 @@ class CommonDocumentGrantsTests(BaseEndpointTest):
     @pytest.mark.asyncio
     async def test_410_deleted_grant(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         requests: Requests,
     ):
         "Test cannot use grant is deleted."
@@ -213,7 +206,7 @@ class CommonDocumentGrantsTests(BaseEndpointTest):
     @pytest.mark.asyncio
     async def test_deleted_410(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         requests: Requests,
     ):
         "Test deleted document"
@@ -258,7 +251,7 @@ class TestDocumentGrantsRead(CommonDocumentGrantsTests):
 
     def check_success(
         self,
-        dummy: Dummy,
+        dummy: DummyProvider,
         res: httpx.Response,
         *,
         pending: bool = False,
@@ -296,7 +289,7 @@ class TestDocumentGrantsRead(CommonDocumentGrantsTests):
         return data
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: Dummy, requests: Requests):
+    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         "Test a successful response."
 
         fn = self.fn(requests)
@@ -317,7 +310,7 @@ class TestDocumentGrantsRead(CommonDocumentGrantsTests):
         self.check_success(dummy, res, pending=False)
 
     @pytest.mark.asyncio
-    async def test_success_200_pending(self, dummy: Dummy, requests: Requests):
+    async def test_success_200_pending(self, dummy: DummyProvider, requests: Requests):
         "Test the pending query parameter."
 
         fn = self.fn(requests)
@@ -327,7 +320,7 @@ class TestDocumentGrantsRead(CommonDocumentGrantsTests):
         self.check_success(dummy, res, pending=True)
 
     @pytest.mark.asyncio
-    async def test_success_200_pending_from(self, dummy: Dummy, requests: Requests):
+    async def test_success_200_pending_from(self, dummy: DummyProvider, requests: Requests):
         "Test the pending_from query parameter."
 
         # NOTE: Should return nothing when `create` and `pending`. Want mix of
@@ -365,7 +358,7 @@ class TestDocumentGrantsRead(CommonDocumentGrantsTests):
 
 
     @pytest.mark.asyncio
-    async def test_success_200_level(self, dummy: Dummy, requests: Requests):
+    async def test_success_200_level(self, dummy: DummyProvider, requests: Requests):
         "Test the pending query parameter."
 
         # NOTE: Documents without grants are not generated by `dummy` as every
@@ -400,7 +393,7 @@ class TestDocumentGrantsRevoke(CommonDocumentGrantsTests):
         return requests.grants.documents.revoke
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: Dummy, requests: Requests):
+    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
 
         document = dummy.get_document(Level.own, exclude_pending=True)
         assert not document.deleted
@@ -460,7 +453,7 @@ class TestDocumentGrantsRevoke(CommonDocumentGrantsTests):
         # TODO: Check indepotence.
 
     @pytest.mark.asyncio
-    async def test_forbidden_403_cannot_reject_other_owner(self, dummy: Dummy, requests: Requests):
+    async def test_forbidden_403_cannot_reject_other_owner(self, dummy: DummyProvider, requests: Requests):
         assert False
 
 
@@ -470,7 +463,7 @@ class TestDocumentGrantsApprove(CommonDocumentGrantsTests):
         return requests.grants.documents.approve
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: Dummy, requests: Requests):
+    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
 
         # Get owned document
         document = dummy.get_document(Level.own)
@@ -542,7 +535,7 @@ class TestDocumentGrantsInvite(CommonDocumentGrantsTests):
         return requests.grants.documents.invite
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: Dummy, requests: Requests):
+    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         assert False
 
 

@@ -2,8 +2,8 @@ import secrets
 from datetime import datetime
 from http import HTTPMethod
 from random import choice, randint, sample
-from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Protocol,
-                    Self, Set, Tuple, Type, TypeVar)
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict, List,
+                    Protocol, Self, Set, Tuple, Type, TypeVar)
 
 import httpx
 import pytest
@@ -14,6 +14,7 @@ from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
                                   BaseResolvedSecondary, Data, KindData,
                                   ResolvedDocument, ResolvedUser)
 from app.controllers.delete import Delete
+from app.fields import KindObject, Level, Singular
 from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
                         LENGTH_NAME, LENGTH_TITLE, LENGTH_URL, Assignment,
                         Base, Collection, Document, Event, Format, Grant,
@@ -23,6 +24,9 @@ from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
 from client.config import ProfileConfig, UseConfig
 from client.flags import Output
+from client.handlers import ConsoleHandler
+from client.requests import Requests
+from client.requests.base import ContextData
 from faker import Faker
 from faker.providers import internet
 from fastapi import HTTPException
@@ -30,100 +34,13 @@ from sqlalchemy import Column, Select, func, insert, inspect, select, update
 from sqlalchemy.orm import Session
 
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
+from tests.mk import Mk
+from tests.test_models import ModelTestMeta
 
-# https://faker.readthedocs.io/en/master/providers/faker.providers.internet.html
-fkit = Faker()
-item_kind_event: List[KindEvent] = list(KindEvent)
-item_kind_obj: List[KindObject] = list(KindObject)
-item_format: List[Format] = list(Format)
-item_pending_from: List[PendingFrom] = list(PendingFrom)
-item_level: List[Level] = list(Level)
+# =========================================================================== #
+# Providers 
 
-NOW = int(datetime.timestamp(datetime.utcnow()))
-
-fkit.add_provider(internet)
-_Mk: Dict[str, Callable[[], Any]] = dict(
-    kind=lambda: choice(item_kind_event),
-    api_version=lambda: __version__,
-    timestamp=lambda: randint(0, NOW),
-    uuid=lambda: secrets.token_urlsafe(8),
-    name=lambda: fkit.text(LENGTH_NAME),
-    description=lambda: fkit.text(LENGTH_DESCRIPTION),
-    detail=lambda: fkit.text(LENGTH_DESCRIPTION),
-    url=lambda: fkit.url()[:LENGTH_URL],
-    url_image=lambda: fkit.url()[:LENGTH_URL],
-    level=lambda: Level(randint(1, 3)),
-    pending_from=lambda: choice(item_pending_from),
-    kind_obj=lambda: choice(item_kind_obj),
-    kind_event=lambda: choice(item_kind_event),
-    format=lambda: choice(item_format),
-    content=lambda: bytes(fkit.text(LENGTH_CONTENT), "utf-8"),
-    message=lambda: fkit.text(LENGTH_MESSAGE),
-    admin=(mk_bool := lambda: bool(randint(0, 1))),
-    deleted=mk_bool,
-    public=mk_bool,
-    pending=mk_bool,
-    api_origin=lambda: "tests/dummy.py",
-)
-
-
-def get_mk(column: Column):
-
-    if column.name.startswith("uuid"):
-        return  # _Mk["uuid"]
-    elif column.name.startswith("id"):
-        return
-    elif column.name.startswith("_prototype"):
-        return
-
-    match column:
-        case Column(primary_key=True):
-            return
-        case _:
-            return _Mk[column.name]  # type: ignore
-
-
-
-T_ResolvableContra = TypeVar(
-    "T_ResolvableContra", Collection, User, Document, Grant, Event, covariant=True
-)
-
-
-class MkDummy(Protocol[T_ResolvableContra]):
-    def __call__(self, **kwargs) -> T_ResolvableContra: ...
-
-
-def create_mk_dummy(
-    T_model: Type[T_ResolvableContra],
-) -> MkDummy[T_ResolvableContra]:
-    cols = {
-        col.name: mk
-        for col in inspect(T_model).columns
-        if (mk := get_mk(col)) is not None
-    }
-
-    def wrapper(**kwargs) -> T_ResolvableContra:
-        base_kwargs = {key: mk() for key, mk in cols.items()}
-        base_kwargs.update(kwargs)
-        return T_model(**base_kwargs)
-
-    return wrapper
-
-
-class Mk:
-
-    user = staticmethod(create_mk_dummy(User))
-    collection = staticmethod(create_mk_dummy(Collection))
-    document = staticmethod(create_mk_dummy(Document))
-    grant = staticmethod(create_mk_dummy(Grant))
-    event = staticmethod(create_mk_dummy(Event))
-
-
-# NOTE: I tried to avoid this but I'm sick of tests with annoying database
-#       state problems and long setup. Use this chainable to expose data for
-#       the user and set `private`/`deleted`ness here.
-class Dummy:
-    dummy_user_uuids_file: ClassVar[str] = util.Path.tests("./dummies.json")
+class BaseDummyProvider:
     dummy_user_uuids: ClassVar[list[str]] = list()
     dummy_kinds: ClassVar[Set[KindObject]] = {
         KindObject.user,
@@ -134,53 +51,256 @@ class Dummy:
         KindObject.event,
     }
 
-    auth: Auth
     session: Session
+
     user: User
-    collections: Tuple[Collection, ...]
     documents: Tuple[Document, ...]
-    grants: Tuple[Grant, ...]
-    assignments: Tuple[Assignment, ...]
-    events: Tuple[Event, ...]
+    collections: Tuple[Collection, ...]
 
     # ----------------------------------------------------------------------- #
+    # Getters
 
-    def __init__(self, auth: Auth, session: Session, *, user: User | None = None,
-                 use_existing: bool = False,):
+    def get_document(self, level: Level, deleted: bool = False, **kwargs) -> Document:
 
+        kwargs.update(exclude_deleted=not deleted)
+        if level is not None:
+            q = self.user.q_select_documents(level=level, **kwargs)
+            if deleted:
+                q = q.where(Document.deleted)
+        else:
+            raise ValueError()
+            # q = select(Document).where(Document.uuid == "ex-parrot")
+        q = q.order_by(func.random()).limit(1)
+        # util.sql(self.session, q)
+        doc = self.session.scalar(q)
+
+        if doc is None:
+            raise ValueError(f"Could not find document with level `{level}`.")
+        return doc
+
+    def get_grant(self, document: Document, **kwargs) -> Grant:
+        self.user.q_select_grants
+        q = self.user.q_select_grants({document.uuid}, **kwargs)
+        q = q.limit(1)
+        # util.sql(self.session, q)
+        grant = self.session.scalar(q)
+        if grant is None:
+            raise AssertionError("Grant should have been created for document.")
+        return grant
+
+    @property
+    def token(self) -> Token:
+        return Token(uuid=self.user.uuid, admin=self.user.admin, permissions=[])
+
+    @property
+    def token_encoded(self) -> str:
+        return self.auth.encode(Token)
+
+    def access(self, *, method: HTTPMethod = HTTPMethod.GET) -> Access:
+        return Access(self.session, self.token, method)
+
+    def delete(
+        self,
+        *,
+        api_origin: str,
+        force: bool = True,
+        method: HTTPMethod = HTTPMethod.GET,
+    ) -> Delete:
+        return Delete(
+            self.session,
+            self.token,
+            method,
+            api_origin=api_origin,
+            access=self.access(method=method),
+            force=force,
+        )
+
+    def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
+        profile =  PyTestClientProfileConfig(
+                    token=self.auth.encode(dict(uuid=self.user.uuid, admin=self.user.admin,)),
+                    uuid_user=self.user.uuid,
+                )
+
+        context = ContextData(
+            config=PytestClientConfig(
+                use=UseConfig(host="default", profile="default"),
+                hosts=dict(default=client_config.host),
+                profiles=dict(default=profile),
+            ),
+            console_handler=ConsoleHandler(output=Output.yaml),  # type: ignore
+        )
+        return Requests(context, client)
+
+    # NOTE: `User` will always be the the same as
+    def data(self, kind: KindData) -> Data:
+        T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary]
+        T_resolved = BaseResolved.get(kind) # type: ignore
+
+        kwargs: Dict[str, Any]
+
+        if T_resolved.kind in {KindData.user}:
+            kwargs = {"users": (self.user,)}
+        elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
+            document = self.get_document(level = Level.own)
+            grant = self.get_grant(document)
+
+            if T_resolved.kind == KindData.grant_document:
+                grants = {grant.uuid_user: grant}
+                kwargs = dict(document=document, users=(self.user,), grants=grants, token_user_grants=grants)
+            else:
+                grants = {grant.uuid_document: grant}
+                kwargs = dict(documents=(document,), user=self.user, grants=grants, token_user_grants=grants)
+        elif T_resolved.kind in {
+            KindData.collection,
+            KindData.document,
+            KindData.edit,
+            KindData.event,
+        }:
+            assert issubclass(T_resolved, BaseResolvedPrimary)
+            attr = T_resolved._attr_name_targets
+            try:
+                attr_value = getattr(self, attr)
+            except AttributeError as err:
+                msg = f"`DummyProvider` probably missing attribute named `{attr}`."
+                raise AttributeError(msg) from err
+
+            if T_resolved.kind == KindData.document:
+                items = {aa.uuid: aa for aa in attr_value if randint(0, 2)}
+                grants = {
+                    gg.uuid_document: gg
+                    for gg in self.grants
+                    if gg.uuid_document not in items
+                }
+                kwargs = {
+                    attr: tuple(items.values()),
+                    "grants": grants,
+                    "token_user_grants": grants,
+                }
+            elif T_resolved.kind == KindData.edit:
+                items = {aa.document.uuid: aa for aa in attr_value if randint(0, 2)}
+                kwargs = {
+                    attr: tuple(items.values()),
+                    "grants": {
+                        gg.uuid_document: gg
+                        for gg in self.grants
+                        if gg.uuid_document in items
+                    },
+                }
+            else:
+                kwargs = {attr: tuple(aa for aa in attr_value if randint(0, 2))}
+        else:
+            raise ValueError(f"No implementation for data kind `{kind}`.")
+
+        return mwargs(
+            Data,
+            data=mwargs(T_resolved, **kwargs),
+            user_token=self.user,
+        )
+
+    def other(
+        self,
+        kind: KindObject,
+        *,
+        callback: Annotated[
+            Callable[[Select], Select] | None,
+            "This should be used to add filters like `where` statements.",
+        ] = None,
+    ):
+        match kind:
+            case KindObject.event:
+                q = select(Event).where(Event.uuid_user != self.user.uuid)
+            case KindObject.document | KindObject.grant | KindObject.assignment:
+                raise ValueError("`other` only supports `KindObject.event`.")
+            case _:
+                raise ValueError(f"Invalid value `{kind}` for `kind`.")
+
+        if callback is not None:
+            q = callback(q)
+
+        q = q.limit(1)
+        res = self.session.scalar(q)
+        if res is None:
+            msg = f"`DummyProvider.other` could not find a suitable `{kind.name}`."
+            raise ValueError(msg)
+        return res
+
+    # ----------------------------------------------------------------------- #
+    # Chainables and their helpers.
+
+    def check_kinds(self, kinds: Set[KindObject]) -> ValueError | None:
+        if bad := set(kind for kind in kinds if kind not in self.dummy_kinds):
+            raise ValueError(f"Invalid kinds `{bad}`.")
+        return None
+
+    def visability(self, kinds: Set[KindObject], deleted: bool, public: bool) -> Self:
+        if (err := self.check_kinds(kinds)) is not None:
+            raise err
+
+        session = self.session
+        for kind in kinds:
+            T_Model = Tables[Singular(kind.name).name].value
+            values = dict(deleted=deleted, public=public)
+            if not hasattr(T_Model, "public"):
+                values.pop("public")
+
+            session.execute(update(T_Model).values(**values))
+
+        session.commit()
+
+        return self
+
+    def refresh(self) -> Self:
+
+        self.session.refresh(self.user)
+        for items in (self.collections, self.documents):
+            for item in items:
+                self.session.refresh(item)
+
+        return self
+
+
+class DummyProviderYAML(BaseDummyProvider):
+
+    def __init__(self, auth: Auth, session: Session, user: User): 
         self.auth = auth
         self.session = session
-        if user is not None:
-            self.find(user)
-        elif use_existing and len(self.dummy_user_uuids):
-            try:
-                user = User.if_exists(session, choice(self.dummy_user_uuids))
-                self.find(user)
-            except HTTPException:
-                self.build()
-        else:
-            self.build()
+        self.find(user)
 
     def find(self, user: User):
+
         session = self.session
+
         self.user = user
         self.documents = tuple(session.scalars(user.q_select_documents()))
         self.collections = tuple(user.collections)
-        self.grants = tuple(session.scalars(user.q_select_grants()))
-        self.assignments = tuple(
-            session.scalars(
-                select(Assignment).where(
-                    Assignment.id_collection.in_(
-                        Collection.resolve_uuid(session, self.collections)
-                    )
-                )
-            )
-        )
-        self.events = tuple(
-            session.scalars(
-                select(Event).where(Event.uuid_user == self.user.uuid).limit(10)
-            )
-        )
+
+    @classmethod
+    def merge(cls, session: Session) -> None:
+
+        backwards = list(Base.metadata.sorted_tables)
+        backwards.reverse()
+        for table in Base.metadata.sorted_tables:
+            cls_model = ModelTestMeta.__children__.get(table.name)
+            if cls_model is None:
+                continue
+            cls_model.merge(session)
+
+
+
+
+
+class DummyProvider(BaseDummyProvider):
+    def __init__(self, auth: Auth, session: Session, use_existing: bool = False):
+
+        self.auth = auth
+        self.session = session
+
+        if use_existing and len(self.dummy_user_uuids):
+            user = User.if_exists(session, choice(self.dummy_user_uuids))
+            self.find(user)
+        else:
+            self.build()
+
 
     def mk_assignments(self):
         # NOTE: Iter over collections first so that every document has a chance
@@ -341,211 +461,7 @@ class Dummy:
         self.dummy_user_uuids.append(user.uuid)
         return user
 
-    # ----------------------------------------------------------------------- #
-    # Getters
 
-    def get_document(self, level: Level, deleted: bool = False, **kwargs) -> Document:
-
-        kwargs.update(exclude_deleted=not deleted)
-        if level is not None:
-            q = self.user.q_select_documents(level=level, **kwargs)
-            if deleted:
-                q = q.where(Document.deleted)
-        else:
-            raise ValueError()
-            # q = select(Document).where(Document.uuid == "ex-parrot")
-        q = q.order_by(func.random()).limit(1)
-        # util.sql(self.session, q)
-        doc = self.session.scalar(q)
-
-        if doc is None:
-            raise ValueError(f"Could not find document with level `{level}`.")
-        return doc
-
-    def get_grant(self, document: Document, **kwargs) -> Grant:
-        self.user.q_select_grants
-        q = self.user.q_select_grants({document.uuid}, **kwargs)
-        q = q.limit(1)
-        # util.sql(self.session, q)
-        grant = self.session.scalar(q)
-        if grant is None:
-            raise AssertionError("Grant should have been created for document.")
-        return grant
-
-    @property
-    def token(self) -> Token:
-        return Token(uuid=self.user.uuid, admin=self.user.admin, permissions=[])
-
-    @property
-    def token_encoded(self) -> str:
-        return self.auth.encode(Token)
-
-    def access(self, *, method: HTTPMethod = HTTPMethod.GET) -> Access:
-        return Access(self.session, self.token, method)
-
-    def delete(
-        self,
-        *,
-        api_origin: str,
-        force: bool = True,
-        method: HTTPMethod = HTTPMethod.GET,
-    ) -> Delete:
-        return Delete(
-            self.session,
-            self.token,
-            method,
-            api_origin=api_origin,
-            access=self.access(method=method),
-            force=force,
-        )
-
-    def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
-        profile =  PyTestClientProfileConfig(
-                    token=self.auth.encode(dict(uuid=self.user.uuid, admin=self.user.admin,)),
-                    uuid_user=self.user.uuid,
-                )
-
-        context = ContextData(
-            config=PytestClientConfig(
-                use=UseConfig(host="default", profile="default"),
-                hosts=dict(default=client_config.host),
-                profiles=dict(default=profile),
-            ),
-            console_handler=ConsoleHandler(output=Output.yaml),  # type: ignore
-        )
-        return Requests(context, client)
-
-    # NOTE: `User` will always be the the same as
-    def data(self, kind: KindData) -> Data:
-        T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary]
-        T_resolved = BaseResolved.get(kind) # type: ignore
-
-        kwargs: Dict[str, Any]
-
-        if T_resolved.kind in {KindData.user}:
-            kwargs = {"users": (self.user,)}
-        elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
-            document = self.get_document(level = Level.own)
-            grant = self.get_grant(document)
-
-            if T_resolved.kind == KindData.grant_document:
-                grants = {grant.uuid_user: grant}
-                kwargs = dict(document=document, users=(self.user,), grants=grants, token_user_grants=grants)
-            else:
-                grants = {grant.uuid_document: grant}
-                kwargs = dict(documents=(document,), user=self.user, grants=grants, token_user_grants=grants)
-        elif T_resolved.kind in {
-            KindData.collection,
-            KindData.document,
-            KindData.edit,
-            KindData.event,
-        }:
-            assert issubclass(T_resolved, BaseResolvedPrimary)
-            attr = T_resolved._attr_name_targets
-            try:
-                attr_value = getattr(self, attr)
-            except AttributeError as err:
-                msg = f"`Dummy` probably missing attribute named `{attr}`."
-                raise AttributeError(msg) from err
-
-            if T_resolved.kind == KindData.document:
-                items = {aa.uuid: aa for aa in attr_value if randint(0, 2)}
-                grants = {
-                    gg.uuid_document: gg
-                    for gg in self.grants
-                    if gg.uuid_document not in items
-                }
-                kwargs = {
-                    attr: tuple(items.values()),
-                    "grants": grants,
-                    "token_user_grants": grants,
-                }
-            elif T_resolved.kind == KindData.edit:
-                items = {aa.document.uuid: aa for aa in attr_value if randint(0, 2)}
-                kwargs = {
-                    attr: tuple(items.values()),
-                    "grants": {
-                        gg.uuid_document: gg
-                        for gg in self.grants
-                        if gg.uuid_document in items
-                    },
-                }
-            else:
-                kwargs = {attr: tuple(aa for aa in attr_value if randint(0, 2))}
-        else:
-            raise ValueError(f"No implementation for data kind `{kind}`.")
-
-        return mwargs(
-            Data,
-            data=mwargs(T_resolved, **kwargs),
-            user_token=self.user,
-        )
-
-    # ----------------------------------------------------------------------- #
-
-    def other(
-        self,
-        kind: KindObject,
-        *,
-        callback: Annotated[
-            Callable[[Select], Select] | None,
-            "This should be used to add filters like `where` statements.",
-        ] = None,
-    ):
-        match kind:
-            case KindObject.event:
-                q = select(Event).where(Event.uuid_user != self.user.uuid)
-            case KindObject.document | KindObject.grant | KindObject.assignment:
-                raise ValueError("`other` only supports `KindObject.event`.")
-            case _:
-                raise ValueError(f"Invalid value `{kind}` for `kind`.")
-
-        if callback is not None:
-            q = callback(q)
-
-        q = q.limit(1)
-        res = self.session.scalar(q)
-        if res is None:
-            msg = f"`Dummy.other` could not find a suitable `{kind.name}`."
-            raise ValueError(msg)
-        return res
-
-    # ----------------------------------------------------------------------- #
-    # Chainables and their helpers.
-
-    def check_kinds(self, kinds: Set[KindObject]) -> ValueError | None:
-        if bad := set(kind for kind in kinds if kind not in self.dummy_kinds):
-            raise ValueError(f"Invalid kinds `{bad}`.")
-        return None
-
-    def visability(self, kinds: Set[KindObject], deleted: bool, public: bool) -> Self:
-        if (err := self.check_kinds(kinds)) is not None:
-            raise err
-
-        session = self.session
-        for kind in kinds:
-            T_Model = Tables[Singular(kind.name).name].value
-            values = dict(deleted=deleted, public=public)
-            if not hasattr(T_Model, "public"):
-                values.pop("public")
-
-            session.execute(update(T_Model).values(**values))
-
-        session.commit()
-
-        return self
-
-    # def randomize_visibility(
-
-    def refresh(self) -> Self:
-
-        self.session.refresh(self.user)
-
-        for items in (self.collections, self.documents, self.grants, self.assignments):
-            for item in items:
-                self.session.refresh(item)
-
-        return self
-
-
+    def dispose(self):
+        ...
 

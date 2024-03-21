@@ -9,7 +9,7 @@ from app.controllers.base import (
 from app.models import Assignment, Collection, Document, Event, Grant, KindObject
 from app.schemas import PendingFrom, mwargs
 from sqlalchemy import false, select
-from tests.dummy import Dummy
+from tests.dummy import DummyProvider
 
 
 class TestDelete:
@@ -22,7 +22,7 @@ class TestDelete:
     #         msg = f"`{n}` of `{len(data.data.documents)}` collections not deleted."
     #         raise AssertionError(msg)
 
-    def test_delete_collection(self, dummy: Dummy):
+    def test_delete_collection(self, dummy: DummyProvider):
         delete = dummy.visability(
             {KindObject.collection}, public=False, deleted=False
         ).delete(api_origin=f"{__file__}::test_delete_user", force=False)
@@ -84,7 +84,7 @@ class TestDelete:
         assignments = tuple(dummy.session.scalars(q_assignments))
         assert not len(assignments), "Collections should have no remaining assignments."
 
-    def test_delete_document(self, dummy: Dummy):
+    def test_delete_document(self, dummy: DummyProvider):
 
         delete = dummy.visability(
             {KindObject.document}, public=False, deleted=False
@@ -165,7 +165,7 @@ class TestDelete:
             msg = f"`{n}` of `{len(assignments)}` grants not deleted."
             raise AssertionError(msg)
 
-    def test_delete_event(self, dummy: Dummy):
+    def test_delete_event(self, dummy: DummyProvider):
         delete = (
             dummy.visability({KindObject.event}, deleted=True, public=False)
             .refresh()

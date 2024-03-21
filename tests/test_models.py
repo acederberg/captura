@@ -4,20 +4,9 @@ from typing import Any, ClassVar, Dict, List, Self, Tuple, Type
 import pytest
 import yaml
 from app import __version__, util
-from app.models import (
-    AssocCollectionDocument,
-    AssocUserDocument,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.models import (AssocCollectionDocument, AssocUserDocument, Base,
+                        Collection, Document, Edit, Event, Grant, KindEvent,
+                        KindObject, Level, User)
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
@@ -31,21 +20,7 @@ class ModelTestMeta(type):
 
     @classmethod
     def load(cls, sessionmaker: sessionmaker[Session]):
-
-        with sessionmaker() as session:
-            backwards = list(Base.metadata.sorted_tables)
-            backwards.reverse()
-            for table in backwards:
-                logger.debug("Cleaning `%s`.", table.name)
-                M = ModelTestMeta.__children__.get(table.name)
-                M.clean(session)
-
-            for table in Base.metadata.sorted_tables:
-                M = ModelTestMeta.__children__.get(table.name)
-                if M is None:
-                    logger.debug("No dummies for `%s`.", table.name)
-                    continue
-                cls.load(session)
+        assert False, "User merge dummyProviderYaml.merge."
 
     def __new__(cls, name, bases, namespace):
         if name == "BaseModelTest":
@@ -98,20 +73,30 @@ class BaseModelTest(metaclass=ModelTestMeta):
 
     @classmethod
     def clean(cls, session: Session) -> None:
+        assert False
         logger.debug("Cleaning %s.", cls.M.__tablename__)
         session.execute(delete(cls.M))
         session.commit()
 
     @classmethod
     def load(cls, session: Session, start: int = 0, stop: int | None = None) -> None:
+        assert False
         logger.debug("Adding %s dummies from `%s`.", cls.M, cls.dummies_file)
         session.add_all(
             list(cls.preload(cls.M(**item)) for item in cls.dummies[start:stop])
         )
         session.commit()
 
+    @classmethod
+    def merge(cls, session: Session): 
+        loaded = (cls.preload(cls.M(**item)) for item in cls.dummies)
+        for item in loaded:
+            session.merge(item)
+        session.commit()
+
     @pytest.fixture(scope="session", autouse=True)
     def invoke_loader(self, load_tables, setup_cleanup): ...
+
 
 
 # NOTE: Test suites must be defined in appropraite order to ensure that
@@ -139,7 +124,7 @@ class TestUser(BaseModelTest):
         raw = next((m for m in cls.dummies if m["id"] == 1), None)
         if raw is None:
             raise ValueError(f"Could not find user with id `{id}`.")
-        session.add(cls.M(**raw))
+        session.merge(cls.M(**raw))
         session.commit()
 
     @classmethod
@@ -684,10 +669,13 @@ class TestAssocUserDocument(BaseModelTest):
         }
         roots = (item for item in items.values() if item.uuid_parent is None)
         others = (item for item in items.values() if item.uuid_parent is not None)
-        session.add_all(roots)
+        for root in roots:
+            session.merge(root)
         session.commit()
-        session.add_all(others)
-        session.commit()
+
+        for leaf in others:
+            session.merge(leaf)
+            session.commit()
 
 
 class TestAssocCollectionDocument(BaseModelTest):

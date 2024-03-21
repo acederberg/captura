@@ -36,7 +36,7 @@ from app.models import (
 from fastapi import HTTPException
 from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
-from tests.dummy import Dummy
+from tests.dummy import DummyProvider
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
 # =========================================================================== #
@@ -1395,7 +1395,7 @@ class TestAccessGrant(BaseTestAccess):
     )
     kinds = {KindObject.user, KindObject.document, KindObject.grant}
 
-    def test_self_access_only(self, dummy: Dummy):
+    def test_self_access_only(self, dummy: DummyProvider):
         """For ``/grants/users/{uuid_user}`` only."""
 
         document = Document.if_exists(dummy.session, "aaa-aaa-aaa")
@@ -1427,7 +1427,7 @@ class TestAccessGrant(BaseTestAccess):
         def doit(access: Access, doc: Document):
             return access.grant_document(doc.uuid, {"000-000-000"})
 
-        dummy = Dummy(auth, session, user=User.if_exists(session, "000-000-000"))
+        dummy = DummyProvider(auth, session, user=User.if_exists(session, "000-000-000"))
         document_own = dummy.get_document(Level.own)
         document_modify = dummy.get_document(Level.modify)
         document_view = dummy.get_document(Level.view)
@@ -1564,7 +1564,7 @@ class TestAccessGrant(BaseTestAccess):
         return grants, AssertionError(msg) if msg else None
 
     @pytest.mark.skip
-    def test_private(self, dummy: Dummy):
+    def test_private(self, dummy: DummyProvider):
         """
         Why is this test empty?
         =======================================================================
@@ -1619,7 +1619,7 @@ class TestAccessGrant(BaseTestAccess):
                as the access rules for the source of the grants.
         """
 
-    def test_deleted(self, dummy: Dummy):
+    def test_deleted(self, dummy: DummyProvider):
         dummy.visability(
             {KindObject.user, KindObject.document}, deleted=True, public=True
         ).refresh()
@@ -1682,7 +1682,7 @@ class TestAccessGrant(BaseTestAccess):
             # NOTE: Adding `exclude_deleted` should result in no erros raised.
             access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
 
-    def test_pending(self, dummy: Dummy):
+    def test_pending(self, dummy: DummyProvider):
         session = dummy.session
         dummy.visability(
             {KindObject.grant, KindObject.user, KindObject.document},
@@ -1742,7 +1742,7 @@ class TestAccessGrant(BaseTestAccess):
                 access.grant_user(dummy.user, dummy.documents, pending=True)
                 access.grant_document(document, {dummy.user.uuid}, pending=True)
 
-    def test_dne(self, dummy: Dummy):
+    def test_dne(self, dummy: DummyProvider):
         dummy.visability(
             {KindObject.user, KindObject.document, KindObject.grant},
             deleted=False,
@@ -1795,7 +1795,7 @@ class TestAccessEvent(BaseTestAccess):
     def test_private(self, session: Session):
         """The `private` column does not apply to events."""
 
-    def test_modify(self, dummy: Dummy):
+    def test_modify(self, dummy: DummyProvider):
         """Access is invarient with respect to method. Modifying an event
         requires that the user own the event directly, which is the same
         requirement for read.
@@ -1822,7 +1822,7 @@ class TestAccessEvent(BaseTestAccess):
             if err is not None:
                 raise err
 
-    def test_deleted(self, dummy: Dummy):
+    def test_deleted(self, dummy: DummyProvider):
 
         event = dummy.events[0]
         dummy.visability(self.kinds, deleted=True, public=True).refresh()
@@ -1843,7 +1843,7 @@ class TestAccessEvent(BaseTestAccess):
             # `exclude_deleted=False` should result in no error.
             access.event(event, exclude_deleted=False)
 
-    def test_dne(self, dummy: Dummy):
+    def test_dne(self, dummy: DummyProvider):
 
         for method in httpcommon:
             access = Access(dummy.session, dummy.token, method)
@@ -1856,7 +1856,7 @@ class TestAccessEvent(BaseTestAccess):
                 kind_obj="event",
             )
 
-    def test_overloads(self, dummy: Dummy):
+    def test_overloads(self, dummy: DummyProvider):
 
         dummy.visability(self.kinds, deleted=False, public=True).refresh()
         access = Access(dummy.session, dummy.token, HTTPMethod.GET)

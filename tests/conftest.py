@@ -14,7 +14,7 @@ from app.views import AppView
 from client.config import Config as ClientConfig
 from fastapi import FastAPI
 from pydantic import BaseModel, TypeAdapter
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
@@ -22,7 +22,7 @@ from sqlalchemy.orm import sessionmaker as _sessionmaker
 from tests.config import PytestClientConfig, PytestConfig
 from tests.test_models import ModelTestMeta
 
-from .dummy import Dummy
+from .dummy import DummyProvider, DummyProviderYAML
 
 logger = util.get_logger(__name__)
 
@@ -96,26 +96,6 @@ def session(sessionmaker):
 
 
 @pytest.fixture(scope="session")
-def load_tables(context: PytestContext, sessionmaker: _sessionmaker[Session], setup_cleanup):
-    context.reloaded = True
-    logger.info("Reloading tables (fixture `load_tables`).")
-    with sessionmaker() as session:
-        backwards = list(Base.metadata.sorted_tables)
-        backwards.reverse()
-        for table in backwards:
-            logger.debug("Cleaning `%s`.", table.name)
-            cls = ModelTestMeta.__children__.get(table.name)
-            cls.clean(session)
-
-        for table in Base.metadata.sorted_tables:
-            cls = ModelTestMeta.__children__.get(table.name)
-            if cls is None:
-                logger.debug("No dummies for `%s`.", table.name)
-                continue
-            cls.load(session)
-
-
-@pytest.fixture(scope="session")
 def setup_cleanup(engine: Engine, config: PytestConfig):
     logger.debug("`setup_cleanup` fixture called.")
     metadata = Base.metadata
@@ -124,7 +104,7 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
         result = list(connection.execute(text("SHOW TABLES;")).scalars())
         exists = len(result) > 0
 
-    if config.tests.recreate_tables and exists:
+    if config.tests.recreate_tables and not exists:
         logger.debug("Recreating tables.")
         metadata.drop_all(engine)
         metadata.create_all(engine)
@@ -133,6 +113,26 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
         metadata.create_all(engine)
 
     yield
+
+
+@pytest.fixture(scope="session")
+def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
+
+    with sessionmaker() as session:
+        logger.info("Loading tables with dummy data.")
+        DummyProviderYAML.merge(session)
+        n_users = session.execute(select(func.count(User.uuid))).scalar()
+        assert n_users is not None
+        assert isinstance(n_users, int)
+
+        if (n_generate := 7 - n_users) > 0:
+
+            while n_generate > 0:
+                DummyProvider(auth, session)
+                print(n_generate)
+                n_generate -= 1
+
+    return
 
 
 # --------------------------------------------------------------------------- #
@@ -162,41 +162,21 @@ def auth(config: Config) -> Auth:
 
 
 @pytest.fixture
-def dummy(auth: Auth, session: Session) -> Dummy:
-    return Dummy(auth, session)
+def dummy(auth: Auth, session: Session) -> DummyProvider:
+    return DummyProvider(auth, session)
 
 
-@pytest.fixture
-def default(auth: Auth, session: Session) -> Dummy:
+@pytest.fixture(scope="function")
+def default(auth: Auth, session: Session) -> DummyProviderYAML:
+
     user = session.get(User, 2)
-    return Dummy(auth, session, user)
+    assert user is not None
+    dd = DummyProviderYAML(auth, session, user)
+    dd.merge(session)
+    dd.refresh()
+
+    return dd
 
 
-@pytest.fixture
-def dummy_lazy(auth: Auth, session: Session) -> Dummy:
-    if Dummy.dummy_user_uuids:
-        uuid = choice(Dummy.dummy_user_uuids)
-        _user = session.scalar(select(User).where(User.uuid == uuid))
-        if _user is None:
-            raise AssertionError(f"Somehow user `{uuid}` is `None`.")
-        return Dummy(auth, session, user=_user)
-    return Dummy(auth, session)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def dummy_data_dump(context: PytestContext) -> Generator[None, None, None]:
-
-    ff = Dummy.dummy_user_uuids_file 
-    if not context.reloaded and path.exists(ff):
-        with open(ff, "r") as file:
-            try:
-                data = json.load(file)
-                dummy_user_uuids = TypeAdapter(List[str]).validate_python(data)
-                Dummy.dummy_user_uuids = dummy_user_uuids
-            except json.decoder.JSONDecodeError:
-                logger.warning("Failed to decode `%s`.", ff)
-
-    yield None
-
-    with open(ff, "w") as file:
-        json.dump(Dummy.dummy_user_uuids, file)

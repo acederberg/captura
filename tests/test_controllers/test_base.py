@@ -8,7 +8,7 @@ from app.models import Collection, Document, Grant
 from app.schemas import mwargs
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, sessionmaker
-from tests.dummy import Dummy
+from tests.dummy import DummyProvider
 
 
 def test_UuidSetFromModel(sessionmaker: sessionmaker):
@@ -45,7 +45,7 @@ def test_UuidFromModel(sessionmaker: sessionmaker):
         assert isinstance(res.uuid_document, str)
         assert isinstance(res.uuid_collections, set)
 
-def test_base_controller(default: Dummy):
+def test_base_controller(default: DummyProvider):
 
     dd = default
     base = BaseController(dd.session, None, HTTPMethod.GET)
@@ -73,7 +73,7 @@ def test_base_controller(default: Dummy):
 
 
 class TestBaseResolved:
-    def test_init_subclass(self): #, default: Dummy):
+    def test_init_subclass(self): #, default: DummyProvider):
 
         # dd = default
         def create_cls(**namespace):
@@ -95,11 +95,11 @@ class TestBaseResolved:
         assert res == ResolvedUser
 
 class TestBaseResolvedPrimary:
-    # def test_init_subclass_base(self, default: Dummy):
+    # def test_init_subclass_base(self, default: DummyProvider):
     #
     #     dd = default
 
-    def test_instance_methods(self, dummy: Dummy):
+    def test_instance_methods(self, dummy: DummyProvider):
 
         dd = dummy
         data = dd.data(KindData.user)
@@ -115,7 +115,7 @@ class TestBaseResolvedPrimary:
     
 
 class TestResolvedSecondary:
-    def test_instance_methods(self, dummy: Dummy):
+    def test_instance_methods(self, dummy: DummyProvider):
 
         dd = dummy 
         data = dd.data(KindData.grant_user)
