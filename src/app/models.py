@@ -850,8 +850,8 @@ class User(SearchableTableMixins, Base):
         level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         pending: bool | None = None,
-        # pending_from: PendingFrom | None,
-        exclude_pending: bool = False,
+        pending_from: PendingFrom | None = None,
+        exclude_pending: bool = True,
     ) -> ColumnElement[bool]:
         cond = AssocUserDocument.id_user == self.id
         if exclude_deleted:
@@ -876,8 +876,15 @@ class User(SearchableTableMixins, Base):
                 raise ValueError(msg)
             case (bool() as pending, False):
                 cond = and_(cond, Grant.pending == (true() if pending else false()))
-            case (None, True):
+            case (None | False, True):
                 cond = and_(cond, Grant.pending == false())
+            case (None, False):
+                pass
+            case bad:
+                raise ValueError(f"Cannot handle case `{bad}`.")
+
+        if pending_from is not None:
+            cond = and_(cond, Grant.pending_from == pending_from)
 
         return cond
 
@@ -888,6 +895,7 @@ class User(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         pending: bool | None = None,
         exclude_pending: bool = True,
+        pending_from: PendingFrom | None = None,
     ) -> Select:
         # NOTE: Attempting to make roughly the following query:
         #
@@ -908,6 +916,7 @@ class User(SearchableTableMixins, Base):
             exclude_deleted=exclude_deleted,
             pending=pending,
             exclude_pending=exclude_pending,
+            pending_from=pending_from
         )
         q = q.where(conds)
         return q
@@ -919,6 +928,7 @@ class User(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
+        pending_from: PendingFrom | None = None
     ) -> Select:
         """Dual to :meth:`q_select_user_uuids`."""
 
@@ -932,6 +942,7 @@ class User(SearchableTableMixins, Base):
                     exclude_deleted,
                     exclude_pending=exclude_pending,
                     pending=pending,
+                    pending_from=pending_from,
                 ),
             )
         )
@@ -1233,6 +1244,7 @@ class Document(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         pending: bool | None = None,
         exclude_pending: bool = True,
+        pending_from: PendingFrom | None = None,
     ) -> ColumnElement[bool]:
         """
 
@@ -1264,8 +1276,11 @@ class Document(SearchableTableMixins, Base):
                 raise ValueError(msg)
             case (bool() as pending, False):
                 cond = and_(cond, Grant.pending == (true() if pending else false()))
-            case (None, True):
+            case (None | False, True):
                 cond = and_(cond, Grant.pending == false())
+
+        if pending_from is not None:
+            cond = and_(cond, Grant.pending_from == pending_from)
 
         return cond
 
@@ -1276,6 +1291,7 @@ class Document(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
+        pending_from: PendingFrom | None = None
     ) -> Select:
         """Query to find grants (AssocUserDocument) for this document.
 
@@ -1290,6 +1306,7 @@ class Document(SearchableTableMixins, Base):
             exclude_deleted=exclude_deleted,
             pending=pending,
             exclude_pending=exclude_pending,
+            pending_from=pending_from,
         )
         return select(Grant).join(Document).join(User).where(conds)
 
@@ -1299,7 +1316,8 @@ class Document(SearchableTableMixins, Base):
         level: ResolvableLevel | None = None,
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
-        pending: bool = True,
+        pending: bool = False,
+        pending_from: PendingFrom | None = None
     ) -> Select:
         """Select user uuids for this document.
 
@@ -1315,6 +1333,7 @@ class Document(SearchableTableMixins, Base):
                     exclude_deleted=exclude_deleted,
                     exclude_pending=exclude_pending,
                     pending=pending,
+                    pending_from=pending_from,
                 )
             )
         )

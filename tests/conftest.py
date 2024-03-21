@@ -1,5 +1,7 @@
+import json
+from os import path
 from random import choice
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Generator, List, Set
 
 import httpx
 import pytest
@@ -11,6 +13,7 @@ from app.models import Base, User
 from app.views import AppView
 from client.config import Config as ClientConfig
 from fastapi import FastAPI
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -55,6 +58,16 @@ def client_config() -> PytestClientConfig:
     return PytestClientConfig(**raw)
 
 
+class PytestContext(BaseModel):
+    reloaded: bool = False
+    config: PytestConfig
+    config_client: PytestClientConfig
+
+
+@pytest.fixture(scope="session", autouse=True)
+def context(config: PytestConfig, client_config: PytestClientConfig,) -> PytestContext:
+    return PytestContext(config=config, config_client=client_config)
+
 # =========================================================================== #
 # Database fixtures
 
@@ -83,7 +96,8 @@ def session(sessionmaker):
 
 
 @pytest.fixture(scope="session")
-def load_tables(sessionmaker: _sessionmaker[Session], setup_cleanup):
+def load_tables(context: PytestContext, sessionmaker: _sessionmaker[Session], setup_cleanup):
+    context.reloaded = True
     logger.info("Reloading tables (fixture `load_tables`).")
     with sessionmaker() as session:
         backwards = list(Base.metadata.sorted_tables)
@@ -168,3 +182,21 @@ def dummy_lazy(auth: Auth, session: Session) -> Dummy:
         return Dummy(auth, session, user=_user)
     return Dummy(auth, session)
 
+
+@pytest.fixture(scope="session", autouse=True)
+def dummy_data_dump(context: PytestContext) -> Generator[None, None, None]:
+
+    ff = Dummy.dummy_user_uuids_file 
+    if not context.reloaded and path.exists(ff):
+        with open(ff, "r") as file:
+            try:
+                data = json.load(file)
+                dummy_user_uuids = TypeAdapter(List[str]).validate_python(data)
+                Dummy.dummy_user_uuids = dummy_user_uuids
+            except json.decoder.JSONDecodeError:
+                logger.warning("Failed to decode `%s`.", ff)
+
+    yield None
+
+    with open(ff, "w") as file:
+        json.dump(Dummy.dummy_user_uuids, file)

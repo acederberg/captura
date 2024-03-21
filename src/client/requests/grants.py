@@ -20,6 +20,7 @@ class DocumentGrantRequests(BaseRequests):
         level: flags.FlagLevel = LevelStr.view,
         uuid_user: flags.FlagUUIDUsersOptional = None,
         pending: flags.FlagPending = False,
+        pending_from: flags.FlagPendingFromOptional = None,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
@@ -29,6 +30,7 @@ class DocumentGrantRequests(BaseRequests):
                 uuid_user=uuid_user,
                 level=level.name,
                 pending=pending,
+                pending_from=pending_from.name if pending_from is not None else None,
             ),
             headers=context.headers,
         )
@@ -80,6 +82,7 @@ class DocumentGrantRequests(BaseRequests):
             "PATCH",
             context.url(cls.fmt_url.format(uuid_document)),
             params=params(uuid_user=uuid_user),
+            headers=context.headers,
         )
 
 
@@ -109,6 +112,7 @@ class UserGrantRequests(BaseRequests):
         level: LevelStr = LevelStr.view,
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
         pending: flags.FlagPending = False,
+        pending_from: flags.FlagPendingFromOptional = None,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
@@ -118,6 +122,7 @@ class UserGrantRequests(BaseRequests):
                 level=level.name,
                 uuid_document=uuid_document,
                 pending=pending,
+                pending_from=pending_from.name if pending_from is not None else None,
             ),
             headers=context.headers,
         )

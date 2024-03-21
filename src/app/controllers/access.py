@@ -567,8 +567,11 @@ class Access(BaseController):
         if grants is None:
             grants = dict()
 
-        # NOTE: Exclude deleted is only required for force deletion.
+        # NOTE: Exclude deleted is only required for force deletion. Deletedness
+        #       exceeds access in terms of priority.
         def check_one(document: Document) -> Document:
+            if exclude_deleted:
+                document = document.check_not_deleted()
             token_user.check_can_access_document(
                 document,
                 level,
@@ -577,8 +580,6 @@ class Access(BaseController):
                 pending=pending,
                 exclude_deleted=exclude_deleted,
             )
-            if exclude_deleted:
-                document = document.check_not_deleted()
             return document
 
         documents: Tuple[Document, ...]

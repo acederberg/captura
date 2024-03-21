@@ -2,6 +2,7 @@ import enum
 import pathlib
 from datetime import datetime
 from typing import Annotated, List, Optional, TypeAlias, TypeVar
+from app.fields import PendingFromStr
 
 import typer
 from app.models import (ChildrenCollection, ChildrenDocument, ChildrenUser,
@@ -305,3 +306,10 @@ FlagShowRequest: TypeAlias = Annotated[
     ),
 ]
 
+FlagPendingFromOptional: TypeAlias = Annotated[
+    Optional[PendingFromStr],
+    typer.Option(
+        "--pending-from",
+        help="Filter results by their pending from status."
+    )
+]

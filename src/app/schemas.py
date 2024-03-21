@@ -534,9 +534,9 @@ class EventBaseSchema(BaseSchema):
     def validate_kind(cls, v: None | str | fields.FieldKindObject) -> None | fields.FieldKindObject:
         if isinstance(v, str):
             try:
-                w = fields.FieldKindObject[v]
+                w = fields.KindObject[v]
             except KeyError:
-                w = fields.FieldKindObject._value2member_map_.get(v)
+                w = fields.KindObject._value2member_map_.get(v)
                 if w is None:
                     msg = f"Could not find enum value associated with `{v}`."
                     raise ValueError(msg)

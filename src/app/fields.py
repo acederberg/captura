@@ -76,10 +76,16 @@ class KindEvent(str, enum.Enum):
     restore = "restore"
 
 
-class PendingFrom(str, enum.Enum):
+class PendingFrom(enum.Enum):
     created = 3
     granter = 2
     grantee = 1
+
+
+class PendingFromStr(str, enum.Enum):
+    created = "created"
+    granter = "granter"
+    grantee = "grantee"
 
 
 # NOTE: This maps table names to their corresponding API names. It is important

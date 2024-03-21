@@ -7,7 +7,7 @@ from typing import (Annotated, Any, Callable, ClassVar, Dict, List, Protocol,
 
 import httpx
 import pytest
-from app import __version__
+from app import __version__, util
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
@@ -25,7 +25,8 @@ from client.config import ProfileConfig, UseConfig
 from client.flags import Output
 from faker import Faker
 from faker.providers import internet
-from sqlalchemy import Column, Select, func, inspect, select, update
+from fastapi import HTTPException
+from sqlalchemy import Column, Select, func, insert, inspect, select, update
 from sqlalchemy.orm import Session
 
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
@@ -122,7 +123,8 @@ class Mk:
 #       state problems and long setup. Use this chainable to expose data for
 #       the user and set `private`/`deleted`ness here.
 class Dummy:
-    dummy_user_uuids: ClassVar[Set[str]] = set()
+    dummy_user_uuids_file: ClassVar[str] = util.Path.tests("./dummies.json")
+    dummy_user_uuids: ClassVar[list[str]] = list()
     dummy_kinds: ClassVar[Set[KindObject]] = {
         KindObject.user,
         KindObject.collection,
@@ -143,12 +145,19 @@ class Dummy:
 
     # ----------------------------------------------------------------------- #
 
-    def __init__(self, auth: Auth, session: Session, user: User | None = None):
-        assert user is None
+    def __init__(self, auth: Auth, session: Session, *, user: User | None = None,
+                 use_existing: bool = False,):
+
         self.auth = auth
         self.session = session
         if user is not None:
             self.find(user)
+        elif use_existing and len(self.dummy_user_uuids):
+            try:
+                user = User.if_exists(session, choice(self.dummy_user_uuids))
+                self.find(user)
+            except HTTPException:
+                self.build()
         else:
             self.build()
 
@@ -173,6 +182,124 @@ class Dummy:
             )
         )
 
+    def mk_assignments(self):
+        # NOTE: Iter over collections first so that every document has a chance
+        #       belong to each collection.
+        self.session.add_all(
+            assignments := tuple(
+                Assignment(
+                    id_document=document.id,
+                    id_collection=collection.id,
+                    deleted=False,
+                )
+                for collection in self.collections
+                for document in self.documents
+                if bool(randint(0, 3) % 3)
+            )
+        )
+        return assignments
+
+    def mk_grants(self):
+        grants = tuple(
+                Grant(
+                    level=Level.own,
+                    id_user=self.user.id,
+                    id_document=document.id,
+                    deleted=False,
+                    pending=False,
+                    pending_from=PendingFrom.created,
+                )
+                for document in self.documents
+            )
+
+        # NOTE: Add grants for documents of other users.
+        q_id_user_max = select(func.max(User.id))
+        id_user_max = self.session.scalar(q_id_user_max)
+        if id_user_max is None:
+            raise AssertionError("Expect a nonzero number of users.")
+
+        id_users_shared = set(k for k in range(1, id_user_max) if not bool(k % 3))
+        if self.user.id in id_users_shared:
+            id_users_shared.remove(self.user.id)
+
+        print(id_user_max)
+
+        # ------------------------------------------------------------------- #
+        # For self.
+
+        q_grants_share = select(Grant).where(Grant.id_user.in_(id_users_shared))
+        grants_share_id_documents: Dict[int, Grant] = {
+            grant_init.id_document: grant_init
+            for grant_init in self.session.scalars(q_grants_share)
+            if grant_init.id_user != self.user.id
+        }
+        grants_self = tuple(
+            Grant( 
+                uuid=secrets.token_urlsafe(8),
+                level=choice(list(Level)),
+                id_user=self.user.id,
+                id_document=grant_init.id_document,
+                uuid_parent=grant_init.uuid,
+                deleted=bool(randint(0, 1)),
+                pending=bool(randint(0, 2)),
+                pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
+            )
+            for grant_init in grants_share_id_documents.values()
+        )
+
+        # ------------------------------------------------------------------- #
+        # For others.
+
+        grants_other = tuple(
+            Grant(
+                uuid=secrets.token_urlsafe(8),
+                level=choice(list(Level)),
+                id_user=id_user,
+                id_document=grant.id_document,
+                uuid_parent=grant.uuid,
+                deleted=bool(randint(0, 1)),
+                pending=bool(randint(0, 2)),
+                pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
+            )
+            for grant in grants
+            for id_user in id_users_shared
+            if randint(0, 2)
+
+        )
+        # def uniq(gg):
+        #     return set((grant.id_user, grant.id_document) for grant in gg)
+        #
+        #
+        # print("=============================================================")
+        #
+        # print()
+        # uniq_other = uniq(grants_other)
+        # print(f"pairs other {len(grants_other)}")
+        # print("unique pairs other: ", len(uniq_other))
+        #
+        # print()
+        # uniq_self = uniq(grants_self)
+        # print(f"pairs self {len(grants_self)}")
+        # print("unique pairs self: ", len(uniq_self))
+        #
+        # print()
+        # uniq_created = uniq(grants)
+        # print(f"pairs created {len(grants)}")
+        # print("unique pairs created: ", len(uniq_created))
+        #
+        # print()
+        # print(f"{uniq_other & uniq_self = }")
+        # print(f"{uniq_other & uniq_created = }")
+        # print(f"{uniq_created & uniq_self = }")
+        #
+        # print()
+        # print(len(uniq_other) + len(uniq_created) + len(uniq_self))
+        # print(len(uniq_other | uniq_created | uniq_self))
+        # print("=============================================================")
+
+
+        return grants + grants_self + grants_other
+
     def build(self):
         # NOTE: Create dummy users, documents, and collections. Grants and
         #       assignments will be made subsequently.
@@ -193,80 +320,25 @@ class Dummy:
         session.add_all(documents)
         session.add_all(collections)
         session.commit()
-        self.dummy_user_uuids.add(user.uuid)
 
         for item in (user, *documents, *collections):
             session.refresh(item)
 
-        # NOTE: Iter over collections first so that every document has a chance
-        #       belong to each collection.
-        session.add_all(
-            assignments := tuple(
-                Assignment(
-                    id_document=document.id,
-                    id_collection=collection.id,
-                    deleted=False,
-                )
-                for collection in collections
-                for document in documents
-                if bool(randint(0, 3) % 3)
-            )
-        )
-        self.assignments = assignments
+        self.assignments = self.mk_assignments()
+        session.add_all(self.assignments)
+
 
         # NOTE: Create own grants. Additional grants will be created next.
-        session.add_all(
-            grants := tuple(
-                Grant(
-                    level=Level.own,
-                    id_user=user.id,
-                    id_document=document.id,
-                    deleted=False,
-                    pending=False,
-                    pending_from=PendingFrom.created,
-                )
-                for document in documents
-            )
-        )
-        self.grants = grants
-
-        # NOTE: Add grants for documents of other users.
-        q_id_user_max = select(func.max(User.id))
-        id_user_max = session.scalar(q_id_user_max)
-        if id_user_max is not None:
-            id_users_shared = set(
-                randint(1, id_user_max) for k in range(id_user_max) if not bool(k % 3)
-            )
-            q_grants_share = select(Grant).where(Grant.id_user.in_(id_users_shared))
-            grants_share: Tuple[Grant, ...] = tuple(session.scalars(q_grants_share))
-            grants_share_id_documents: Dict[int, Grant] = {
-                grant_init.id_document: grant_init
-                for grant_init in grants_share
-                if grant_init.id_user != user.id
-                and grant_init.uuid_document != "ex-parrot"
-            }
-
-            session.add_all(
-                more_grants := tuple(
-                    Grant(
-                        uuid=secrets.token_urlsafe(8),
-                        level=choice(list(Level)),
-                        id_user=user.id,
-                        id_document=grant_init.id_document,
-                        uuid_parent=grant_init.uuid,
-                        deleted=bool(randint(0, 1)),
-                        pending=bool(randint(0, 2)),
-                        pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
-                    )
-                    for id_document, grant_init in grants_share_id_documents.items()
-                )
-            )
-            self.grants += more_grants
+        self.grants = self.mk_grants()
+        for gg in self.grants:
+            self.session.merge(gg)
+        self.session.commit()
 
         self.events = tuple(Mk.event(uuid_user=user.uuid) for _ in range(10))
         session.add_all(self.events)
         session.commit()
 
+        self.dummy_user_uuids.append(user.uuid)
         return user
 
     # ----------------------------------------------------------------------- #
@@ -282,17 +354,19 @@ class Dummy:
         else:
             raise ValueError()
             # q = select(Document).where(Document.uuid == "ex-parrot")
-        
         q = q.order_by(func.random()).limit(1)
+        # util.sql(self.session, q)
         doc = self.session.scalar(q)
+
         if doc is None:
             raise ValueError(f"Could not find document with level `{level}`.")
-        
         return doc
 
     def get_grant(self, document: Document, **kwargs) -> Grant:
+        self.user.q_select_grants
         q = self.user.q_select_grants({document.uuid}, **kwargs)
         q = q.limit(1)
+        # util.sql(self.session, q)
         grant = self.session.scalar(q)
         if grant is None:
             raise AssertionError("Grant should have been created for document.")

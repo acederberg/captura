@@ -3,72 +3,31 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Literal,
-    Protocol,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    Union,
-    overload,
-)
+from typing import (Any, Callable, Dict, Generic, Literal, Protocol, Set,
+                    Tuple, Type, TypeAlias, TypeVar, Union, overload)
 
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-    T_Data,
-)
-from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    PendingFrom,
-    ResolvableMultiple,
-    ResolvableSingular,
-    ResolvableSourceAssignment,
-    ResolvableTargetAssignment,
-    Singular,
-    Tables,
-    User,
-)
-from app.schemas import (
-    AssignmentSchema,
-    CollectionCreateSchema,
-    CollectionSchema,
-    CollectionUpdateSchema,
-    DocumentCreateSchema,
-    DocumentUpdateSchema,
-    EditCreateSchema,
-    EventSchema,
-    GrantCreateSchema,
-    UserCreateSchema,
-    UserUpdateSchema,
-)
+from app.controllers.base import (Data, DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser, T_Data)
+from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
+                                    WithDelete)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, PendingFrom,
+                        ResolvableMultiple, ResolvableSingular,
+                        ResolvableSourceAssignment, ResolvableTargetAssignment,
+                        Singular, Tables, User)
+from app.schemas import (AssignmentSchema, CollectionCreateSchema,
+                         CollectionSchema, CollectionUpdateSchema,
+                         DocumentCreateSchema, DocumentUpdateSchema,
+                         EditCreateSchema, EventSchema, GrantCreateSchema,
+                         UserCreateSchema, UserUpdateSchema)
 from fastapi import HTTPException
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
@@ -632,6 +591,7 @@ T_Update = TypeVar(
     CollectionUpdateSchema,
     DocumentUpdateSchema,
     UserUpdateSchema,
+    bool # approve or reject grant
 )
 
 
@@ -979,32 +939,35 @@ class Update(WithDelete, Generic[T_Update]):
             uuid_grant=token_user_grant.uuid,
         )
 
-        if data.token_user != token_user_grant.uuid:
+        if token_user.uuid != token_user_grant.uuid_user:
             detail.update(msg="Grant is not for token user.")
-            raise HTTPException(403, detail=detail)
+            raise HTTPException(500, detail=detail)
         elif token_user_grant.level != Level.own:
             detail.update(
                 msg="Grant must be of level `own`.",
                 level=token_user_grant.level.name,
             )
-            raise HTTPException(403, detail=detail)
+            raise HTTPException(500, detail=detail)
 
-        session = self.session
-        q_pending = data.data.document.q_select_grants(
-            data.data.uuid_users, pending=True
-        )
-        pending_grants = tuple(self.session.execute(q_pending).scalars())
+        # NOTE: Below does not use grants from data.
+        # session = self.session
+        # q_pending = data.data.document.q_select_grants(
+        #     data.data.uuid_users, pending=True,
+        #     pending_from=PendingFrom.created,
+        # )
+        # pending_grants = tuple(self.session.execute(q_pending).scalars())
 
-        for grant in pending_grants:
+        pending_grants = data.data.grants
+        for grant in (pending_values := pending_grants.values()):
+            if grant.pending_from != PendingFrom.granter:
+                raise HTTPException(400,
+                                    detail="Cannot approve grant pending from `grantee` or `created`.")
             grant.pending = False
             grant.uuid_parent = token_user_grant.uuid
 
-        session.add_all(pending_grants)
-        event = self.create_event_grant(data, pending_grants)
+        event = self.create_event_grant(data, tuple(pending_values))
         event.detail = "Access granted."
-
-        session.add(event)
-        session.commit()
+        data.event = event
         return data
 
     # ------------------------------------------------------------------------ #

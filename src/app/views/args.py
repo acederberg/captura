@@ -74,3 +74,4 @@ QueryForce: TypeAlias = Annotated[
 ]
 QueryLevel: TypeAlias = Annotated[fields.LevelStr, Query()]
 QueryLevelOptional: TypeAlias = Annotated[fields.LevelStr | None, Query()]
+QueryPendingFromOptional: TypeAlias = Annotated[fields.PendingFromStr | None, Query()]

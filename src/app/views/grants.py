@@ -1,6 +1,6 @@
 from typing import Annotated, List, Set, Tuple
 
-from app import __version__
+from app import __version__, fields
 from app.controllers.base import (Data, ResolvedDocument,
                                   ResolvedGrantDocument, ResolvedGrantUser,
                                   ResolvedUser)
@@ -95,6 +95,7 @@ class DocumentGrantView(BaseView):
         uuid_document: args.PathUUIDDocument,
         uuid_user: args.QueryUUIDUserOptional = None,
         pending: bool = False,
+        pending_from: args.QueryPendingFromOptional = None,
     ) -> AsOutput[List[GrantSchema]]:
         """List the active grants for a **document**. If `uuid_user` is
         specified, then filter results by these users; otherwise, return all
@@ -111,11 +112,14 @@ class DocumentGrantView(BaseView):
             level=Level.view,
             pending=pending,
         )
+        grants = data.data.grants.values()
+        if pending_from:
+            pending_from_ = fields.PendingFrom[pending_from.name]
+            grants = list(v for v in grants if v.pending_from == pending_from_)
+
         out = mwargs(
             AsOutput,
-            data=TypeAdapter(List[GrantSchema]).validate_python(
-                data.data.grants.values()
-            ),
+            data=TypeAdapter(List[GrantSchema]).validate_python(grants),
         )
         return out
 
@@ -171,19 +175,37 @@ class DocumentGrantView(BaseView):
     @classmethod
     def patch_grants_document(
         cls,
-        access: DependsAccess,
+        update: DependsUpdate,
         uuid_document: args.PathUUIDDocument,
         uuid_user: args.QueryUUIDUser,
-        accept: bool = False,
+        # accept: bool = False,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Accept any grant requests *(likely made via
-        `PATCH /grants/users/{uuid_user}`)*.
+        `PATCH /grants/users/{uuid_user}`)*. To reject invitations use the 
+        corresponding ``Delete`` endpoint.
 
         Updating grants in place is not permitted. To replace a grant use
         `POST /grants/users/{uuid_user}` with `force=true`.
         """
-        ...
 
+        data: Data[ResolvedGrantDocument] = update.access.d_grant_document(
+            uuid_document,
+            uuid_user,
+            level=Level.view,
+            pending=True,
+            # exclude_pending=False,
+            # pending_from=PendingFrom.granter
+        )
+        update.grant_document(data)
+        data.commit(update.session)
+        assert data.event is not None
+
+        out = mwargs(
+            OutputWithEvents[List[GrantSchema]],
+            data=TypeAdapter(List[GrantSchema]).validate_python(data.data.grants.values()),
+            events=[EventSchema.model_validate(data.event)]
+        )
+        return out
 
 class UserGrantView(BaseView):
     view_routes = dict(
@@ -251,6 +273,7 @@ class UserGrantView(BaseView):
         uuid_document: args.QueryUUIDDocumentOptional = None,
         level: args.QueryLevel | None = None,
         pending: bool = False,
+        pending_from: args.QueryPendingFromOptional = None,
     ) -> AsOutput[List[GrantSchema]]:
         """Get grants for a **user**. The indented use case is for users/admins
         to view the grants for any user. If **uuid_document** is not specified
@@ -263,8 +286,11 @@ class UserGrantView(BaseView):
             uuid_user,
             uuid_document,
             pending=pending,
+            pending_from=pending_from,
             level=level,
         )
+        if pending_from:
+            grant = {k: v for k, v in data.data.grants.items() if v.pending_from == pending_from}
         grant = data.data.grants.values()
         return mwargs(
             AsOutput[List[GrantSchema]],
