@@ -1,36 +1,27 @@
 import secrets
-from datetime import datetime
 from http import HTTPMethod
-from random import choice, randint, sample
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict, List,
-                    Protocol, Self, Set, Tuple, Type, TypeVar)
+from random import choice, randint
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict, Self,
+                    Set, Tuple, Type)
 
 import httpx
-import pytest
-from app import __version__, util
+from app import __version__
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
-                                  BaseResolvedSecondary, Data, KindData,
-                                  ResolvedDocument, ResolvedUser)
+                                  BaseResolvedSecondary, Data, KindData)
 from app.controllers.delete import Delete
 from app.fields import KindObject, Level, Singular
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_TITLE, LENGTH_URL, Assignment,
-                        Base, Collection, Document, Event, Format, Grant,
-                        KindEvent, KindObject, Level, PendingFrom, Singular,
-                        T_Resolvable, Tables, User)
+from app.models import (Assignment, Base, Collection, Document, Event, Grant,
+                        KindObject, Level, PendingFrom, Singular, Tables, User)
 from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
-from client.config import ProfileConfig, UseConfig
+from client.config import UseConfig
 from client.flags import Output
 from client.handlers import ConsoleHandler
 from client.requests import Requests
 from client.requests.base import ContextData
-from faker import Faker
-from faker.providers import internet
-from fastapi import HTTPException
-from sqlalchemy import Column, Select, func, insert, inspect, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.orm import Session
 
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
@@ -258,14 +249,6 @@ class BaseDummyProvider:
 
         return self
 
-
-class DummyProviderYAML(BaseDummyProvider):
-
-    def __init__(self, auth: Auth, session: Session, user: User): 
-        self.auth = auth
-        self.session = session
-        self.find(user)
-
     def find(self, user: User):
 
         session = self.session
@@ -273,6 +256,15 @@ class DummyProviderYAML(BaseDummyProvider):
         self.user = user
         self.documents = tuple(session.scalars(user.q_select_documents()))
         self.collections = tuple(user.collections)
+
+
+
+class DummyProviderYAML(BaseDummyProvider):
+
+    def __init__(self, auth: Auth, session: Session, user: User): 
+        self.auth = auth
+        self.session = session
+        self.find(user)
 
     @classmethod
     def merge(cls, session: Session) -> None:

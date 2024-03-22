@@ -115,7 +115,7 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
     yield
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
 
     with sessionmaker() as session:
@@ -125,8 +125,7 @@ def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
         assert n_users is not None
         assert isinstance(n_users, int)
 
-        if (n_generate := 7 - n_users) > 0:
-
+        if (n_generate := 100 - n_users) > 0:
             while n_generate > 0:
                 DummyProvider(auth, session)
                 print(n_generate)
@@ -176,7 +175,3 @@ def default(auth: Auth, session: Session) -> DummyProviderYAML:
     dd.refresh()
 
     return dd
-
-
-
-

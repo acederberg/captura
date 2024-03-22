@@ -24,6 +24,7 @@ from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
                         User)
 from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
+from sqlalchemy import literal, select
 from sqlalchemy.orm import Session
 
 H = HTTPMethod
@@ -805,7 +806,7 @@ class Access(BaseController):
                 exclude_pending=False,
                 # exclude_deleted=exclude_deleted,
             )
-            util.sql(self.session, q)
+            # util.sql(self.session, q)
             resolve_documents = tuple(self.session.execute(q).scalars())
 
         token_user_grants: Dict[str, Grant] = dict()
@@ -942,7 +943,7 @@ class Access(BaseController):
                 pending=pending,
                 exclude_pending=False,
             )
-            util.sql(self.session, q)
+            # util.sql(self.session, q)
             users = tuple(self.session.execute(q).scalars())
         else:
             users = User.resolve(self.session, resolve_users)
@@ -953,25 +954,23 @@ class Access(BaseController):
                 ...
             case H.DELETE:
                 session = self.session
-                q_owners = document.q_select_grants(
+                q_owners = document.q_select_users(
                     level=Level.own,
                     exclude_deleted=exclude_deleted,
                     # pending=pending,
                     exclude_pending=True,  # Absolutely necessary, do not rm
                 )
 
-                util.sql(self.session, q_owners)
-                uuid_owners: Set[str] = set(
-                    item.uuid for item in session.execute(q_owners).scalars()
-                )
-                if len(uuid_owners & uuid_users):
-                    detail = ErrAccessDocumentCannotRejectOwner(
-                        msg="Owner cannot reject grants of other owners.",
+                uuid_owners: set[str] 
+                uuid_owners = set(item.uuid for item in session.scalars(q_owners))
+                if len(uuid_bad := uuid_owners & uuid_users):
+                    raise ErrAccessDocumentCannotRejectOwner.httpexception(
+                        "_msg_cannot_reject_owner",
+                        403,
                         uuid_user_revoker=self.token.uuid,
-                        uuid_user_revokees=list(uuid_owners),
+                        uuid_user_revokees=uuid_bad,
                         uuid_document=Document.resolve_uuid(session, resolve_document),
                     )
-                    raise HTTPException(403, detail=detail.model_dump())
             case _:
                 raise HTTPException(405)
 

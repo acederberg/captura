@@ -83,6 +83,7 @@ class ContextData(BaseModel):
     # NOTE: These flags will change how wrapped functions work.
     openapi: flags.FlagOpenApi = False
     show_request: flags.FlagShowRequest = False
+    auth_exclude: flags.FlagNoAuthorization = False
 
     def openapijson(self, client: httpx.Client) -> OpenAPI:
         res = client.send(self.req_openapijson())
@@ -99,7 +100,7 @@ class ContextData(BaseModel):
     @property
     def headers(self) -> Dict[str, str]:
         h = dict(content_type="application/json")
-        if self.config.token is not None:
+        if self.config.token is not None and not self.auth_exclude:
             h.update(authorization=f"bearer {self.config.token}")
         return h
 
@@ -131,6 +132,7 @@ class ContextData(BaseModel):
         columns: flags.FlagColumns = list(),
         openapi: flags.FlagOpenApi = False,
         show_request: flags.FlagShowRequest = False,
+        auth_exclude: flags.FlagNoAuthorization = False,
     ):
         config = mwargs(Config)
         if host is not None:
@@ -140,7 +142,8 @@ class ContextData(BaseModel):
 
         console_handler = mwargs(ConsoleHandler, output=output, columns=columns)
         context.obj = ContextData(
-            config=config, console_handler=console_handler, show_request=show_request
+            config=config, console_handler=console_handler, show_request=show_request,
+            auth_exclude=auth_exclude,
         )
         context.obj.openapi = openapi
 
@@ -213,22 +216,10 @@ def typerize_fn(
             request: httpx.Request = fn(_context, *args, **kwargs)
             if context.openapi:
                 res = openapi_find(context.openapijson(client), request)
-                context.console_handler.handle(None, data=res)
-                raise typer.Exit(0)
+                status = context.console_handler.handle(None, data=res)
+                raise typer.Exit(status)
 
             if context.show_request:
-                console.print("")
-                console.print(f"[bold blue]{request.method} [green]{request.url}")
-                console.print("")
-                console.print(
-                    "\r\n".join(
-                        f"[bold blue]{key}[/bold blue][grey]: [green]{value}[/green]".format(key, value)
-                        for key, value in request.headers.items()
-                    )
-                )
-                console.print("")
-                console.print_json(request.content.decode() or "null")
-                console.print("")
                 raise typer.Exit(1)
 
             response = client.send(request)

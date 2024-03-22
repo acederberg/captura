@@ -1,7 +1,4 @@
 import base64
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from app.models import User
 import json
 import re
 from os import path
@@ -10,14 +7,18 @@ from typing import Annotated, Any, Dict, List, Self, Tuple, overload
 import httpx
 import jwt
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicKey
+from cryptography.hazmat.backends.openssl.rsa import (_RSAPrivateKey,
+                                                      _RSAPublicKey)
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app import util
 from app.config import Config
+from app.models import User
 
 # Do not touch this! This pattern will have to run against many requests.
 logger = util.get_logger(__name__)

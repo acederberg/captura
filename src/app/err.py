@@ -1,5 +1,7 @@
-from typing import Any, ClassVar, Dict, Generic, List, TypeVar
+import json
+from typing import Any, ClassVar, Dict, Generic, List, Self, TypeVar
 
+import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel
 
@@ -19,7 +21,7 @@ class ErrBase(BaseModel):
     @classmethod
     def httpexception(cls, msg_name: str, status: int, *, dump_kwargs: Dict[str, Any] = dict(), **kwargs,) -> HTTPException:
         if (msg := getattr(cls, msg_name, None)) is None:
-            raise ValueError("No message named 'msg_name'.")
+            raise ValueError(f"No message named '{msg_name}'.")
 
         kwargs.update(msg=msg)
         self = cls(**kwargs)
@@ -103,13 +105,14 @@ class ErrAccessDocumentGrantInsufficient(ErrAccessDocumentGrantBase):
 
 
 class ErrAccessDocumentPending(ErrAccessDocumentGrantInsufficient):
-    _msg_grant: ClassVar[str] = "Grant is pending."
-    _msg_grant_created_pending: ClassVar[str] = "Grant is pending with `pending_from=created`."
+    _msg_grant_pending: ClassVar[str] = "Grant is pending."
+    _msg_grant_pending_created: ClassVar[str] = "Grant is pending with `pending_from=created`."
 
     pending_from: fields.FieldPendingFrom
 
 
 class ErrAccessDocumentCannotRejectOwner(ErrBase):
+    _msg_cannot_reject_owner : ClassVar[str] =  "Owner cannot reject grants of other owners."
     uuid_user_revoker: fields.FieldUUID
     uuid_document: fields.FieldUUID
     uuid_user_revokees: fields.FieldUUIDS
@@ -123,6 +126,47 @@ T_ErrDetail = TypeVar("T_ErrDetail", bound=BaseModel | str)
 
 class ErrDetail(BaseModel, Generic[T_ErrDetail]):
     detail: T_ErrDetail
+
+    @classmethod
+    def from_response(cls, res: httpx.Response) -> Self:
+        TT = cls.model_fields["detail"].annotation
+        assert TT is not None
+        if TT == str:
+            return cls(detail=json.loads(res.content))
+        return cls(detail=TT.model_validate_json(res.content))
+
+    def compare(self, res: httpx.Response) -> str | None:
+        "Only for pytest!"
+
+        # Assumes detail is a single layer deep.
+        self_from_res = self.from_response(res)
+        if self.detail == self_from_res.detail:
+            return
+        elif isinstance(self.detail, str):
+            diff = {"detail": (self.detail, self_from_res.detail)}
+        else:
+            detail_self = self.detail.model_dump(mode="json")
+            detail_res = self_from_res.detail.model_dump(mode="json") # type: ignore
+            diff = {
+                exp_k: (exp_v, have_v)
+                for exp_k, exp_v in detail_self.items()
+                if (have_v := detail_res.get(exp_k)) is None
+                or have_v != exp_v
+            }
+
+        msg = "Error from response is wrong in the following fields: \n"
+        msg += ",\n".join(
+            (
+                f"[bold blue]{key}[/bold blue]: "
+                + f"[bold green]{good}[/bold green] -> "
+                + f"[bold red]{bad}[/bold red]"
+            )
+            for key, (good, bad) in diff.items()
+        )
+        msg += "."
+
+        return msg
+
 
 
 AnyErrDetailAccessDocumentGrant = (ErrDetail[ErrAccessDocumentGrantBase] |

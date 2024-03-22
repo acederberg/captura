@@ -2,9 +2,9 @@ import enum
 import pathlib
 from datetime import datetime
 from typing import Annotated, List, Optional, TypeAlias, TypeVar
-from app.fields import PendingFromStr
 
 import typer
+from app.fields import PendingFromStr
 from app.models import (ChildrenCollection, ChildrenDocument, ChildrenUser,
                         Format, KindEvent, KindObject, KindRecurse, LevelStr)
 
@@ -312,4 +312,11 @@ FlagPendingFromOptional: TypeAlias = Annotated[
         "--pending-from",
         help="Filter results by their pending from status."
     )
+]
+
+FlagNoAuthorization: TypeAlias = Annotated[
+    bool,
+    typer.Option("--auth-exclude/--auth-include",
+                 help="Include or exclude the authorization header.",
+                 )
 ]

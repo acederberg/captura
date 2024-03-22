@@ -1,5 +1,6 @@
 import json
-from typing import Annotated, Any, ClassVar, Dict, Iterable, Protocol, Tuple, overload
+from typing import (Annotated, Any, ClassVar, Dict, Iterable, Literal,
+                    Protocol, Tuple, overload)
 
 import httpx
 import typer
@@ -110,6 +111,44 @@ class ConsoleHandler(BaseModel):
             case _:
                 raise HandlerError(f"Failed to match `{[res, data]=}`.")
 
+    def print_request(
+        self,
+        request: httpx.Request,
+        response: httpx.Response | Any | None = None
+    ) -> int:
+        "Print a request and (when provided) its response."
+        CONSOLE.print("")
+        CONSOLE.print(f"[bold blue]{request.method} [green]{request.url}")
+        CONSOLE.print("")
+        CONSOLE.print(
+            "\r\n".join(
+                f"[bold blue]{key}[/bold blue][grey]: [green]{value}[/green]".format(key, value)
+                for key, value in request.headers.items()
+            )
+        )
+        CONSOLE.print("")
+        CONSOLE.print_json(request.content.decode() or "null")
+        CONSOLE.print("")
+
+        data: Any
+        match response:
+            case None:
+                return 0
+            case httpx.Response() as res:
+                try:
+                    data = res.json()
+                except json.decoder.JSONDecodeError:
+                    data = None
+            case _ as data:
+                ...
+            # case bad:
+            #     t_bad = typer(bad)
+            #     raise ValueError(f"Cannot handle response of type `{t_bad}`.")
+
+        # NOTE: Assumes that content always for an err
+        return self.print_err(response, data)
+
+
     def handle_one(
         self,
         res: httpx.Response | None = None,
@@ -121,8 +160,10 @@ class ConsoleHandler(BaseModel):
             except json.JSONDecodeError:
                 data = None
 
+        # NOTE: Print both the request and response. This will be used in
+        #       pytest too.
         if res is not None and not (200 <= res.status_code < 300):
-            self.print_err(res, data)
+            self.print_request(res.request, response=res)
             return 1
 
         match self.output:
@@ -139,10 +180,24 @@ class ConsoleHandler(BaseModel):
                 CONSOLE.print(f"[red]Unknown output format `{bad}`.")
                 return 1
 
-    def print_err(self, res: httpx.Response, data=None) -> int:
-        msg = f"[red]Request failed with status `{res.status_code}`. "
-        msg += "Response JSON: " + json.dumps(data) if data else ""
+    def print_err(self, res: httpx.Response, data, *, expected: int | None =None) -> int:
+        #     msg = (
+        #         f"Unexpected status code `{response.status_code}` (expected "
+        #         f"`{expect}`) from {msg}. The response included the following "
+        #         f"detail: {res_json}."
+        #     )
+
+        msg = f"[bold red]Request failed with status[/bold red] [bold yellow]`{res.status_code}`"
+        if expected is not None:
+            msg += f", expected `{expected}`"
+
+        msg += ".[/bold yellow]"
         CONSOLE.print(msg)
+        CONSOLE.print()
+        CONSOLE.print("[bold red]Response content: \n[/bold red]")
+        self.print_json(data)
+        CONSOLE.print()
+
         return 1
 
     def print_json(self,  data=None) -> int:
