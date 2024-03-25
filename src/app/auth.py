@@ -35,6 +35,8 @@ PATH_PYTEST_PUBLIC_KEY: str = util.Path.docker("pytest-public.pem")
 PATH_PYTEST_PRIVATE_KEY: str = util.Path.docker("pytest-private.pem")
 
 
+# TODO: Add https://github.com/cak/secure. See https://github.com/auth0-developer-hub/api_fastapi_python_hello-world/tree/main for an example.
+# https://github.com/auth0-developer-hub/api_fastapi_python_hello-world/blob/main/application/main.py
 class Auth:
     """Authentication in general. Use :meth:`forAuth0` to create an instance
     that uses auth0 or use :meth:`forPyTest` to get a key pair for making

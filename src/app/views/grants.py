@@ -154,11 +154,12 @@ class DocumentGrantView(BaseView):
         being indempotent in this case and is why it is possibly to get single
         layered events out of this endpoint.
         """
+        # NOTE: Level filters grants.
         fr_level = Level.resolve(level) if level is not None else None
         data: Data[ResolvedGrantDocument] = create.access.d_grant_document(
             uuid_document,
             uuid_user,
-            level=fr_level,
+            level=fr_level, 
         )
         create.create_data = GrantCreateSchema(level=fr_level)
         create.grant_document(data)
@@ -178,7 +179,6 @@ class DocumentGrantView(BaseView):
         update: DependsUpdate,
         uuid_document: args.PathUUIDDocument,
         uuid_user: args.QueryUUIDUser,
-        # accept: bool = False,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Accept any grant requests *(likely made via
         `PATCH /grants/users/{uuid_user}`)*. To reject invitations use the 
@@ -191,10 +191,7 @@ class DocumentGrantView(BaseView):
         data: Data[ResolvedGrantDocument] = update.access.d_grant_document(
             uuid_document,
             uuid_user,
-            level=Level.view,
-            pending=True,
-            # exclude_pending=False,
-            # pending_from=PendingFrom.granter
+            level=Level.own,
         )
         update.grant_document(data)
         data.commit(update.session)
@@ -286,11 +283,15 @@ class UserGrantView(BaseView):
             uuid_user,
             uuid_document,
             pending=pending,
-            pending_from=pending_from,
             level=level,
         )
         if pending_from:
-            grant = {k: v for k, v in data.data.grants.items() if v.pending_from == pending_from}
+            grant = {
+                k: v
+                for k, v in data.data.grants.items()
+                if v.pending_from == pending_from
+            }
+
         grant = data.data.grants.values()
         return mwargs(
             AsOutput[List[GrantSchema]],
@@ -312,7 +313,25 @@ class UserGrantView(BaseView):
 
         Note that grants cannot be updated in place. To replace/update a grant
         use `POST /grants/users/{uuid}` endpoint with `force=true`."""
-        ...
+
+        data: Data[ResolvedGrantDocument] = update.access.d_grant_user(
+            uuid_user,
+            uuid_document,
+            # level=Level.view,
+            pending=True,
+            # exclude_pending=False,
+            # pending_from=PendingFrom.granter
+        )
+        update.grant_document(data)
+        data.commit(update.session)
+        assert data.event is not None
+
+        out = mwargs(
+            OutputWithEvents[List[GrantSchema]],
+            data=TypeAdapter(List[GrantSchema]).validate_python(data.data.grants.values()),
+            events=[EventSchema.model_validate(data.event)]
+        )
+        return out
 
     @classmethod
     def post_grants_user(
@@ -336,16 +355,23 @@ class UserGrantView(BaseView):
         # NOTE: `token_user_grants` is usually the same as grants. But in this
         #       case they are not used. `grants` will be updated inside of
         #       `create.grant_user`.
-        user: User = create.access.user(uuid_user)
-        data: Data[ResolvedGrantUser] = mwargs(
-            Data[ResolvedGrantUser],
-            data=mwargs(
-                ResolvedGrantUser,
-                user=user,
-                documents=Document.resolve(create.session, uuid_document),
-                grants=dict(),
-                token_user_grants=dict(),
-            ),
+
+        # user: User = create.access._user(uuid_user)
+        # data: Data[ResolvedGrantUser] = mwargs(
+        #     Data[ResolvedGrantUser],
+        #     data=mwargs(
+        #         ResolvedGrantUser,
+        #         user=user,
+        #         documents=Document.resolve(create.session, uuid_document),
+        #         grants=dict(),
+        #         token_user_grants=dict(),
+        #     ),
+        # )
+        data: Data[ResolvedGrantUser] = create.access.d_grant_user(
+            uuid_user,
+            uuid_document,
+            # exclude_pending=False,
+            # pending_from=PendingFrom.granter
         )
         create.create_data = GrantCreateSchema(level=level)
         create.grant_user(data)

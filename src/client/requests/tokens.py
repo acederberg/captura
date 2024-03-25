@@ -18,13 +18,14 @@ class TokenRequests(BaseRequests):
     def req_read(
         cls,
         _context: typer.Context,
-        token: flags.FlagTokenOptional = None,
+        # NOTE: now global.
+        # token: flags.FlagTokenOptional = None,
     ) -> httpx.Request:
         """Verify current token (as specified by configuration) or, when
         provided, the token provided by `--token`."""
 
         context = ContextData.resolve(_context)
-        token = token if token is not None else context.config.token
+        token = context.token
         if token is None:
             CONSOLE.print("[red]No token to check.")
             raise typer.Exit(1)

@@ -16,7 +16,8 @@ from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
                                   ResolvedGrantDocument, ResolvedGrantUser,
                                   ResolvedObjectEvents, ResolvedUser, T_Data)
 from app.err import (ErrAccessCollection, ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessUser)
+                     ErrAccessUser, ErrUpdateGrantPendingFrom)
+from app.fields import PendingFrom
 from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
                         Event, Grant, KindObject, Level, Resolvable,
                         ResolvableLevel, ResolvableMultiple,
@@ -326,7 +327,9 @@ class Access(BaseController):
         *,
         exclude_public: bool = False,
         exclude_deleted: bool = True,
-        msg_access_user: str = "Cannot modify other user.",
+        msg_name: Literal[
+            "_msg_private", "_msg_modify", "_msg_only_self",
+        ] | None = None,
     ) -> User:
         """
         :param exclude_public: When ``True``, will exclude checking if user is
@@ -346,21 +349,22 @@ class Access(BaseController):
                     not user.public
                     and user_token.uuid != user.uuid
                 ):
-                    detail = ErrAccessUser(
+                    raise ErrAccessUser.httpexception(
+                        msg_name or "_msg_private",
+                        403,
                         uuid_user_token=user_token.uuid,
                         uuid_user=user.uuid,
-                        msg="Cannot access private user.",
                     )
-                    raise HTTPException(403, detail=detail.model_dump())
                 return user
             case H.POST | H.PATCH | H.PUT | H.DELETE | H.GET:
                 if user.uuid != user_token.uuid:
-                    detail = ErrAccessUser(
+                    raise ErrAccessUser.httpexception(
+                        msg_name or "_msg_modify",
+                        403,
                         uuid_user=user.uuid,
                         uuid_user_token=user_token.uuid,
-                        msg=msg_access_user,
+                        # msg=msg_access_user,
                     )
-                    raise HTTPException(403, detail.model_dump())
                 return user
             case _ as bad:
                 raise ValueError(f"Cannot yet method `{bad}`.")
@@ -521,6 +525,8 @@ class Access(BaseController):
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
+        validate: bool = True,
+        # pending_from: PendingFrom | None = None,
     ) -> Document: ...
 
     @overload
@@ -535,6 +541,8 @@ class Access(BaseController):
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
+        validate: bool = True,
+        # pending_from: PendingFrom | None = None,
     ) -> Tuple[Document, ...]: ...
 
     @overload
@@ -549,6 +557,8 @@ class Access(BaseController):
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
+        validate: bool = True,
+        # pending_from: PendingFrom | None = None,
     ) -> Data[ResolvedDocument]: ...
 
     def document(
@@ -562,6 +572,8 @@ class Access(BaseController):
         grants: Dict[str, Grant] | None = None,
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
+        validate: bool = True,
+        # pending_from: PendingFrom | None = None,
     ) -> Document | Tuple[Document, ...] | Data[ResolvedDocument]:
         level = level if level is not None else self.level
         token_user = self.token_user_or(resolve_user_token)
@@ -580,6 +592,7 @@ class Access(BaseController):
                 grants_index=grants_index,
                 pending=pending,
                 exclude_deleted=exclude_deleted,
+                validate=validate
             )
             return document
 
@@ -619,6 +632,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
         pending: bool = True,
+        # pending_from: PendingFrom | None = None,
     ) -> Data[ResolvedDocument]:
         return self.document(
             resolve_document,
@@ -627,6 +641,7 @@ class Access(BaseController):
             level=level,
             return_data=True,
             pending=pending,
+            # pending_from=pending_from,
         )
 
     # ----------------------------------------------------------------------- #
@@ -736,6 +751,8 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
         pending: bool = False,
+        validate: bool = False,
+        # pending_from: PendingFrom | None = None,
     ) -> Tuple[User, Tuple[Document, ...]]: ...
 
     @overload
@@ -749,6 +766,8 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
         pending: bool = False,
+        validate: bool = False,
+        # pending_from: PendingFrom | None = None,
     ) -> Data[ResolvedGrantUser]: ...
 
     def grant_user(
@@ -761,37 +780,43 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: bool = False,
         pending: bool = False,
+        validate: bool = False,
+        # pending_from: PendingFrom | None = None,
     ) -> Tuple[User, Tuple[Document, ...]] | Data[ResolvedGrantUser]:
-        """When inspecting the user, one must authenticate as the user."""
+        """When inspecting the user, one must authenticate as the user.
+
+        About `PendingFrom`
+        -----------------------------------------------------------------------
+
+        Pending from would be nice to have up front (i.e. here) but its value
+        only really matters when accepting grants, so the functionality exists
+        in the corresponding method (with a similar name) in :class:`Update`.
+
+        More or less, in the update case, the status of the documents would
+        have to be checked when :attr:`method` is ``PATCH``.
+
+
+        About Checking Document Permissions
+        -----------------------------------------------------------------------
+
+        Access is generally not required for the documents in
+        ``resolve_documents``. However, it would still be useful to populate
+        ``grants`` using ``self.document``. For this reason the parameter 
+        ``validate`` is added.
+        """
+
 
         level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
-        # NOTE: Resolve user here because this should supercede the `cannot
-        #       modify other user.` error message raised in :meth:`user`.
         user = User.resolve(self.session, resolve_user)
         user = self._user(
             user,
             user_token,
             exclude_deleted=exclude_deleted,
-            msg_access_user="User can only access own grants.",
             exclude_public=True,
+            msg_name="_msg_only_self",
         )
-
-        user = self.user(
-            user,
-            resolve_user_token=user_token,
-            exclude_deleted=exclude_deleted,
-        )
-
-        # User can read, request, and remove all of their invitations.
-        match self.method:
-            # When posting, user may request only for documents that are
-            # public, and when deleting
-            case H.DELETE | H.POST | H.PUT | H.PATCH | H.GET if level is not None:
-                level = Level.view
-            case _:
-                raise HTTPException(405)
 
         # NOTE: See the equivalent note in `ResolvedGrantUser`. User grants are
         #       not important, only `token_user`.
@@ -804,9 +829,7 @@ class Access(BaseController):
             q = user.q_select_documents(
                 **document_kwargs,
                 exclude_pending=False,
-                # exclude_deleted=exclude_deleted,
             )
-            # util.sql(self.session, q)
             resolve_documents = tuple(self.session.execute(q).scalars())
 
         token_user_grants: Dict[str, Grant] = dict()
@@ -816,7 +839,10 @@ class Access(BaseController):
             resolve_user_token=user_token,
             grants=token_user_grants,
             grants_index="uuid_document",
+            validate=validate,
+            # pending_from=pending_from,
         )
+
 
         # NOTE: If the token user is not the user that the data is for then
         #       it is necessary to find a different set of grants.
@@ -831,6 +857,23 @@ class Access(BaseController):
             )
         else:
             grants_user = token_user_grants
+
+        if self.method == H.PATCH and len(
+            bad := {
+                uuid_document 
+                for uuid_document, grant in grants_user.items() 
+                if grant.pending_from != PendingFrom.grantee
+            }
+        ):
+
+            # NOTE: Ensure all documents have the currect pending from value 
+            #       for approval
+            raise ErrUpdateGrantPendingFrom.httpexception(
+                "_msg_grantee",
+                403,
+                uuid_obj=bad,
+                kind_obj=KindObject.document,
+            )
 
         if return_data:
             return mwargs(
@@ -858,6 +901,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
         pending: bool = False,
+        validate: bool = False,
     ) -> Data[ResolvedGrantUser]:
         return self.grant_user(
             resolve_user,
@@ -867,6 +911,7 @@ class Access(BaseController):
             level=level,
             return_data=True,
             pending=pending,
+            validate=validate,
         )
 
     @overload
@@ -950,6 +995,8 @@ class Access(BaseController):
 
         uuid_users = User.resolve_uuid(self.session, users)
         match self.method:
+            # NOTE: Ensure all documents have the currect pending from value 
+            #       for approval
             case H.GET | H.POST | H.PUT | H.PATCH:
                 ...
             case H.DELETE:
@@ -982,8 +1029,23 @@ class Access(BaseController):
             exclude_deleted=True,
         )
         user_grant: Dict[str, Grant] = {
-            grant.uuid: grant for grant in self.session.execute(q_user_grants).scalars()
+            grant.uuid_user: grant for grant in self.session.execute(q_user_grants).scalars()
         }
+
+        # NOTE: Check that the grants in question is.
+        if self.method == H.PATCH and len(
+            bad := {
+                uuid_user
+                for uuid_user, grant in user_grant.items() 
+                if grant.pending_from != PendingFrom.granter
+            }
+        ):
+            raise ErrUpdateGrantPendingFrom.httpexception(
+                "_msg_granter",
+                403,
+                uuid_obj=bad,
+                kind_obj=KindObject.user,
+            )
 
         if return_data:
             return mwargs(

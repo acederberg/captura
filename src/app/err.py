@@ -40,6 +40,7 @@ class ErrObjMinSchema(ErrBase):
 class ErrAccessUser(ErrBase):
     _msg_private: ClassVar[str] = "Cannot access private user."
     _msg_modify: ClassVar[str] = "Cannot modify user."
+    _msg_only_self: ClassVar[str] = "User can only access own grants."
 
     uuid_user: fields.FieldUUID
     uuid_user_token: fields.FieldUUID
@@ -116,6 +117,14 @@ class ErrAccessDocumentCannotRejectOwner(ErrBase):
     uuid_user_revoker: fields.FieldUUID
     uuid_document: fields.FieldUUID
     uuid_user_revokees: fields.FieldUUIDS
+
+
+class ErrUpdateGrantPendingFrom(ErrBase):
+    _msg_granter: ClassVar[str] = "Cannot accept grants because `pending_from` must be `granter`."
+    _msg_grantee: ClassVar[str] = "Cannot accept grants because `pending_from` must be `grantee`."
+
+    uuid_obj: fields.FieldUUIDS
+    kind_obj: fields.FieldKindObject
 
 
 # --------------------------------------------------------------------------- #

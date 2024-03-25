@@ -1021,8 +1021,13 @@ class User(SearchableTableMixins, Base):
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
         exclude_deleted: bool = True,
+        validate: bool = True,
     ) -> Self:
         "Less horrific."
+
+        def do_grant(grant):
+            if grants is not None and grant is not None:
+                grants[getattr(grant, grants_index)] = grant
 
         # NOTE: If the document is public and the level is view, then don't check.
         #       These lines can cause an issue where grants are not correctly 
@@ -1038,15 +1043,19 @@ class User(SearchableTableMixins, Base):
 
         res: Grant | None = session.execute(q).scalar()  # type: ignore
         detail: Dict[str, Any] = dict(
-            uuid_user=self.uuid, 
+            uuid_user=self.uuid,
             uuid_document=document.uuid,
             level_grant_required=level,
         )
 
+        if not validate:
+            do_grant(res)
+            return self
+
         match res:
             case None:
                 raise ErrAccessDocumentGrantBase.httpexception(
-                    "_msg_grant_dne",
+                    "_msg_dne",
                     403,
                     level=level.name,
                     **detail,
@@ -1074,12 +1083,10 @@ class User(SearchableTableMixins, Base):
                             level_grant=grant.level,
                             **detail
                         )
-                    if grants is not None:
-                        grants[getattr(grant, grants_index)] = grant
+                    do_grant(grant)
                     return self
                 elif not exclude_deleted:
-                    if grants is not None:
-                        grants[getattr(grant, grants_index)] = grant
+                    do_grant(grant)
                     return self
                 else:
                     raise ErrAccessDocumentGrantBase.httpexception(

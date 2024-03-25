@@ -84,6 +84,7 @@ class ContextData(BaseModel):
     openapi: flags.FlagOpenApi = False
     show_request: flags.FlagShowRequest = False
     auth_exclude: flags.FlagNoAuthorization = False
+    token: flags.FlagTokenOptional = None
 
     def openapijson(self, client: httpx.Client) -> OpenAPI:
         res = client.send(self.req_openapijson())
@@ -101,7 +102,7 @@ class ContextData(BaseModel):
     def headers(self) -> Dict[str, str]:
         h = dict(content_type="application/json")
         if self.config.token is not None and not self.auth_exclude:
-            h.update(authorization=f"bearer {self.config.token}")
+            h.update(authorization=f"bearer {self.token or self.config.token}")
         return h
 
     @classmethod
@@ -133,6 +134,7 @@ class ContextData(BaseModel):
         openapi: flags.FlagOpenApi = False,
         show_request: flags.FlagShowRequest = False,
         auth_exclude: flags.FlagNoAuthorization = False,
+        token: flags.FlagTokenOptional = None,
     ):
         config = mwargs(Config)
         if host is not None:
@@ -143,7 +145,7 @@ class ContextData(BaseModel):
         console_handler = mwargs(ConsoleHandler, output=output, columns=columns)
         context.obj = ContextData(
             config=config, console_handler=console_handler, show_request=show_request,
-            auth_exclude=auth_exclude,
+            auth_exclude=auth_exclude, token=token,
         )
         context.obj.openapi = openapi
 

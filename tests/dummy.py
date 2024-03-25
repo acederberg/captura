@@ -1,15 +1,16 @@
 import secrets
 from http import HTTPMethod
 from random import choice, randint
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict, Self,
-                    Set, Tuple, Type)
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
+                    NotRequired, Self, Set, Tuple, Type, TypedDict)
 
 import httpx
 from app import __version__
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
-                                  BaseResolvedSecondary, Data, KindData)
+                                  BaseResolvedSecondary, Data, KindData,
+                                  T_ResolvedPrimary)
 from app.controllers.delete import Delete
 from app.fields import KindObject, Level, Singular
 from app.models import (Assignment, Base, Collection, Document, Event, Grant,
@@ -21,15 +22,21 @@ from client.flags import Output
 from client.handlers import ConsoleHandler
 from client.requests import Requests
 from client.requests.base import ContextData
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, false, func, select, true, update
 from sqlalchemy.orm import Session
+from typing_extensions import Doc
 
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.mk import Mk
 from tests.test_models import ModelTestMeta
 
 # =========================================================================== #
-# Providers 
+# Providers
+
+
+class GetPrimaryKwargs(TypedDict):
+    public: NotRequired[bool | None]
+    deleted: NotRequired[bool | None]
 
 class BaseDummyProvider:
     dummy_user_uuids: ClassVar[list[str]] = list()
@@ -51,29 +58,89 @@ class BaseDummyProvider:
     # ----------------------------------------------------------------------- #
     # Getters
 
-    def get_document(self, level: Level, deleted: bool = False, **kwargs) -> Document:
+    def get_primary(
+        self,
+        Model: Type[T_ResolvedPrimary],
+        n: int,
+        *,
+        callback: Callable[[Any], Any] | None = None,
+        public: bool | None = None,
+        deleted: bool | None = None,
+    ) -> Tuple[T_ResolvedPrimary, ...]:
+
+        # print(f"{public=}")
+        # print(f"{deleted=}")
+        conds = list()
+        if public is not None:
+            bool_ = true() if public else false()
+            conds.append(Model.public == bool_)
+        if deleted is not None:
+            bool_ = true() if deleted else false()
+            conds.append(Model.deleted == false())
+
+        q = select(Model).where(*conds).order_by(func.random()).limit(n)
+        if callback:
+            q = callback(q)
+
+        # NOTE: Move assertions here to avoid perflight checks in tests.
+        models = tuple(self.session.scalars(q))
+        assert len(models)
+        if deleted is not None:
+            assert all(mm.deleted is deleted for mm in models)
+            # print("Checking deleted...")
+            # for mm in models:
+            #     print(mm.uuid, "->", mm.deleted)
+            
+        if public is not None:
+            assert all(mm.public is public for mm in models)
+        return models
+
+    def get_users(
+        self,
+        n: int,
+        kwargs_get_primary: GetPrimaryKwargs | None = None,
+    ) -> Tuple[User, ...]:
+
+        if kwargs_get_primary is None:
+            kwargs_get_primary = {}
+        return self.get_primary(User, n, **kwargs_get_primary)
+
+    def get_documents(
+        self,
+        n: int,
+        kwargs_get_primary: GetPrimaryKwargs | None = None,
+    ) -> Tuple[Document, ...]:
+
+        # print("==============================================================")
+        if kwargs_get_primary is None:
+            kwargs_get_primary = {}
+        return self.get_primary(Document, n, **kwargs_get_primary)
+
+    def get_user_documents(
+        self,
+        level: Level,
+        deleted: bool = False,
+        *,
+        n: int = 1,
+        **kwargs
+    ) -> Tuple[Document, ...]:
 
         kwargs.update(exclude_deleted=not deleted)
-        if level is not None:
-            q = self.user.q_select_documents(level=level, **kwargs)
-            if deleted:
-                q = q.where(Document.deleted)
-        else:
-            raise ValueError()
-            # q = select(Document).where(Document.uuid == "ex-parrot")
-        q = q.order_by(func.random()).limit(1)
-        # util.sql(self.session, q)
-        doc = self.session.scalar(q)
+        q = self.user.q_select_documents(level=level, **kwargs)
+        if deleted:
+            q = q.where(Document.deleted)
 
-        if doc is None:
-            raise ValueError(f"Could not find document with level `{level}`.")
-        return doc
+        q = q.order_by(func.random()).limit(n)
+        docs = tuple(self.session.scalars(q))
 
-    def get_grant(self, document: Document, **kwargs) -> Grant:
-        self.user.q_select_grants
+        assert len(docs)
+        assert all(dd.deleted is deleted for dd in docs)
+
+        return docs
+
+    def get_document_grant(self, document: Document, **kwargs) -> Grant:
         q = self.user.q_select_grants({document.uuid}, **kwargs)
         q = q.limit(1)
-        # util.sql(self.session, q)
         grant = self.session.scalar(q)
         if grant is None:
             raise AssertionError("Grant should have been created for document.")
@@ -107,10 +174,15 @@ class BaseDummyProvider:
         )
 
     def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
-        profile =  PyTestClientProfileConfig(
-                    token=self.auth.encode(dict(uuid=self.user.uuid, admin=self.user.admin,)),
-                    uuid_user=self.user.uuid,
+        profile = PyTestClientProfileConfig(
+            token=self.auth.encode(
+                dict(
+                    uuid=self.user.uuid,
+                    admin=self.user.admin,
                 )
+            ),
+            uuid_user=self.user.uuid,
+        )
 
         context = ContextData(
             config=PytestClientConfig(
@@ -125,22 +197,32 @@ class BaseDummyProvider:
     # NOTE: `User` will always be the the same as
     def data(self, kind: KindData) -> Data:
         T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary]
-        T_resolved = BaseResolved.get(kind) # type: ignore
+        T_resolved = BaseResolved.get(kind)  # type: ignore
 
         kwargs: Dict[str, Any]
 
         if T_resolved.kind in {KindData.user}:
             kwargs = {"users": (self.user,)}
         elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
-            document = self.get_document(level = Level.own)
+            document = self.get_document(level=Level.own)
             grant = self.get_grant(document)
 
             if T_resolved.kind == KindData.grant_document:
                 grants = {grant.uuid_user: grant}
-                kwargs = dict(document=document, users=(self.user,), grants=grants, token_user_grants=grants)
+                kwargs = dict(
+                    document=document,
+                    users=(self.user,),
+                    grants=grants,
+                    token_user_grants=grants,
+                )
             else:
                 grants = {grant.uuid_document: grant}
-                kwargs = dict(documents=(document,), user=self.user, grants=grants, token_user_grants=grants)
+                kwargs = dict(
+                    documents=(document,),
+                    user=self.user,
+                    grants=grants,
+                    token_user_grants=grants,
+                )
         elif T_resolved.kind in {
             KindData.collection,
             KindData.document,
@@ -258,10 +340,9 @@ class BaseDummyProvider:
         self.collections = tuple(user.collections)
 
 
-
 class DummyProviderYAML(BaseDummyProvider):
 
-    def __init__(self, auth: Auth, session: Session, user: User): 
+    def __init__(self, auth: Auth, session: Session, user: User):
         self.auth = auth
         self.session = session
         self.find(user)
@@ -278,9 +359,6 @@ class DummyProviderYAML(BaseDummyProvider):
             cls_model.merge(session)
 
 
-
-
-
 class DummyProvider(BaseDummyProvider):
     def __init__(self, auth: Auth, session: Session, use_existing: bool = False):
 
@@ -292,7 +370,6 @@ class DummyProvider(BaseDummyProvider):
             self.find(user)
         else:
             self.build()
-
 
     def mk_assignments(self):
         # NOTE: Iter over collections first so that every document has a chance
@@ -313,16 +390,16 @@ class DummyProvider(BaseDummyProvider):
 
     def mk_grants(self):
         grants = tuple(
-                Grant(
-                    level=Level.own,
-                    id_user=self.user.id,
-                    id_document=document.id,
-                    deleted=False,
-                    pending=False,
-                    pending_from=PendingFrom.created,
-                )
-                for document in self.documents
+            Grant(
+                level=Level.own,
+                id_user=self.user.id,
+                id_document=document.id,
+                deleted=False,
+                pending=False,
+                pending_from=PendingFrom.created,
             )
+            for document in self.documents
+        )
 
         # NOTE: Add grants for documents of other users.
         q_id_user_max = select(func.max(User.id))
@@ -334,7 +411,7 @@ class DummyProvider(BaseDummyProvider):
         if self.user.id in id_users_shared:
             id_users_shared.remove(self.user.id)
 
-        print(id_user_max)
+        # print(id_user_max)
 
         # ------------------------------------------------------------------- #
         # For self.
@@ -346,7 +423,7 @@ class DummyProvider(BaseDummyProvider):
             if grant_init.id_user != self.user.id
         }
         grants_self = tuple(
-            Grant( 
+            Grant(
                 uuid=secrets.token_urlsafe(8),
                 level=choice(list(Level)),
                 id_user=self.user.id,
@@ -376,7 +453,6 @@ class DummyProvider(BaseDummyProvider):
             for grant in grants
             for id_user in id_users_shared
             if randint(0, 2)
-
         )
         # def uniq(gg):
         #     return set((grant.id_user, grant.id_document) for grant in gg)
@@ -409,7 +485,6 @@ class DummyProvider(BaseDummyProvider):
         # print(len(uniq_other | uniq_created | uniq_self))
         # print("=============================================================")
 
-
         return grants + grants_self + grants_other
 
     def build(self):
@@ -439,7 +514,6 @@ class DummyProvider(BaseDummyProvider):
         self.assignments = self.mk_assignments()
         session.add_all(self.assignments)
 
-
         # NOTE: Create own grants. Additional grants will be created next.
         self.grants = self.mk_grants()
         for gg in self.grants:
@@ -452,8 +526,4 @@ class DummyProvider(BaseDummyProvider):
 
         self.dummy_user_uuids.append(user.uuid)
         return user
-
-
-    def dispose(self):
-        ...
 

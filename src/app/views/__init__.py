@@ -6,9 +6,9 @@ from app.auth import Auth
 from app.controllers.access import Access, H
 from app.depends import DependsAccess, DependsAuth, DependsSessionMaker
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
@@ -48,6 +48,7 @@ or less this model will be 'sharing as a service'.
 
 from starlette.routing import Mount
 
+
 class AppView(BaseView):
     # NOTE: The following are helpful, I don't want to do this right now but
     #       it will be useful for later.
@@ -57,6 +58,8 @@ class AppView(BaseView):
     #
     # TODO: Make swagger docs better. Add better examples for requests and
     #       responses, etc.
+    #
+    #       - https://fastapi.tiangolo.com/reference/openapi/models/
     #
     # NOTE: About static files:
     #
