@@ -24,6 +24,8 @@ from fastapi import Body, Depends, HTTPException, Query
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
+logger = util.get_logger(__name__)
+
 OpenApiResponseUser = {
     **OpenApiResponseCommon,
     403: {
@@ -88,6 +90,7 @@ class DemoUserView(BaseView):
         Optionally filter by **invitation_email**, **invitation_code**, or
         **invitation_uuid**.
         """
+
 
         if not access.token.admin:
             raise HTTPException(
@@ -443,6 +446,8 @@ class UserView(BaseView):
 
         For instance, this could be used to make a profile page.
         """
+
+        logger.info("Testing testing.")
 
         user = UserExtraSchema.model_validate(read.access.user(uuid_user))
         return mwargs(AsOutput[UserExtraSchema], data=user)

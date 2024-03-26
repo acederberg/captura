@@ -1,55 +1,18 @@
+import datetime
 import enum
+import json
 import logging
+import logging.config
+import logging.handlers
 from os import environ, path
-from typing import Any, Iterable, Type
+from typing import Any, ClassVar, Iterable, List, Set, Type
 
+import yaml
 from rich.console import Console
 from rich.syntax import Syntax
 
 ENV_PREFIX = "ARTICLES_"
 LOG_LEVEL = logging.INFO
-
-# =========================================================================== #
-# LOGGING STUFF
-
-
-def get_logger(name: str) -> logging.Logger:
-    ll = logging.getLogger(name)
-
-    handler = logging.StreamHandler()
-    handler.setLevel(LOG_LEVEL)
-    ll.addHandler(handler)
-
-    formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    )
-    handler.setFormatter(formatter)
-
-    ll.setLevel(LOG_LEVEL)
-    return ll
-
-
-CONSOLE_APP = Console()
-
-
-def sql(session, *qs) -> None:
-    cmps = (
-        f"{q.compile(session.bind, compile_kwargs=dict(literal_binds=True))};"
-        for q in qs
-    )
-    cmp = "\n\n".join(cmps)
-    highlighted = Syntax(cmp, "mysql", theme="fruity", word_wrap=True)
-    CONSOLE_APP.print(highlighted)
-
-
-# def pre_stringify(data: Any) -> Any:
-#     match data:
-#         case other if hasattr(other, ""):
-#             return
-#         case Iterable():
-#             return [pre_stringify(item) for item in data]
-#             ...
-#
 
 # =========================================================================== #
 # PATH STUFF
@@ -119,3 +82,38 @@ def check_enum_opt_attr(
                 f"Expected `{T_enum}` or `None` (got `{bad}` of type "
                 f"`{type(bad)}`)."
             )
+
+
+# =========================================================================== sss
+# LOGGING STUFF
+
+
+ENV_LOG_CONFIG= f"{ENV_PREFIX}LOG_CONFIG"
+PATH_LOG_CONFIG = environ.get(ENV_LOG_CONFIG, Path.base("logging.yaml"))
+
+
+# TODO: Add quehandler.
+def setup_logging():
+    print("HERE!")
+    with open(PATH_LOG_CONFIG, "r") as file:
+        config = yaml.safe_load(file)
+
+    logging.config.dictConfig(config)
+
+
+def get_logger(name: str) -> logging.Logger:
+    ll = logging.getLogger(name)
+    return ll
+
+
+CONSOLE_APP = Console()
+
+
+def sql(session, *qs) -> None:
+    cmps = (
+        f"{q.compile(session.bind, compile_kwargs=dict(literal_binds=True))};"
+        for q in qs
+    )
+    cmp = "\n\n".join(cmps)
+    highlighted = Syntax(cmp, "mysql", theme="fruity", word_wrap=True)
+    CONSOLE_APP.print(highlighted)

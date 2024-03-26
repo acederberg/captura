@@ -285,17 +285,17 @@ class UserGrantView(BaseView):
             pending=pending,
             level=level,
         )
-        if pending_from:
-            grant = {
-                k: v
-                for k, v in data.data.grants.items()
-                if v.pending_from == pending_from
+        grants = data.data.grants
+        if pending_from is not None:
+            pending_from_ = fields.PendingFrom[pending_from.name]
+            grants = {
+                k: v for k, v in grants.items()
+                if v.pending_from == pending_from_
             }
 
-        grant = data.data.grants.values()
         return mwargs(
             AsOutput[List[GrantSchema]],
-            data=TypeAdapter(List[GrantSchema]).validate_python(grant),
+            data=TypeAdapter(List[GrantSchema]).validate_python(grants.values()),
         )
 
     @classmethod
@@ -304,7 +304,7 @@ class UserGrantView(BaseView):
         update: DependsUpdate,
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocument,
-    ) -> AsOutput[List[GrantSchema]]:
+    ) -> OutputWithEvents[List[GrantSchema]]:
         """Approve pending grants for user. The intended use case is for users
         to accept their own grants (this can also be done by admins).
 
@@ -314,15 +314,18 @@ class UserGrantView(BaseView):
         Note that grants cannot be updated in place. To replace/update a grant
         use `POST /grants/users/{uuid}` endpoint with `force=true`."""
 
-        data: Data[ResolvedGrantDocument] = update.access.d_grant_user(
+        data: Data[ResolvedGrantUser] = update.access.d_grant_user(
             uuid_user,
             uuid_document,
-            # level=Level.view,
             pending=True,
-            # exclude_pending=False,
-            # pending_from=PendingFrom.granter
+            level=Level.view,
         )
-        update.grant_document(data)
+        print("=================================")
+        print(1)
+        print(len(data.data.documents))
+        print(len(data.data.grants))
+
+        update.grant_user(data)
         data.commit(update.session)
         assert data.event is not None
 
@@ -356,28 +359,14 @@ class UserGrantView(BaseView):
         #       case they are not used. `grants` will be updated inside of
         #       `create.grant_user`.
 
-        # user: User = create.access._user(uuid_user)
-        # data: Data[ResolvedGrantUser] = mwargs(
-        #     Data[ResolvedGrantUser],
-        #     data=mwargs(
-        #         ResolvedGrantUser,
-        #         user=user,
-        #         documents=Document.resolve(create.session, uuid_document),
-        #         grants=dict(),
-        #         token_user_grants=dict(),
-        #     ),
-        # )
         data: Data[ResolvedGrantUser] = create.access.d_grant_user(
             uuid_user,
             uuid_document,
-            # exclude_pending=False,
-            # pending_from=PendingFrom.granter
         )
         create.create_data = GrantCreateSchema(level=level)
         create.grant_user(data)
-
-        # Get rid of grants that already exist.
         data.commit(create.session, True)
+
         grants = data.data.grants
         return mwargs(
             OutputWithEvents[List[GrantSchema]],

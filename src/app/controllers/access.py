@@ -825,12 +825,17 @@ class Access(BaseController):
             level=level,
             pending=pending,
         )
-        if not resolve_documents:
-            q = user.q_select_documents(
-                **document_kwargs,
-                exclude_pending=False,
-            )
-            resolve_documents = tuple(self.session.execute(q).scalars())
+
+        uuid_documents = Document.resolve_uuid(self.session, resolve_documents) if resolve_documents is not None else None
+        q = user.q_select_documents(
+            uuid_documents,
+            **document_kwargs,
+            exclude_pending=not pending,
+        )
+        print("IN ACCESS")
+        util.sql(self.session, q)
+
+        resolve_documents = tuple(self.session.execute(q).scalars())
 
         token_user_grants: Dict[str, Grant] = dict()
         documents = self.document(

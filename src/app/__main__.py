@@ -100,7 +100,7 @@ class Cli:
             curl "http://$CONTAINER_IP:8080"
 
         """
-        logger.info("Running articles server version `%s`.", __version__)
+
         uvicorn.run(
             "app.views:AppView.view_router",
             port=8080,
@@ -116,6 +116,10 @@ def main() -> None:
     tt = typer.Typer()
     tt.command("run")(cli)
     tt()
+
+
+# THIS APPEARS TO BE THE BEST SPOT FOR THIS!
+util.setup_logging()
 
 
 if __name__ == "__main__":

@@ -3,72 +3,31 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Literal,
-    Protocol,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    Union,
-    overload,
-)
+from typing import (Any, Callable, Dict, Generic, Literal, Protocol, Set,
+                    Tuple, Type, TypeAlias, TypeVar, Union, overload)
 
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-    T_Data,
-)
-from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    PendingFrom,
-    ResolvableMultiple,
-    ResolvableSingular,
-    ResolvableSourceAssignment,
-    ResolvableTargetAssignment,
-    Singular,
-    Tables,
-    User,
-)
-from app.schemas import (
-    AssignmentSchema,
-    CollectionCreateSchema,
-    CollectionSchema,
-    CollectionUpdateSchema,
-    DocumentCreateSchema,
-    DocumentUpdateSchema,
-    EditCreateSchema,
-    EventSchema,
-    GrantCreateSchema,
-    UserCreateSchema,
-    UserUpdateSchema,
-)
+from app.controllers.base import (Data, DataResolvedGrant,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser, T_Data)
+from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
+                                    WithDelete)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, PendingFrom,
+                        ResolvableMultiple, ResolvableSingular,
+                        ResolvableSourceAssignment, ResolvableTargetAssignment,
+                        Singular, Tables, User)
+from app.schemas import (AssignmentSchema, CollectionCreateSchema,
+                         CollectionSchema, CollectionUpdateSchema,
+                         DocumentCreateSchema, DocumentUpdateSchema,
+                         EditCreateSchema, EventSchema, GrantCreateSchema,
+                         UserCreateSchema, UserUpdateSchema)
 from fastapi import HTTPException
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
@@ -944,40 +903,46 @@ class Update(WithDelete, Generic[T_Update]):
         #       url should still require the user uuid in the url because admins
         #       will be able to modify permissions generally.
         token_user = data.token_user or self.token_user
-        token_user_grant = data.data.token_user_grants[token_user.uuid]
-        if data.token_user != data.data.user.uuid:
+        if token_user.uuid != data.data.user.uuid:
             detail = dict(
                 msg="User cannot accept grants of other users.",
                 uuid_user=data.data.uuid_user,
                 uuid_user_token=token_user.uuid,
             )
             raise HTTPException(403, detail=detail)
-        elif token_user.uuid != token_user_grant.uuid_user:
-            detail = dict(
-                uuid_user=token_user.uuid,
-                uuid_user_token_from_grant=token_user_grant.uuid,
-                msg="Token user grant is not for token user.",
-            )
-            raise HTTPException(500, detail=detail)
+        # elif token_user.uuid != token_user_grant.uuid_user:
+        #     detail = dict(
+        #         uuid_user=token_user.uuid,
+        #         uuid_user_token_from_grant=token_user_grant.uuid,
+        #         msg="Token user grant is not for token user.",
+        #     )
+        #     raise HTTPException(500, detail=detail)
 
-        # session = self.session
-        # token_user = data.token_user or self.token_user
-        # q_pending = token_user.q_select_grants(data.data.uuid_documents, pending=True)
-        # pending_grants = tuple(self.session.execute(q_pending).scalars())
+        print("=================================")
+        print(2)
+        print(len(data.data.documents))
+        print(len(data.data.grants))
 
         pending_grants = data.data.grants
-        for grant in pending_grants:
-            grant.pending = False
+        for grant in (pending_values := pending_grants.values()):
             # NOTE: Aleady checked by access. Here incase errs.
             if grant.pending_from != PendingFrom.grantee:
                 raise HTTPException(
                     500,
                     detail="Cannot approve grant pending from `grantee` or `created`.",
                 )
-            grant.uuid_parent = token_user_grant.uuid
-            # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Not assigned when inviting.
 
-        event = self.create_event_grant(data, tuple(pending_grants))
+            # grant.uuid_parent = token_user_grant.uuid
+            # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Assigned by granter on invite
+            grant.pending = False
+            self.session.add(grant)
+
+            print("---------------------")
+            print(grant.uuid)
+            print(grant.uuid_document)
+            print(grant.uuid_user)
+
+        event = self.create_event_grant(data, tuple(pending_values))
         event.detail = "Access granted."
         data.event = event
         return data
@@ -989,6 +954,7 @@ class Update(WithDelete, Generic[T_Update]):
         "Granter approves many users for owned doc."
 
         token_user = data.token_user or self.token_user
+        print(data.data.token_user_grants)
         token_user_grant = data.data.token_user_grants[token_user.uuid]
 
         # Double check the level. The first case should not really happen.
@@ -1016,8 +982,8 @@ class Update(WithDelete, Generic[T_Update]):
                     detail="Cannot approve grant pending from `grantee` or `created`.",
                 )
             grant.pending = False
-            # grant.uuid_parent = token_user_grant.uuid
-            # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Assigned when inviting.
+            grant.uuid_parent = token_user_grant.uuid
+            # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Not assigned when inviting.
 
         event = self.create_event_grant(data, tuple(pending_values))
         event.detail = "Access granted."

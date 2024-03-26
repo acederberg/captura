@@ -1060,7 +1060,9 @@ class User(SearchableTableMixins, Base):
                     level=level.name,
                     **detail,
                 )
-            case Grant(deleted=False, pending=True, pending_from=pending_from) as grant if not pending:
+            case Grant(
+                deleted=False, pending=True, pending_from=pending_from
+            ) as grant if not pending:
                 status, msg = 403, "_msg_grant_pending"
                 if pending_from == PendingFrom.created:
                     status, msg = 500, "_msg_grant_pending_created"

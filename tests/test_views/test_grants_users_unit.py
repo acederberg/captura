@@ -1,11 +1,13 @@
 import asyncio
+import json
 import secrets
 from os import walk
 from typing import List, Tuple
 
 import httpx
 import pytest
-from app.err import ErrAccessUser, ErrDetail, ErrObjMinSchema
+from app.err import (ErrAccessDocumentPending, ErrAccessUser, ErrDetail,
+                     ErrObjMinSchema, ErrUpdateGrantPendingFrom)
 from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from app.models import Document, Grant
 from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
@@ -81,9 +83,6 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         user, (user_other,) = dummy.user, dummy.get_users(1, GetPrimaryKwargs(deleted=False))
         assert user.uuid != user_other.uuid
         assert user.deleted is False
-
-        print(f"{user.uuid=}")
-        print(f"{user_other.uuid=}")
 
         documents = dummy.get_documents(5)
         uuid_documents = Document.resolve_uuid(dummy.session, documents)
@@ -257,6 +256,47 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         assert data.kind is not None
         self.check_data(dummy, data)
 
+    # NOTE: The `pending` filter only works when `uuid_document` is not 
+    #       specified.
+    @pytest.mark.parametrize(
+        "dummy, requests, include_uuids",
+        [(None, None, bool(vv)) for vv in (0, 1)],
+        indirect=["dummy", "requests"],
+    )
+    @pytest.mark.asyncio
+    async def test_success_200_pending(
+        self, dummy: DummyProvider, requests: Requests, include_uuids
+    ):
+
+        user = dummy.user
+        fn = self.fn(requests)
+
+        if include_uuids:
+            docs = dummy.get_user_documents(
+                level=Level.view, 
+                exclude_pending=True,
+            )
+            uuid_document = list(Document.resolve_uuid(dummy.session, docs))
+        else:
+            uuid_document = None
+
+        count_nonempty = 0
+        for pending in map(bool, (0, 1)):
+            res = await fn(user.uuid, pending=pending, uuid_document=uuid_document)
+            if err:=self.check_status(requests, res):
+                raise err
+
+            data = self.adapter.validate_json(res.content)
+            if data.kind is None:
+                continue
+
+            self.check_data(dummy, data, pending=pending)
+            count_nonempty += 1
+
+        if not count_nonempty:
+            raise AssertionError("All empty.")
+
+
     @pytest.mark.asyncio
     async def test_success_200_pending_from(
         self, dummy: DummyProvider, requests: Requests
@@ -266,22 +306,30 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         user = dummy.user
         fn = self.fn(requests)
 
-        pending_froms = list(PendingFrom)
-        responses = await asyncio.gather(
-            *(
-                fn(user.uuid, pending_from=PendingFromStr[pending_from.name])
-                for pending_from in pending_froms
-            )
-        )
+        count_nonempty = 0
+        for pending_from in list(PendingFrom):
 
-        for pending_from, res in zip(pending_froms, responses):
-
+            res = await fn(user.uuid, pending_from=PendingFromStr[pending_from.name])
             if err := self.check_status(requests, res, 200):
                 raise err
 
+            # pending_from = PendingFrom[res.request.url.params["pending_from"]]
             data = self.adapter.validate_json(res.content)
+
+            if data.kind is None:
+                continue
+
             self.check_data(dummy, data)
-            assert all(item.pending_from == pending_from for item in data.data)
+            bad = tuple(item for item in data.data if item.pending_from.name != pending_from.name)
+            if len(bad):
+                bad = tuple(item.model_dump(mode="json") for item in bad)
+                msg = json.dumps(bad, indent=2, default=str)
+                msg = f"Found unexpected values for `pending_from` (expected `{pending_from}`) in `{msg}`."
+                raise AssertionError(msg)
+            count_nonempty += 1
+
+        if not count_nonempty:
+            raise AssertionError("All empty.")
 
     @pytest.mark.asyncio
     async def test_success_200_level(
@@ -326,16 +374,109 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         """User can accept own grants."""
 
-        documents = dummy.get_user_documents(Level.view, n=5)
+        session = dummy.session
+        documents = dummy.get_user_documents(Level.view, n=5, deleted=False, pending=True, exclude_pending=False)
+        assert not any(dd.deleted for dd in documents)
         uuid_document = list(Document.resolve_uuid(dummy.session, documents))
 
+        dummy.user.deleted = False
+        session.add(dummy.user)
+
+        grants = []
         for dd in documents:
-            grant = dummy.get_document_grant(dd)
+            grant = dummy.get_document_grant(dd,
+                                             pending=True,
+                                             exclude_pending=False
+                                             )
             if grant.pending_from == PendingFrom.created:
                 continue
 
             grant.pending_from = PendingFrom.grantee
-            grant.pending = True
+            assert grant.pending
+            session.add(grant)
+            grants.append(grant)
+
+        session.commit()
+
+        # NOTE: Cannot read pending unless specified.
+        fn_read = requests.grants.users.read
+        res_read = await fn_read(dummy.user.uuid, pending=False, uuid_document=uuid_document)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter.validate_json(res_read.content)
+        assert not len(data.data)
+        assert data.kind is None
+
+        # NOTE: Now with pending true
+        fn_read = requests.grants.users.read
+        res_read = await fn_read(dummy.user.uuid, pending=True, uuid_document=uuid_document)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter.validate_json(res_read.content)
+        assert (n := len(data.data)) == len(documents)
+        assert data.kind is KindObject.grant
+
+        # NOTE: Accept grants.
+        fn = self.fn(requests)
+        res = await fn(dummy.user.uuid, uuid_document=uuid_document)
+
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        dummy.session.reset()
+        self.check_data(dummy, data, pending=False)
+
+        # NOTE: Check with database.
+        q_grants = dummy.user.q_select_grants(
+            uuid_document, # type: ignore
+            exclude_deleted=False,
+            exclude_pending=False,
+        )
+        grants = tuple(session.scalars(q_grants))
+        assert len(grants) == len(uuid_document)
+
+        still_pending = tuple(grant for grant in grants if grant.pending)
+        if m:=len(still_pending):
+            msg = "Failed to move all grants from pending state. "
+            msg += f"`{m}` of `{n}` grants still remain pending."
+            raise AssertionError(msg)
+
+
+        # NOTE: Should be able to read these grants after
+        res_read = await fn_read(dummy.user.uuid, uuid_document=uuid_document)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter.validate_json(res_read.content)
+        assert data.kind == KindObject.grant
+
+        # NOTE: Should not be able to read these grants after
+        res_read = await fn_read(dummy.user.uuid, uuid_document=uuid_document, pending=True)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter.validate_json(res_read.content)
+        assert data.kind is None
+
+        # NOTE: Indempotent
+        res = await fn(dummy.user.uuid, uuid_document=uuid_document)
+
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind is None
+        assert len(data.events) == 1
+        
+
+
+    @pytest.mark.asyncio
+    async def test_success_200_uuid_document_dne(self, dummy: DummyProvider, requests: Requests):
+        """Test filtering by using fake document uuids."""
+        uuid_document = [secrets.token_urlsafe(9) for _ in range(5)]
 
         fn = self.fn(requests)
         res = await fn(dummy.user.uuid, uuid_document=uuid_document)
@@ -344,16 +485,9 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
             raise err
 
         data = self.adapter_w_events.validate_json(res.content)
-        self.check_data(dummy, data, pending=False)
-
-    @pytest.mark.asyncio
-    async def test_success_200_uuid_document_dne(self, dummy: DummyProvider, requests: Requests):
-        """Test filtering by using fake document uuids."""
-        ...
-
-    @pytest.mark.asyncio
-    async def test_success_200_uuid_document(self, dummy: DummyProvider, requests: Requests):
-        """User can accept own grants."""
+        assert data.kind is None
+        assert not len(data.data)
+        assert len(data.events) == 1  # Only the base event.
 
 
     @pytest.mark.asyncio
@@ -365,4 +499,28 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         """Test that grants with ``pending_from != granter`` cannot be approved
         with this endpoint.
         """
-        assert False
+
+        session = dummy.session
+        document, = dummy.get_user_documents(Level.view, n=1, pending=True, exclude_pending=False)
+        uuid_document = [Document.resolve_uuid(dummy.session, document)]
+
+        grant = dummy.get_document_grant(document, pending=True, exclude_pending=False)
+        assert grant.pending
+        grant.pending_from = PendingFrom.granter
+        session.add(grant)
+        session.commit()
+
+        fn = self.fn(requests)
+        res = await fn(dummy.user.uuid, uuid_document=uuid_document)
+
+        err_exp = mwargs(
+            ErrDetail[ErrUpdateGrantPendingFrom],
+            detail=mwargs(
+                ErrUpdateGrantPendingFrom,
+                msg=ErrUpdateGrantPendingFrom._msg_grantee,
+                uuid_obj=uuid_document,
+                kind_obj=KindObject.document
+            )
+        )
+        if err := self.check_status(requests, res, 403, err_exp):
+            raise err

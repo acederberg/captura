@@ -234,10 +234,12 @@ DependsUser: TypeAlias = Annotated[User, Depends(user)]
 
 
 def access(
-    sessionmaker: DependsSessionMaker, token: DependsTokenOptional, request: Request
-) -> Access:
+    sessionmaker: DependsSessionMaker, token: DependsTokenOptional, request: Request,
+):
+    logger.debug("Creating sessionmaker access.")
     with sessionmaker() as session:
-        return Access(session=session, token=token, method=request.method)
+        yield Access(session=session, token=token, method=request.method)
+        logger.debug("Exitting `sessionmaker` context.")
 
 
 DependsAccess: TypeAlias = Annotated[Access, Depends(access)]
