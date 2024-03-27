@@ -22,9 +22,10 @@ Instead do
         return config.m
 """
 
-from typing import Annotated
+import enum
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
@@ -101,9 +102,28 @@ class Auth0Config(BaseHashable):
     app: Auth0AppConfig
 
 
+class Environment(enum.Enum):
+    production = "production"
+    development = "development"
+
+
+class AppConfigDev(BaseHashable):
+    """Setting exclusively for development."""
+
+    httpexc_tb: Annotated[bool, Field(default = False)]
+
+
 class AppConfig(BaseHashable):
-    # log_level: Literal["DEBUG", "INFO", "WARNING", "CRITICAL"]
-    port: int = 8080
+    port: Annotated[int, Field(default=8080)]
+    host: Annotated[str, Field(default="0.0.0.0")]
+    environment: Annotated[Environment, Field(default=Environment.production)]
+    dev: Annotated[AppConfigDev, Field(default_factory=lambda: AppConfigDev.model_validate({}))]
+    logging_configuration_path: Annotated[str, Field(default=util.PATH_LOG_CONFIG)]
+
+    @computed_field
+    @property
+    def is_dev(self) -> bool:
+        return self.environment == Environment.development
 
 
 class Config(BaseHashable, BaseYamlSettings):
@@ -115,6 +135,7 @@ class Config(BaseHashable, BaseYamlSettings):
     )
     mysql: MySqlConfig
     auth0: Auth0Config
+    app: AppConfig
 
     def engine(self, **kwargs) -> Engine:
         url = URL.create(

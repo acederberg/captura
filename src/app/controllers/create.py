@@ -3,7 +3,7 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Any, Callable, Dict, Generic, Literal, Protocol, Set,
+from typing import (Any, Callable, Dict, Generic, List, Literal, Protocol, Set,
                     Tuple, Type, TypeAlias, TypeVar, Union, overload)
 
 from app import __version__, util
@@ -18,6 +18,7 @@ from app.controllers.base import (Data, DataResolvedGrant,
                                   ResolvedUser, T_Data)
 from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
                                     WithDelete)
+from app.err import ErrAssocRequestMustForce
 from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
                         KindEvent, KindObject, Level, PendingFrom,
                         ResolvableMultiple, ResolvableSingular,
@@ -27,8 +28,9 @@ from app.schemas import (AssignmentSchema, CollectionCreateSchema,
                          CollectionSchema, CollectionUpdateSchema,
                          DocumentCreateSchema, DocumentUpdateSchema,
                          EditCreateSchema, EventSchema, GrantCreateSchema,
-                         UserCreateSchema, UserUpdateSchema)
+                         GrantSchema, UserCreateSchema, UserUpdateSchema)
 from fastapi import HTTPException
+from pydantic import TypeAdapter
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
 from sqlalchemy import literal_column, select
@@ -215,7 +217,6 @@ class Create(WithDelete, Generic[T_Create]):
             their source. The requirement that they be active means that doing
             the same `POST` twice should be indempotent.
         """
-        print(5)
         force = force if force is not None else self.force
 
         # NOTE: No actual deletion here. Deletion occurs in SPM.
@@ -229,20 +230,15 @@ class Create(WithDelete, Generic[T_Create]):
         match self.method:
             case H.POST if not force:
                 if rm_assoc_data.uuid_assoc_deleted:
-                    msg = "Some targets have existing assignments awaiting "
-                    msg += "cleanup. Try this request again with `force=true` "
-                    msg += "or make an equivalent `PUT` request."
-                    raise HTTPException(
+                    raise ErrAssocRequestMustForce.httpexception(
+                        "_msg_force",
                         400,
-                        detail=dict(
-                            msg=msg,
-                            kind_target=data.data.kind_target.name,
-                            kind_source=data.data.kind_source.name,
-                            kind_assoc=data.data.kind_assoc.name,
-                            uuid_target=list(rm_assoc_data.uuid_target_deleted),
-                            uuid_source=data.data.uuid_source,
-                            uuid_assoc=list(rm_assoc_data.uuid_assoc_deleted),
-                        ),
+                        kind_target=data.data.kind_target,
+                        kind_source=data.data.kind_source,
+                        kind_assoc=data.data.kind_assoc,
+                        uuid_target=list(rm_assoc_data.uuid_target_deleted),
+                        uuid_source=data.data.uuid_source,
+                        uuid_assoc=list(rm_assoc_data.uuid_assoc_deleted),
                     )
                 uuid_target_create -= rm_assoc_data.uuid_target_active
             # NOTE: Delete ALL existing, add deleted to created. DO NOT UPDATE
@@ -265,34 +261,62 @@ class Create(WithDelete, Generic[T_Create]):
                 # This makes force possible when committing. It will be necessary
                 # to delete so that ew entries are added without conflicts.
                 event_rm = self.delete.create_event_assoc(data, rm_assocs)
-                data.data.add_q(rm_q)
+                self.session.execute(rm_q)
             case _:
                 raise HTTPException(405)
 
-        targets: Tuple = data.data.target  # type: ignore
+        attr_uuid_target = "uuid_" + Singular[data.data._attr_name_target].value
+
+        print(
+            json.dumps(
+                [
+                    item.model_dump(mode="json")
+                    for item in
+                    TypeAdapter(List[GrantSchema]).validate_python(data.data.assoc.values())
+                ]
+            )
+        )
+
+        uuid_target_exists = { 
+            getattr(value, attr_uuid_target)
+            for value in data.data.assoc.values()
+        }
+        targets: Tuple = tuple(
+            target
+            for target in data.data.target  # type: ignore
+            if target.uuid in uuid_target_create
+            if target.uuid not in uuid_target_exists
+        )
         assocs: Dict[str, Grant] | Dict[str, Assignment] = {
             target.uuid: create_assoc(data, target)  # type: ignore
             for target in targets
-            if target.uuid in uuid_target_create
         }
-        # ADD CREATED ASSOCS TO DATA!
-        data.data.assoc.update(assocs)
 
-        event_create = self.create_event_assoc(data, assocs)
+        # WARNING! OVERWRITES! NECESSARY FOR
+        data_final = data.model_copy(deep=True)
+        print("uuid_target_exists", uuid_target_exists)
+        print("targets", targets)
+        print("assocs", assocs)
+        setattr(data_final.data, data_final.data._attr_name_target, targets)
+        setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
+        # data_final.data.target = targets
+        # data_final.data.assocs = assocs
+
+        event_create = self.create_event_assoc(data_final, assocs)
         if event_rm is not None:
             event = Event(
                 **self.event_common,
-                uuid_obj=data.data.uuid_source,
-                kind_obj=data.data.kind_source,
+                uuid_obj=data_final.data.uuid_source,
+                kind_obj=data_final.data.kind_source,
                 children=[event_rm, event_create],
             )
             event.kind = KindEvent.upsert
-            data.event = event
+            # data_final.event = event
         else:
             event = event_create
 
-        data.event = event
-        return data, rm_assoc_data, rm_q, T_assoc
+        data_final.event = event
+        return data_final, rm_assoc_data, rm_q, T_assoc
 
     # @overload
     # def create_event_assoc(
@@ -466,9 +490,7 @@ class Create(WithDelete, Generic[T_Create]):
         return data
 
     a_assignment_document = with_access(Access.assignment_document)(assignment_document)
-    a_assignment_collection = with_access(Access.assignment_collection)(
-        assignment_collection
-    )
+    a_assignment_collection = with_access(Access.assignment_collection)(assignment_collection)
     a_grant_document = with_access(Access.grant_document)(grant_document)
     a_grant_user = with_access(Access.grant_user)(grant_user)
 
@@ -910,18 +932,6 @@ class Update(WithDelete, Generic[T_Update]):
                 uuid_user_token=token_user.uuid,
             )
             raise HTTPException(403, detail=detail)
-        # elif token_user.uuid != token_user_grant.uuid_user:
-        #     detail = dict(
-        #         uuid_user=token_user.uuid,
-        #         uuid_user_token_from_grant=token_user_grant.uuid,
-        #         msg="Token user grant is not for token user.",
-        #     )
-        #     raise HTTPException(500, detail=detail)
-
-        print("=================================")
-        print(2)
-        print(len(data.data.documents))
-        print(len(data.data.grants))
 
         pending_grants = data.data.grants
         for grant in (pending_values := pending_grants.values()):
@@ -935,12 +945,7 @@ class Update(WithDelete, Generic[T_Update]):
             # grant.uuid_parent = token_user_grant.uuid
             # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Assigned by granter on invite
             grant.pending = False
-            self.session.add(grant)
-
-            print("---------------------")
-            print(grant.uuid)
-            print(grant.uuid_document)
-            print(grant.uuid_user)
+            self.session.merge(grant)
 
         event = self.create_event_grant(data, tuple(pending_values))
         event.detail = "Access granted."
@@ -954,7 +959,6 @@ class Update(WithDelete, Generic[T_Update]):
         "Granter approves many users for owned doc."
 
         token_user = data.token_user or self.token_user
-        print(data.data.token_user_grants)
         token_user_grant = data.data.token_user_grants[token_user.uuid]
 
         # Double check the level. The first case should not really happen.

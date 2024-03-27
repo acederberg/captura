@@ -1,5 +1,5 @@
 import json
-from typing import Any, ClassVar, Dict, Generic, List, Self, TypeVar
+from typing import Any, ClassVar, Dict, Generic, List, Self, Set, TypeVar
 
 import httpx
 from fastapi import HTTPException
@@ -125,6 +125,22 @@ class ErrUpdateGrantPendingFrom(ErrBase):
 
     uuid_obj: fields.FieldUUIDS
     kind_obj: fields.FieldKindObject
+
+
+class ErrAssocRequestMustForce(ErrBase):
+    _msg_force: ClassVar[str] = (
+        "Some targets have existing assignments awaiting cleanup. Try this "
+        "request again with `force=true` or make an equivalent `PUT` request."
+    )
+
+    kind_target: fields.FieldKindObject
+    kind_source: fields.FieldKindObject
+    kind_assoc: fields.FieldKindObject
+
+    uuid_target: fields.FieldUUIDS
+    uuid_assoc: fields.FieldUUIDS
+    uuid_source: fields.FieldUUID
+
 
 
 # --------------------------------------------------------------------------- #

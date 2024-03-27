@@ -372,9 +372,7 @@ class Delete(WithAccess):
         Update[Assignment] | sqaDelete[Grant],
         Type[Assignment] | Type[Grant],
     ]:
-        # assert False
         assoc_data, assocs, q_del, T_assoc = self.try_force(data, force=force)
-        # util.sql(self.session, q_del)
         self.session.execute(q_del)
         data.data.delete = self.force
         data.event = self.create_event_assoc(data, assocs)
@@ -463,8 +461,8 @@ class Delete(WithAccess):
         data, *_ = self.assoc(data)  # , commit=commit)
         return data
 
-    a_grant_document = with_access(Access.d_grant_document)(grant_user)
-    a_grant_user = with_access(Access.d_grant_user)(grant_document)
+    a_grant_document = with_access(Access.d_grant_document)(grant_document)
+    a_grant_user = with_access(Access.d_grant_user)(grant_user)
 
     # ----------------------------------------------------------------------- #
 

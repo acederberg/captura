@@ -19,7 +19,7 @@ from app.views import args
 from app.views.base import (BaseView, OpenApiResponseCommon,
                             OpenApiResponseDocumentForbidden,
                             OpenApiResponseUnauthorized, OpenApiTags)
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from pydantic import TypeAdapter
 from sqlalchemy import literal_column, select, update
 from sqlalchemy.orm import Session
@@ -75,17 +75,26 @@ class DocumentGrantView(BaseView):
         `uuid_user`.
         """
 
-        data: Data[ResolvedGrantDocument] = delete.a_grant_document(
+        data: Data[ResolvedGrantDocument] = delete.access.d_grant_document(
             uuid_document,
             uuid_user,
+            level=Level.view,
+            exclude_deleted=not delete.force,
         )
-        data.commit(delete.session, True)
+
+        events, grants = list(), list()
+        if len(data.data.grants):
+            delete.grant_document(data)
+            grants=TypeAdapter(List[GrantSchema]).validate_python(
+                data.data.grants.values()
+            )
+            data.commit(delete.session)
+            events.append(EventSchema.model_validate(data.event))
+
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
-            data=TypeAdapter(List[GrantSchema]).validate_python(
-                data.data.grants.values()
-            ),
-            events=[data.event],
+            data=grants,
+            events=events,
         )
 
     @classmethod
@@ -163,7 +172,7 @@ class DocumentGrantView(BaseView):
         )
         create.create_data = GrantCreateSchema(level=fr_level)
         create.grant_document(data)
-        data.commit(create.session, True)
+        data.commit(create.session)
 
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
@@ -243,24 +252,39 @@ class UserGrantView(BaseView):
         delete: DependsDelete,
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocument,
+        *,
+        pending: bool = False
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Revoke grants for a **user** for the provided **documents**. The
         intended use case is for users/admins to revoke their own grants.
         """
 
-        data: Data[ResolvedGrantUser] = delete.a_grant_user(
+        data: Data[ResolvedGrantUser] = delete.access.d_grant_user(
             uuid_user,
             uuid_document,
             exclude_deleted=not delete.force,
+            pending=pending,
+            level=Level.view,
         )
-        data.commit(delete.session, True)
+
+        events, grants = list(), list()
+        if len(data.data.documents):
+
+            delete.grant_user(data)
+            events.append(data.event)
+            # NOTE: This must be done before the commit because the data 
+            #       becomes transient
+            grants = TypeAdapter(List[GrantSchema]).validate_python(
+                data.data.grants.values()
+            )
+            data.commit(delete.session)
+
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
-            data=TypeAdapter(List[GrantSchema]).validate_python(
-                data.data.grants.values()
-            ),
-            events=[data.event],
+            data=grants,
+            events=[EventSchema.model_validate(ee) for ee in events]
         )
+
 
     @classmethod
     def get_grants_user(
@@ -320,10 +344,6 @@ class UserGrantView(BaseView):
             pending=True,
             level=Level.view,
         )
-        print("=================================")
-        print(1)
-        print(len(data.data.documents))
-        print(len(data.data.grants))
 
         update.grant_user(data)
         data.commit(update.session)
@@ -362,14 +382,15 @@ class UserGrantView(BaseView):
         data: Data[ResolvedGrantUser] = create.access.d_grant_user(
             uuid_user,
             uuid_document,
+            level=None,
         )
-        create.create_data = GrantCreateSchema(level=level)
-        create.grant_user(data)
-        data.commit(create.session, True)
+        create.create_data = GrantCreateSchema(level=Level[level.name])
+        data_final = create.grant_user(data)
+        data_final.commit(create.session)
 
-        grants = data.data.grants
+        grants = data_final.data.grants
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
             data=TypeAdapter(List[GrantSchema]).validate_python(grants.values()),
-            events=[EventSchema.model_validate(data.event)],
+            events=[EventSchema.model_validate(data_final.event)],
         )

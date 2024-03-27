@@ -2,19 +2,22 @@ import asyncio
 import json
 import secrets
 from os import walk
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import httpx
 import pytest
-from app.err import (ErrAccessDocumentPending, ErrAccessUser, ErrDetail,
+from app.err import (ErrAccessDocumentPending, ErrAccessUser,
+                     ErrAssocRequestMustForce, ErrBase, ErrDetail,
                      ErrObjMinSchema, ErrUpdateGrantPendingFrom)
 from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
-from app.models import Document, Grant
+from app.models import Document, Grant, User
 from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
                          mwargs)
 from client.requests import Requests
 from pydantic import TypeAdapter
+from sqlalchemy import delete, select, true
 from tests.dummy import DummyProvider, GetPrimaryKwargs
+from tests.mk import Mk
 from tests.test_views.util import BaseEndpointTest
 
 
@@ -162,10 +165,268 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.request
 
+    # NOTE: Many tests bc pain in the ass.
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-        "Test requesting a grant. Ask for access and verify the grant."
-        assert False
+    @pytest.mark.parametrize(
+        "dummy, requests, count",
+        [(None, None, k) for k in range(10)],
+        indirect=["dummy", "requests"],
+    )
+    async def test_success_200_simple(self, dummy: DummyProvider, requests: Requests, count: int):
+        "Test requesting a (single) grant that does not already exist and is not deleted."
+
+        user, session = dummy.user, dummy.session
+        other_user, = dummy.get_users(1)
+        assert user.uuid != other_user.uuid
+
+        other_dummy = DummyProvider(dummy.auth, session, use_existing=other_user)
+        other_document, = other_dummy.get_user_documents(Level.own)
+        assert other_document.deleted is False
+
+        q = select(Grant).join(User).join(Document).where(User.uuid==user.uuid, Document.uuid==other_document.uuid)
+        grants = tuple(session.scalars(q))
+        for grant in grants:
+            session.delete(grant)
+        session.commit()
+
+        # NOTE: Read the grant. No results should exist.
+        fn_read = requests.grants.users.read
+        uuid_other = [other_document.uuid]
+        res_read, res_read_pending = await asyncio.gather(
+            fn_read(user.uuid, uuid_document=uuid_other, pending = False),
+            fn_read(user.uuid, uuid_document=uuid_other, pending = True),
+        )
+        if err := self.check_status(requests, res_read, 200):
+            raise err
+        elif err := self.check_status(requests, res_read_pending, 200):
+            raise err
+
+        data_read = self.adapter.validate_json(res_read.content)
+        data_read_pending = self.adapter.validate_json(res_read.content)
+
+        assert data_read.kind is None
+        assert data_read_pending.kind is None
+
+        # NOTE: Request grant.
+        fn = self.fn(requests)
+        res = await fn(user.uuid, uuid_document=[other_document.uuid])
+        if err := self.check_status(requests, res, 201):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind is KindObject.grant
+        assert len(data.data)
+        assert len(data.events) == 1
+        assert len(data.events[0].children) == 1
+        assert len(data.data) == 1
+
+        # NOTE: Check with database.
+        session.reset()
+        grant = session.get(Grant, data.data[0].uuid)
+        grant_data = data.data[0]
+        assert grant is not None
+        assert grant.pending
+        assert grant_data.pending
+        assert grant.pending_from == PendingFrom.granter == grant_data.pending_from 
+        assert grant.uuid_document == other_document.uuid == grant_data.uuid_document
+        assert grant.uuid_user == user.uuid == grant_data.uuid_user
+
+        # NOTE: Read again.
+        res_read, res_read_pending = await asyncio.gather(
+            fn_read(user.uuid, uuid_document=uuid_other, pending=False),
+            fn_read(user.uuid, uuid_document=uuid_other, pending=True),
+        )
+        if err := self.check_status(requests, res_read, 200):
+            raise err
+        elif err := self.check_status(requests, res_read_pending, 200):
+            raise err
+
+        data_read = self.adapter.validate_json(res_read.content)
+        data_read_pending = self.adapter.validate_json(res_read_pending.content)
+
+        assert data_read.kind is None
+        assert data_read_pending.kind is KindObject.grant
+
+        # NOTE: Indempotent
+        fn = self.fn(requests)
+        res = await fn(user.uuid, uuid_document=[other_document.uuid])
+        if err := self.check_status(requests, res, 201):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind is None
+
+    @pytest.mark.asyncio
+    async def test_bad_request_400(self, dummy: DummyProvider, requests: Requests):
+        "Test what happens when requesting deleted grants."
+
+        user, session = dummy.user, dummy.session
+        documents = dummy.get_user_documents(Level.view, n=3)
+        uuid_document = Document.resolve_uuid(session, documents)
+        uuid_document_list= list(uuid_document)
+
+        grants = tuple(dummy.get_document_grant(dd) for dd in documents)
+        assert len(grants) == 3
+
+        for gg in grants:
+            gg.deleted = True
+            assert gg.uuid_user == user.uuid
+            assert gg.pending is False
+            assert gg.uuid_document in uuid_document
+
+        session.add_all(grants)
+        session.commit()
+
+        uuid_document = Document.resolve_uuid(session, documents)
+        uuid_grant = Grant.resolve_uuid(session, grants) 
+        uuid_document_list = list(uuid_document)
+
+        # NOTE: Read! There should be nothing.
+        fn_read = requests.grants.users.read
+        res_read_pending, res_read = await asyncio.gather(
+            fn_read(user.uuid, uuid_document=uuid_document_list, pending=True),
+            fn_read(user.uuid, uuid_document=uuid_document_list, pending=False),
+        )
+        if err := self.check_status(requests, res_read_pending):
+            raise err
+        elif err := self.check_status(requests, res_read):
+            raise err
+
+        data_read_pending = self.adapter.validate_json(res_read_pending.content)
+        data_read = self.adapter.validate_json(res_read.content)
+        assert data_read_pending.kind is None
+        assert data_read.kind is None
+
+        # NOTE: These are deleted, should get a 400 for trying to overwrite
+        #       without force.
+        assert uuid_grant is not None
+        httperr = mwargs(
+            ErrDetail[ErrAssocRequestMustForce],
+            detail=mwargs(
+                ErrAssocRequestMustForce,
+                msg=ErrAssocRequestMustForce._msg_force,
+                kind_source=KindObject.user,
+                kind_target=KindObject.document,
+                kind_assoc=KindObject.grant,
+                uuid_source=user.uuid,
+                uuid_target=uuid_document,
+                uuid_assoc=uuid_grant
+            )
+        )
+        assert httperr.detail.uuid_assoc is not None
+
+
+        fn = self.fn(requests)
+        res = await fn(user.uuid, uuid_document=uuid_document_list)
+        if err := self.check_status(requests, res, 400, err=httperr):
+            raise err
+
+        # NOTE: Adding the force parameter should not work, user will delete 
+        #       own existing.
+        res = await fn(user.uuid, uuid_document=uuid_document_list, force=True)
+        if err := self.check_status(requests, res, 400):
+            raise err
+
+        detail: Dict[str, str] 
+        assert isinstance(detail := res.json(), dict)
+
+        msg: str | None
+        if (msg := detail.get("msg")) is None:
+            raise AssertionError("Response missing message.")
+
+        assert msg.startswith("This request results in user deleting own ")
+        assert msg.endswith("done by directly deleting these grants.")
+
+
+    @pytest.mark.asyncio
+    async def test_success_200_ideal(self, dummy: DummyProvider, requests: Requests):
+        "Test requesting a grant after grants cleared."
+
+        user, session = dummy.user, dummy.session
+        documents = dummy.get_documents(10, GetPrimaryKwargs(deleted=False))
+        uuid_document = Document.resolve_uuid(session, documents)
+        uuid_document_list = list(uuid_document)
+        n = len(uuid_document_list)
+
+        # NOTE: Cleanup deleted grants. 
+        q_grants = select(Grant).join(User).join(Document).where(User.uuid==user.uuid, Document.uuid.in_(uuid_document))
+        grant_rm = tuple(session.scalars(q_grants))
+        for gg in grant_rm:
+            session.delete(gg)
+
+        session.commit()
+
+        # NOTE: Read. Should be nothing.
+        fn_read = requests.grants.users.read
+        res_read_pending, res_read = await asyncio.gather(
+            fn_read(user.uuid, uuid_document=uuid_document_list, pending=True),
+            fn_read(user.uuid, uuid_document=uuid_document_list, pending=False),
+        )
+
+        if err := self.check_status(requests, res_read_pending):
+            raise err
+        elif err := self.check_status(requests, res_read):
+            raise err
+
+        data_read_pending = self.adapter.validate_json(res_read_pending.content)
+        data_read = self.adapter.validate_json(res_read.content)
+        assert data_read_pending.kind is None
+        assert data_read.kind is None
+
+        # NOTE: Request grants.
+        fn = self.fn(requests)
+        res = await fn(user.uuid, uuid_document=uuid_document_list)
+
+        if err := self.check_status(requests, res, 201):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        requests.context.console_handler.print_yaml(data.model_dump(mode="json"))
+        assert data.events
+        assert len(data.events) == 1
+        assert len(data.events[0].children) == n
+        assert len(data.data) == n
+
+        session.reset()
+
+        for item in data.data:
+            item_from_db = session.get(Grant, item.uuid)
+
+            assert item_from_db is not None
+            assert item.pending and item_from_db.pending
+            # assert not item_from_db.deleted
+
+            assert item.pending_from == item_from_db.pending_from == PendingFrom.granter
+
+        # NOTE: Read again.
+        res_read_pending, res_read = await asyncio.gather(
+            fn_read(user.uuid, uuid_document=list(uuid_document), pending=True,),
+            fn_read(user.uuid, uuid_document=list(uuid_document), pending=False,),
+        )
+
+        if err := self.check_status(requests, res_read_pending):
+            raise err
+        elif err := self.check_status(requests, res_read):
+            raise err
+
+        data_read_pending = self.adapter.validate_json(res_read_pending.content)
+        data_read = self.adapter.validate_json(res_read.content)
+
+        assert data_read.kind is None
+        assert data_read_pending.kind is KindObject.grant
+        assert len(data_read_pending.data) == n
+
+        # NOTE: Indempotent.
+        res = await fn(user.uuid, uuid_document=uuid_document_list)
+        if err := self.check_status(requests, res, 201):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind is None
+
+        assert len(data.events) == 1
+        assert not len(data.events[0].children)
+
 
     # NOTE: Not too sure about this one. For now users can request access so
     #       long as they know the document uuid.
@@ -361,9 +622,92 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
         return requests.grants.users.reject
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_ideal(self, dummy: DummyProvider, requests: Requests):
         """User can remove own grants."""
-        assert False
+
+        user, session = dummy.user, dummy.session
+        assert not user.deleted
+
+        documents = dummy.get_user_documents(level=Level.view, n=5)
+        uuid_document = Document.resolve_uuid(session, documents)
+        uuid_document_list = list(uuid_document)
+
+        # NOTE: Ensure all grants active.
+        q_grants = select(Grant).join(User).join(Document).where(User.uuid==user.uuid, Document.uuid.in_(uuid_document))
+        grants = tuple(session.scalars(q_grants))
+        for grant in grants:
+            grant.deleted = False
+            grant.pending = False
+            session.add(grant)
+
+        session.commit()
+
+        # NOTE: Try reading to start with.
+        fn_read = requests.grants.users.read
+        res_read = await fn_read(user.uuid, uuid_document=uuid_document_list)
+
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter.validate_json(res_read.content)
+        assert data.kind == KindObject.grant
+        assert len(data.data) == (n := len(uuid_document_list))
+
+        # NOTE: Delete (no force)
+        fn = self.fn(requests)
+        res = await fn(user.uuid, uuid_document=uuid_document_list)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind == KindObject.grant
+        assert len(data.events) == 1
+        assert len(data.events[0].children) == n
+        assert len(data.data) == n
+
+        # NOTE: Verify with database.
+        session.reset()
+        for grant in data.data:
+            grant_db = session.get(Grant, grant.uuid)
+            assert grant_db is not None
+            assert grant_db.deleted
+
+        # NOTE: Try reading again. There should be nothing.
+        res_read = await fn_read(user.uuid, uuid_document=uuid_document_list)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter.validate_json(res_read.content)
+        assert data.kind is None
+
+        # NOTE: Try deleting again. Should do nothing.
+        res = await fn(user.uuid, uuid_document=uuid_document_list)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind is None
+        assert len(data.events) == 0
+        
+        # NOTE: Try force deleting now.
+        res = await fn(user.uuid, uuid_document=uuid_document_list, force=True)
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind == KindObject.grant
+        assert len(data.data) == n
+        assert len(data.events) == 1
+        assert len(data.events[0].children) == n
+
+        # NOTE: Verify with database.
+        session.reset()
+        for grant in data.data:
+            grant_db = session.get(Grant, grant.uuid)
+            assert grant_db is None
+
+
+
 
 
 class TestUsersGrantsAccept(CommonUsersGrantsTests):

@@ -1,42 +1,21 @@
 import functools
-from typing import Callable, Concatenate, List, Literal, ParamSpec, Type, TypeVar
+from typing import (Callable, Concatenate, List, Literal, ParamSpec, Type,
+                    TypeVar)
 
 from app import __version__, util
 from app.controllers.access import Access, WithAccess
 from app.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
 from app.depends import DependsAccess, DependsDelete, DependsRead
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    User,
-)
-from app.schemas import (
-    AsOutput,
-    AssignmentExtraSchema,
-    CollectionExtraSchema,
-    DocumentExtraSchema,
-    EventExtraSchema,
-    EventMetadataSchema,
-    EventParams,
-    EventSchema,
-    EventSearchSchema,
-    GrantExtraSchema,
-    OutputWithEvents,
-    UserExtraSchema,
-    mwargs,
-)
+from app.models import (Assignment, Collection, Document, Event, Grant,
+                        KindEvent, KindObject, User)
+from app.schemas import (AsOutput, AssignmentExtraSchema,
+                         CollectionExtraSchema, DocumentExtraSchema,
+                         EventExtraSchema, EventMetadataSchema, EventParams,
+                         EventSchema, EventSearchSchema, GrantExtraSchema,
+                         OutputWithEvents, UserExtraSchema, mwargs)
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Depends, HTTPException
 from pydantic import TypeAdapter
 
@@ -383,7 +362,7 @@ class EventView(BaseView):
             ),
             after=int(param_search.after.timestamp()),
         )
-        util.sql(session, q)
+        # util.sql(session, q)
         events = session.execute(q).scalars()
 
         data = TypeAdapter(List[EventMetadataSchema]).validate_python(events)

@@ -25,7 +25,7 @@ from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
                         User)
 from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
-from sqlalchemy import literal, select
+from sqlalchemy import false, literal, select
 from sqlalchemy.orm import Session
 
 H = HTTPMethod
@@ -809,17 +809,13 @@ class Access(BaseController):
         level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
 
-        user = User.resolve(self.session, resolve_user)
         user = self._user(
-            user,
+            User.resolve(self.session, resolve_user),
             user_token,
             exclude_deleted=exclude_deleted,
             exclude_public=True,
             msg_name="_msg_only_self",
         )
-
-        # NOTE: See the equivalent note in `ResolvedGrantUser`. User grants are
-        #       not important, only `token_user`.
         document_kwargs: Dict[str, Any] = dict(
             exclude_deleted=exclude_deleted,
             level=level,
@@ -827,15 +823,23 @@ class Access(BaseController):
         )
 
         uuid_documents = Document.resolve_uuid(self.session, resolve_documents) if resolve_documents is not None else None
-        q = user.q_select_documents(
-            uuid_documents,
-            **document_kwargs,
-            exclude_pending=not pending,
-        )
-        print("IN ACCESS")
-        util.sql(self.session, q)
 
-        resolve_documents = tuple(self.session.execute(q).scalars())
+        # NOTE: In the case of post, a document just has to not be deleted.
+        #       It is easier (for now) to just write out the query here.
+        if self.method == H.POST:
+            if uuid_documents is None:
+                raise ValueError("`uuid_documents` is `None`.")
+            q = select(Document).where(Document.uuid.in_(uuid_documents))
+            q = q.where(Document.deleted == false())
+            resolve_documents = tuple(self.session.scalars(q)) 
+        else:
+            q = user.q_select_documents(
+                uuid_documents,
+                **document_kwargs,
+                exclude_pending=not pending,
+            )
+            util.sql(self.session, q)
+            resolve_documents = tuple(self.session.execute(q).scalars())
 
         token_user_grants: Dict[str, Grant] = dict()
         documents = self.document(
@@ -847,7 +851,6 @@ class Access(BaseController):
             validate=validate,
             # pending_from=pending_from,
         )
-
 
         # NOTE: If the token user is not the user that the data is for then
         #       it is necessary to find a different set of grants.
@@ -952,6 +955,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
+        exclude_pending: bool = False,
         level: ResolvableLevel | None = None,
         return_data: bool = False,
         pending: bool = False,
@@ -1029,12 +1033,14 @@ class Access(BaseController):
         q_user_grants = document.q_select_grants(
             uuid_users,
             level=level,
+            exclude_pending=exclude_pending,
             pending=pending,
-            exclude_pending=False,
-            exclude_deleted=True,
+            exclude_deleted=exclude_deleted,
         )
+        util.sql(self.session, q_user_grants)
         user_grant: Dict[str, Grant] = {
-            grant.uuid_user: grant for grant in self.session.execute(q_user_grants).scalars()
+            grant.uuid_user: grant 
+            for grant in self.session.scalars(q_user_grants)
         }
 
         # NOTE: Check that the grants in question is.

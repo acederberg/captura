@@ -249,9 +249,11 @@ def create(
     token: DependsTokenOptional,
     access: DependsAccess,
     request: Request,
+    force: QueryForce = False,
 ) -> Create:
     api_origin = request.url.path
     return Create(
+        force=force,
         session=access.session,
         token=token,
         method=request.method,

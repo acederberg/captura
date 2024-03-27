@@ -104,7 +104,7 @@ class DemoUserView(BaseView):
             invitation_code=invitation_code,
             invitation_email=invitation_email,
         )
-        util.sql(session, q_user)
+        # util.sql(session, q_user)
         users = tuple(session.execute(q_user).scalars())
 
         adapter = TypeAdapter(List[EventSchema])
@@ -446,8 +446,6 @@ class UserView(BaseView):
 
         For instance, this could be used to make a profile page.
         """
-
-        logger.info("Testing testing.")
 
         user = UserExtraSchema.model_validate(read.access.user(uuid_user))
         return mwargs(AsOutput[UserExtraSchema], data=user)

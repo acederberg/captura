@@ -171,6 +171,7 @@ class UserGrantRequests(BaseRequests):
         *,
         level: LevelStr = LevelStr.view,
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
+        force: flags.FlagForce = False,
     ) -> httpx.Request:
 
         context = ContextData.resolve(_context)
@@ -180,6 +181,7 @@ class UserGrantRequests(BaseRequests):
             params=params(
                 level=level.name,
                 uuid_document=uuid_document,
+                force=force,
             ),
             headers=context.headers,
         )

@@ -93,12 +93,12 @@ PATH_LOG_CONFIG = environ.get(ENV_LOG_CONFIG, Path.base("logging.yaml"))
 
 
 # TODO: Add quehandler.
-def setup_logging():
-    print("HERE!")
-    with open(PATH_LOG_CONFIG, "r") as file:
+def setup_logging(config_path: str = PATH_LOG_CONFIG):
+    with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
     logging.config.dictConfig(config)
+    return config
 
 
 def get_logger(name: str) -> logging.Logger:

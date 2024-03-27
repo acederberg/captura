@@ -8,7 +8,7 @@ import pytest
 import pytest_asyncio
 from app import util
 from app.auth import Auth
-from app.config import Config
+from app.config import AppConfig, Config
 from app.models import Base, User
 from app.views import AppView
 from client.config import Config as ClientConfig
@@ -34,19 +34,16 @@ logger = util.get_logger(__name__)
 #       only ever be called once in a test session.
 @pytest.fixture(scope="session")
 def config() -> PytestConfig:
-    logger.debug(
-        "`config` fixture called. Loading `%s`.",
-        util.PATH_CONFIG_TEST_APP,
-    )
-    return PytestConfig()  # type: ignore
+    logger.debug("Loading application configuration.")
+    app = AppConfig.model_validate({
+        "logging_configuration_path": util.Path.base("logging.test.yaml"),
+    })
+    return PytestConfig(app=app)  # type: ignore
 
 
 @pytest.fixture(scope="session")
 def client_config() -> PytestClientConfig:
-    logger.debug(
-        "`client_config` fixture called. Loading from `%s`.",
-        util.PATH_CONFIG_TEST_CLIENT,
-    )
+    logger.debug( "Loading client configuration.")
     raw: Dict[str, Any] = dict(
         hosts=dict(
             docker=dict(host="http://localhost:8080", remote=True),
@@ -64,8 +61,9 @@ class PytestContext(BaseModel):
     config_client: PytestClientConfig
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def context(config: PytestConfig, client_config: PytestClientConfig,) -> PytestContext:
+    logger.debug("Creating client context.")
     return PytestContext(config=config, config_client=client_config)
 
 # =========================================================================== #
@@ -74,30 +72,37 @@ def context(config: PytestConfig, client_config: PytestClientConfig,) -> PytestC
 
 @pytest.fixture(scope="session")
 def engine(config: PytestConfig) -> Engine:
-    logger.debug("`engine` fixture called.")
+    logger.debug("Creating engine from application configuration.")
     return config.engine(echo=config.tests.emit_sql)
 
 
 @pytest.fixture(scope="session")
 def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
-    logger.debug("`sessionmaker` fixture called.")
+    logger.debug("Creating sessionmaker from application configuration.")
     return _sessionmaker(engine)
 
 
 @pytest.fixture(scope="function")
 def session(sessionmaker):
-    logger.debug("`session` fixture called.")
+    logger.debug("Session opened.")
     with sessionmaker() as session:
         yield session
+    logger.debug("Session closed.")
 
 
 # --------------------------------------------------------------------------- #
 # Loading fixtures
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_logging(config: PytestConfig) -> None:
+    util.setup_logging(config.app.logging_configuration_path)
+    return
+
 
 @pytest.fixture(scope="session")
 def setup_cleanup(engine: Engine, config: PytestConfig):
-    logger.debug("`setup_cleanup` fixture called.")
+    logger.info("Setting up.")
+    logger.debug("Verifying tables.")
     metadata = Base.metadata
     exists: bool
     with engine.begin() as connection:
@@ -111,6 +116,8 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
     elif not exists:
         logger.debug("Creating tables.")
         metadata.create_all(engine)
+    else:
+        logger.debug("Doing nothing to tables.")
 
     yield
 
@@ -119,12 +126,17 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
 def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
 
     with sessionmaker() as session:
-        logger.info("Loading tables with dummy data.")
+        logger.info("Loading tables with dummy data from `YAML`.")
         DummyProviderYAML.merge(session)
-        n_users = session.execute(select(func.count(User.uuid))).scalar()
+        uuids_existing = list(session.scalars(select(User.uuid)))
+        n_users = len(uuids_existing)
         assert n_users is not None
         assert isinstance(n_users, int)
 
+        # NOTE: This line is important!
+        DummyProvider.dummy_user_uuids = uuids_existing
+
+        logger.info("Loading tables with generated dummy data.")
         if (n_generate := 100 - n_users) > 0:
             while n_generate > 0:
                 DummyProvider(auth, session)
@@ -162,12 +174,14 @@ def auth(config: Config) -> Auth:
 
 @pytest.fixture
 def dummy(auth: Auth, session: Session) -> DummyProvider:
+    logger.debug("Providing random dummy.")
     return DummyProvider(auth, session)
 
 
 @pytest.fixture(scope="function")
 def default(auth: Auth, session: Session) -> DummyProviderYAML:
 
+    logger.debug("Providing dummy for user uuid `000-000-000`.")
     user = session.get(User, 2)
     assert user is not None
     dd = DummyProviderYAML(auth, session, user)

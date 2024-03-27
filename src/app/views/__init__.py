@@ -3,13 +3,17 @@ from typing import Annotated, Generator, List, Set
 
 from app import __version__, util
 from app.auth import Auth
+from app.config import Config
 from app.controllers.access import Access, H
-from app.depends import DependsAccess, DependsAuth, DependsSessionMaker
+from app.depends import (DependsAccess, DependsAuth, DependsConfig,
+                         DependsSessionMaker)
 from fastapi import FastAPI, HTTPException
+from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from starlette.routing import Mount
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
 from .auth import AuthView
@@ -19,14 +23,6 @@ from .documents import DocumentView
 from .events import EventSearchView, EventView
 from .grants import DocumentGrantView, UserGrantView
 from .users import UserSearchView, UserView
-
-
-class AppRouteInfo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    path: Annotated[str, Field()]
-    name: Annotated[str, Field()]
-    methods: Annotated[Set[H], Field()]
-
 
 description: str = """
 An API for storing, rendering, editting, and sharing text documents and other 
@@ -46,7 +42,11 @@ or less this model will be 'sharing as a service'.
 """
 
 
-from starlette.routing import Mount
+class AppRouteInfo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    path: Annotated[str, Field()]
+    name: Annotated[str, Field()]
+    methods: Annotated[Set[H], Field()]
 
 
 class AppView(BaseView):
@@ -82,11 +82,18 @@ class AppView(BaseView):
         routes=[Mount("/static", view_static)],
     )  # type: ignore
 
-    # TODO: This should not show up in prod unless the status `500`. In fact,
-    #       the traceback should be stored somewhere.
+
+    # TODO: The traceback should not show up in prod unless the status `500`. 
+    #       In fact, the traceback should be stored by the logger instead.
+    # TODO: Figure out how to use config to turn this on or off. Unfortunately
+    #       exception handlers do not use dependencies and it is hard to build
+    #       dependecies from the request directly.
     @view_router.exception_handler(HTTPException)  # type: ignore
     async def http_exception_handler(request, exc: HTTPException):
-        traceback.print_exc()
+
+        # if config.app.is_dev and config.app.dev.httpexc_tb:
+        #     traceback.print_exc()
+
         return JSONResponse(
             exc.detail,
             exc.status_code,

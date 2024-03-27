@@ -6,7 +6,6 @@ formatters:
   json:
     (): app.logger.JSONFormatter
     fmt_keys: 
-      # foo : bar
       - levelname
       - message
       - timestamp
@@ -28,15 +27,31 @@ handlers:
     class: logging.handlers.RotatingFileHandler
     level: DEBUG
     formatter: json
-    filename: logs/captura.jsonl
+    filename: logs/tests.jsonl
     maxBytes: 10000000
     backupCount: 5
-# disable_existing_loggers: True
+  # queue_handler:
+  #   class: logging.handlers.QueueHandler
+  #   # handlers:
+  #   # - stdout
+  #   # - file_json
+  #   respect_handler_level: true
+  # stdout:
+  #   formatter: human
+  #   stream: ext://sys.stdout
 loggers:
   root:
     level: INFO
     handlers:
       - stdout_dev
       - file_json
-  test.conftest:
+  # NOTE: DO NOT ADD HANDLERS HERE! HANDLED DATA IS PASSED UP THE TREE!
+  tests.conftest:
     level: DEBUG
+  tests.dummy:
+    level: DEBUG
+  # app.views.base:
+  #   level: WARNING
+  # app.depends:
+  #   level: DEBUG
+

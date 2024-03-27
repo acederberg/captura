@@ -307,7 +307,7 @@ class BaseResolvedSecondary(BaseResolved):
     _attr_name_source: ClassVar[str]
     _attr_name_assoc: ClassVar[str]
     # delete: bool = False
-    # _attr_name_target: ClassVar[str]
+    _attr_name_target: ClassVar[str]
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -581,7 +581,6 @@ class Data(BaseModel, Generic[T_Data]):
             self.children.append(item)
 
     def register(self, session: Session) -> None:
-        # print("Registering...")
         self.data.register(session)
         if self.event is not None:
             session.add(self.event)
@@ -591,7 +590,6 @@ class Data(BaseModel, Generic[T_Data]):
 
     def refresh(self, session: Session) -> None:
         # session.expire_all()
-        # print("Refreshing...")
         self.data.refresh(session)
         if self.event is not None:
             session.refresh(self.event)
@@ -601,7 +599,6 @@ class Data(BaseModel, Generic[T_Data]):
     def commit(self, session: Session, commit: Any = None) -> None:
         if commit is not None:
             logger.warning("The `commit` argument is being removed.")
-        # print("Committing...")
         self.register(session)
         try:
             session.commit()

@@ -5,7 +5,7 @@ from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
                     NotRequired, Self, Set, Tuple, Type, TypedDict)
 
 import httpx
-from app import __version__
+from app import __version__, util
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
@@ -30,6 +30,8 @@ from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.mk import Mk
 from tests.test_models import ModelTestMeta
 
+logger =util.get_logger(__name__)
+
 # =========================================================================== #
 # Providers
 
@@ -39,7 +41,6 @@ class GetPrimaryKwargs(TypedDict):
     deleted: NotRequired[bool | None]
 
 class BaseDummyProvider:
-    dummy_user_uuids: ClassVar[list[str]] = list()
     dummy_kinds: ClassVar[Set[KindObject]] = {
         KindObject.user,
         KindObject.collection,
@@ -68,8 +69,7 @@ class BaseDummyProvider:
         deleted: bool | None = None,
     ) -> Tuple[T_ResolvedPrimary, ...]:
 
-        # print(f"{public=}")
-        # print(f"{deleted=}")
+        logger.debug("Getting data of kind `%s`.", Model.__tablename__)
         conds = list()
         if public is not None:
             bool_ = true() if public else false()
@@ -125,6 +125,7 @@ class BaseDummyProvider:
         **kwargs
     ) -> Tuple[Document, ...]:
 
+        logger.debug("Getting user documents.")
         kwargs.update(exclude_deleted=not deleted)
         q = self.user.q_select_documents(level=level, **kwargs)
         if deleted:
@@ -139,6 +140,7 @@ class BaseDummyProvider:
         return docs
 
     def get_document_grant(self, document: Document, **kwargs) -> Grant:
+        logger.debug("Getting user grants.")
         q = self.user.q_select_grants({document.uuid}, **kwargs)
         q = q.limit(1)
         grant = self.session.scalar(q)
@@ -196,6 +198,8 @@ class BaseDummyProvider:
 
     # NOTE: `User` will always be the the same as
     def data(self, kind: KindData) -> Data:
+        logger.debug("Constructing dummy `Data` for kind `%s`.", kind.name)
+
         T_resolved: Type[BaseResolvedPrimary] | Type[BaseResolvedSecondary]
         T_resolved = BaseResolved.get(kind)  # type: ignore
 
@@ -204,8 +208,8 @@ class BaseDummyProvider:
         if T_resolved.kind in {KindData.user}:
             kwargs = {"users": (self.user,)}
         elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
-            document = self.get_document(level=Level.own)
-            grant = self.get_grant(document)
+            document, = self.get_user_documents(n=1, level=Level.own)
+            grant = self.get_document_grant(document)
 
             if T_resolved.kind == KindData.grant_document:
                 grants = {grant.uuid_user: grant}
@@ -300,13 +304,13 @@ class BaseDummyProvider:
     # ----------------------------------------------------------------------- #
     # Chainables and their helpers.
 
-    def check_kinds(self, kinds: Set[KindObject]) -> ValueError | None:
+    def _visibility_check_kinds(self, kinds: Set[KindObject]) -> ValueError | None:
         if bad := set(kind for kind in kinds if kind not in self.dummy_kinds):
             raise ValueError(f"Invalid kinds `{bad}`.")
         return None
 
     def visability(self, kinds: Set[KindObject], deleted: bool, public: bool) -> Self:
-        if (err := self.check_kinds(kinds)) is not None:
+        if (err := self._visibility_check_kinds(kinds)) is not None:
             raise err
 
         session = self.session
@@ -350,6 +354,7 @@ class DummyProviderYAML(BaseDummyProvider):
     @classmethod
     def merge(cls, session: Session) -> None:
 
+        logger.info("Merging YAML data into database.")
         backwards = list(Base.metadata.sorted_tables)
         backwards.reverse()
         for table in Base.metadata.sorted_tables:
@@ -360,16 +365,33 @@ class DummyProviderYAML(BaseDummyProvider):
 
 
 class DummyProvider(BaseDummyProvider):
-    def __init__(self, auth: Auth, session: Session, use_existing: bool = False):
+
+    dummy_user_uuids: ClassVar[list[str] | None] = None
+
+    def __init__(self, auth: Auth, session: Session, use_existing: bool | User = False):
 
         self.auth = auth
         self.session = session
 
-        if use_existing and len(self.dummy_user_uuids):
-            user = User.if_exists(session, choice(self.dummy_user_uuids))
-            self.find(user)
-        else:
-            self.build()
+        if self.dummy_user_uuids is None:
+            clsname = self.__class__.__name__
+            raise AttributeError(
+                f"Attribute `dummy_user_uuids` must be set before `{clsname}` "
+                "is instantiated. This should be done in the `load_tables` "
+                "fixture"
+            )
+
+        match use_existing:
+            case True if len(self.dummy_user_uuids):
+                logger.info("Using random existing dummy.")
+                user = User.if_exists(session, choice(self.dummy_user_uuids))
+                self.find(user)
+            case User() as user:
+                logger.info("Using existing dummy with uuid `%s`.", user.uuid)
+                self.find(user)
+            case _:
+                logger.info("Building a new dummy.")
+                self.build()
 
     def mk_assignments(self):
         # NOTE: Iter over collections first so that every document has a chance
@@ -490,6 +512,7 @@ class DummyProvider(BaseDummyProvider):
     def build(self):
         # NOTE: Create dummy users, documents, and collections. Grants and
         #       assignments will be made subsequently.
+        logger.debug("Building primary dummy entries.")
         session = self.session
         session.add(user := Mk.user())
         user.admin = False
@@ -511,6 +534,7 @@ class DummyProvider(BaseDummyProvider):
         for item in (user, *documents, *collections):
             session.refresh(item)
 
+        logger.debug("Adding secondary dummy entries.")
         self.assignments = self.mk_assignments()
         session.add_all(self.assignments)
 

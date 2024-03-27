@@ -1,7 +1,9 @@
+import json
 from typing import Annotated
 
 import typer
 import uvicorn
+import uvicorn.config
 from rich.console import Console
 from sqlalchemy import Engine
 from sqlalchemy.engine import Connection
@@ -22,6 +24,8 @@ FlagDummies = Annotated[bool, typer.Option("--dummies")]
 FlagRecreateTables = Annotated[bool, typer.Option("--recreate-tables")]
 
 
+CONFIG = Config() # type: ignore
+
 class Cli:
 
     config: Config
@@ -29,44 +33,17 @@ class Cli:
     engine: Engine
 
     def __init__(self, config: Config | None = None):
-        self.config = config if config is not None else Config()
+        self.config = config if config is not None else CONFIG
         self.engine = self.config.engine()
         self.sesionmaker = session_maker(self.engine)
 
-    def __call__(
-        self,
-        recreate_tables: FlagRecreateTables = False,
-        run: FlagRun = True,
-        dummies: FlagDummies = False,
-    ) -> None:
-        if recreate_tables:
-            CONSOLE.print("[green]Recreating tables.")
-            metadata = Base.metadata
-            metadata.drop_all(self.engine)
-            metadata.create_all(self.engine)
-        if dummies:
-            CONSOLE.print("[green]Loading tables.")
-            self.try_load_tables()
-        if run:
-            CONSOLE.print("[green]Serving app with uvicorn.")
-            uvicorn.run(
-                "app.views:AppView.view_router",
-                port=8080,
-                host="0.0.0.0",
-                reload=True,
-                reload_dirs=util.PATH_APP,
+    def show_config(self):
+        CONSOLE.print_json(
+            json.dumps(
+            self.config.model_dump(mode="json"),
+            indent=2,
             )
-
-        raise typer.Exit(0)
-
-    def try_load_tables(self):
-        try:
-            from captura_tests.test_models import ModelTestMeta
-        except ImportError as err:
-            CONSOLE.print("[red]Missing tests. Cannot load.")
-            CONSOLE.print(err)
-            raise typer.Exit(1)
-        ModelTestMeta.load(self.sessionmaker)
+        )
 
     def run(self):
         """This function can be run by invoking this module (e.g. python -m
@@ -103,10 +80,10 @@ class Cli:
 
         uvicorn.run(
             "app.views:AppView.view_router",
-            port=8080,
-            host="0.0.0.0",
-            reload=True,
-            reload_dirs=util.PATH_APP,
+            port=self.config.app.port,
+            host=self.config.app.host,
+            reload=self.config.app.is_dev,
+            reload_dirs=util.PATH_APP if self.config.app.is_dev else None,
         )
 
 
@@ -114,12 +91,19 @@ def main() -> None:
     cli = Cli()
 
     tt = typer.Typer()
-    tt.command("run")(cli)
+    tt.command("run")(cli.run)
+    tt.command("config")(cli.show_config)
     tt()
 
 
-# THIS APPEARS TO BE THE BEST SPOT FOR THIS!
-util.setup_logging()
+# NOTE: THIS APPEARS TO BE THE BEST SPOT FOR THIS! Please see
+#
+#       .. code:: txt
+#
+#         https://github.com/encode/uvicorn/issues/491
+#        
+LOGGING_CONFIG = util.setup_logging(CONFIG.app.logging_configuration_path)
+uvicorn.config.LOGGING_CONFIG.update(LOGGING_CONFIG)
 
 
 if __name__ == "__main__":
