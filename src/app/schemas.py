@@ -18,13 +18,33 @@ import enum
 import secrets
 from dataclasses import field
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Type, TypeAlias, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Self,
+    Set,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 
 from fastapi import Body, Query
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
-                      computed_field, field_serializer, field_validator,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app import fields
@@ -89,7 +109,11 @@ class Registry:
 
         schemas_for_kind[kind_schema] = schema
 
-    def get(self, kind: fields.KindObject, kind_schema: KindSchema,) -> "Type[BaseSchema]":
+    def get(
+        self,
+        kind: fields.KindObject,
+        kind_schema: KindSchema,
+    ) -> "Type[BaseSchema]":
         schemas = self.schemas
         if (schemas_for_kind := schemas.get(kind)) is None:
             raise ValueError(f"No schemas for kind `{kind.name}`.")
@@ -416,7 +440,6 @@ class TimespanLimitParams(BaseModel):
 # Grants
 
 
-
 class GrantBaseSchema(BaseSecondarySchema):
     kind_mapped = fields.KindObject.grant
 
@@ -424,9 +447,8 @@ class GrantBaseSchema(BaseSecondarySchema):
     #       `POST /grants/users/<uuid>`.
     level: fields.FieldLevel
 
-
     @field_serializer("level")
-    def enum_as_name(item: enum.Enum): # type: ignore
+    def enum_as_name(item: enum.Enum):  # type: ignore
         return item.name
 
 
@@ -446,12 +468,14 @@ class GrantSchema(GrantBaseSchema):
     pending_from: fields.FieldPendingFrom
 
     @field_serializer("level", "pending_from")
-    def enum_as_name(item: enum.Enum): # type: ignore
+    def enum_as_name(item: enum.Enum):  # type: ignore
         return item.name
 
     # Metadata
     uuid_parent: Optional[fields.FieldUUID] = None
-    uuid_user_granter: Optional[fields.FieldUUID] = None  # should it reeally be optional
+    uuid_user_granter: Optional[fields.FieldUUID] = (
+        None  # should it reeally be optional
+    )
 
 
 class GrantExtraSchema(GrantSchema):
@@ -531,7 +555,9 @@ class EventBaseSchema(BaseSchema):
         return v.name
 
     @field_validator("kind_obj", mode="before")
-    def validate_kind(cls, v: None | str | fields.FieldKindObject) -> None | fields.FieldKindObject:
+    def validate_kind(
+        cls, v: None | str | fields.FieldKindObject
+    ) -> None | fields.FieldKindObject:
         if isinstance(v, str):
             try:
                 w = fields.KindObject[v]

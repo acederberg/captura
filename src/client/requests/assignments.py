@@ -131,7 +131,10 @@ class DocumentAssignmentRequests(BaseRequests):
 
 
 class AssignmentRequests(BaseRequests):
-    typer_children = dict(collections=CollectionAssignmentRequests, documents=DocumentAssignmentRequests,)
+    typer_children = dict(
+        collections=CollectionAssignmentRequests,
+        documents=DocumentAssignmentRequests,
+    )
 
     collections: CollectionAssignmentRequests
     documents: DocumentAssignmentRequests
@@ -142,10 +145,15 @@ class AssignmentRequests(BaseRequests):
         self.collections = CollectionAssignmentRequests.spawn_from(self)
 
 
-__all__ = ("CollectionAssignmentRequests", "DocumentAssignmentRequests", "AssignmentRequests")
+__all__ = (
+    "CollectionAssignmentRequests",
+    "DocumentAssignmentRequests",
+    "AssignmentRequests",
+)
 
 
 if __name__ == "__main__":
     from client.requests.base import typerize
+
     assignments = typerize(AssignmentRequests)
     assignments()

@@ -88,7 +88,7 @@ def check_enum_opt_attr(
 # LOGGING STUFF
 
 
-ENV_LOG_CONFIG= f"{ENV_PREFIX}LOG_CONFIG"
+ENV_LOG_CONFIG = f"{ENV_PREFIX}LOG_CONFIG"
 PATH_LOG_CONFIG = environ.get(ENV_LOG_CONFIG, Path.base("logging.yaml"))
 
 

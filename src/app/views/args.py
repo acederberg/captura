@@ -9,7 +9,9 @@ PathUUIDCollection: TypeAlias = Annotated[str, Path(description="Collection uuid
 PathUUIDDocument: TypeAlias = Annotated[str, Path(description="Document uuids.")]
 PathUUIDEvent: TypeAlias = Annotated[str, Path(description="Event uuids.")]
 PathUUIDObj: TypeAlias = Annotated[str, Path(description="Object uuids.")]
-PathKindObj: TypeAlias = Annotated[fields.FieldKindEvent, Path(description="Object kind.")]
+PathKindObj: TypeAlias = Annotated[
+    fields.FieldKindEvent, Path(description="Object kind.")
+]
 
 # --------------------------------------------------------------------------- #
 

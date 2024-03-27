@@ -2,34 +2,92 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
-                    Generator, List, Literal, Self, Set, Tuple, TypeAlias,
-                    TypeVar, overload)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Collection,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    TypeAlias,
+    TypeVar,
+    overload,
+)
 
 from fastapi import HTTPException
-from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
-                        CompoundSelect, Enum, ForeignKey, Select, String,
-                        UniqueConstraint, and_, func, literal_column, select,
-                        true, union)
+from sqlalchemy import (
+    CTE,
+    BooleanClauseList,
+    Column,
+    ColumnElement,
+    CompoundSelect,
+    Enum,
+    ForeignKey,
+    Select,
+    String,
+    UniqueConstraint,
+    and_,
+    func,
+    literal_column,
+    select,
+    true,
+    union,
+)
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
-                            Session, mapped_column, object_session,
-                            relationship)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+    Mapped,
+    Session,
+    mapped_column,
+    object_session,
+    relationship,
+)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
 from app import __version__, fields, util
-from app.err import (ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrAccessEvent, ErrEventGeneral,
-                     ErrEventKind, ErrEventUndone, ErrObjMinSchema)
-from app.fields import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_FORMAT,
-                        LENGTH_MESSAGE, LENGTH_NAME, LENGTH_TITLE, LENGTH_URL,
-                        ChildrenAssignment, ChildrenCollection,
-                        ChildrenDocument, ChildrenGrant, ChildrenUser, Format,
-                        KindEvent, KindObject, KindRecurse, Level, LevelHTTP,
-                        LevelStr, PendingFrom, Plural, ResolvableLevel,
-                        Singular)
+from app.err import (
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrAccessEvent,
+    ErrEventGeneral,
+    ErrEventKind,
+    ErrEventUndone,
+    ErrObjMinSchema,
+)
+from app.fields import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_FORMAT,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_TITLE,
+    LENGTH_URL,
+    ChildrenAssignment,
+    ChildrenCollection,
+    ChildrenDocument,
+    ChildrenGrant,
+    ChildrenUser,
+    Format,
+    KindEvent,
+    KindObject,
+    KindRecurse,
+    Level,
+    LevelHTTP,
+    LevelStr,
+    PendingFrom,
+    Plural,
+    ResolvableLevel,
+    Singular,
+)
 
 # =========================================================================== #
 # CONSTANTS, ENUMS, ETC.
@@ -83,17 +141,16 @@ class Base(DeclarativeBase):
 
     @classmethod
     def if_exists(
-        cls, session: Session, uuid: str
-        #status: int = 404, msg=None
+        cls,
+        session: Session,
+        uuid: str,
+        # status: int = 404, msg=None
     ) -> Self:
 
         m = session.execute(select(cls).where(cls.uuid == uuid)).scalar()
         if m is None:
             err = ErrObjMinSchema.httpexception(
-                "_msg_dne",
-                404,
-                uuid_obj=uuid, 
-                kind_obj=KindObject(cls.__tablename__)
+                "_msg_dne", 404, uuid_obj=uuid, kind_obj=KindObject(cls.__tablename__)
             )
             raise err
         return m
@@ -531,7 +588,7 @@ class Event(Base):
                 400,
                 kind_event=self.kind,
                 kind_expected=kind,
-                uuid_event=self.uuid
+                uuid_event=self.uuid,
             )
         if kind_obj is not None and self.kind_obj != kind_obj:
             raise ErrEventKind.httpexception(
@@ -539,7 +596,7 @@ class Event(Base):
                 400,
                 kind_obj_event=self.kind_obj,
                 kind_obj_expected=kind_obj,
-                uuid_event=self.uuid
+                uuid_event=self.uuid,
             )
         return self
 
@@ -563,7 +620,11 @@ class Event(Base):
             select(Event).where(Event.uuid == self.uuid_parent),
         ).scalar()
         if next_ is None:
-            raise ErrEventGeneral.httpexception("_msg_undone", 400, uuid_event=self.uuid,)
+            raise ErrEventGeneral.httpexception(
+                "_msg_undone",
+                400,
+                uuid_event=self.uuid,
+            )
 
         return next_
 
@@ -916,7 +977,7 @@ class User(SearchableTableMixins, Base):
             exclude_deleted=exclude_deleted,
             pending=pending,
             exclude_pending=exclude_pending,
-            pending_from=pending_from
+            pending_from=pending_from,
         )
         q = q.where(conds)
         return q
@@ -928,7 +989,7 @@ class User(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
-        pending_from: PendingFrom | None = None
+        pending_from: PendingFrom | None = None,
     ) -> Select:
         """Dual to :meth:`q_select_user_uuids`."""
 
@@ -1010,7 +1071,7 @@ class User(SearchableTableMixins, Base):
 
     # NOTE: Chainable methods should be prefixed with `check_`.
     # def check_can_access_collection(self, collection: "Collection") -> Self:
-        # return self
+    # return self
 
     def check_can_access_document(
         self,
@@ -1030,15 +1091,13 @@ class User(SearchableTableMixins, Base):
                 grants[getattr(grant, grants_index)] = grant
 
         # NOTE: If the document is public and the level is view, then don't check.
-        #       These lines can cause an issue where grants are not correctly 
+        #       These lines can cause an issue where grants are not correctly
         #       added,
         # NOTE: Deleted, pending, insufficient should be included for better
         #       feedback. Do not exclude when adding.
         level, session = Level.resolve(level), self.get_session()
         q = self.q_select_grants(
-            {document.uuid},
-            exclude_deleted=False,
-            exclude_pending=False
+            {document.uuid}, exclude_deleted=False, exclude_pending=False
         )
 
         res: Grant | None = session.execute(q).scalar()  # type: ignore
@@ -1083,7 +1142,7 @@ class User(SearchableTableMixins, Base):
                             403,
                             uuid_grant=grant.uuid,
                             level_grant=grant.level,
-                            **detail
+                            **detail,
                         )
                     do_grant(grant)
                     return self
@@ -1110,10 +1169,7 @@ class User(SearchableTableMixins, Base):
     def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
         if self.uuid != event.uuid_user:
             raise ErrAccessEvent.httpexception(
-                "_msg_not_owner",
-                403,
-                uuid_event=event.uuid,
-                uuid_user=self.uuid
+                "_msg_not_owner", 403, uuid_event=event.uuid, uuid_user=self.uuid
             )
 
         return self
@@ -1300,7 +1356,7 @@ class Document(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
-        pending_from: PendingFrom | None = None
+        pending_from: PendingFrom | None = None,
     ) -> Select:
         """Query to find grants (AssocUserDocument) for this document.
 
@@ -1326,7 +1382,7 @@ class Document(SearchableTableMixins, Base):
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
-        pending_from: PendingFrom | None = None
+        pending_from: PendingFrom | None = None,
     ) -> Select:
         """Select user uuids for this document.
 

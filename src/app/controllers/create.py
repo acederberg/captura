@@ -3,32 +3,75 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Any, Callable, Dict, Generic, List, Literal, Protocol, Set,
-                    Tuple, Type, TypeAlias, TypeVar, Union, overload)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Protocol,
+    Set,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser, T_Data)
-from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
-                                    WithDelete)
+from app.controllers.base import (
+    Data,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+    T_Data,
+)
+from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
 from app.err import ErrAssocRequestMustForce
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, PendingFrom,
-                        ResolvableMultiple, ResolvableSingular,
-                        ResolvableSourceAssignment, ResolvableTargetAssignment,
-                        Singular, Tables, User)
-from app.schemas import (AssignmentSchema, CollectionCreateSchema,
-                         CollectionSchema, CollectionUpdateSchema,
-                         DocumentCreateSchema, DocumentUpdateSchema,
-                         EditCreateSchema, EventSchema, GrantCreateSchema,
-                         GrantSchema, UserCreateSchema, UserUpdateSchema)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    ResolvableMultiple,
+    ResolvableSingular,
+    ResolvableSourceAssignment,
+    ResolvableTargetAssignment,
+    Singular,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AssignmentSchema,
+    CollectionCreateSchema,
+    CollectionSchema,
+    CollectionUpdateSchema,
+    DocumentCreateSchema,
+    DocumentUpdateSchema,
+    EditCreateSchema,
+    EventSchema,
+    GrantCreateSchema,
+    GrantSchema,
+    UserCreateSchema,
+    UserUpdateSchema,
+)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy import Delete as sqaDelete
@@ -170,8 +213,7 @@ class Create(WithDelete, Generic[T_Create]):
         AssocData,
         sqaUpdate[Grant] | sqaDelete[Grant],
         Type[Grant],
-    ]:
-        ...
+    ]: ...
 
     # NOTE: Typehints bad when `CallableAssocCallback` is protocol, idk why
     @overload
@@ -186,8 +228,7 @@ class Create(WithDelete, Generic[T_Create]):
         AssocData,
         sqaUpdate[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]:
-        ...
+    ]: ...
 
     def assoc(
         self,
@@ -271,15 +312,15 @@ class Create(WithDelete, Generic[T_Create]):
             json.dumps(
                 [
                     item.model_dump(mode="json")
-                    for item in
-                    TypeAdapter(List[GrantSchema]).validate_python(data.data.assoc.values())
+                    for item in TypeAdapter(List[GrantSchema]).validate_python(
+                        data.data.assoc.values()
+                    )
                 ]
             )
         )
 
-        uuid_target_exists = { 
-            getattr(value, attr_uuid_target)
-            for value in data.data.assoc.values()
+        uuid_target_exists = {
+            getattr(value, attr_uuid_target) for value in data.data.assoc.values()
         }
         targets: Tuple = tuple(
             target
@@ -490,7 +531,9 @@ class Create(WithDelete, Generic[T_Create]):
         return data
 
     a_assignment_document = with_access(Access.assignment_document)(assignment_document)
-    a_assignment_collection = with_access(Access.assignment_collection)(assignment_collection)
+    a_assignment_collection = with_access(Access.assignment_collection)(
+        assignment_collection
+    )
     a_grant_document = with_access(Access.grant_document)(grant_document)
     a_grant_user = with_access(Access.grant_user)(grant_user)
 
@@ -670,8 +713,7 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedUser],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]:
-        ...
+    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]: ...
 
     @overload
     def generic_update(
@@ -679,8 +721,7 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedCollection],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]:
-        ...
+    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]: ...
 
     @overload
     def generic_update(
@@ -688,8 +729,7 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedDocument],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]:
-        ...
+    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]: ...
 
     # NOTE: Document updates are not generic
     def generic_update(

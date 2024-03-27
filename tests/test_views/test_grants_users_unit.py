@@ -6,13 +6,18 @@ from typing import Dict, List, Tuple
 
 import httpx
 import pytest
-from app.err import (ErrAccessDocumentPending, ErrAccessUser,
-                     ErrAssocRequestMustForce, ErrBase, ErrDetail,
-                     ErrObjMinSchema, ErrUpdateGrantPendingFrom)
+from app.err import (
+    ErrAccessDocumentPending,
+    ErrAccessUser,
+    ErrAssocRequestMustForce,
+    ErrBase,
+    ErrDetail,
+    ErrObjMinSchema,
+    ErrUpdateGrantPendingFrom,
+)
 from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from app.models import Document, Grant, User
-from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
-                         mwargs)
+from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from client.requests import Requests
 from pydantic import TypeAdapter
 from sqlalchemy import delete, select, true
@@ -49,7 +54,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
             assert _grant_loaded.pending is pending
 
             if level is None:
-                continue 
+                continue
 
             assert grant.level.value >= level.value
 
@@ -83,7 +88,9 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         requests: Requests,
     ):
         """User must be logged in as user."""
-        user, (user_other,) = dummy.user, dummy.get_users(1, GetPrimaryKwargs(deleted=False))
+        user, (user_other,) = dummy.user, dummy.get_users(
+            1, GetPrimaryKwargs(deleted=False)
+        )
         assert user.uuid != user_other.uuid
         assert user.deleted is False
 
@@ -172,18 +179,25 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         [(None, None, k) for k in range(10)],
         indirect=["dummy", "requests"],
     )
-    async def test_success_200_simple(self, dummy: DummyProvider, requests: Requests, count: int):
+    async def test_success_200_simple(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test requesting a (single) grant that does not already exist and is not deleted."
 
         user, session = dummy.user, dummy.session
-        other_user, = dummy.get_users(1)
+        (other_user,) = dummy.get_users(1)
         assert user.uuid != other_user.uuid
 
         other_dummy = DummyProvider(dummy.auth, session, use_existing=other_user)
-        other_document, = other_dummy.get_user_documents(Level.own)
+        (other_document,) = other_dummy.get_user_documents(Level.own)
         assert other_document.deleted is False
 
-        q = select(Grant).join(User).join(Document).where(User.uuid==user.uuid, Document.uuid==other_document.uuid)
+        q = (
+            select(Grant)
+            .join(User)
+            .join(Document)
+            .where(User.uuid == user.uuid, Document.uuid == other_document.uuid)
+        )
         grants = tuple(session.scalars(q))
         for grant in grants:
             session.delete(grant)
@@ -193,8 +207,8 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         fn_read = requests.grants.users.read
         uuid_other = [other_document.uuid]
         res_read, res_read_pending = await asyncio.gather(
-            fn_read(user.uuid, uuid_document=uuid_other, pending = False),
-            fn_read(user.uuid, uuid_document=uuid_other, pending = True),
+            fn_read(user.uuid, uuid_document=uuid_other, pending=False),
+            fn_read(user.uuid, uuid_document=uuid_other, pending=True),
         )
         if err := self.check_status(requests, res_read, 200):
             raise err
@@ -227,7 +241,7 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         assert grant is not None
         assert grant.pending
         assert grant_data.pending
-        assert grant.pending_from == PendingFrom.granter == grant_data.pending_from 
+        assert grant.pending_from == PendingFrom.granter == grant_data.pending_from
         assert grant.uuid_document == other_document.uuid == grant_data.uuid_document
         assert grant.uuid_user == user.uuid == grant_data.uuid_user
 
@@ -263,7 +277,7 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         user, session = dummy.user, dummy.session
         documents = dummy.get_user_documents(Level.view, n=3)
         uuid_document = Document.resolve_uuid(session, documents)
-        uuid_document_list= list(uuid_document)
+        uuid_document_list = list(uuid_document)
 
         grants = tuple(dummy.get_document_grant(dd) for dd in documents)
         assert len(grants) == 3
@@ -278,7 +292,7 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         session.commit()
 
         uuid_document = Document.resolve_uuid(session, documents)
-        uuid_grant = Grant.resolve_uuid(session, grants) 
+        uuid_grant = Grant.resolve_uuid(session, grants)
         uuid_document_list = list(uuid_document)
 
         # NOTE: Read! There should be nothing.
@@ -310,24 +324,23 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
                 kind_assoc=KindObject.grant,
                 uuid_source=user.uuid,
                 uuid_target=uuid_document,
-                uuid_assoc=uuid_grant
-            )
+                uuid_assoc=uuid_grant,
+            ),
         )
         assert httperr.detail.uuid_assoc is not None
-
 
         fn = self.fn(requests)
         res = await fn(user.uuid, uuid_document=uuid_document_list)
         if err := self.check_status(requests, res, 400, err=httperr):
             raise err
 
-        # NOTE: Adding the force parameter should not work, user will delete 
+        # NOTE: Adding the force parameter should not work, user will delete
         #       own existing.
         res = await fn(user.uuid, uuid_document=uuid_document_list, force=True)
         if err := self.check_status(requests, res, 400):
             raise err
 
-        detail: Dict[str, str] 
+        detail: Dict[str, str]
         assert isinstance(detail := res.json(), dict)
 
         msg: str | None
@@ -336,7 +349,6 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
 
         assert msg.startswith("This request results in user deleting own ")
         assert msg.endswith("done by directly deleting these grants.")
-
 
     @pytest.mark.asyncio
     async def test_success_200_ideal(self, dummy: DummyProvider, requests: Requests):
@@ -348,8 +360,13 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         uuid_document_list = list(uuid_document)
         n = len(uuid_document_list)
 
-        # NOTE: Cleanup deleted grants. 
-        q_grants = select(Grant).join(User).join(Document).where(User.uuid==user.uuid, Document.uuid.in_(uuid_document))
+        # NOTE: Cleanup deleted grants.
+        q_grants = (
+            select(Grant)
+            .join(User)
+            .join(Document)
+            .where(User.uuid == user.uuid, Document.uuid.in_(uuid_document))
+        )
         grant_rm = tuple(session.scalars(q_grants))
         for gg in grant_rm:
             session.delete(gg)
@@ -400,8 +417,16 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
 
         # NOTE: Read again.
         res_read_pending, res_read = await asyncio.gather(
-            fn_read(user.uuid, uuid_document=list(uuid_document), pending=True,),
-            fn_read(user.uuid, uuid_document=list(uuid_document), pending=False,),
+            fn_read(
+                user.uuid,
+                uuid_document=list(uuid_document),
+                pending=True,
+            ),
+            fn_read(
+                user.uuid,
+                uuid_document=list(uuid_document),
+                pending=False,
+            ),
         )
 
         if err := self.check_status(requests, res_read_pending):
@@ -427,7 +452,6 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         assert len(data.events) == 1
         assert not len(data.events[0].children)
 
-
     # NOTE: Not too sure about this one. For now users can request access so
     #       long as they know the document uuid.
     @pytest.mark.skip
@@ -446,9 +470,10 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.read
 
-
     @pytest.mark.asyncio
-    async def test_success_200_random_documents(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_random_documents(
+        self, dummy: DummyProvider, requests: Requests
+    ):
         """Test user can read own grants.
 
         In this case this might be empty - such behaviour is desired. This
@@ -481,9 +506,10 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         assert data.kind is None or data.kind is KindObject.grant
 
     @pytest.mark.asyncio
-    async def test_success_200_dne_documents(self, dummy: DummyProvider, requests: Requests):
-        """Like `test_success_200_random_documents` but gaurenteed empty.
-        """
+    async def test_success_200_dne_documents(
+        self, dummy: DummyProvider, requests: Requests
+    ):
+        """Like `test_success_200_random_documents` but gaurenteed empty."""
 
         user = dummy.user
         uuid_document = list(secrets.token_urlsafe(9) for _ in range(5))
@@ -498,9 +524,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         assert data.kind is None
 
     @pytest.mark.asyncio
-    async def test_success_200_private(
-        self, dummy: DummyProvider, requests: Requests
-    ):
+    async def test_success_200_private(self, dummy: DummyProvider, requests: Requests):
         """Test can read user pending grants for private documents."""
 
         user = dummy.user
@@ -517,7 +541,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         assert data.kind is not None
         self.check_data(dummy, data)
 
-    # NOTE: The `pending` filter only works when `uuid_document` is not 
+    # NOTE: The `pending` filter only works when `uuid_document` is not
     #       specified.
     @pytest.mark.parametrize(
         "dummy, requests, include_uuids",
@@ -534,7 +558,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
 
         if include_uuids:
             docs = dummy.get_user_documents(
-                level=Level.view, 
+                level=Level.view,
                 exclude_pending=True,
             )
             uuid_document = list(Document.resolve_uuid(dummy.session, docs))
@@ -544,7 +568,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         count_nonempty = 0
         for pending in map(bool, (0, 1)):
             res = await fn(user.uuid, pending=pending, uuid_document=uuid_document)
-            if err:=self.check_status(requests, res):
+            if err := self.check_status(requests, res):
                 raise err
 
             data = self.adapter.validate_json(res.content)
@@ -556,7 +580,6 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
 
         if not count_nonempty:
             raise AssertionError("All empty.")
-
 
     @pytest.mark.asyncio
     async def test_success_200_pending_from(
@@ -581,7 +604,11 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
                 continue
 
             self.check_data(dummy, data)
-            bad = tuple(item for item in data.data if item.pending_from.name != pending_from.name)
+            bad = tuple(
+                item
+                for item in data.data
+                if item.pending_from.name != pending_from.name
+            )
             if len(bad):
                 bad = tuple(item.model_dump(mode="json") for item in bad)
                 msg = json.dumps(bad, indent=2, default=str)
@@ -593,18 +620,13 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
             raise AssertionError("All empty.")
 
     @pytest.mark.asyncio
-    async def test_success_200_level(
-        self, dummy: DummyProvider, requests: Requests
-    ):
+    async def test_success_200_level(self, dummy: DummyProvider, requests: Requests):
         user = dummy.user
         fn = self.fn(requests)
 
         levels = list(Level)
         responses = await asyncio.gather(
-            *(
-                fn(user.uuid, level=LevelStr[level.name])
-                for level in levels
-            )
+            *(fn(user.uuid, level=LevelStr[level.name]) for level in levels)
         )
 
         for level, res in zip(levels, responses):
@@ -616,7 +638,6 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
             self.check_data(dummy, data, level=level)
 
 
-
 class TestUsersGrantsReject(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.reject
@@ -626,14 +647,20 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
         """User can remove own grants."""
 
         user, session = dummy.user, dummy.session
-        assert not user.deleted
+        user.deleted = False
+        session.add(user)
 
         documents = dummy.get_user_documents(level=Level.view, n=5)
         uuid_document = Document.resolve_uuid(session, documents)
         uuid_document_list = list(uuid_document)
 
         # NOTE: Ensure all grants active.
-        q_grants = select(Grant).join(User).join(Document).where(User.uuid==user.uuid, Document.uuid.in_(uuid_document))
+        q_grants = (
+            select(Grant)
+            .join(User)
+            .join(Document)
+            .where(User.uuid == user.uuid, Document.uuid.in_(uuid_document))
+        )
         grants = tuple(session.scalars(q_grants))
         for grant in grants:
             grant.deleted = False
@@ -688,7 +715,7 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
         data = self.adapter_w_events.validate_json(res.content)
         assert data.kind is None
         assert len(data.events) == 0
-        
+
         # NOTE: Try force deleting now.
         res = await fn(user.uuid, uuid_document=uuid_document_list, force=True)
         if err := self.check_status(requests, res_read):
@@ -707,9 +734,6 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
             assert grant_db is None
 
 
-
-
-
 class TestUsersGrantsAccept(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.accept
@@ -719,7 +743,9 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         """User can accept own grants."""
 
         session = dummy.session
-        documents = dummy.get_user_documents(Level.view, n=5, deleted=False, pending=True, exclude_pending=False)
+        documents = dummy.get_user_documents(
+            Level.view, n=5, deleted=False, pending=True, exclude_pending=False
+        )
         assert not any(dd.deleted for dd in documents)
         uuid_document = list(Document.resolve_uuid(dummy.session, documents))
 
@@ -728,10 +754,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
         grants = []
         for dd in documents:
-            grant = dummy.get_document_grant(dd,
-                                             pending=True,
-                                             exclude_pending=False
-                                             )
+            grant = dummy.get_document_grant(dd, pending=True, exclude_pending=False)
             if grant.pending_from == PendingFrom.created:
                 continue
 
@@ -744,7 +767,9 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
         # NOTE: Cannot read pending unless specified.
         fn_read = requests.grants.users.read
-        res_read = await fn_read(dummy.user.uuid, pending=False, uuid_document=uuid_document)
+        res_read = await fn_read(
+            dummy.user.uuid, pending=False, uuid_document=uuid_document
+        )
         if err := self.check_status(requests, res_read):
             raise err
 
@@ -754,7 +779,9 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
         # NOTE: Now with pending true
         fn_read = requests.grants.users.read
-        res_read = await fn_read(dummy.user.uuid, pending=True, uuid_document=uuid_document)
+        res_read = await fn_read(
+            dummy.user.uuid, pending=True, uuid_document=uuid_document
+        )
         if err := self.check_status(requests, res_read):
             raise err
 
@@ -775,7 +802,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
         # NOTE: Check with database.
         q_grants = dummy.user.q_select_grants(
-            uuid_document, # type: ignore
+            uuid_document,  # type: ignore
             exclude_deleted=False,
             exclude_pending=False,
         )
@@ -783,11 +810,10 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         assert len(grants) == len(uuid_document)
 
         still_pending = tuple(grant for grant in grants if grant.pending)
-        if m:=len(still_pending):
+        if m := len(still_pending):
             msg = "Failed to move all grants from pending state. "
             msg += f"`{m}` of `{n}` grants still remain pending."
             raise AssertionError(msg)
-
 
         # NOTE: Should be able to read these grants after
         res_read = await fn_read(dummy.user.uuid, uuid_document=uuid_document)
@@ -798,7 +824,9 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         assert data.kind == KindObject.grant
 
         # NOTE: Should not be able to read these grants after
-        res_read = await fn_read(dummy.user.uuid, uuid_document=uuid_document, pending=True)
+        res_read = await fn_read(
+            dummy.user.uuid, uuid_document=uuid_document, pending=True
+        )
         if err := self.check_status(requests, res_read):
             raise err
 
@@ -814,11 +842,11 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         data = self.adapter_w_events.validate_json(res.content)
         assert data.kind is None
         assert len(data.events) == 1
-        
-
 
     @pytest.mark.asyncio
-    async def test_success_200_uuid_document_dne(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_uuid_document_dne(
+        self, dummy: DummyProvider, requests: Requests
+    ):
         """Test filtering by using fake document uuids."""
         uuid_document = [secrets.token_urlsafe(9) for _ in range(5)]
 
@@ -833,7 +861,6 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         assert not len(data.data)
         assert len(data.events) == 1  # Only the base event.
 
-
     @pytest.mark.asyncio
     async def test_forbidden_403_pending_from(
         self,
@@ -845,7 +872,9 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         """
 
         session = dummy.session
-        document, = dummy.get_user_documents(Level.view, n=1, pending=True, exclude_pending=False)
+        (document,) = dummy.get_user_documents(
+            Level.view, n=1, pending=True, exclude_pending=False
+        )
         uuid_document = [Document.resolve_uuid(dummy.session, document)]
 
         grant = dummy.get_document_grant(document, pending=True, exclude_pending=False)
@@ -863,8 +892,8 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
                 ErrUpdateGrantPendingFrom,
                 msg=ErrUpdateGrantPendingFrom._msg_grantee,
                 uuid_obj=uuid_document,
-                kind_obj=KindObject.document
-            )
+                kind_obj=KindObject.document,
+            ),
         )
         if err := self.check_status(requests, res, 403, err_exp):
             raise err

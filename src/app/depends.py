@@ -234,7 +234,9 @@ DependsUser: TypeAlias = Annotated[User, Depends(user)]
 
 
 def access(
-    sessionmaker: DependsSessionMaker, token: DependsTokenOptional, request: Request,
+    sessionmaker: DependsSessionMaker,
+    token: DependsTokenOptional,
+    request: Request,
 ):
     logger.debug("Creating sessionmaker access.")
     with sessionmaker() as session:

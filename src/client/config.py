@@ -47,6 +47,3 @@ class Config(BaseYamlSettings):
             # raise ValueError("No profile to get token from.")
 
         return pp.token
-
-
-

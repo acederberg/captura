@@ -1427,7 +1427,9 @@ class TestAccessGrant(BaseTestAccess):
         def doit(access: Access, doc: Document):
             return access.grant_document(doc.uuid, {"000-000-000"})
 
-        dummy = DummyProvider(auth, session, user=User.if_exists(session, "000-000-000"))
+        dummy = DummyProvider(
+            auth, session, user=User.if_exists(session, "000-000-000")
+        )
         document_own = dummy.get_document(Level.own)
         document_modify = dummy.get_document(Level.modify)
         document_view = dummy.get_document(Level.view)

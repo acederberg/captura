@@ -9,7 +9,7 @@ from app import fields
 
 # --------------------------------------------------------------------------- #
 # Error Message Schemas.
-# 
+#
 # These are important for clients that might want to use these and for testing.
 # It also makes it such that all errors come from the same origin.
 
@@ -19,7 +19,14 @@ class ErrBase(BaseModel):
     # _msg_bad_method = "Method not allowed."
 
     @classmethod
-    def httpexception(cls, msg_name: str, status: int, *, dump_kwargs: Dict[str, Any] = dict(), **kwargs,) -> HTTPException:
+    def httpexception(
+        cls,
+        msg_name: str,
+        status: int,
+        *,
+        dump_kwargs: Dict[str, Any] = dict(),
+        **kwargs,
+    ) -> HTTPException:
         if (msg := getattr(cls, msg_name, None)) is None:
             raise ValueError(f"No message named '{msg_name}'.")
 
@@ -107,21 +114,29 @@ class ErrAccessDocumentGrantInsufficient(ErrAccessDocumentGrantBase):
 
 class ErrAccessDocumentPending(ErrAccessDocumentGrantInsufficient):
     _msg_grant_pending: ClassVar[str] = "Grant is pending."
-    _msg_grant_pending_created: ClassVar[str] = "Grant is pending with `pending_from=created`."
+    _msg_grant_pending_created: ClassVar[str] = (
+        "Grant is pending with `pending_from=created`."
+    )
 
     pending_from: fields.FieldPendingFrom
 
 
 class ErrAccessDocumentCannotRejectOwner(ErrBase):
-    _msg_cannot_reject_owner : ClassVar[str] =  "Owner cannot reject grants of other owners."
+    _msg_cannot_reject_owner: ClassVar[str] = (
+        "Owner cannot reject grants of other owners."
+    )
     uuid_user_revoker: fields.FieldUUID
     uuid_document: fields.FieldUUID
     uuid_user_revokees: fields.FieldUUIDS
 
 
 class ErrUpdateGrantPendingFrom(ErrBase):
-    _msg_granter: ClassVar[str] = "Cannot accept grants because `pending_from` must be `granter`."
-    _msg_grantee: ClassVar[str] = "Cannot accept grants because `pending_from` must be `grantee`."
+    _msg_granter: ClassVar[str] = (
+        "Cannot accept grants because `pending_from` must be `granter`."
+    )
+    _msg_grantee: ClassVar[str] = (
+        "Cannot accept grants because `pending_from` must be `grantee`."
+    )
 
     uuid_obj: fields.FieldUUIDS
     kind_obj: fields.FieldKindObject
@@ -140,7 +155,6 @@ class ErrAssocRequestMustForce(ErrBase):
     uuid_target: fields.FieldUUIDS
     uuid_assoc: fields.FieldUUIDS
     uuid_source: fields.FieldUUID
-
 
 
 # --------------------------------------------------------------------------- #
@@ -171,12 +185,11 @@ class ErrDetail(BaseModel, Generic[T_ErrDetail]):
             diff = {"detail": (self.detail, self_from_res.detail)}
         else:
             detail_self = self.detail.model_dump(mode="json")
-            detail_res = self_from_res.detail.model_dump(mode="json") # type: ignore
+            detail_res = self_from_res.detail.model_dump(mode="json")  # type: ignore
             diff = {
                 exp_k: (exp_v, have_v)
                 for exp_k, exp_v in detail_self.items()
-                if (have_v := detail_res.get(exp_k)) is None
-                or have_v != exp_v
+                if (have_v := detail_res.get(exp_k)) is None or have_v != exp_v
             }
 
         msg = "Error from response is wrong in the following fields: \n"
@@ -193,10 +206,8 @@ class ErrDetail(BaseModel, Generic[T_ErrDetail]):
         return msg
 
 
-
-AnyErrDetailAccessDocumentGrant = (ErrDetail[ErrAccessDocumentGrantBase] |
-    ErrDetail[ErrAccessDocumentGrantInsufficient] |
-    ErrDetail[ErrAccessDocumentPending])
-
-
-
+AnyErrDetailAccessDocumentGrant = (
+    ErrDetail[ErrAccessDocumentGrantBase]
+    | ErrDetail[ErrAccessDocumentGrantInsufficient]
+    | ErrDetail[ErrAccessDocumentPending]
+)

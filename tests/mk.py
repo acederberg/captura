@@ -1,14 +1,30 @@
 import secrets
 from datetime import datetime
 from random import choice, randint
-from typing import (Any, Callable, ClassVar, Dict, Generic, List, Protocol,
-                    Type, TypeVar)
+from typing import Any, Callable, ClassVar, Dict, Generic, List, Protocol, Type, TypeVar
 
 from app import __version__
-from app.models import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_MESSAGE,
-                        LENGTH_NAME, LENGTH_URL, Base, Collection, Document,
-                        Event, Format, Grant, KindEvent, KindObject, Level,
-                        PendingFrom, Singular, T_Resolvable, Tables, User)
+from app.models import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_URL,
+    Base,
+    Collection,
+    Document,
+    Event,
+    Format,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
 from faker import Faker
 from faker.providers import internet
 from sqlalchemy import Column, inspect
@@ -71,6 +87,7 @@ T_ResolvableContra = TypeVar(
     Event,
     covariant=True,
 )
+
 
 class MkDummyProvider(Protocol, Generic[T_ResolvableContra]):
     def __call__(self, **kwargs) -> T_ResolvableContra: ...

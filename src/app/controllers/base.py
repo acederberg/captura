@@ -9,19 +9,54 @@ import logging
 from functools import cached_property
 from http import HTTPMethod
 from traceback import print_tb
-from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
-                    Literal, Self, Set, Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, LevelHTTP,
-                        ResolvableSingular, ResolvedRawAny, Singular, User,
-                        uuids)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    LevelHTTP,
+    ResolvableSingular,
+    ResolvedRawAny,
+    Singular,
+    User,
+    uuids,
+)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
-                      ValidationInfo, computed_field, field_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Tag,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy.orm import Session, make_transient
 
 logger = util.get_logger(__name__)
@@ -96,7 +131,7 @@ class BaseController:
             case HTTPMethod():
                 self.method = method
             case _:
-                msg = f"Invalid input `{method}` for parameter `method`." 
+                msg = f"Invalid input `{method}` for parameter `method`."
                 raise ValueError(msg)
 
         match token:
@@ -105,7 +140,7 @@ class BaseController:
             case Token() as token:
                 self._token = token
             case bad:
-                msg = f"Invalid input `{bad}` for parameter `token`." 
+                msg = f"Invalid input `{bad}` for parameter `token`."
                 raise ValueError(msg)
 
 
@@ -299,7 +334,7 @@ class BaseResolvedPrimary(BaseResolved):
 
 
 class BaseResolvedSecondary(BaseResolved):
-    
+
     kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]

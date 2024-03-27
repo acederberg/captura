@@ -1,20 +1,49 @@
 import secrets
 from http import HTTPMethod
 from random import choice, randint
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
-                    NotRequired, Self, Set, Tuple, Type, TypedDict)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Collection,
+    Dict,
+    NotRequired,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypedDict,
+)
 
 import httpx
 from app import __version__, util
 from app.auth import Auth, Token
 from app.controllers.access import Access
-from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
-                                  BaseResolvedSecondary, Data, KindData,
-                                  T_ResolvedPrimary)
+from app.controllers.base import (
+    BaseResolved,
+    BaseResolvedPrimary,
+    BaseResolvedSecondary,
+    Data,
+    KindData,
+    T_ResolvedPrimary,
+)
 from app.controllers.delete import Delete
 from app.fields import KindObject, Level, Singular
-from app.models import (Assignment, Base, Collection, Document, Event, Grant,
-                        KindObject, Level, PendingFrom, Singular, Tables, User)
+from app.models import (
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    PendingFrom,
+    Singular,
+    Tables,
+    User,
+)
 from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
 from client.config import UseConfig
@@ -30,7 +59,7 @@ from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.mk import Mk
 from tests.test_models import ModelTestMeta
 
-logger =util.get_logger(__name__)
+logger = util.get_logger(__name__)
 
 # =========================================================================== #
 # Providers
@@ -39,6 +68,7 @@ logger =util.get_logger(__name__)
 class GetPrimaryKwargs(TypedDict):
     public: NotRequired[bool | None]
     deleted: NotRequired[bool | None]
+
 
 class BaseDummyProvider:
     dummy_kinds: ClassVar[Set[KindObject]] = {
@@ -90,7 +120,7 @@ class BaseDummyProvider:
             # print("Checking deleted...")
             # for mm in models:
             #     print(mm.uuid, "->", mm.deleted)
-            
+
         if public is not None:
             assert all(mm.public is public for mm in models)
         return models
@@ -117,12 +147,7 @@ class BaseDummyProvider:
         return self.get_primary(Document, n, **kwargs_get_primary)
 
     def get_user_documents(
-        self,
-        level: Level,
-        deleted: bool = False,
-        *,
-        n: int = 1,
-        **kwargs
+        self, level: Level, deleted: bool = False, *, n: int = 1, **kwargs
     ) -> Tuple[Document, ...]:
 
         logger.debug("Getting user documents.")
@@ -208,7 +233,7 @@ class BaseDummyProvider:
         if T_resolved.kind in {KindData.user}:
             kwargs = {"users": (self.user,)}
         elif T_resolved.kind in {KindData.grant_document, KindData.grant_user}:
-            document, = self.get_user_documents(n=1, level=Level.own)
+            (document,) = self.get_user_documents(n=1, level=Level.own)
             grant = self.get_document_grant(document)
 
             if T_resolved.kind == KindData.grant_document:
@@ -550,4 +575,3 @@ class DummyProvider(BaseDummyProvider):
 
         self.dummy_user_uuids.append(user.uuid)
         return user
-

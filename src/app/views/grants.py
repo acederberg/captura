@@ -1,24 +1,57 @@
 from typing import Annotated, List, Set, Tuple
 
 from app import __version__, fields
-from app.controllers.base import (Data, ResolvedDocument,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser)
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsSessionMaker, DependsToken, DependsUpdate)
-from app.err import (AnyErrDetailAccessDocumentGrant,
-                     ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrAccessUser, ErrDetail)
-from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
-                        KindObject, Level, LevelStr, User)
-from app.schemas import (AsOutput, EventSchema, GrantCreateSchema, GrantSchema,
-                         OutputWithEvents, mwargs)
+from app.controllers.base import (
+    Data,
+    ResolvedDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUpdate,
+)
+from app.err import (
+    AnyErrDetailAccessDocumentGrant,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrAccessUser,
+    ErrDetail,
+)
+from app.models import (
+    AssocUserDocument,
+    Document,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    LevelStr,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    EventSchema,
+    GrantCreateSchema,
+    GrantSchema,
+    OutputWithEvents,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseDocumentForbidden,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseDocumentForbidden,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import HTTPException, status
 from pydantic import TypeAdapter
 from sqlalchemy import literal_column, select, update
@@ -85,7 +118,7 @@ class DocumentGrantView(BaseView):
         events, grants = list(), list()
         if len(data.data.grants):
             delete.grant_document(data)
-            grants=TypeAdapter(List[GrantSchema]).validate_python(
+            grants = TypeAdapter(List[GrantSchema]).validate_python(
                 data.data.grants.values()
             )
             data.commit(delete.session)
@@ -168,7 +201,7 @@ class DocumentGrantView(BaseView):
         data: Data[ResolvedGrantDocument] = create.access.d_grant_document(
             uuid_document,
             uuid_user,
-            level=fr_level, 
+            level=fr_level,
         )
         create.create_data = GrantCreateSchema(level=fr_level)
         create.grant_document(data)
@@ -190,7 +223,7 @@ class DocumentGrantView(BaseView):
         uuid_user: args.QueryUUIDUser,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Accept any grant requests *(likely made via
-        `PATCH /grants/users/{uuid_user}`)*. To reject invitations use the 
+        `PATCH /grants/users/{uuid_user}`)*. To reject invitations use the
         corresponding ``Delete`` endpoint.
 
         Updating grants in place is not permitted. To replace a grant use
@@ -208,10 +241,13 @@ class DocumentGrantView(BaseView):
 
         out = mwargs(
             OutputWithEvents[List[GrantSchema]],
-            data=TypeAdapter(List[GrantSchema]).validate_python(data.data.grants.values()),
-            events=[EventSchema.model_validate(data.event)]
+            data=TypeAdapter(List[GrantSchema]).validate_python(
+                data.data.grants.values()
+            ),
+            events=[EventSchema.model_validate(data.event)],
         )
         return out
+
 
 class UserGrantView(BaseView):
     view_routes = dict(
@@ -253,7 +289,7 @@ class UserGrantView(BaseView):
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocument,
         *,
-        pending: bool = False
+        pending: bool = False,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Revoke grants for a **user** for the provided **documents**. The
         intended use case is for users/admins to revoke their own grants.
@@ -272,7 +308,7 @@ class UserGrantView(BaseView):
 
             delete.grant_user(data)
             events.append(data.event)
-            # NOTE: This must be done before the commit because the data 
+            # NOTE: This must be done before the commit because the data
             #       becomes transient
             grants = TypeAdapter(List[GrantSchema]).validate_python(
                 data.data.grants.values()
@@ -282,9 +318,8 @@ class UserGrantView(BaseView):
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
             data=grants,
-            events=[EventSchema.model_validate(ee) for ee in events]
+            events=[EventSchema.model_validate(ee) for ee in events],
         )
-
 
     @classmethod
     def get_grants_user(
@@ -313,8 +348,7 @@ class UserGrantView(BaseView):
         if pending_from is not None:
             pending_from_ = fields.PendingFrom[pending_from.name]
             grants = {
-                k: v for k, v in grants.items()
-                if v.pending_from == pending_from_
+                k: v for k, v in grants.items() if v.pending_from == pending_from_
             }
 
         return mwargs(
@@ -351,8 +385,10 @@ class UserGrantView(BaseView):
 
         out = mwargs(
             OutputWithEvents[List[GrantSchema]],
-            data=TypeAdapter(List[GrantSchema]).validate_python(data.data.grants.values()),
-            events=[EventSchema.model_validate(data.event)]
+            data=TypeAdapter(List[GrantSchema]).validate_python(
+                data.data.grants.values()
+            ),
+            events=[EventSchema.model_validate(data.event)],
         )
         return out
 

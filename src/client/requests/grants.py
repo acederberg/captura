@@ -85,8 +85,6 @@ class DocumentGrantRequests(BaseRequests):
             headers=context.headers,
         )
 
-
-
     fmt_url: ClassVar[str] = "/grants/documents/{}"
     typer_check_verbage = False
     typer_commands = dict(
@@ -95,10 +93,10 @@ class DocumentGrantRequests(BaseRequests):
         revoke="req_revoke",
         approve="req_approve",
     )
-    approve = methodize(req_approve, __func__=req_approve.__func__) # type: ignore 
-    invite = methodize(req_invite, __func__=req_invite.__func__) # type: ignore
-    revoke = methodize(req_revoke, __func__=req_revoke.__func__) # type: ignore
-    read = methodize(req_read, __func__=req_read.__func__) # type: ignore
+    approve = methodize(req_approve, __func__=req_approve.__func__)  # type: ignore
+    invite = methodize(req_invite, __func__=req_invite.__func__)  # type: ignore
+    revoke = methodize(req_revoke, __func__=req_revoke.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
 
 
 class UserGrantRequests(BaseRequests):
@@ -195,10 +193,10 @@ class UserGrantRequests(BaseRequests):
         accept="req_accept",
     )
 
-    read = methodize(req_read , __func__=req_read.__func__) # type: ignore
-    request = methodize(req_request , __func__=req_request.__func__) # type: ignore
-    reject = methodize(req_reject , __func__=req_reject.__func__) # type: ignore
-    accept = methodize(req_accept , __func__=req_accept.__func__) # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
+    request = methodize(req_request, __func__=req_request.__func__)  # type: ignore
+    reject = methodize(req_reject, __func__=req_reject.__func__)  # type: ignore
+    accept = methodize(req_accept, __func__=req_accept.__func__)  # type: ignore
 
 
 class GrantRequests(BaseRequests):

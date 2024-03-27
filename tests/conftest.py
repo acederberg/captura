@@ -35,15 +35,17 @@ logger = util.get_logger(__name__)
 @pytest.fixture(scope="session")
 def config() -> PytestConfig:
     logger.debug("Loading application configuration.")
-    app = AppConfig.model_validate({
-        "logging_configuration_path": util.Path.base("logging.test.yaml"),
-    })
+    app = AppConfig.model_validate(
+        {
+            "logging_configuration_path": util.Path.base("logging.test.yaml"),
+        }
+    )
     return PytestConfig(app=app)  # type: ignore
 
 
 @pytest.fixture(scope="session")
 def client_config() -> PytestClientConfig:
-    logger.debug( "Loading client configuration.")
+    logger.debug("Loading client configuration.")
     raw: Dict[str, Any] = dict(
         hosts=dict(
             docker=dict(host="http://localhost:8080", remote=True),
@@ -62,9 +64,13 @@ class PytestContext(BaseModel):
 
 
 @pytest.fixture(scope="session")
-def context(config: PytestConfig, client_config: PytestClientConfig,) -> PytestContext:
+def context(
+    config: PytestConfig,
+    client_config: PytestClientConfig,
+) -> PytestContext:
     logger.debug("Creating client context.")
     return PytestContext(config=config, config_client=client_config)
+
 
 # =========================================================================== #
 # Database fixtures
@@ -92,6 +98,7 @@ def session(sessionmaker):
 
 # --------------------------------------------------------------------------- #
 # Loading fixtures
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_logging(config: PytestConfig) -> None:
@@ -153,7 +160,7 @@ def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
 @pytest_asyncio.fixture(scope="session")
 async def app(client_config: ClientConfig) -> FastAPI | None:
     if (host := client_config.host) is None or not host.remote:
-        return AppView.view_router # type: ignore
+        return AppView.view_router  # type: ignore
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
 

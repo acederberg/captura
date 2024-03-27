@@ -172,6 +172,6 @@ class EventsRequests(BaseRequests):
 
 if __name__ == "__main__":
     from client.requests.base import typerize
+
     events = typerize(EventsRequests)
     events()
-

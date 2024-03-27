@@ -110,14 +110,16 @@ class Environment(enum.Enum):
 class AppConfigDev(BaseHashable):
     """Setting exclusively for development."""
 
-    httpexc_tb: Annotated[bool, Field(default = False)]
+    httpexc_tb: Annotated[bool, Field(default=False)]
 
 
 class AppConfig(BaseHashable):
     port: Annotated[int, Field(default=8080)]
     host: Annotated[str, Field(default="0.0.0.0")]
     environment: Annotated[Environment, Field(default=Environment.production)]
-    dev: Annotated[AppConfigDev, Field(default_factory=lambda: AppConfigDev.model_validate({}))]
+    dev: Annotated[
+        AppConfigDev, Field(default_factory=lambda: AppConfigDev.model_validate({}))
+    ]
     logging_configuration_path: Annotated[str, Field(default=util.PATH_LOG_CONFIG)]
 
     @computed_field

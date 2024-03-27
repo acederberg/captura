@@ -7,8 +7,15 @@ import httpx
 import pytest
 from app import __version__, util
 from app.auth import Auth
-from app.models import (AssocUserDocument, ChildrenUser, Document, KindEvent,
-                        KindObject, Level, User)
+from app.models import (
+    AssocUserDocument,
+    ChildrenUser,
+    Document,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import DocumentSchema, EventSchema, GrantSchema
 from client.requests import GrantRequests, Requests
 from fastapi import HTTPException
@@ -16,6 +23,7 @@ from sqlalchemy import delete, literal_column, select
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from . import util
+
 # NOTE: The `requests` fixture must exist in module scope directly.
 from .util import BaseTestViews, requests
 

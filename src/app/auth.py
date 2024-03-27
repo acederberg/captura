@@ -7,8 +7,7 @@ from typing import Annotated, Any, Dict, List, Self, Tuple, overload
 import httpx
 import jwt
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.backends.openssl.rsa import (_RSAPrivateKey,
-                                                      _RSAPublicKey)
+from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicKey
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException

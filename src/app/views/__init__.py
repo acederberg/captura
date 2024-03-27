@@ -5,8 +5,7 @@ from app import __version__, util
 from app.auth import Auth
 from app.config import Config
 from app.controllers.access import Access, H
-from app.depends import (DependsAccess, DependsAuth, DependsConfig,
-                         DependsSessionMaker)
+from app.depends import DependsAccess, DependsAuth, DependsConfig, DependsSessionMaker
 from fastapi import FastAPI, HTTPException
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse
@@ -65,7 +64,7 @@ class AppView(BaseView):
     #
     #       - https://fastapi.tiangolo.com/tutorial/static-files/
     #
-    #       I'm aware the using `routes` is a bit taboo, but I think this is a 
+    #       I'm aware the using `routes` is a bit taboo, but I think this is a
     #       cleaner pattern.
     view_static = StaticFiles(directory=util.Path.app("static"))
     view_router = FastAPI(
@@ -82,8 +81,7 @@ class AppView(BaseView):
         routes=[Mount("/static", view_static)],
     )  # type: ignore
 
-
-    # TODO: The traceback should not show up in prod unless the status `500`. 
+    # TODO: The traceback should not show up in prod unless the status `500`.
     #       In fact, the traceback should be stored by the logger instead.
     # TODO: Figure out how to use config to turn this on or off. Unfortunately
     #       exception handlers do not use dependencies and it is hard to build

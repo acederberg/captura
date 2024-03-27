@@ -2,8 +2,20 @@ import abc
 import functools
 import json
 from http import HTTPMethod
-from typing import (Any, AsyncGenerator, Callable, ClassVar, Concatenate, Dict,
-                    Generator, List, ParamSpec, Set, Tuple, Type)
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Dict,
+    Generator,
+    List,
+    ParamSpec,
+    Set,
+    Tuple,
+    Type,
+)
 
 import httpx
 import pytest
@@ -99,6 +111,7 @@ def checks_event(
 # =========================================================================== #
 # ObjectpRe
 
+
 class BaseEndpointTest(abc.ABC):
     """Use this template to save some time:
 
@@ -123,7 +136,13 @@ class BaseEndpointTest(abc.ABC):
     @pytest.fixture(scope="class")
     def dummy(self, sessionmaker, auth: Auth) -> Generator[DummyProvider, None, None]:
         with sessionmaker() as session:
-            yield DummyProvider(auth, session, use_existing=True)
+            dummy = DummyProvider(auth, session, use_existing=True)
+            dummy.user.deleted = False
+            session.add(dummy.user)
+            session.commit()
+            session.refresh(dummy.user)
+
+            yield dummy
 
     @pytest_asyncio.fixture(scope="function")
     async def requests(
@@ -172,14 +191,12 @@ class BaseEndpointTest(abc.ABC):
 
         return AssertionError(err_msg_capture.get())
 
-
     # def check_err(
     #     self,
     #     requests: Requests,
     #     response: httpx.Response,
     #     expected: ErrDetail
     # ) -> AssertionError | None:
-
 
     # ----------------------------------------------------------------------- #
     # Errors
@@ -199,11 +216,22 @@ class BaseEndpointTest(abc.ABC):
         "Test deleted object"
         ...
 
-
-    def document_user_uuids(self, dummy: DummyProvider, document: Document, limit: int | None = None, **kwargs) -> List[str]:
-        q_users = document.q_select_users(**kwargs).where(Grant.level < Level.own).order_by(func.random()).limit(limit or 10)
+    def document_user_uuids(
+        self,
+        dummy: DummyProvider,
+        document: Document,
+        limit: int | None = None,
+        **kwargs,
+    ) -> List[str]:
+        q_users = (
+            document.q_select_users(**kwargs)
+            .where(Grant.level < Level.own)
+            .order_by(func.random())
+            .limit(limit or 10)
+        )
         users = tuple(dummy.session.scalars(q_users))
         return list(User.resolve_uuid(dummy.session, users))
+
 
 # =========================================================================== #
 
@@ -292,4 +320,3 @@ class BaseEndpointTest(abc.ABC):
 #             )
 #
 #     return event
-

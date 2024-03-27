@@ -7,13 +7,16 @@ from client.requests.grants import DocumentGrantRequests
 
 
 class DocumentRequests(BaseRequests):
-    typer_commands = dict(read="req_read",
-         search="req_search",
-         delete="req_delete",
-         update="req_update",
-         create="req_create",
-        )
-    typer_children = dict(grants=DocumentGrantRequests, assignments=DocumentAssignmentRequests)
+    typer_commands = dict(
+        read="req_read",
+        search="req_search",
+        delete="req_delete",
+        update="req_update",
+        create="req_create",
+    )
+    typer_children = dict(
+        grants=DocumentGrantRequests, assignments=DocumentAssignmentRequests
+    )
 
     @classmethod
     def req_delete(
@@ -61,7 +64,7 @@ class DocumentRequests(BaseRequests):
         context = ContextData.resolve(_context)
         return httpx.Request(
             "PATCH",
-            context.url ( f"/documents/{uuid_document}"),
+            context.url(f"/documents/{uuid_document}"),
             json=params(
                 name=name,
                 description=description,

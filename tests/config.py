@@ -51,6 +51,3 @@ class PytestClientConfig(ClientConfig):
     )
 
     profiles: Annotated[Dict[str, PyTestClientProfileConfig], Field()] = None  # type: ignore
-
-
-

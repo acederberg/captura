@@ -6,20 +6,40 @@ from uuid import uuid4
 from app import __version__, util
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedUser
-from app.depends import (DependsAccess, DependsDelete, DependsRead,
-                         DependsSessionMaker, DependsToken, DependsUpdate)
+from app.depends import (
+    DependsAccess,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUpdate,
+)
 from app.err import ErrAccessUser, ErrDetail
-from app.models import (Collection, Document, Edit, Event, KindEvent,
-                        KindObject, User)
-from app.schemas import (AsOutput, CollectionMetadataSchema,
-                         CollectionSearchSchema, DocumentMetadataSchema,
-                         DocumentSearchSchema, EditMetadataSchema,
-                         EditSearchSchema, EventSchema, OutputWithEvents,
-                         UserCreateSchema, UserExtraSchema, UserSchema,
-                         UserSearchSchema, UserUpdateSchema, mwargs)
+from app.models import Collection, Document, Edit, Event, KindEvent, KindObject, User
+from app.schemas import (
+    AsOutput,
+    CollectionMetadataSchema,
+    CollectionSearchSchema,
+    DocumentMetadataSchema,
+    DocumentSearchSchema,
+    EditMetadataSchema,
+    EditSearchSchema,
+    EventSchema,
+    OutputWithEvents,
+    UserCreateSchema,
+    UserExtraSchema,
+    UserSchema,
+    UserSearchSchema,
+    UserUpdateSchema,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import Body, Depends, HTTPException, Query
 from pydantic import TypeAdapter
 from sqlalchemy import select
@@ -90,7 +110,6 @@ class DemoUserView(BaseView):
         Optionally filter by **invitation_email**, **invitation_code**, or
         **invitation_uuid**.
         """
-
 
         if not access.token.admin:
             raise HTTPException(

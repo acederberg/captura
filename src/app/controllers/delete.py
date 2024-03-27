@@ -5,16 +5,33 @@ from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedAssignment,
-                                  DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, User)
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
@@ -641,7 +658,6 @@ class Delete(WithAccess):
         q_users = document.q_select_users(
             exclude_deleted=not self.force, exclude_pending=False, pending=False
         )
-        # util.sql(self.session, q_users)
         if users := tuple(session.execute(q_users).scalars()):
             data_grant = mwargs(
                 Data[ResolvedGrantDocument],
@@ -660,7 +676,6 @@ class Delete(WithAccess):
         q_collections = document.q_select_collections(
             exclude_deleted=not self.force,
         )
-        # util.sql(self.session, q_collections)
         if collections := tuple(session.execute(q_collections).scalars()):
             data_assignment = mwargs(
                 Data[ResolvedAssignmentDocument],

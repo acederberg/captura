@@ -58,10 +58,12 @@ class TokenRequests(BaseRequests):
             headers=context.headers,
         )
 
+
 __all__ = ("TokenRequests",)
 
 
 if __name__ == "__main__":
     from client.requests.base import typerize
+
     tokens = typerize(TokenRequests)
     tokens()

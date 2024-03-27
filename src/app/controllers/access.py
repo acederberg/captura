@@ -2,27 +2,67 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
-                    Tuple, Type, TypeVar, overload)
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Dict,
+    Literal,
+    ParamSpec,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    overload,
+)
 
 from app import __version__, util
 from app.auth import Token
-from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
-                                  DataResolvedGrant, KindData,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser, T_Data)
-from app.err import (ErrAccessCollection, ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessUser, ErrUpdateGrantPendingFrom)
+from app.controllers.base import (
+    BaseController,
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    KindData,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+    T_Data,
+)
+from app.err import (
+    ErrAccessCollection,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessUser,
+    ErrUpdateGrantPendingFrom,
+)
 from app.fields import PendingFrom
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, Resolvable,
-                        ResolvableLevel, ResolvableMultiple,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    Resolvable,
+    ResolvableLevel,
+    ResolvableMultiple,
+    ResolvableSingular,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
 from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
 from sqlalchemy import false, literal, select
@@ -327,9 +367,14 @@ class Access(BaseController):
         *,
         exclude_public: bool = False,
         exclude_deleted: bool = True,
-        msg_name: Literal[
-            "_msg_private", "_msg_modify", "_msg_only_self",
-        ] | None = None,
+        msg_name: (
+            Literal[
+                "_msg_private",
+                "_msg_modify",
+                "_msg_only_self",
+            ]
+            | None
+        ) = None,
     ) -> User:
         """
         :param exclude_public: When ``True``, will exclude checking if user is
@@ -592,7 +637,7 @@ class Access(BaseController):
                 grants_index=grants_index,
                 pending=pending,
                 exclude_deleted=exclude_deleted,
-                validate=validate
+                validate=validate,
             )
             return document
 
@@ -801,10 +846,9 @@ class Access(BaseController):
 
         Access is generally not required for the documents in
         ``resolve_documents``. However, it would still be useful to populate
-        ``grants`` using ``self.document``. For this reason the parameter 
+        ``grants`` using ``self.document``. For this reason the parameter
         ``validate`` is added.
         """
-
 
         level = Level.resolve(level) if level is not None else self.level
         user_token = self.token_user_or(resolve_user_token)
@@ -822,7 +866,11 @@ class Access(BaseController):
             pending=pending,
         )
 
-        uuid_documents = Document.resolve_uuid(self.session, resolve_documents) if resolve_documents is not None else None
+        uuid_documents = (
+            Document.resolve_uuid(self.session, resolve_documents)
+            if resolve_documents is not None
+            else None
+        )
 
         # NOTE: In the case of post, a document just has to not be deleted.
         #       It is easier (for now) to just write out the query here.
@@ -831,14 +879,13 @@ class Access(BaseController):
                 raise ValueError("`uuid_documents` is `None`.")
             q = select(Document).where(Document.uuid.in_(uuid_documents))
             q = q.where(Document.deleted == false())
-            resolve_documents = tuple(self.session.scalars(q)) 
+            resolve_documents = tuple(self.session.scalars(q))
         else:
             q = user.q_select_documents(
                 uuid_documents,
                 **document_kwargs,
                 exclude_pending=not pending,
             )
-            util.sql(self.session, q)
             resolve_documents = tuple(self.session.execute(q).scalars())
 
         token_user_grants: Dict[str, Grant] = dict()
@@ -868,13 +915,13 @@ class Access(BaseController):
 
         if self.method == H.PATCH and len(
             bad := {
-                uuid_document 
-                for uuid_document, grant in grants_user.items() 
+                uuid_document
+                for uuid_document, grant in grants_user.items()
                 if grant.pending_from != PendingFrom.grantee
             }
         ):
 
-            # NOTE: Ensure all documents have the currect pending from value 
+            # NOTE: Ensure all documents have the currect pending from value
             #       for approval
             raise ErrUpdateGrantPendingFrom.httpexception(
                 "_msg_grantee",
@@ -997,14 +1044,13 @@ class Access(BaseController):
                 pending=pending,
                 exclude_pending=False,
             )
-            # util.sql(self.session, q)
             users = tuple(self.session.execute(q).scalars())
         else:
             users = User.resolve(self.session, resolve_users)
 
         uuid_users = User.resolve_uuid(self.session, users)
         match self.method:
-            # NOTE: Ensure all documents have the currect pending from value 
+            # NOTE: Ensure all documents have the currect pending from value
             #       for approval
             case H.GET | H.POST | H.PUT | H.PATCH:
                 ...
@@ -1017,7 +1063,7 @@ class Access(BaseController):
                     exclude_pending=True,  # Absolutely necessary, do not rm
                 )
 
-                uuid_owners: set[str] 
+                uuid_owners: set[str]
                 uuid_owners = set(item.uuid for item in session.scalars(q_owners))
                 if len(uuid_bad := uuid_owners & uuid_users):
                     raise ErrAccessDocumentCannotRejectOwner.httpexception(
@@ -1037,17 +1083,15 @@ class Access(BaseController):
             pending=pending,
             exclude_deleted=exclude_deleted,
         )
-        util.sql(self.session, q_user_grants)
         user_grant: Dict[str, Grant] = {
-            grant.uuid_user: grant 
-            for grant in self.session.scalars(q_user_grants)
+            grant.uuid_user: grant for grant in self.session.scalars(q_user_grants)
         }
 
         # NOTE: Check that the grants in question is.
         if self.method == H.PATCH and len(
             bad := {
                 uuid_user
-                for uuid_user, grant in user_grant.items() 
+                for uuid_user, grant in user_grant.items()
                 if grant.pending_from != PendingFrom.granter
             }
         ):

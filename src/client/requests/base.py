@@ -3,8 +3,19 @@ import json
 import urllib
 from collections.abc import Awaitable
 from os import walk
-from typing import (Any, Awaitable, Callable, ClassVar, Concatenate, Dict,
-                    Generator, ParamSpec, Self, Type, TypeVar)
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Dict,
+    Generator,
+    ParamSpec,
+    Self,
+    Type,
+    TypeVar,
+)
 from urllib import parse
 
 import httpx
@@ -76,6 +87,7 @@ def openapi_find(openapi: OpenAPI, req: httpx.Request) -> PathItem:
 # =========================================================================== #
 # Data for `ClickContext`.
 
+
 class ContextData(BaseModel):
     config: Config
     console_handler: ConsoleHandler
@@ -144,8 +156,11 @@ class ContextData(BaseModel):
 
         console_handler = mwargs(ConsoleHandler, output=output, columns=columns)
         context.obj = ContextData(
-            config=config, console_handler=console_handler, show_request=show_request,
-            auth_exclude=auth_exclude, token=token,
+            config=config,
+            console_handler=console_handler,
+            show_request=show_request,
+            auth_exclude=auth_exclude,
+            token=token,
         )
         context.obj.openapi = openapi
 
@@ -176,8 +191,9 @@ MkRequestInstance = Callable[
 # --------------------------------------------------------------------------- #
 # Test client stuff.
 
-# NOTE: The type hint of fn cannot include `ContextData | typer.Context` bc 
-#       typer. ``__func__`` is included because classmethods are processed 
+
+# NOTE: The type hint of fn cannot include `ContextData | typer.Context` bc
+#       typer. ``__func__`` is included because classmethods are processed
 #       after the end of the class definition.
 def methodize(
     fn: MkRequestCls[T_Wrapped, P_Wrapped],
@@ -255,6 +271,7 @@ def typerize(cls: Type["BaseTyperizable"], *, is_recurse: bool = False) -> typer
 
 # =========================================================================== #
 # BaseRequests
+
 
 class BaseTyperizable:
     typer_decorate: ClassVar[bool] = True

@@ -144,10 +144,11 @@ class CollectionRequests(BaseRequests):
             headers=context.headers,
         )
 
+
 __all__ = ("DocumentRequests",)
 
 if __name__ == "__main__":
     from client.requests.base import typerize
+
     collections = typerize(CollectionRequests)
     collections()
-

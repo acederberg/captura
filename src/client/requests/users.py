@@ -15,8 +15,8 @@ from fastapi import Request
 
 class DemoRequests(BaseRequests):
     typer_commands = dict(
-        read="req_read", 
-        create="req_create", 
+        read="req_read",
+        create="req_create",
         activate="req_activate",
     )
 
@@ -115,7 +115,7 @@ class UserRequests(BaseRequests):
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
 
-        # 
+        #
         # if uuid_user is None:
         #     uuid_user = context.config.profile.uuid_user  # type: ignore
 
@@ -126,20 +126,18 @@ class UserRequests(BaseRequests):
             headers=context.headers,
             params=params(
                 uuid=uuids,
-                limit=limit, 
+                limit=limit,
                 name_like=name_like,
                 description_like=description_like,
                 include_public=include_public,
             ),
         )
 
-    search = methodize(req_search , __func__=req_search.__func__)
+    search = methodize(req_search, __func__=req_search.__func__)
 
     @classmethod
     def req_read(
-        cls,
-        _context: typer.Context,
-        uuid_user: flags.ArgUUIDUser
+        cls, _context: typer.Context, uuid_user: flags.ArgUUIDUser
     ) -> httpx.Request:
 
         context = ContextData.resolve(_context)
@@ -149,7 +147,7 @@ class UserRequests(BaseRequests):
             headers=context.headers,
         )
 
-    read = methodize(req_read , __func__=req_read.__func__)
+    read = methodize(req_read, __func__=req_read.__func__)
 
     @classmethod
     def req_update(
@@ -178,7 +176,6 @@ class UserRequests(BaseRequests):
             headers=context.headers,
         )
 
-
     @classmethod
     def req_create(
         cls,
@@ -201,7 +198,6 @@ class UserRequests(BaseRequests):
         # )
         rich.print("[red]Not implemented.")
         raise typer.Exit(1)
-
 
     @classmethod
     def req_delete(
@@ -231,15 +227,15 @@ class UserRequests(BaseRequests):
         delete="req_delete",
     )
     typer_children = {
-        "demos": DemoRequests, 
+        "demos": DemoRequests,
         "grants": UserGrantRequests,
     }
 
     demos: DemoRequests
     grants: UserGrantRequests
-    update = methodize(req_update, __func__=req_update.__func__) # type: ignore
-    create = methodize(req_create, __func__=req_create.__func__) # type: ignore 
-    delete = methodize(req_delete, __func__=req_delete.__func__) # type: ignore 
+    update = methodize(req_update, __func__=req_update.__func__)  # type: ignore
+    create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
+    delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
 
     def __init__(self, context: ContextData, client: httpx.AsyncClient):
         super().__init__(context, client)
@@ -247,13 +243,12 @@ class UserRequests(BaseRequests):
         self.grants = UserGrantRequests.spawn_from(self)
 
 
-
-
 __all__ = ("UserRequests", "DemoRequests")
 
 
 if __name__ == "__main__":
     from client.requests.base import typerize
+
     users = typerize(UserRequests)
     users()
 

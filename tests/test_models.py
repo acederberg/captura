@@ -4,9 +4,20 @@ from typing import Any, ClassVar, Dict, List, Self, Tuple, Type
 import pytest
 import yaml
 from app import __version__, util
-from app.models import (AssocCollectionDocument, AssocUserDocument, Base,
-                        Collection, Document, Edit, Event, Grant, KindEvent,
-                        KindObject, Level, User)
+from app.models import (
+    AssocCollectionDocument,
+    AssocUserDocument,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
@@ -88,7 +99,7 @@ class BaseModelTest(metaclass=ModelTestMeta):
         session.commit()
 
     @classmethod
-    def merge(cls, session: Session): 
+    def merge(cls, session: Session):
         loaded = (cls.preload(cls.M(**item)) for item in cls.dummies)
         for item in loaded:
             session.merge(item)
@@ -96,7 +107,6 @@ class BaseModelTest(metaclass=ModelTestMeta):
 
     @pytest.fixture(scope="session", autouse=True)
     def invoke_loader(self, load_tables, setup_cleanup): ...
-
 
 
 # NOTE: Test suites must be defined in appropraite order to ensure that

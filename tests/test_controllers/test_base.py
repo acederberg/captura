@@ -1,9 +1,15 @@
 from http import HTTPMethod
 
 import pytest
-from app.controllers.base import (BaseController, BaseResolved, KindData,
-                                  ResolvedAssignmentDocument, ResolvedDocument,
-                                  ResolvedGrantUser, ResolvedUser)
+from app.controllers.base import (
+    BaseController,
+    BaseResolved,
+    KindData,
+    ResolvedAssignmentDocument,
+    ResolvedDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
 from app.models import Collection, Document, Grant
 from app.schemas import mwargs
 from fastapi import HTTPException
@@ -36,7 +42,7 @@ def test_UuidFromModel(sessionmaker: sessionmaker):
             ResolvedAssignmentDocument,
             document=doc,
             collections=collections,
-            assignments=None
+            assignments=None,
         )
         assert res.uuid_collections == uuid_col_expected
         assert res.uuid_document == uuid_doc_expected
@@ -44,6 +50,7 @@ def test_UuidFromModel(sessionmaker: sessionmaker):
         assert res.uuid_assignments is None
         assert isinstance(res.uuid_document, str)
         assert isinstance(res.uuid_collections, set)
+
 
 def test_base_controller(default: DummyProvider):
 
@@ -53,12 +60,12 @@ def test_base_controller(default: DummyProvider):
         base.token
 
     assert err.value.detail == "Token required."
-    
+
     with pytest.raises(HTTPException) as err:
         base.token_user
 
     assert err.value.detail == "Token required."
-    
+
     with pytest.raises(ValueError) as err:
         BaseController(dd.session, None, "Foo")
 
@@ -73,13 +80,12 @@ def test_base_controller(default: DummyProvider):
 
 
 class TestBaseResolved:
-    def test_init_subclass(self): #, default: DummyProvider):
+    def test_init_subclass(self):  # , default: DummyProvider):
 
         # dd = default
         def create_cls(**namespace):
             return type("Foo", (BaseResolved,), namespace)
 
-        
         # Bad kind
         with pytest.raises(ValueError) as err:
             create_cls(kind="raboof")
@@ -93,6 +99,7 @@ class TestBaseResolved:
         # Should be able to get the actual class
         res = BaseResolved.get(KindData.user)
         assert res == ResolvedUser
+
 
 class TestBaseResolvedPrimary:
     # def test_init_subclass_base(self, default: DummyProvider):
@@ -112,17 +119,16 @@ class TestBaseResolvedPrimary:
         mt = ResolvedUser.empty()
         assert not len(mt.users)
         assert mt.err_nonempty() is None
-    
+
 
 class TestResolvedSecondary:
     def test_instance_methods(self, dummy: DummyProvider):
 
-        dd = dummy 
+        dd = dummy
         data = dd.data(KindData.grant_user)
         assert isinstance(data.data, ResolvedGrantUser)
-        res  = data.data
+        res = data.data
 
         assert res.target == res.documents
         assert res.source == res.user
         assert res.assoc == res.grants
-

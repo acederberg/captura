@@ -4,25 +4,54 @@ from typing import Annotated, List, Tuple, overload
 from app import __version__
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedDocument
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsRead, DependsSessionMaker, DependsToken,
-                         DependsTokenOptional, DependsUpdate)
-from app.err import (AnyErrDetailAccessDocumentGrant,
-                     ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrDetail)
-from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
-                        Document, Level, User)
-from app.schemas import (AsOutput, DocumentCreateSchema,
-                         DocumentMetadataSchema, DocumentSchema,
-                         DocumentSearchSchema, DocumentUpdateSchema,
-                         EditSchema, EditSearchSchema, EventSchema,
-                         OutputWithEvents, TimespanLimitParams, mwargs)
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+    DependsTokenOptional,
+    DependsUpdate,
+)
+from app.err import (
+    AnyErrDetailAccessDocumentGrant,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrDetail,
+)
+from app.models import (
+    AssocCollectionDocument,
+    AssocUserDocument,
+    Collection,
+    Document,
+    Level,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    DocumentCreateSchema,
+    DocumentMetadataSchema,
+    DocumentSchema,
+    DocumentSearchSchema,
+    DocumentUpdateSchema,
+    EditSchema,
+    EditSearchSchema,
+    EventSchema,
+    OutputWithEvents,
+    TimespanLimitParams,
+    mwargs,
+)
 from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseDocumentForbidden,
-                            OpenApiResponseUnauthorized, OpenApiTags)
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseDocumentForbidden,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter

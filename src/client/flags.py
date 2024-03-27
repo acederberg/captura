@@ -5,8 +5,16 @@ from typing import Annotated, List, Optional, TypeAlias, TypeVar
 
 import typer
 from app.fields import PendingFromStr
-from app.models import (ChildrenCollection, ChildrenDocument, ChildrenUser,
-                        Format, KindEvent, KindObject, KindRecurse, LevelStr)
+from app.models import (
+    ChildrenCollection,
+    ChildrenDocument,
+    ChildrenUser,
+    Format,
+    KindEvent,
+    KindObject,
+    KindRecurse,
+    LevelStr,
+)
 
 
 class Verbage(str, enum.Enum):
@@ -280,22 +288,23 @@ FlagTokenOptional: TypeAlias = Annotated[
 
 FlagAdmin: TypeAlias = Annotated[
     Optional[bool],
-    typer.Option("--admin/--not-an-admin", help="Admin token or not an admin token")
+    typer.Option("--admin/--not-an-admin", help="Admin token or not an admin token"),
 ]
 
 ArgTokenPayload: TypeAlias = Annotated[
-    str, typer.Option(
-        "--payload",
-        help="Data for token payload.")
+    str, typer.Option("--payload", help="Data for token payload.")
 ]
 
 FlagPending: TypeAlias = Annotated[
-    bool, typer.Option("--pending", help="Get only pending grants."),
+    bool,
+    typer.Option("--pending", help="Get only pending grants."),
 ]
 
 FlagOpenApi: TypeAlias = Annotated[
     bool,
-    typer.Option("--openapi", help="Get the OpenAPI information for the specified request."),
+    typer.Option(
+        "--openapi", help="Get the OpenAPI information for the specified request."
+    ),
 ]
 
 FlagShowRequest: TypeAlias = Annotated[
@@ -308,15 +317,13 @@ FlagShowRequest: TypeAlias = Annotated[
 
 FlagPendingFromOptional: TypeAlias = Annotated[
     Optional[PendingFromStr],
-    typer.Option(
-        "--pending-from",
-        help="Filter results by their pending from status."
-    )
+    typer.Option("--pending-from", help="Filter results by their pending from status."),
 ]
 
 FlagNoAuthorization: TypeAlias = Annotated[
     bool,
-    typer.Option("--auth-exclude/--auth-include",
-                 help="Include or exclude the authorization header.",
-                 )
+    typer.Option(
+        "--auth-exclude/--auth-include",
+        help="Include or exclude the authorization header.",
+    ),
 ]

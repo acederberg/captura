@@ -1,4 +1,3 @@
-
 import pytest
 from client.requests import Requests
 from tests.dummy import DummyProvider
@@ -33,4 +32,3 @@ class CommonUserTests(BaseEndpointTest):
     ):
         "Test no such user."
         assert False
-

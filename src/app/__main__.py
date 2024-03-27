@@ -24,7 +24,8 @@ FlagDummies = Annotated[bool, typer.Option("--dummies")]
 FlagRecreateTables = Annotated[bool, typer.Option("--recreate-tables")]
 
 
-CONFIG = Config() # type: ignore
+CONFIG = Config()  # type: ignore
+
 
 class Cli:
 
@@ -40,8 +41,8 @@ class Cli:
     def show_config(self):
         CONSOLE.print_json(
             json.dumps(
-            self.config.model_dump(mode="json"),
-            indent=2,
+                self.config.model_dump(mode="json"),
+                indent=2,
             )
         )
 
@@ -101,7 +102,7 @@ def main() -> None:
 #       .. code:: txt
 #
 #         https://github.com/encode/uvicorn/issues/491
-#        
+#
 LOGGING_CONFIG = util.setup_logging(CONFIG.app.logging_configuration_path)
 uvicorn.config.LOGGING_CONFIG.update(LOGGING_CONFIG)
 

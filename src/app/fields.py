@@ -1,13 +1,34 @@
 import enum
 import secrets
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, Callable, ClassVar, Dict, Generic, List,
-                    Literal, Optional, Self, Set, Type, TypeAlias, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Self,
+    Set,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 
 from fastapi import Body, Query
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
-                      computed_field, field_serializer, field_validator,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app import models
@@ -272,7 +293,10 @@ FieldDescriptionLike = Annotated[
     ),
 ]
 
-def int_enum_from_name(EnumSubclass: Type[enum.Enum], callback: Callable[[Any], Any] | None = None) -> Callable[[Any], Any]:
+
+def int_enum_from_name(
+    EnumSubclass: Type[enum.Enum], callback: Callable[[Any], Any] | None = None
+) -> Callable[[Any], Any]:
     def wrapper(v: Any) -> Any:
         match v:
             case EnumSubclass():
@@ -296,13 +320,13 @@ def int_enum_from_name_callback(v) -> None | Level:
 
 
 FieldLevel = Annotated[
-    Level, 
+    Level,
     Field(description="Access level for grant."),
     BeforeValidator(int_enum_from_name(Level, int_enum_from_name_callback)),
 ]
 
 FieldPendingFrom: TypeAlias = Annotated[
-    PendingFrom, 
+    PendingFrom,
     Field(description="Grant pending origin."),
     BeforeValidator(int_enum_from_name(PendingFrom)),
 ]

@@ -1,6 +1,15 @@
 import json
-from typing import (Annotated, Any, ClassVar, Dict, Iterable, Literal,
-                    Protocol, Tuple, overload)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Iterable,
+    Literal,
+    Protocol,
+    Tuple,
+    overload,
+)
 
 import httpx
 import typer
@@ -78,6 +87,7 @@ class ConsoleHandler(BaseModel):
 
     This should be built by a handler somewhere.
     """
+
     console: ClassVar[Console] = CONSOLE
 
     output: Annotated[flags.FlagOutput, Field(default=Output.yaml)]
@@ -93,7 +103,6 @@ class ConsoleHandler(BaseModel):
     ) -> httpx.Response:
         status = self.handle(res, data)
         raise typer.Exit(status)
-
 
     def handle(
         self,
@@ -112,9 +121,7 @@ class ConsoleHandler(BaseModel):
                 raise HandlerError(f"Failed to match `{[res, data]=}`.")
 
     def print_request(
-        self,
-        request: httpx.Request,
-        response: httpx.Response | Any | None = None
+        self, request: httpx.Request, response: httpx.Response | Any | None = None
     ) -> int:
         "Print a request and (when provided) its response."
         CONSOLE.print("")
@@ -122,7 +129,9 @@ class ConsoleHandler(BaseModel):
         CONSOLE.print("")
         CONSOLE.print(
             "\r\n".join(
-                f"[bold blue]{key}[/bold blue][grey]: [green]{value}[/green]".format(key, value)
+                f"[bold blue]{key}[/bold blue][grey]: [green]{value}[/green]".format(
+                    key, value
+                )
                 for key, value in request.headers.items()
             )
         )
@@ -147,7 +156,6 @@ class ConsoleHandler(BaseModel):
 
         # NOTE: Assumes that content always for an err
         return self.print_err(response, data)
-
 
     def handle_one(
         self,
@@ -180,7 +188,9 @@ class ConsoleHandler(BaseModel):
                 CONSOLE.print(f"[red]Unknown output format `{bad}`.")
                 return 1
 
-    def print_err(self, res: httpx.Response, data, *, expected: int | None =None) -> int:
+    def print_err(
+        self, res: httpx.Response, data, *, expected: int | None = None
+    ) -> int:
         #     msg = (
         #         f"Unexpected status code `{response.status_code}` (expected "
         #         f"`{expect}`) from {msg}. The response included the following "
@@ -200,7 +210,7 @@ class ConsoleHandler(BaseModel):
 
         return 1
 
-    def print_json(self,  data=None) -> int:
+    def print_json(self, data=None) -> int:
         # data = res.json() or data
         try:
             stringified = json.dumps(data, indent=2)
@@ -248,16 +258,16 @@ class ConsoleHandler(BaseModel):
         if include_count := not self.columns or "count" in self.columns:
             table.add_column("count")
 
-        column_config_base= dict(
+        column_config_base = dict(
             justify="center",
         )
 
         for ii, key in enumerate(keys):
             column_config_extra = self.column_configs.get(key, dict())
-            column_config: Dict[str, Any] 
+            column_config: Dict[str, Any]
             column_config = column_config_base | column_config_extra
 
-            if  column_config.get("style") is None:
+            if column_config.get("style") is None:
                 style = typer.colors.CYAN if not (ii % 2) else typer.colors.BLUE
                 column_config.update(style=style)
 
