@@ -1,49 +1,20 @@
 import secrets
 from http import HTTPMethod
 from random import choice, randint
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    ClassVar,
-    Collection,
-    Dict,
-    NotRequired,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypedDict,
-)
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
+                    NotRequired, Self, Set, Tuple, Type, TypedDict)
 
 import httpx
 from app import __version__, util
 from app.auth import Auth, Token
 from app.controllers.access import Access
-from app.controllers.base import (
-    BaseResolved,
-    BaseResolvedPrimary,
-    BaseResolvedSecondary,
-    Data,
-    KindData,
-    T_ResolvedPrimary,
-)
+from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
+                                  BaseResolvedSecondary, Data, KindData,
+                                  T_ResolvedPrimary)
 from app.controllers.delete import Delete
 from app.fields import KindObject, Level, Singular
-from app.models import (
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    PendingFrom,
-    Singular,
-    Tables,
-    User,
-)
+from app.models import (Assignment, Base, Collection, Document, Event, Grant,
+                        KindObject, Level, PendingFrom, Singular, Tables, User)
 from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
 from client.config import UseConfig
@@ -141,10 +112,18 @@ class BaseDummyProvider:
         kwargs_get_primary: GetPrimaryKwargs | None = None,
     ) -> Tuple[Document, ...]:
 
-        # print("==============================================================")
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
         return self.get_primary(Document, n, **kwargs_get_primary)
+
+    def get_collections(
+        self,
+        n: int,
+        kwargs_get_primary: GetPrimaryKwargs | None = None,
+    ) -> Tuple[Collection, ...]:
+        if kwargs_get_primary is None:
+            kwargs_get_primary = {}
+        return self.get_primary(Collection, n, **kwargs_get_primary)
 
     def get_user_documents(
         self, level: Level, deleted: bool = False, *, n: int = 1, **kwargs
@@ -163,6 +142,19 @@ class BaseDummyProvider:
         assert all(dd.deleted is deleted for dd in docs)
 
         return docs
+
+    def get_user_collections(self, n: int = 1, **kwargs) -> Tuple[Collection, ...]:
+
+        logger.debug("Getting user collections.")
+        q = Collection.q_select_for_user(self.user.uuid, kwargs.pop("uuids", None), **kwargs)
+        q = q.order_by(func.random()).limit(n) 
+        collections = tuple(self.session.scalars(q))
+
+        assert len(collections)
+        if kwargs.get("exclude_deleted") in (True, None):
+            assert all(cc.deleted is False for cc in collections)
+
+        return collections
 
     def get_document_grant(self, document: Document, **kwargs) -> Grant:
         logger.debug("Getting user grants.")

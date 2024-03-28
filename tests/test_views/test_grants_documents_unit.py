@@ -3,17 +3,14 @@ from typing import List
 
 import httpx
 import pytest
-from app.err import (
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrDetail,
-    ErrObjMinSchema,
-)
+from app.err import (ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrDetail, ErrObjMinSchema)
 from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from app.models import Grant, User
-from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
+from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
+                         mwargs)
 from client.requests import Requests
 from pydantic import TypeAdapter
 from sqlalchemy import false, func, literal_column, select, true
@@ -49,15 +46,15 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         (document,) = dummy.get_user_documents(Level.own)
         assert not document.deleted
         fn = self.fn(requests)
-        requests.context.auth_exclude = True
 
+        requests.context.auth_exclude = True
         res = await fn(document.uuid, uuid_user=[dummy.user.uuid])
+        requests.context.auth_exclude = False
 
         err_content = ErrDetail[str](detail="Token required.")
         if err := self.check_status(requests, res, 401, err_content):
             raise err
 
-        requests.context.auth_exclude = False
 
     @pytest.mark.asyncio
     async def test_forbidden_403_insufficient(

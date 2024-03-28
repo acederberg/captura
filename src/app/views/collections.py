@@ -2,27 +2,17 @@ from typing import Annotated, List, Tuple
 
 from app import __version__
 from app.controllers.base import Data, ResolvedCollection
-from app.depends import DependsCreate, DependsDelete, DependsRead, DependsUpdate
+from app.depends import (DependsCreate, DependsDelete, DependsRead,
+                         DependsUpdate)
 from app.err import ErrAccessCollection, ErrDetail
 from app.models import Collection
-from app.schemas import (
-    AsOutput,
-    CollectionCreateSchema,
-    CollectionSchema,
-    CollectionUpdateSchema,
-    DocumentMetadataSchema,
-    DocumentSearchSchema,
-    EventSchema,
-    OutputWithEvents,
-    mwargs,
-)
+from app.schemas import (AsOutput, CollectionCreateSchema, CollectionSchema,
+                         CollectionUpdateSchema, DocumentMetadataSchema,
+                         DocumentSearchSchema, EventSchema, OutputWithEvents,
+                         mwargs)
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
@@ -187,6 +177,8 @@ class CollectionView(BaseView):
             uuid_collection,
             resolve_user_token=update.token_user,
         )
+        data.commit(update.session)
+
         return mwargs(
             OutputWithEvents[CollectionSchema],
             data=CollectionSchema.model_validate(*data.data.collections),
@@ -207,12 +199,18 @@ class CollectionView(BaseView):
 
         # NOTE: User only needs a valid token to create a collection.
         create.create_data = create_data
-        create.e_collection
-        data = create.e_collection(None)
-        (collection,) = data.data.collections
+        data = Data(
+            token_user=create.token_user,
+            event=None,
+            data=ResolvedCollection.empty(),
+            children=list(),
+        )
+        data_create = create.collection(data)
+        data_create.commit(create.session)
+        (collection,) = data_create.data.collections
 
         return mwargs(
             OutputWithEvents,
-            events=[EventSchema.model_validate(data.event)],
+            events=[EventSchema.model_validate(data_create.event)],
             data=CollectionSchema.model_validate(collection),
         )

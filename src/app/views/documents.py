@@ -4,54 +4,25 @@ from typing import Annotated, List, Tuple, overload
 from app import __version__
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedDocument
-from app.depends import (
-    DependsAccess,
-    DependsCreate,
-    DependsDelete,
-    DependsRead,
-    DependsSessionMaker,
-    DependsToken,
-    DependsTokenOptional,
-    DependsUpdate,
-)
-from app.err import (
-    AnyErrDetailAccessDocumentGrant,
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrDetail,
-)
-from app.models import (
-    AssocCollectionDocument,
-    AssocUserDocument,
-    Collection,
-    Document,
-    Level,
-    User,
-)
-from app.schemas import (
-    AsOutput,
-    DocumentCreateSchema,
-    DocumentMetadataSchema,
-    DocumentSchema,
-    DocumentSearchSchema,
-    DocumentUpdateSchema,
-    EditSchema,
-    EditSearchSchema,
-    EventSchema,
-    OutputWithEvents,
-    TimespanLimitParams,
-    mwargs,
-)
+from app.depends import (DependsAccess, DependsCreate, DependsDelete,
+                         DependsRead, DependsSessionMaker, DependsToken,
+                         DependsTokenOptional, DependsUpdate)
+from app.err import (AnyErrDetailAccessDocumentGrant,
+                     ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrDetail)
+from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
+                        Document, Level, User)
+from app.schemas import (AsOutput, DocumentCreateSchema,
+                         DocumentMetadataSchema, DocumentSchema,
+                         DocumentSearchSchema, DocumentUpdateSchema,
+                         EditSchema, EditSearchSchema, EventSchema,
+                         OutputWithEvents, TimespanLimitParams, mwargs)
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseDocumentForbidden,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseDocumentForbidden,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
@@ -200,12 +171,20 @@ class DocumentView(BaseView):
         """
 
         create.create_data = create_data
-        data = create.e_document(None)
+        data = Data(
+            token_user=create.token_user,
+            event=None,
+            data=ResolvedDocument.empty(),
+            children=list(),
+        )
+        data_create = create.document(data)
+        data_create.commit(create.session)
+        document, = data_create.data.documents
 
         return mwargs(
             OutputWithEvents[DocumentSchema],
-            events=[EventSchema.model_validate(data.event)],
-            data=DocumentSchema.model_validate(data.data.documents),
+            events=[EventSchema.model_validate(data_create.event)],
+            data=DocumentSchema.model_validate(document),
         )
 
     @classmethod
@@ -214,8 +193,8 @@ class DocumentView(BaseView):
         uuid_document: args.PathUUIDDocument,
         update: DependsUpdate,
         update_data: Annotated[DocumentUpdateSchema, Body()],
-        rollback: bool = False,
-        uuid_rollback: args.QueryUUIDEditOptional = None,
+        # rollback: bool = False,
+        # uuid_rollback: args.QueryUUIDEditOptional = None,
     ) -> OutputWithEvents[DocumentSchema]:
         """Update document. Updating **content** will result in the current
         document content being moved to an edit.
@@ -230,6 +209,7 @@ class DocumentView(BaseView):
 
         update.update_data = update_data
         data = update.a_document(uuid_document)
+        data.commit(update.session)
 
         return mwargs(
             OutputWithEvents[DocumentSchema],

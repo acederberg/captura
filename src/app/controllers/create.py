@@ -3,75 +3,32 @@ import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    Protocol,
-    Set,
-    Tuple,
-    Type,
-    TypeAlias,
-    TypeVar,
-    Union,
-    overload,
-)
+from typing import (Any, Callable, Dict, Generic, List, Literal, Protocol, Set,
+                    Tuple, Type, TypeAlias, TypeVar, Union, overload)
 
 from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (
-    Data,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-    T_Data,
-)
-from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
+from app.controllers.base import (Data, DataResolvedGrant, KindData,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser, T_Data)
+from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
+                                    WithDelete)
 from app.err import ErrAssocRequestMustForce
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    PendingFrom,
-    ResolvableMultiple,
-    ResolvableSingular,
-    ResolvableSourceAssignment,
-    ResolvableTargetAssignment,
-    Singular,
-    Tables,
-    User,
-)
-from app.schemas import (
-    AssignmentSchema,
-    CollectionCreateSchema,
-    CollectionSchema,
-    CollectionUpdateSchema,
-    DocumentCreateSchema,
-    DocumentUpdateSchema,
-    EditCreateSchema,
-    EventSchema,
-    GrantCreateSchema,
-    GrantSchema,
-    UserCreateSchema,
-    UserUpdateSchema,
-)
+from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
+                        KindEvent, KindObject, Level, PendingFrom,
+                        ResolvableMultiple, ResolvableSingular,
+                        ResolvableSourceAssignment, ResolvableTargetAssignment,
+                        Singular, Tables, User)
+from app.schemas import (AssignmentSchema, CollectionCreateSchema,
+                         CollectionSchema, CollectionUpdateSchema,
+                         DocumentCreateSchema, DocumentUpdateSchema,
+                         EditCreateSchema, EventSchema, GrantCreateSchema,
+                         GrantSchema, UserCreateSchema, UserUpdateSchema)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy import Delete as sqaDelete
@@ -103,38 +60,35 @@ AssocCallback = AssocCallbackGrant | AssocCallbackAssignment
 # --------------------------------------------------------------------------- #
 
 
-T_with_empty_data_self = TypeVar(
-    "T_with_empty_data_self",
-    bound=WithDelete,
-)
-
+# T_with_empty_data_self = TypeVar(
+#     "T_with_empty_data_self",
+#     bound=WithDelete,
+# )
+#
 
 # NOTE: Apply to methods like :func:`with_access`. In this case access is only
 #       checked by verifying that the user has a valid token.
 #       The goal is to create empty data and use that as the entry point
 #       instead of a method of :class:`Access`
-def with_empty_data(
-    meth: Callable[[T_with_empty_data_self, Data[T_Data]], Data[T_Data]],
-) -> Callable[[T_with_empty_data_self, Data[T_Data] | None], Data[T_Data]]:
-    def reject_nonempty(
-        self: T_with_empty_data_self, _data: Data[T_Data] | None = None
-    ) -> Data[T_Data]:
-        data: Data[T_Data]
-        if _data is None:
-            data = Data.empty(meth.__name__)
-            if (err := data.err_nonempty()) is not None:
-                raise err
-        else:
-            if err := _data.err_nonempty():
-                raise err
-            data = _data
-
-        return meth(self, data)
-
-    reject_nonempty.__name__ = meth.__name__
-    reject_nonempty.__doc__ = meth.__doc__
-
-    return reject_nonempty
+# def with_empty_data(
+#     meth: Callable[[T_with_empty_data_self, Data[T_Data]], Data[T_Data]],
+# ) -> Callable[[T_with_empty_data_self, Data[T_Data] | None], Data[T_Data]]:
+#
+#     def reject_nonempty(
+#         self: T_with_empty_data_self, data: Data[T_Data] | None = None
+#     ) -> Data[T_Data]:
+#         data: Data[T_Data]
+#         if data is None:
+#             data = Data[T_Data].model_vali
+#
+#         data_empty = data
+#
+#         return meth(self, data)
+#
+#     reject_nonempty.__name__ = meth.__name__
+#     reject_nonempty.__doc__ = meth.__doc__
+#
+#     return reject_nonempty
 
 
 # --------------------------------------------------------------------------- #
@@ -547,37 +501,30 @@ class Create(WithDelete, Generic[T_Create]):
         self,
         data: Data[ResolvedUser],
     ) -> Data[ResolvedUser]:
-        raise HTTPException(400, msg="Not implemented.")
+        raise HTTPException(400, detail="Not implemented.")
 
-    e_user = with_empty_data(user)
-
+    # NOTE: Ideally consuming functions would just pass in an empty data and 
+    #       this would fill it out. Unfortunately mutations make things more 
+    #       complicated so the behaviour here is not as such.
     def collection(
         self,
         data: Data[ResolvedCollection],
     ) -> Data[ResolvedCollection]:
-        uuid_collection = secrets.token_urlsafe(8)
-        data.data.collections = (
-            collection := Collection(
-                **self.create_data.model_dump(), user=data.token_user
-            ),
+        collection = Collection(
+            **self.create_data.model_dump(), 
+            user=data.token_user,
+            uuid = (uuid_collection := secrets.token_urlsafe(8))
         )
-
-        data.event = Event(
+        data_create = data.empty(KindData.collection)
+        data_create.data.collections = (collection, )
+        data_create.event = Event(
             **self.event_common,
             kind_obj=KindObject.collection,
             uuid_obj=uuid_collection,
             detail="Collection created.",
         )
 
-        session = self.session
-        session.add(data.event)
-        session.add(collection)
-        session.commit()
-        session.refresh(data.event)
-        session.refresh(collection)
-        return data
-
-    e_collection = with_empty_data(collection)
+        return data_create
 
     def document(
         self,
@@ -634,7 +581,7 @@ class Create(WithDelete, Generic[T_Create]):
         session.refresh(document)
         return data
 
-    e_document = with_empty_data(document)
+    # e_document = with_empty_data(document)
 
     def edit(
         self,
@@ -644,7 +591,7 @@ class Create(WithDelete, Generic[T_Create]):
         msg += "/documents/<uuid_document>` to create a new edit."
         raise HTTPException(400, msg=msg)
 
-    e_edit = with_empty_data(edit)
+    # e_edit = with_empty_data(edit)
 
 
 # --------------------------------------------------------------------------- #
@@ -824,21 +771,20 @@ class Update(WithDelete, Generic[T_Update]):
         data, param = self.generic_update(data, {"uuid_user"}, commit=False)
 
         collection, *_ = data.data.collections
+        event_root = data.event
         data.event = Event(
             **self.event_common,
             kind_obj=KindObject.collection,
             uuid_obj=collection.uuid,
             detail="Collection updated.",
-            children=[data.event],
+            children=[],
         )
+
+        if event_root is not None and event_root.children:
+            data.event.children.append(event_root)
 
         session = self.session
         if param.uuid_user is None:
-            session.add(collection)
-            session.add(data.event)
-            session.commit()
-            session.refresh(collection)
-            session.refresh(data.event)
             return data
 
         # Transfer ownership, same transaction so easy to rollback.
@@ -846,7 +792,6 @@ class Update(WithDelete, Generic[T_Update]):
         user = User.if_exists(
             session,
             param.uuid_user,
-            msg="User to transfer collection to does not exist.",
         )
         collection.id_user = user.id
         data.event.children.append(
@@ -857,11 +802,6 @@ class Update(WithDelete, Generic[T_Update]):
                 detail="Ownership of collection transfered.",
             )
         )
-        session.add(collection)
-        session.add(data.event)
-        session.commit()
-        session.refresh(data.event)
-        session.refresh(collection)
 
         return data
 

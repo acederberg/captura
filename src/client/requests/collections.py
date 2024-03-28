@@ -6,7 +6,7 @@ from app.models import ChildrenCollection
 from client import flags
 from client.handlers import CONSOLE
 from client.requests.assignments import CollectionAssignmentRequests
-from client.requests.base import BaseRequests, ContextData, params
+from client.requests.base import BaseRequests, ContextData, methodize, params
 
 __all__ = ("CollectionRequests",)
 
@@ -135,7 +135,6 @@ class CollectionRequests(BaseRequests):
             public=public,
             uuid_user=uuid_user,
         )
-        print(data)
         context = ContextData.resolve(_context)
         return httpx.Request(
             "PATCH",
@@ -144,8 +143,14 @@ class CollectionRequests(BaseRequests):
             headers=context.headers,
         )
 
+    delete = methodize(req_delete, __func__=req_delete.__func__)  #type: ignore
+    update = methodize(req_update, __func__=req_update.__func__)  #type: ignore
+    create = methodize(req_create, __func__=req_create.__func__)  #type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  #type: ignore
+    search = methodize(req_search, __func__=req_search.__func__)  #type: ignore
 
-__all__ = ("DocumentRequests",)
+
+__all__ = ("CollectionRequests",)
 
 if __name__ == "__main__":
     from client.requests.base import typerize

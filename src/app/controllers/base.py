@@ -6,57 +6,23 @@ This includes a metaclass so that undecorated functions may be tested.
 
 import enum
 import logging
+from dataclasses import dataclass
 from functools import cached_property
 from http import HTTPMethod
 from traceback import print_tb
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
+                    Literal, Self, Set, Tuple, Type, TypeVar)
 
 from app import __version__, util
 from app.auth import Token
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    LevelHTTP,
-    ResolvableSingular,
-    ResolvedRawAny,
-    Singular,
-    User,
-    uuids,
-)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, LevelHTTP,
+                        ResolvableSingular, ResolvedRawAny, Singular, User,
+                        uuids)
 from app.schemas import OutputWithEvents, T_Output
 from fastapi import HTTPException
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    Tag,
-    ValidationInfo,
-    computed_field,
-    field_validator,
-)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
+                      ValidationInfo, computed_field, field_validator)
 from sqlalchemy.orm import Session, make_transient
 
 logger = util.get_logger(__name__)
@@ -262,6 +228,10 @@ class BaseResolved(BaseModel):
     def get(cls, kind: KindData) -> "Type[BaseResolved]":
         return BaseResolved.registry[kind]
 
+    @classmethod
+    def empty(cls, **kwargs_init) -> Self:
+        "Yes, I know an ABC could be used here."
+        raise ValueError("Not implemented!")
 
 T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
 
@@ -610,6 +580,22 @@ class Data(BaseModel, Generic[T_Data]):
         return self.data.kind
 
     # ----------------------------------------------------------------------- #
+
+    def empty(self, kind_data: KindData | str, **kwargs_init) -> Self:
+        "Make an empty version of self (same data, resolved is empty)."
+
+        if isinstance(kind_data, str):
+            kind_data = KindData[kind_data]
+
+        T_Resolved = BaseResolved.registry[kind_data]
+        mt = T_Resolved.empty(**kwargs_init)
+        return self.__class__(
+            data=mt,  # type: ignore
+            event=self.event,
+            token_user=self.token_user,
+            children=list(),
+        )
+
 
     def add(self, *items: "Data") -> None:
         for item in items:

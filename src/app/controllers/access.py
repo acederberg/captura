@@ -2,67 +2,27 @@ import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (
-    Any,
-    Callable,
-    Concatenate,
-    Dict,
-    Literal,
-    ParamSpec,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    overload,
-)
+from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
+                    Tuple, Type, TypeVar, overload)
 
 from app import __version__, util
 from app.auth import Token
-from app.controllers.base import (
-    BaseController,
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    KindData,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedCollection,
-    ResolvedDocument,
-    ResolvedEdit,
-    ResolvedEvent,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedObjectEvents,
-    ResolvedUser,
-    T_Data,
-)
-from app.err import (
-    ErrAccessCollection,
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessUser,
-    ErrUpdateGrantPendingFrom,
-)
+from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
+                                  DataResolvedGrant, KindData,
+                                  ResolvedAssignmentCollection,
+                                  ResolvedAssignmentDocument,
+                                  ResolvedCollection, ResolvedDocument,
+                                  ResolvedEdit, ResolvedEvent,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedObjectEvents, ResolvedUser, T_Data)
+from app.err import (ErrAccessCollection, ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessUser, ErrUpdateGrantPendingFrom)
 from app.fields import PendingFrom
-from app.models import (
-    AnyModel,
-    Assignment,
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    Grant,
-    KindObject,
-    Level,
-    Resolvable,
-    ResolvableLevel,
-    ResolvableMultiple,
-    ResolvableSingular,
-    Singular,
-    T_Resolvable,
-    Tables,
-    User,
-)
+from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
+                        Event, Grant, KindObject, Level, Resolvable,
+                        ResolvableLevel, ResolvableMultiple,
+                        ResolvableSingular, Singular, T_Resolvable, Tables,
+                        User)
 from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
 from sqlalchemy import false, literal, select
@@ -475,27 +435,27 @@ class Access(BaseController):
         # NOTE: `exclude_deleted` should only be ``True`` when a force
         #       deletion is occuring.
         def check_one(collection: Collection) -> Collection:
-            if not collection.public and collection.id_user != token_user.id:
-                raise ErrAccessCollection.httpexception(
-                    "_msg_private",
-                    403,
-                    uuid_user_token=token_user.uuid,
-                    uuid_collection=collection.uuid,
-                )
             if exclude_deleted:
                 collection = collection.check_not_deleted()
 
             # Not sure how this happens on occasion.
-            if collection.id_user is None:
-                raise ErrAccessCollection.httpexception(
-                    "_msg_homeless",
-                    418,
-                    uuid_user_token=token_user.uuid,
-                    uuid_collection=collection.uuid,
-                )
+            # if collection.id_user is None:
+            #     raise ErrAccessCollection.httpexception(
+            #         "_msg_homeless",
+            #         418,
+            #         uuid_user_token=token_user.uuid,
+            #         uuid_collection=collection.uuid,
+            #     )
 
             match self.method:
                 case H.GET:
+                    if not collection.public and collection.id_user != token_user.id:
+                        raise ErrAccessCollection.httpexception(
+                            "_msg_private",
+                            403,
+                            uuid_user_token=token_user.uuid,
+                            uuid_collection=collection.uuid,
+                        )
                     return collection
                 case H.POST | H.DELETE | H.PUT | H.PATCH:
 
@@ -503,7 +463,7 @@ class Access(BaseController):
                         raise ErrAccessCollection.httpexception(
                             "_msg_modify",
                             403,
-                            uuid_user=token_user.uuid,
+                            uuid_user_token=token_user.uuid,
                             uuid_collection=collection.uuid,
                         )
                     return collection

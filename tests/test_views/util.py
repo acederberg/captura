@@ -2,20 +2,8 @@ import abc
 import functools
 import json
 from http import HTTPMethod
-from typing import (
-    Any,
-    AsyncGenerator,
-    Callable,
-    ClassVar,
-    Concatenate,
-    Dict,
-    Generator,
-    List,
-    ParamSpec,
-    Set,
-    Tuple,
-    Type,
-)
+from typing import (Any, AsyncGenerator, Callable, ClassVar, Concatenate, Dict,
+                    Generator, List, ParamSpec, Set, Tuple, Type)
 
 import httpx
 import pytest
@@ -232,6 +220,19 @@ class BaseEndpointTest(abc.ABC):
         users = tuple(dummy.session.scalars(q_users))
         return list(User.resolve_uuid(dummy.session, users))
 
+
+class BaseEndpointTestPrimaryCreateMixins:
+    @pytest.mark.skip
+    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
+        ...
+
+    @pytest.mark.skip
+    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
+        ...
+
+    @pytest.mark.skip
+    async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
+        ...
 
 # =========================================================================== #
 

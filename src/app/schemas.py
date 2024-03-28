@@ -18,33 +18,13 @@ import enum
 import secrets
 from dataclasses import field
 from datetime import datetime, timedelta
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    Optional,
-    Self,
-    Set,
-    Type,
-    TypeAlias,
-    TypeVar,
-)
+from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
+                    Optional, Self, Set, Type, TypeAlias, TypeVar)
 
 from fastapi import Body, Query
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    computed_field,
-    field_serializer,
-    field_validator,
-    model_validator,
-)
+from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
+                      computed_field, field_serializer, field_validator,
+                      model_validator)
 from pydantic_core.core_schema import FieldValidationInfo
 
 from app import fields
@@ -168,7 +148,7 @@ class BaseUpdateSchema(BaseSchema):
     def at_least_one(self) -> Self:
 
         if not any(getattr(self, field) is not None for field in self.model_fields):
-            msg = ", ".join((str(vv) for vv in self.model_fields.values()))
+            msg = ", ".join((str(vv) for vv in self.model_fields.keys()))
             raise ValueError(f"Must specify at least one of `{msg}`.")
         return self
 

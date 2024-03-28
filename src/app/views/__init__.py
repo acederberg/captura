@@ -5,8 +5,9 @@ from app import __version__, util
 from app.auth import Auth
 from app.config import Config
 from app.controllers.access import Access, H
-from app.depends import DependsAccess, DependsAuth, DependsConfig, DependsSessionMaker
-from fastapi import FastAPI, HTTPException
+from app.depends import (DependsAccess, DependsAuth, DependsConfig,
+                         DependsSessionMaker)
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -22,6 +23,8 @@ from .documents import DocumentView
 from .events import EventSearchView, EventView
 from .grants import DocumentGrantView, UserGrantView
 from .users import UserSearchView, UserView
+
+logger = util.get_logger(__name__)
 
 description: str = """
 An API for storing, rendering, editting, and sharing text documents and other 
@@ -80,22 +83,6 @@ class AppView(BaseView):
         swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"},
         routes=[Mount("/static", view_static)],
     )  # type: ignore
-
-    # TODO: The traceback should not show up in prod unless the status `500`.
-    #       In fact, the traceback should be stored by the logger instead.
-    # TODO: Figure out how to use config to turn this on or off. Unfortunately
-    #       exception handlers do not use dependencies and it is hard to build
-    #       dependecies from the request directly.
-    @view_router.exception_handler(HTTPException)  # type: ignore
-    async def http_exception_handler(request, exc: HTTPException):
-
-        # if config.app.is_dev and config.app.dev.httpexc_tb:
-        #     traceback.print_exc()
-
-        return JSONResponse(
-            exc.detail,
-            exc.status_code,
-        )
 
     view_routes = {
         "get_index": {
@@ -169,6 +156,34 @@ class AppView(BaseView):
         t = TypeAdapter(List[AppRouteInfo])
         return t.validate_python(items)
 
+
+# TODO: The traceback should not show up in prod unless the status `500`.
+#       In fact, the traceback should be stored by the logger instead.
+# TODO: Figure out how to use config to turn this on or off. Unfortunately
+#       exception handlers do not use dependencies and it is hard to build
+#       dependecies from the request directly.
+@AppView.view_router.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+
+    # if config.app.is_dev and config.app.dev.httpexc_tb:
+    #     traceback.print_exc()
+
+    # https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/http/h11_impl.py
+    if request.client:
+        host, port = request.client.host, request.client.port
+        logger.info(
+            "%s:%s - %s",
+            host,
+            port,
+            exc.detail
+        )
+    else:
+        logger.debug("No client for request.")
+
+    return JSONResponse(
+        exc.detail,
+        exc.status_code,
+    )
 
 __all__ = (
     "DocumentGrantView",
