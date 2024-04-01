@@ -1,54 +1,23 @@
 # =========================================================================== #
-from http import HTTPMethod
-from typing import Any, Dict, List, Set, Tuple
+from typing import List
 
-from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import delete, func, literal_column, select, update
-from sqlalchemy.orm import Session, make_transient
-from sqlalchemy.sql.expression import false, true
+from sqlalchemy import func, select
+from sqlalchemy.sql.expression import false
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.controllers.access import Access
-from app.controllers.base import ResolvedGrantDocument
-from app.controllers.create import Create
-from app.controllers.delete import Delete
-from app.depends import (
-    DependsAccess,
-    DependsCreate,
-    DependsDelete,
-    DependsSessionMaker,
-    DependsToken,
-)
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Event,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
+from app.depends import DependsAccess, DependsCreate, DependsDelete
+from app.models import Assignment, Collection, Document, Level
 from app.schemas import (
     AsOutput,
     AssignmentCreateSchema,
     AssignmentSchema,
     EventSchema,
-    GrantSchema,
     OutputWithEvents,
     mwargs,
 )
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import BaseView, OpenApiResponseUnauthorized, OpenApiTags
 
 OpenApiResponseAssignment = {
     **OpenApiResponseUnauthorized,

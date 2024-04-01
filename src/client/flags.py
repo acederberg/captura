@@ -2,7 +2,7 @@
 import enum
 import pathlib
 from datetime import datetime
-from typing import Annotated, List, Optional, TypeAlias, TypeVar
+from typing import Annotated, List, Optional, TypeAlias
 
 import typer
 

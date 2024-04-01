@@ -24,7 +24,7 @@ Instead do
 
 # =========================================================================== #
 import enum
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import BaseModel, Field, computed_field
 from sqlalchemy.engine import URL, Engine, create_engine

@@ -1,7 +1,6 @@
 # =========================================================================== #
 import secrets
-from http import HTTPMethod
-from typing import Annotated, Any, Dict, List, Literal, Set, Tuple
+from typing import Annotated, List, Set, Tuple
 from uuid import uuid4
 
 from fastapi import Body, Depends, HTTPException, Query
@@ -10,16 +9,8 @@ from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
 from app import __version__, util
-from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedUser
-from app.depends import (
-    DependsAccess,
-    DependsDelete,
-    DependsRead,
-    DependsSessionMaker,
-    DependsToken,
-    DependsUpdate,
-)
+from app.depends import DependsAccess, DependsDelete, DependsRead, DependsUpdate
 from app.err import ErrAccessUser, ErrDetail
 from app.models import Collection, Document, Edit, Event, KindEvent, KindObject, User
 from app.schemas import (

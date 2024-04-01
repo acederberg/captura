@@ -18,7 +18,7 @@ from client.requests import UserRequests
 from . import util
 
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import BaseTestViews, requests
+from .util import BaseTestViews
 
 
 class TestUserViews(BaseTestViews):

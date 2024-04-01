@@ -1,5 +1,5 @@
 # =========================================================================== #
-from typing import Annotated, Literal, Optional, Set, TypeAlias
+from typing import Annotated, Optional, Set, TypeAlias
 
 from fastapi import Path, Query
 

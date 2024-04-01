@@ -15,7 +15,6 @@ from typing import (
     ParamSpec,
     Set,
     Tuple,
-    Type,
 )
 
 import httpx
@@ -26,16 +25,13 @@ from pydantic import TypeAdapter
 from sqlalchemy import func
 
 # --------------------------------------------------------------------------- #
-from app import __version__
-from app import util as u
 from app.auth import Auth
 from app.err import ErrDetail
 from app.fields import Level
-from app.models import Document, Grant, KindEvent, User
+from app.models import Document, Grant, User
 from app.schemas import EventSchema
 from client.handlers import CONSOLE
 from client.requests import Requests
-from client.requests.base import BaseRequests, ContextData
 from tests.dummy import DummyProvider
 
 from ..conftest import PytestClientConfig

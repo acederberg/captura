@@ -1,15 +1,12 @@
 # =========================================================================== #
-import json
-from os import path
-from random import choice
-from typing import Any, AsyncGenerator, Dict, Generator, List, Set
+from typing import Any, AsyncGenerator, Dict
 
 import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from pydantic import BaseModel, TypeAdapter
-from sqlalchemy import func, select, text
+from pydantic import BaseModel
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
@@ -22,7 +19,6 @@ from app.models import Base, User
 from app.views import AppView
 from client.config import Config as ClientConfig
 from tests.config import PytestClientConfig, PytestConfig
-from tests.test_models import ModelTestMeta
 
 from .dummy import DummyProvider, DummyProviderYAML
 

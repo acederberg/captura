@@ -1,6 +1,6 @@
 # =========================================================================== #
 import json
-from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias, TypeVar
+from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias
 
 import pytest
 from fastapi import HTTPException

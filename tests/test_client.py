@@ -1,12 +1,12 @@
 # =========================================================================== #
 import inspect
-from typing import Any, Self
+from typing import Any
 
 import httpx
 
 # --------------------------------------------------------------------------- #
 from client.config import Config
-from client.handlers import ConsoleHandler, Handler
+from client.handlers import Handler
 from client.requests.base import BaseRequest
 
 

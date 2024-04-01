@@ -1,50 +1,27 @@
 # =========================================================================== #
-from http import HTTPMethod
-from typing import Annotated, List, Tuple, overload
+from typing import Annotated, List
 
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app import __version__
-from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedDocument
 from app.depends import (
     DependsAccess,
     DependsCreate,
     DependsDelete,
     DependsRead,
-    DependsSessionMaker,
-    DependsToken,
-    DependsTokenOptional,
     DependsUpdate,
 )
-from app.err import (
-    AnyErrDetailAccessDocumentGrant,
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrDetail,
-)
-from app.models import (
-    AssocCollectionDocument,
-    AssocUserDocument,
-    Collection,
-    Document,
-    Level,
-    User,
-)
+from app.models import Document, Level
 from app.schemas import (
     AsOutput,
     DocumentCreateSchema,
     DocumentMetadataSchema,
     DocumentSchema,
-    DocumentSearchSchema,
     DocumentUpdateSchema,
     EditSchema,
-    EditSearchSchema,
     EventSchema,
     OutputWithEvents,
     TimespanLimitParams,
@@ -55,7 +32,6 @@ from app.views.base import (
     BaseView,
     OpenApiResponseCommon,
     OpenApiResponseDocumentForbidden,
-    OpenApiResponseUnauthorized,
     OpenApiTags,
 )
 

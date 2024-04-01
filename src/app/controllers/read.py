@@ -1,41 +1,18 @@
 # =========================================================================== #
 from http import HTTPMethod
-from typing import Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar, overload
+from typing import Any, Dict, Tuple, Type, TypeVar, overload
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import util
 from app.auth import Token
-from app.controllers.access import Access, WithAccess
-from app.controllers.base import (
-    BaseController,
-    Data,
-    ResolvedEvent,
-    ResolvedObjectEvents,
-    ResolvedUser,
-)
-from app.models import (
-    Base,
-    Collection,
-    Document,
-    Edit,
-    Event,
-    KindObject,
-    ResolvableSingular,
-    Singular,
-    T_Resolvable,
-    Tables,
-    User,
-)
+from app.controllers.access import Access
+from app.controllers.base import BaseController
+from app.models import Collection, Document, Edit, Singular, Tables, User
 from app.schemas import (
-    AsOutput,
     CollectionSearchSchema,
     DocumentSearchSchema,
     EditSearchSchema,
-    EventParams,
-    EventSearchSchema,
     UserSearchSchema,
 )
 

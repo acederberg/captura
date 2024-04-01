@@ -2,20 +2,16 @@
 import asyncio
 import json
 import secrets
-from os import walk
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-import httpx
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import delete, select, true
+from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
 from app.err import (
-    ErrAccessDocumentPending,
     ErrAccessUser,
     ErrAssocRequestMustForce,
-    ErrBase,
     ErrDetail,
     ErrObjMinSchema,
     ErrUpdateGrantPendingFrom,
@@ -25,7 +21,6 @@ from app.models import Document, Grant, User
 from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from client.requests import Requests
 from tests.dummy import DummyProvider, GetPrimaryKwargs
-from tests.mk import Mk
 from tests.test_views.util import BaseEndpointTest
 
 

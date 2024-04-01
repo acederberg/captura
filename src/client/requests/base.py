@@ -1,9 +1,6 @@
 # =========================================================================== #
 import functools
-import json
-import urllib
 from collections.abc import Awaitable
-from os import walk
 from typing import (
     Any,
     Awaitable,
@@ -23,7 +20,7 @@ import httpx
 import typer
 from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
-from pydantic import BaseModel, TypeAdapter, computed_field
+from pydantic import BaseModel, computed_field
 from rich.console import Console
 
 # --------------------------------------------------------------------------- #

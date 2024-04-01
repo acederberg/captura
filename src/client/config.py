@@ -1,7 +1,7 @@
 # =========================================================================== #
 from typing import Annotated, Dict
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field, computed_field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #

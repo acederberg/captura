@@ -6,7 +6,6 @@ from fastapi import Depends, HTTPException
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
 from app.controllers.access import Access, WithAccess
 from app.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
 from app.depends import DependsAccess, DependsDelete, DependsRead

@@ -1,12 +1,9 @@
 # =========================================================================== #
-import json
-from typing import Any, ClassVar, Dict, List, Self, Tuple, Type
+from typing import Any, ClassVar, Dict, List, Type
 
 import pytest
 import yaml
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 # --------------------------------------------------------------------------- #
@@ -22,7 +19,6 @@ from app.models import (
     Grant,
     KindEvent,
     KindObject,
-    Level,
     User,
 )
 

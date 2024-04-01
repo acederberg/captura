@@ -1,49 +1,14 @@
 # =========================================================================== #
-from typing import Annotated, List, Set, Tuple
+from typing import List
 
-from fastapi import HTTPException, status
 from pydantic import TypeAdapter
-from sqlalchemy import literal_column, select, update
-from sqlalchemy.orm import Session
-from sqlalchemy.sql.expression import false, true
 
 # --------------------------------------------------------------------------- #
-from app import __version__, fields
-from app.controllers.base import (
-    Data,
-    ResolvedDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
-from app.depends import (
-    DependsAccess,
-    DependsCreate,
-    DependsDelete,
-    DependsSessionMaker,
-    DependsToken,
-    DependsUpdate,
-)
-from app.err import (
-    AnyErrDetailAccessDocumentGrant,
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrAccessUser,
-    ErrDetail,
-)
-from app.models import (
-    AssocUserDocument,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    LevelStr,
-    User,
-)
+from app import fields
+from app.controllers.base import Data, ResolvedGrantDocument, ResolvedGrantUser
+from app.depends import DependsAccess, DependsCreate, DependsDelete, DependsUpdate
+from app.err import ErrAccessDocumentCannotRejectOwner, ErrAccessUser, ErrDetail
+from app.models import Level, LevelStr
 from app.schemas import (
     AsOutput,
     EventSchema,

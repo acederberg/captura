@@ -1,7 +1,6 @@
 # =========================================================================== #
 import abc
 import functools
-import inspect
 from http import HTTPMethod
 from typing import (
     Any,
@@ -10,7 +9,6 @@ from typing import (
     Dict,
     Literal,
     ParamSpec,
-    Set,
     Tuple,
     Type,
     TypeVar,
@@ -18,11 +16,11 @@ from typing import (
 )
 
 from fastapi import HTTPException
-from sqlalchemy import false, literal, select
+from sqlalchemy import false, select
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
+from app import __version__
 from app.auth import Token
 from app.controllers.base import (
     BaseController,
@@ -50,8 +48,6 @@ from app.err import (
 )
 from app.fields import PendingFrom
 from app.models import (
-    AnyModel,
-    Assignment,
     Base,
     Collection,
     Document,

@@ -58,6 +58,7 @@ dev = [
 	"flake8",
 	"mypy",
 	"isort",
+  "autoflake",
   "jedi-language-server"
 ]
 test = [
@@ -105,6 +106,10 @@ ignore = [
 ]
 
 
+[tool.autoflake]
+in_place = true
+remove_all_unused_imports = true
+recursive = true
 
 
 [tool.mypy]

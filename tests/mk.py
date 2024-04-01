@@ -2,7 +2,7 @@
 import secrets
 from datetime import datetime
 from random import choice, randint
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Protocol, Type, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Protocol, Type, TypeVar
 
 from faker import Faker
 from faker.providers import internet
@@ -16,7 +16,6 @@ from app.models import (
     LENGTH_MESSAGE,
     LENGTH_NAME,
     LENGTH_URL,
-    Base,
     Collection,
     Document,
     Event,
@@ -26,9 +25,6 @@ from app.models import (
     KindObject,
     Level,
     PendingFrom,
-    Singular,
-    T_Resolvable,
-    Tables,
     User,
 )
 

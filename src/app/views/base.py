@@ -6,16 +6,13 @@ This includes a metaclass so that undecorated functions may be tested.
 # =========================================================================== #
 import enum
 from http import HTTPMethod
-from typing import Any, ClassVar, Dict, Generic, Literal, TypeVar
+from typing import Any, ClassVar, Dict, Literal
 
-from fastapi import APIRouter, status
-from fastapi.routing import APIRoute
-from pydantic import BaseModel
+from fastapi import APIRouter
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
+from app import util
 from app.err import AnyErrDetailAccessDocumentGrant, ErrDetail, ErrObjMinSchema
-from app.models import KindObject
 
 logger = util.get_logger(__name__)
 # logger.level = logging.INFO

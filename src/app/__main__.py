@@ -7,15 +7,13 @@ import uvicorn
 import uvicorn.config
 from rich.console import Console
 from sqlalchemy import Engine
-from sqlalchemy.engine import Connection
 from sqlalchemy.orm import sessionmaker
 
 # --------------------------------------------------------------------------- #
 from app.config import Config
 from app.depends import session_maker
-from app.models import Base
 
-from . import __version__, util, views
+from . import util
 
 logger = util.get_logger(__name__)
 

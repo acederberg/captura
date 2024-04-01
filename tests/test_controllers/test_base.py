@@ -3,7 +3,7 @@ from http import HTTPMethod
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 # --------------------------------------------------------------------------- #
 from app.controllers.base import (
@@ -15,7 +15,7 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from app.models import Collection, Document, Grant
+from app.models import Collection, Document
 from app.schemas import mwargs
 from tests.dummy import DummyProvider
 

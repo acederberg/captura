@@ -8,13 +8,10 @@ be wrapped in ``Depends``.
 """
 
 # =========================================================================== #
-from datetime import datetime
 from functools import cache
-from typing import Annotated, Any, Callable, Dict, Tuple, TypeAlias
+from typing import Annotated, Dict, TypeAlias
 
-import jwt
-from fastapi import Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine

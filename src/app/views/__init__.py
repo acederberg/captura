@@ -3,7 +3,6 @@ import traceback
 from typing import Annotated, Generator, List, Set
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
@@ -12,10 +11,8 @@ from starlette.routing import Mount
 
 # --------------------------------------------------------------------------- #
 from app import __version__, util
-from app.auth import Auth
-from app.config import Config
-from app.controllers.access import Access, H
-from app.depends import DependsAccess, DependsAuth, DependsConfig, DependsSessionMaker
+from app.controllers.access import H
+from app.depends import DependsAccess
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
 from .auth import AuthView
@@ -24,7 +21,7 @@ from .collections import CollectionView
 from .documents import DocumentView
 from .events import EventSearchView, EventView
 from .grants import DocumentGrantView, UserGrantView
-from .users import UserSearchView, UserView
+from .users import UserView
 
 logger = util.get_logger(__name__)
 

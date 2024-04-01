@@ -2,22 +2,11 @@
 import functools
 import secrets
 from http import HTTPMethod
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    ClassVar,
-    Concatenate,
-    Dict,
-    List,
-    ParamSpec,
-)
+from typing import Any, Awaitable, Callable, ClassVar, Concatenate, Dict
 
 import httpx
 import pytest
-from fastapi import Response
 from pydantic import TypeAdapter
-from sqlalchemy.sql.operators import op
 
 # --------------------------------------------------------------------------- #
 from app.controllers.access import H
@@ -27,7 +16,7 @@ from app.models import Collection
 from app.schemas import AsOutput, CollectionSchema, OutputWithEvents, mwargs
 from client.requests import Requests
 from client.requests.base import P_Wrapped
-from tests.dummy import DummyProvider, GetPrimaryKwargs
+from tests.dummy import DummyProvider
 from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
 

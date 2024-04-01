@@ -24,13 +24,10 @@ from app.controllers.create import Create
 from app.controllers.delete import AssocData, Delete
 from app.models import (
     Assignment,
-    AssocUserDocument,
     Collection,
     Document,
     Grant,
-    KindEvent,
     KindObject,
-    Plural,
     Singular,
     User,
 )

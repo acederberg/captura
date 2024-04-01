@@ -1,16 +1,14 @@
 # =========================================================================== #
-import functools
 from http import HTTPMethod
-from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
+from typing import Any, Dict, Set, Tuple, Type, overload
 
 from fastapi import HTTPException
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Select, Update, delete, false, true, update
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess, with_access
 from app.controllers.base import (
@@ -40,7 +38,7 @@ from app.models import (
     Level,
     User,
 )
-from app.schemas import CollectionSchema, mwargs
+from app.schemas import mwargs
 
 
 class AssocData(BaseModel):

@@ -30,7 +30,7 @@ from . import util
 from .test_assignments import TestAssignmentView
 
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import BaseTestViews, requests
+from .util import BaseTestViews
 
 
 class TestCollectionView(BaseTestViews):

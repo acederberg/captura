@@ -1,6 +1,5 @@
 # =========================================================================== #
 import asyncio
-from asyncio import gather
 from http import HTTPMethod
 from typing import Any, Dict, List
 
@@ -28,7 +27,7 @@ from client.requests import GrantRequests, Requests
 from . import util
 
 # NOTE: The `requests` fixture must exist in module scope directly.
-from .util import BaseTestViews, requests
+from .util import BaseTestViews
 
 
 class TestGrantView(BaseTestViews):

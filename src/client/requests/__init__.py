@@ -1,14 +1,9 @@
 # =========================================================================== #
 import enum
-from typing import Annotated, List, Optional, Tuple
+from typing import Annotated, List, Optional
 
 import httpx
 import typer
-
-# --------------------------------------------------------------------------- #
-from client import flags
-from client.flags import Output
-from client.handlers import CONSOLE
 
 from .assignments import AssignmentRequests
 

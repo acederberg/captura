@@ -5,7 +5,6 @@ from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app import __version__
 from app.controllers.base import Data, ResolvedCollection
 from app.depends import DependsCreate, DependsDelete, DependsRead, DependsUpdate
 from app.err import ErrAccessCollection, ErrDetail

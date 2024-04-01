@@ -21,7 +21,6 @@ from typing import (
     overload,
 )
 
-from fastapi import HTTPException
 from sqlalchemy import (
     CTE,
     BooleanClauseList,
@@ -50,11 +49,10 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
 )
-from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
 # --------------------------------------------------------------------------- #
-from app import __version__, fields, util
+from app import __version__, fields
 from app.err import (
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
@@ -66,29 +64,18 @@ from app.err import (
     ErrObjMinSchema,
 )
 from app.fields import (
-    LENGTH_CONTENT,
-    LENGTH_DESCRIPTION,
-    LENGTH_FORMAT,
-    LENGTH_MESSAGE,
-    LENGTH_NAME,
-    LENGTH_TITLE,
-    LENGTH_URL,
     ChildrenAssignment,
     ChildrenCollection,
     ChildrenDocument,
-    ChildrenGrant,
     ChildrenUser,
     Format,
     KindEvent,
     KindObject,
     KindRecurse,
     Level,
-    LevelHTTP,
     LevelStr,
     PendingFrom,
-    Plural,
     ResolvableLevel,
-    Singular,
 )
 
 # CONSTANTS, ENUMS, ETC.

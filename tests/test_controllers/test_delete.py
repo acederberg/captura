@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import false, select
+from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
 from app.controllers.base import (
@@ -10,7 +10,6 @@ from app.controllers.base import (
     ResolvedEvent,
 )
 from app.models import Assignment, Collection, Document, Event, Grant, KindObject
-from app.schemas import PendingFrom, mwargs
 from tests.dummy import DummyProvider
 
 

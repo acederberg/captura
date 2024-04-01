@@ -3,7 +3,6 @@ import typer
 
 # --------------------------------------------------------------------------- #
 from client import flags
-from client.config import ProfileConfig
 from client.handlers import CONSOLE
 
 from .base import BaseRequests, ContextData, params

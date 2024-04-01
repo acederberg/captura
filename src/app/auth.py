@@ -3,7 +3,7 @@ import base64
 import json
 import re
 from os import path
-from typing import Annotated, Any, Dict, List, Self, Tuple, overload
+from typing import Annotated, Any, Dict, List, Self, Tuple
 
 import httpx
 import jwt

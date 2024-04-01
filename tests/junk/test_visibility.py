@@ -17,7 +17,6 @@ import pytest
 from client.requests import Requests
 
 from . import util
-from .util import requests
 
 
 class TestPublic:

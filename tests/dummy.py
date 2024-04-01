@@ -20,10 +20,9 @@ from typing import (
 import httpx
 from sqlalchemy import Select, false, func, select, true, update
 from sqlalchemy.orm import Session
-from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
+from app import util
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (

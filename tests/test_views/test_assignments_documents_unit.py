@@ -1,11 +1,10 @@
 # =========================================================================== #
-import asyncio
 import secrets
 from typing import Any, ClassVar, Dict, List, Set
 
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import false, func, select
+from sqlalchemy import false, select
 
 # --------------------------------------------------------------------------- #
 from app.controllers.access import H
@@ -16,17 +15,15 @@ from app.err import (
     ErrObjMinSchema,
 )
 from app.fields import KindObject, Level
-from app.models import Assignment, Collection, Document
+from app.models import Assignment, Collection
 from app.schemas import (
     AsOutput,
     AssignmentSchema,
-    GrantSchema,
     KindNesting,
     OutputWithEvents,
     mwargs,
 )
 from client.requests import Requests
-from tests.conftest import session
 from tests.dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest
 

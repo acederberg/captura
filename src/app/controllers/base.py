@@ -7,7 +7,6 @@ This includes a metaclass so that undecorated functions may be tested.
 # =========================================================================== #
 import enum
 import logging
-from dataclasses import dataclass
 from functools import cached_property
 from http import HTTPMethod
 from traceback import print_tb
@@ -17,9 +16,7 @@ from typing import (
     ClassVar,
     Dict,
     Generic,
-    Iterable,
     List,
-    Literal,
     Self,
     Set,
     Tuple,
@@ -38,10 +35,10 @@ from pydantic import (
     computed_field,
     field_validator,
 )
-from sqlalchemy.orm import Session, make_transient
+from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
+from app import util
 from app.auth import Token
 from app.models import (
     AnyModel,
@@ -56,12 +53,10 @@ from app.models import (
     Level,
     LevelHTTP,
     ResolvableSingular,
-    ResolvedRawAny,
     Singular,
     User,
     uuids,
 )
-from app.schemas import OutputWithEvents, T_Output
 
 logger = util.get_logger(__name__)
 logger.level = logging.INFO

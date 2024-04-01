@@ -1,5 +1,4 @@
 # =========================================================================== #
-import json
 from http import HTTPMethod
 from typing import Set, Type
 
@@ -9,18 +8,16 @@ from sqlalchemy import Update, select
 from sqlalchemy.orm import make_transient
 
 # --------------------------------------------------------------------------- #
-from app.auth import Auth, Token
 from app.controllers.access import H
 from app.controllers.base import Data
 from app.controllers.create import Create
 from app.controllers.delete import AssocData, Delete
-from app.models import Document, Grant, KindEvent, KindObject, Level, PendingFrom, User
-from app.schemas import AssignmentCreateSchema, EventSchema, GrantCreateSchema
+from app.models import Document, Grant, KindEvent, KindObject, Level, User
+from app.schemas import AssignmentCreateSchema, GrantCreateSchema
 from tests.test_controllers.test_delete_assoc import (
     CASES_ASSOCS,
     BaseTestAssoc,
     create_data_from_params,
-    delete,
 )
 
 TEST_DETAIL = "From `test_upsert.py`."

@@ -5,7 +5,7 @@ from typing import List
 import httpx
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import false, func, literal_column, select, true
+from sqlalchemy import false, select
 
 # --------------------------------------------------------------------------- #
 from app.err import (
