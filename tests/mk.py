@@ -10,12 +10,14 @@ from sqlalchemy import Column, inspect
 
 # --------------------------------------------------------------------------- #
 from app import __version__
-from app.models import (
+from app.fields import (
     LENGTH_CONTENT,
     LENGTH_DESCRIPTION,
     LENGTH_MESSAGE,
     LENGTH_NAME,
     LENGTH_URL,
+)
+from app.models import (
     Collection,
     Document,
     Event,

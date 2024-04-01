@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 # --------------------------------------------------------------------------- #
 from app import util
 from app.auth import Token
+from app.fields import LevelHTTP, Singular
 from app.models import (
     AnyModel,
     Assignment,
@@ -51,9 +52,7 @@ from app.models import (
     Grant,
     KindObject,
     Level,
-    LevelHTTP,
     ResolvableSingular,
-    Singular,
     User,
     uuids,
 )

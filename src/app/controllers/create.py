@@ -27,6 +27,7 @@ from app.controllers.base import (
 )
 from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
 from app.err import ErrAssocRequestMustForce
+from app.fields import Singular
 from app.models import (
     Assignment,
     Collection,
@@ -38,7 +39,6 @@ from app.models import (
     KindObject,
     Level,
     PendingFrom,
-    Singular,
     User,
 )
 from app.schemas import (

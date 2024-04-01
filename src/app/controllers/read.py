@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from app.auth import Token
 from app.controllers.access import Access
 from app.controllers.base import BaseController
-from app.models import Collection, Document, Edit, Singular, Tables, User
+from app.fields import Singular
+from app.models import Collection, Document, Edit, Tables, User
 from app.schemas import (
     CollectionSearchSchema,
     DocumentSearchSchema,

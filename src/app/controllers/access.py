@@ -46,7 +46,7 @@ from app.err import (
     ErrAccessUser,
     ErrUpdateGrantPendingFrom,
 )
-from app.fields import PendingFrom
+from app.fields import PendingFrom, Singular
 from app.models import (
     Base,
     Collection,
@@ -60,7 +60,6 @@ from app.models import (
     ResolvableLevel,
     ResolvableMultiple,
     ResolvableSingular,
-    Singular,
     T_Resolvable,
     Tables,
     User,

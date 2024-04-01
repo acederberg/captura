@@ -5,7 +5,7 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from app.models import KindObject, Singular
+from app.fields import KindObject, Singular
 from client import flags
 from client.flags import Output
 from client.handlers import CONSOLE, ConsoleHandler

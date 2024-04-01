@@ -45,7 +45,6 @@ from app.models import (
     KindObject,
     Level,
     PendingFrom,
-    Singular,
     Tables,
     User,
 )

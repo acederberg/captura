@@ -24,7 +24,7 @@ from pydantic import BaseModel, computed_field
 from rich.console import Console
 
 # --------------------------------------------------------------------------- #
-from app.models import Singular
+from app.fields import Singular
 from app.schemas import mwargs
 from client import flags
 from client.config import Config
