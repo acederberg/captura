@@ -1,3 +1,4 @@
+# =========================================================================== #
 import asyncio
 import json
 from http import HTTPMethod
@@ -5,6 +6,10 @@ from typing import List
 
 import httpx
 import pytest
+from sqlalchemy import and_, delete, select, update
+from sqlalchemy.orm import Session, sessionmaker
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.models import (
     AssocCollectionDocument,
@@ -17,8 +22,6 @@ from app.models import (
 )
 from app.schemas import AssignmentSchema, EventSchema
 from client.requests import AssignmentRequests, Requests
-from sqlalchemy import and_, delete, select, update
-from sqlalchemy.orm import Session, sessionmaker
 
 from . import util
 

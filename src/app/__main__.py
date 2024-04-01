@@ -1,3 +1,4 @@
+# =========================================================================== #
 import json
 from typing import Annotated
 
@@ -9,6 +10,7 @@ from sqlalchemy import Engine
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import sessionmaker
 
+# --------------------------------------------------------------------------- #
 from app.config import Config
 from app.depends import session_maker
 from app.models import Base
@@ -28,7 +30,6 @@ CONFIG = Config()  # type: ignore
 
 
 class Cli:
-
     config: Config
     sessionmaker: sessionmaker
     engine: Engine

@@ -1,32 +1,75 @@
+# =========================================================================== #
 import abc
 import functools
 import inspect
 from http import HTTPMethod
-from typing import (Any, Callable, Concatenate, Dict, Literal, ParamSpec, Set,
-                    Tuple, Type, TypeVar, overload)
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Dict,
+    Literal,
+    ParamSpec,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    overload,
+)
 
-from app import __version__, util
-from app.auth import Token
-from app.controllers.base import (BaseController, Data, DataResolvedAssignment,
-                                  DataResolvedGrant, KindData,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser, T_Data)
-from app.err import (ErrAccessCollection, ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessUser, ErrUpdateGrantPendingFrom)
-from app.fields import PendingFrom
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, Resolvable,
-                        ResolvableLevel, ResolvableMultiple,
-                        ResolvableSingular, Singular, T_Resolvable, Tables,
-                        User)
-from app.schemas import EventParams, EventSearchSchema, mwargs
 from fastapi import HTTPException
 from sqlalchemy import false, literal, select
 from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.auth import Token
+from app.controllers.base import (
+    BaseController,
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    KindData,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+    T_Data,
+)
+from app.err import (
+    ErrAccessCollection,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessUser,
+    ErrUpdateGrantPendingFrom,
+)
+from app.fields import PendingFrom
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    Resolvable,
+    ResolvableLevel,
+    ResolvableMultiple,
+    ResolvableSingular,
+    Singular,
+    T_Resolvable,
+    Tables,
+    User,
+)
+from app.schemas import EventParams, EventSearchSchema, mwargs
 
 H = HTTPMethod
 AccessAssignmentResult = (
@@ -35,7 +78,6 @@ AccessAssignmentResult = (
 
 
 class Access(BaseController):
-
     def __call__(
         self,
         kind_data: KindData,
@@ -67,7 +109,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Event: ...
+    ) -> Event:
+        ...
 
     @overload
     def event(
@@ -77,7 +120,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Tuple[Event, ...]: ...
+    ) -> Tuple[Event, ...]:
+        ...
 
     @overload
     def event(
@@ -87,7 +131,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedEvent]: ...
+    ) -> Data[ResolvedEvent]:
+        ...
 
     def event(
         self,
@@ -97,7 +142,6 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         return_data: bool = False,
     ) -> Event | Tuple[Event, ...] | Data[ResolvedEvent]:
-
         session = self.session
         token_user = self.token_user_or(resolve_user_token)
         events = Event.resolve(session, resolvable_uuid)
@@ -149,7 +193,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedObjectEvents]: ...
+    ) -> Data[ResolvedObjectEvents]:
+        ...
 
     @overload
     def object_events(
@@ -161,7 +206,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]: ...
+    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]:
+        ...
 
     def object_events(
         self,
@@ -173,7 +219,6 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         return_data: bool = False,
     ) -> Data[ResolvedObjectEvents] | Tuple[T_Resolvable, Tuple[Event, ...]]:
-
         # NOTE: Resolved.
         resolve_user_token = self.token_user_or(resolve_user_token)
         T_Mapped: Type[Base]  # [T_Resolvable]
@@ -249,7 +294,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> User: ...
+    ) -> User:
+        ...
 
     @overload
     def user(  # type: ignore[overload-overlap]
@@ -259,7 +305,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Tuple[User, ...]: ...
+    ) -> Tuple[User, ...]:
+        ...
 
     @overload
     def user(
@@ -269,7 +316,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedUser]: ...
+    ) -> Data[ResolvedUser]:
+        ...
 
     def user(  # type: ignore
         self,
@@ -402,7 +450,8 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
-    ) -> Collection: ...
+    ) -> Collection:
+        ...
 
     @overload
     def collection(  # type: ignore[overload-overlap]
@@ -412,7 +461,8 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
-    ) -> Tuple[Collection, ...]: ...
+    ) -> Tuple[Collection, ...]:
+        ...
 
     @overload
     def collection(
@@ -422,7 +472,8 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedCollection]: ...
+    ) -> Data[ResolvedCollection]:
+        ...
 
     def collection(
         self,
@@ -458,7 +509,6 @@ class Access(BaseController):
                         )
                     return collection
                 case H.POST | H.DELETE | H.PUT | H.PATCH:
-
                     if token_user.id != collection.id_user:
                         raise ErrAccessCollection.httpexception(
                             "_msg_modify",
@@ -533,7 +583,8 @@ class Access(BaseController):
         validate: bool = True,
         allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
-    ) -> Document: ...
+    ) -> Document:
+        ...
 
     @overload
     def document(  # type: ignore[overload-overlap]
@@ -550,7 +601,8 @@ class Access(BaseController):
         validate: bool = True,
         allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
-    ) -> Tuple[Document, ...]: ...
+    ) -> Tuple[Document, ...]:
+        ...
 
     @overload
     def document(
@@ -567,7 +619,8 @@ class Access(BaseController):
         validate: bool = True,
         allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
-    ) -> Data[ResolvedDocument]: ...
+    ) -> Data[ResolvedDocument]:
+        ...
 
     def document(
         self,
@@ -670,7 +723,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Edit: ...
+    ) -> Edit:
+        ...
 
     @overload
     def edit(  # type: ignore[overload-overlap]
@@ -680,7 +734,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[False] = False,
-    ) -> Tuple[Edit, ...]: ...
+    ) -> Tuple[Edit, ...]:
+        ...
 
     @overload
     def edit(
@@ -690,7 +745,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         return_data: Literal[True] = True,
-    ) -> Data[ResolvedEdit]: ...
+    ) -> Data[ResolvedEdit]:
+        ...
 
     def edit(
         self,
@@ -765,7 +821,8 @@ class Access(BaseController):
         pending: bool = False,
         validate: bool = False,
         # pending_from: PendingFrom | None = None,
-    ) -> Tuple[User, Tuple[Document, ...]]: ...
+    ) -> Tuple[User, Tuple[Document, ...]]:
+        ...
 
     @overload
     def grant_user(
@@ -780,7 +837,8 @@ class Access(BaseController):
         pending: bool = False,
         validate: bool = False,
         # pending_from: PendingFrom | None = None,
-    ) -> Data[ResolvedGrantUser]: ...
+    ) -> Data[ResolvedGrantUser]:
+        ...
 
     def grant_user(
         self,
@@ -887,7 +945,6 @@ class Access(BaseController):
                 if grant.pending_from != PendingFrom.grantee
             }
         ):
-
             # NOTE: Ensure all documents have the currect pending from value
             #       for approval
             raise ErrUpdateGrantPendingFrom.httpexception(
@@ -947,7 +1004,8 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
         pending: bool = False,
-    ) -> Tuple[Document, Tuple[User, ...]]: ...
+    ) -> Tuple[Document, Tuple[User, ...]]:
+        ...
 
     @overload
     def grant_document(
@@ -960,7 +1018,8 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
         pending: bool = False,
-    ) -> Data[ResolvedGrantDocument]: ...
+    ) -> Data[ResolvedGrantDocument]:
+        ...
 
     def grant_document(
         self,
@@ -1119,7 +1178,8 @@ class Access(BaseController):
         return_data: Literal[False] = False,
         allow_public: bool = False,
         validate_documents: bool = True,
-    ) -> Tuple[Collection, Tuple[Document, ...]]: ...
+    ) -> Tuple[Collection, Tuple[Document, ...]]:
+        ...
 
     @overload
     def assignment_collection(
@@ -1133,7 +1193,8 @@ class Access(BaseController):
         return_data: Literal[True] = True,
         allow_public: bool = False,
         validate_documents: bool = True,
-    ) -> Data[ResolvedAssignmentCollection]: ...
+    ) -> Data[ResolvedAssignmentCollection]:
+        ...
 
     def assignment_collection(
         self,
@@ -1220,7 +1281,8 @@ class Access(BaseController):
         validate_document: bool = True,
         allow_public: bool = False,
         all_collections: bool = False,
-    ) -> Tuple[Document, Tuple[Collection, ...]]: ...
+    ) -> Tuple[Document, Tuple[Collection, ...]]:
+        ...
 
     @overload
     def assignment_document(
@@ -1236,7 +1298,8 @@ class Access(BaseController):
         validate_document: bool = True,
         allow_public: bool = False,
         all_collections: bool = False,
-    ) -> Data[ResolvedAssignmentDocument]: ...
+    ) -> Data[ResolvedAssignmentDocument]:
+        ...
 
     def assignment_document(
         self,
@@ -1278,8 +1341,9 @@ class Access(BaseController):
             )
 
         uuid_collections = Collection.resolve_uuid(self.session, resolve_collections)
-        q_assignments = document.q_select_assignment(uuid_collections,
-                                                     exclude_deleted=exclude_deleted)
+        q_assignments = document.q_select_assignment(
+            uuid_collections, exclude_deleted=exclude_deleted
+        )
         assignments = {
             assignment.uuid_collection: assignment
             for assignment in self.session.execute(q_assignments).scalars()
@@ -1473,23 +1537,27 @@ class WithAccess(BaseController, abc.ABC):
     @abc.abstractmethod
     def assignment_collection(
         self, data: Data[ResolvedAssignmentCollection]
-    ) -> Data[ResolvedAssignmentCollection]: ...
+    ) -> Data[ResolvedAssignmentCollection]:
+        ...
 
     @abc.abstractmethod
     def assignment_document(
         self, data: Data[ResolvedAssignmentDocument]
-    ) -> Data[ResolvedAssignmentDocument]: ...
+    ) -> Data[ResolvedAssignmentDocument]:
+        ...
 
     # NOTE: Should never overwrite! Messes up overloads!
     @overload
     def assignment(
         self, data: Data[ResolvedAssignmentCollection]
-    ) -> Data[ResolvedAssignmentCollection]: ...
+    ) -> Data[ResolvedAssignmentCollection]:
+        ...
 
     @overload
     def assignment(
         self, data: Data[ResolvedAssignmentDocument]
-    ) -> Data[ResolvedAssignmentDocument]: ...
+    ) -> Data[ResolvedAssignmentDocument]:
+        ...
 
     def assignment(self, data: DataResolvedAssignment) -> DataResolvedAssignment:
         meth = (
@@ -1506,21 +1574,23 @@ class WithAccess(BaseController, abc.ABC):
     def grant_user(
         self,
         data: Data[ResolvedGrantUser],
-    ) -> Data[ResolvedGrantUser]: ...
+    ) -> Data[ResolvedGrantUser]:
+        ...
 
     @abc.abstractmethod
     def grant_document(
         self,
         data: Data[ResolvedGrantDocument],
-    ) -> Data[ResolvedGrantDocument]: ...
+    ) -> Data[ResolvedGrantDocument]:
+        ...
 
     @overload
-    def grant(self, data: Data[ResolvedGrantUser]) -> Data[ResolvedGrantUser]: ...
+    def grant(self, data: Data[ResolvedGrantUser]) -> Data[ResolvedGrantUser]:
+        ...
 
     @overload
-    def grant(
-        self, data: Data[ResolvedGrantDocument]
-    ) -> Data[ResolvedGrantDocument]: ...
+    def grant(self, data: Data[ResolvedGrantDocument]) -> Data[ResolvedGrantDocument]:
+        ...
 
     def grant(self, data: DataResolvedGrant) -> DataResolvedGrant:
         meth = self.grant_user if data.kind == "grant_user" else self.grant_document
@@ -1530,19 +1600,23 @@ class WithAccess(BaseController, abc.ABC):
     # Everything else
 
     @abc.abstractmethod
-    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]: ...
+    def user(self, data: Data[ResolvedUser]) -> Data[ResolvedUser]:
+        ...
 
     @abc.abstractmethod
     def document(
         self,
         data: Data[ResolvedDocument],
-    ) -> Data[ResolvedDocument]: ...
+    ) -> Data[ResolvedDocument]:
+        ...
 
     @abc.abstractmethod
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]: ...
+    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
+        ...
 
     @abc.abstractmethod
     def collection(
         self,
         data: Data[ResolvedCollection],
-    ) -> Data[ResolvedCollection]: ...
+    ) -> Data[ResolvedCollection]:
+        ...

@@ -1,13 +1,31 @@
+# =========================================================================== #
 import abc
 import functools
 import json
 from http import HTTPMethod
-from typing import (Any, AsyncGenerator, Callable, ClassVar, Concatenate, Dict,
-                    Generator, List, ParamSpec, Set, Tuple, Type)
+from typing import (
+    Any,
+    AsyncGenerator,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Dict,
+    Generator,
+    List,
+    ParamSpec,
+    Set,
+    Tuple,
+    Type,
+)
 
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from pydantic import TypeAdapter
+from sqlalchemy import func
+
+# --------------------------------------------------------------------------- #
 from app import __version__
 from app import util as u
 from app.auth import Auth
@@ -18,9 +36,6 @@ from app.schemas import EventSchema
 from client.handlers import CONSOLE
 from client.requests import Requests
 from client.requests.base import BaseRequests, ContextData
-from fastapi import FastAPI
-from pydantic import TypeAdapter
-from sqlalchemy import func
 from tests.dummy import DummyProvider
 
 from ..conftest import PytestClientConfig
@@ -155,10 +170,11 @@ class BaseEndpointTest(abc.ABC):
             err: AssertionError | None
             return next(
                 (
-                    err for rr in response
-                    if (err := self.check_status(requests, rr) ) is not None
+                    err
+                    for rr in response
+                    if (err := self.check_status(requests, rr)) is not None
                 ),
-                None
+                None,
             )
 
         if expect is None:
@@ -240,6 +256,7 @@ class BaseEndpointTestPrimaryCreateMixins:
     @pytest.mark.skip
     async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
         ...
+
 
 # =========================================================================== #
 

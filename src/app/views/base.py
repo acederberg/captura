@@ -3,16 +3,19 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
+# =========================================================================== #
 import enum
 from http import HTTPMethod
 from typing import Any, ClassVar, Dict, Generic, Literal, TypeVar
 
-from app import __version__, util
-from app.err import AnyErrDetailAccessDocumentGrant, ErrDetail, ErrObjMinSchema
-from app.models import KindObject
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
+
+# --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.err import AnyErrDetailAccessDocumentGrant, ErrDetail, ErrObjMinSchema
+from app.models import KindObject
 
 logger = util.get_logger(__name__)
 # logger.level = logging.INFO
@@ -199,4 +202,5 @@ class ViewMeta(type):
         return T
 
 
-class BaseView(ViewMixins, metaclass=ViewMeta): ...
+class BaseView(ViewMixins, metaclass=ViewMeta):
+    ...

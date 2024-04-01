@@ -1,7 +1,9 @@
-from app.models import User
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.sql import text
+
+# --------------------------------------------------------------------------- #
+from app.models import User
 
 
 def test_fixture_works(engine: Engine, sessionmaker, load_tables):

@@ -1,22 +1,34 @@
+# =========================================================================== #
 from typing import Annotated, List, Tuple
 
-from app import __version__
-from app.controllers.base import Data, ResolvedCollection
-from app.depends import (DependsCreate, DependsDelete, DependsRead,
-                         DependsUpdate)
-from app.err import ErrAccessCollection, ErrDetail
-from app.models import Collection
-from app.schemas import (AsOutput, CollectionCreateSchema, CollectionSchema,
-                         CollectionUpdateSchema, DocumentMetadataSchema,
-                         DocumentSearchSchema, EventSchema, OutputWithEvents,
-                         mwargs)
-from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
+from app import __version__
+from app.controllers.base import Data, ResolvedCollection
+from app.depends import DependsCreate, DependsDelete, DependsRead, DependsUpdate
+from app.err import ErrAccessCollection, ErrDetail
+from app.models import Collection
+from app.schemas import (
+    AsOutput,
+    CollectionCreateSchema,
+    CollectionSchema,
+    CollectionUpdateSchema,
+    DocumentMetadataSchema,
+    DocumentSearchSchema,
+    EventSchema,
+    OutputWithEvents,
+    mwargs,
+)
+from app.views import args
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
+
 # Depends
 
 
@@ -51,7 +63,6 @@ OpenApiResponseCollection = {
 
 
 class CollectionSearchView(BaseView):
-
     view_routes = dict(
         get_search_documents=dict(
             url="/{uuid_collection}/documents",

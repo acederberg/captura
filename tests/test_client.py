@@ -1,7 +1,10 @@
+# =========================================================================== #
 import inspect
 from typing import Any, Self
 
 import httpx
+
+# --------------------------------------------------------------------------- #
 from client.config import Config
 from client.handlers import ConsoleHandler, Handler
 from client.requests.base import BaseRequest

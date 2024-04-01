@@ -1,37 +1,96 @@
 # import abc
+# =========================================================================== #
 import enum
 import secrets
 from datetime import datetime
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
-                    Generator, List, Literal, Self, Set, Tuple, TypeAlias,
-                    TypeVar, overload)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Collection,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    TypeAlias,
+    TypeVar,
+    overload,
+)
 
 from fastapi import HTTPException
-from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
-                        CompoundSelect, Enum, ForeignKey, Select, String,
-                        UniqueConstraint, and_, func, literal_column, select,
-                        true, union)
+from sqlalchemy import (
+    CTE,
+    BooleanClauseList,
+    Column,
+    ColumnElement,
+    CompoundSelect,
+    Enum,
+    ForeignKey,
+    Select,
+    String,
+    UniqueConstraint,
+    and_,
+    func,
+    literal_column,
+    select,
+    true,
+    union,
+)
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
-                            Session, mapped_column, object_session,
-                            relationship)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+    Mapped,
+    Session,
+    mapped_column,
+    object_session,
+    relationship,
+)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
+# --------------------------------------------------------------------------- #
 from app import __version__, fields, util
-from app.err import (ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrAccessEvent, ErrEventGeneral,
-                     ErrEventKind, ErrEventUndone, ErrObjMinSchema)
-from app.fields import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_FORMAT,
-                        LENGTH_MESSAGE, LENGTH_NAME, LENGTH_TITLE, LENGTH_URL,
-                        ChildrenAssignment, ChildrenCollection,
-                        ChildrenDocument, ChildrenGrant, ChildrenUser, Format,
-                        KindEvent, KindObject, KindRecurse, Level, LevelHTTP,
-                        LevelStr, PendingFrom, Plural, ResolvableLevel,
-                        Singular)
+from app.err import (
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrAccessEvent,
+    ErrEventGeneral,
+    ErrEventKind,
+    ErrEventUndone,
+    ErrObjMinSchema,
+)
+from app.fields import (
+    LENGTH_CONTENT,
+    LENGTH_DESCRIPTION,
+    LENGTH_FORMAT,
+    LENGTH_MESSAGE,
+    LENGTH_NAME,
+    LENGTH_TITLE,
+    LENGTH_URL,
+    ChildrenAssignment,
+    ChildrenCollection,
+    ChildrenDocument,
+    ChildrenGrant,
+    ChildrenUser,
+    Format,
+    KindEvent,
+    KindObject,
+    KindRecurse,
+    Level,
+    LevelHTTP,
+    LevelStr,
+    PendingFrom,
+    Plural,
+    ResolvableLevel,
+    Singular,
+)
 
-# =========================================================================== #
 # CONSTANTS, ENUMS, ETC.
 #
 # NOTE: These enums will be used throughout the program and a should be used
@@ -88,7 +147,6 @@ class Base(DeclarativeBase):
         uuid: str,
         # status: int = 404, msg=None
     ) -> Self:
-
         m = session.execute(select(cls).where(cls.uuid == uuid)).scalar()
         if m is None:
             err = ErrObjMinSchema.httpexception(
@@ -119,13 +177,15 @@ class Base(DeclarativeBase):
 
     @overload
     @classmethod
-    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self: ...
+    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self:
+        ...
 
     @overload
     @classmethod
     def resolve(
         cls, session: Session, that: ResolvableSelfMultiple
-    ) -> Tuple[Self, ...]: ...
+    ) -> Tuple[Self, ...]:
+        ...
 
     @classmethod
     def resolve(cls, session: Session, that: ResolvableSelf) -> Self | Tuple[Self, ...]:
@@ -152,7 +212,8 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfMultiple,
-    ) -> Set[str]: ...
+    ) -> Set[str]:
+        ...
 
     @overload
     @classmethod
@@ -160,7 +221,8 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfSingular,
-    ) -> str: ...
+    ) -> str:
+        ...
 
     @classmethod
     def resolve_uuid(
@@ -326,7 +388,8 @@ class SearchableTableMixins(PrimaryTableMixins):
         user_uuid: str,
         uuids: Set[str] | None,
         exclude_deleted: bool = True,
-    ) -> Select: ...
+    ) -> Select:
+        ...
 
 
 # =========================================================================== #
@@ -470,7 +533,6 @@ class Event(Base):
         before: int | None = None,
         after: int | None = None,
     ) -> ...:
-
         conds = []
         if uuid_user is not None:
             conds.append(cls.uuid_user == uuid_user)
@@ -1106,7 +1168,8 @@ class User(SearchableTableMixins, Base):
                     level_grant_required=Level.own,
                 )
 
-    def check_sole_owner_document(self, document: "Document") -> Self: ...
+    def check_sole_owner_document(self, document: "Document") -> Self:
+        ...
 
     def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
         if self.uuid != event.uuid_user:
@@ -1401,7 +1464,6 @@ class Document(SearchableTableMixins, Base):
         after: int | None = None,
         limit: int | None = None,
     ) -> Select:
-
         conds = []
         if before is not None:
             conds.append(Event.timestamp <= before)
@@ -1432,7 +1494,6 @@ class Document(SearchableTableMixins, Base):
         after: int | None = None,
         limit: int | None = None,
     ) -> Select:
-
         conds = []
         if before is not None:
             conds.append(Event.timestamp <= before)

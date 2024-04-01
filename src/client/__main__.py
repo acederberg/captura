@@ -1,10 +1,13 @@
+# =========================================================================== #
 from typing import Annotated, List, Optional
 
+# --------------------------------------------------------------------------- #
 from client import ConfigCommands
 from client.requests import Requests
 
 
 def main():
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     client = typerize(Requests)

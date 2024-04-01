@@ -1,8 +1,14 @@
+# =========================================================================== #
 import secrets
 from http import HTTPMethod
 from typing import Annotated, Any, Dict, List, Literal, Set, Tuple
 from uuid import uuid4
 
+from fastapi import Body, Depends, HTTPException, Query
+from pydantic import TypeAdapter
+from sqlalchemy import select
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.controllers.access import Access
 from app.controllers.base import Data, ResolvedUser
@@ -40,9 +46,6 @@ from app.views.base import (
     OpenApiResponseUnauthorized,
     OpenApiTags,
 )
-from fastapi import Body, Depends, HTTPException, Query
-from pydantic import TypeAdapter
-from sqlalchemy import select
 
 logger = util.get_logger(__name__)
 
@@ -384,7 +387,6 @@ class UserSearchView(BaseView):
         read: DependsRead,
         param: DocumentSearchSchema = Depends(),
     ) -> AsOutput[List[DocumentMetadataSchema]]:
-
         user: User = read.access.user(uuid_user)
         res: Tuple[Document, ...] = read.search_user(user, param)
         return mwargs(
@@ -399,7 +401,6 @@ class UserSearchView(BaseView):
         read: DependsRead,
         param: CollectionSearchSchema = Depends(),
     ) -> AsOutput[List[CollectionMetadataSchema]]:
-
         user: User = read.access.user(uuid_user)
         res: Tuple[Collection, ...] = read.search_user(user, param)
         return mwargs(

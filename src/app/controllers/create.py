@@ -1,34 +1,26 @@
+# =========================================================================== #
 import functools
 import json
 import secrets
 from functools import cached_property
 from http import HTTPMethod
-from typing import (Any, Callable, Dict, Generic, List, Literal, Protocol, Set,
-                    Tuple, Type, TypeAlias, TypeVar, Union, overload)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Protocol,
+    Set,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypeVar,
+    Union,
+    overload,
+)
 
-from app import __version__, util
-from app.auth import Token
-from app.controllers.access import Access, H, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedGrant, KindData,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser, T_Data)
-from app.controllers.delete import (AssocData, DataResolvedAssignment, Delete,
-                                    WithDelete)
-from app.err import ErrAssocRequestMustForce
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, PendingFrom,
-                        ResolvableMultiple, ResolvableSingular,
-                        ResolvableSourceAssignment, ResolvableTargetAssignment,
-                        Singular, Tables, User)
-from app.schemas import (AssignmentSchema, CollectionCreateSchema,
-                         CollectionSchema, CollectionUpdateSchema,
-                         DocumentCreateSchema, DocumentUpdateSchema,
-                         EditCreateSchema, EventSchema, GrantCreateSchema,
-                         GrantSchema, UserCreateSchema, UserUpdateSchema)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy import Delete as sqaDelete
@@ -37,6 +29,60 @@ from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.auth import Token
+from app.controllers.access import Access, H, WithAccess, with_access
+from app.controllers.base import (
+    Data,
+    DataResolvedGrant,
+    KindData,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+    T_Data,
+)
+from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
+from app.err import ErrAssocRequestMustForce
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    PendingFrom,
+    ResolvableMultiple,
+    ResolvableSingular,
+    ResolvableSourceAssignment,
+    ResolvableTargetAssignment,
+    Singular,
+    Tables,
+    User,
+)
+from app.schemas import (
+    AssignmentSchema,
+    CollectionCreateSchema,
+    CollectionSchema,
+    CollectionUpdateSchema,
+    DocumentCreateSchema,
+    DocumentUpdateSchema,
+    EditCreateSchema,
+    EventSchema,
+    GrantCreateSchema,
+    GrantSchema,
+    UserCreateSchema,
+    UserUpdateSchema,
+)
+
 # Typehints for assoc callback.
 # NOTE: Tried protocol, too much of a pain in the ass.
 
@@ -167,7 +213,8 @@ class Create(WithDelete, Generic[T_Create]):
         AssocData,
         sqaUpdate[Grant] | sqaDelete[Grant],
         Type[Grant],
-    ]: ...
+    ]:
+        ...
 
     # NOTE: Typehints bad when `CallableAssocCallback` is protocol, idk why
     @overload
@@ -182,7 +229,8 @@ class Create(WithDelete, Generic[T_Create]):
         AssocData,
         sqaUpdate[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     def assoc(
         self,
@@ -500,20 +548,20 @@ class Create(WithDelete, Generic[T_Create]):
     ) -> Data[ResolvedUser]:
         raise HTTPException(400, detail="Not implemented.")
 
-    # NOTE: Ideally consuming functions would just pass in an empty data and 
-    #       this would fill it out. Unfortunately mutations make things more 
+    # NOTE: Ideally consuming functions would just pass in an empty data and
+    #       this would fill it out. Unfortunately mutations make things more
     #       complicated so the behaviour here is not as such.
     def collection(
         self,
         data: Data[ResolvedCollection],
     ) -> Data[ResolvedCollection]:
         collection = Collection(
-            **self.create_data.model_dump(), 
+            **self.create_data.model_dump(),
             user=data.token_user,
-            uuid = (uuid_collection := secrets.token_urlsafe(8))
+            uuid=(uuid_collection := secrets.token_urlsafe(8)),
         )
         data_create = data.empty(KindData.collection)
-        data_create.data.collections = (collection, )
+        data_create.data.collections = (collection,)
         data_create.event = Event(
             **self.event_common,
             kind_obj=KindObject.collection,
@@ -657,7 +705,8 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedUser],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]: ...
+    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]:
+        ...
 
     @overload
     def generic_update(
@@ -665,7 +714,8 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedCollection],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]: ...
+    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]:
+        ...
 
     @overload
     def generic_update(
@@ -673,7 +723,8 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedDocument],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]: ...
+    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]:
+        ...
 
     # NOTE: Document updates are not generic
     def generic_update(

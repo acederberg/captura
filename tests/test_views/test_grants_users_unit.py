@@ -1,3 +1,4 @@
+# =========================================================================== #
 import asyncio
 import json
 import secrets
@@ -6,23 +7,29 @@ from typing import Dict, List, Tuple
 
 import httpx
 import pytest
-from app.err import (ErrAccessDocumentPending, ErrAccessUser,
-                     ErrAssocRequestMustForce, ErrBase, ErrDetail,
-                     ErrObjMinSchema, ErrUpdateGrantPendingFrom)
-from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
-from app.models import Document, Grant, User
-from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
-                         mwargs)
-from client.requests import Requests
 from pydantic import TypeAdapter
 from sqlalchemy import delete, select, true
+
+# --------------------------------------------------------------------------- #
+from app.err import (
+    ErrAccessDocumentPending,
+    ErrAccessUser,
+    ErrAssocRequestMustForce,
+    ErrBase,
+    ErrDetail,
+    ErrObjMinSchema,
+    ErrUpdateGrantPendingFrom,
+)
+from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
+from app.models import Document, Grant, User
+from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
+from client.requests import Requests
 from tests.dummy import DummyProvider, GetPrimaryKwargs
 from tests.mk import Mk
 from tests.test_views.util import BaseEndpointTest
 
 
 class CommonUsersGrantsTests(BaseEndpointTest):
-
     adapter = TypeAdapter(AsOutput[List[GrantSchema]])
     adapter_w_events = TypeAdapter(OutputWithEvents[List[GrantSchema]])
 
@@ -35,13 +42,11 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         pending: bool = False,
         deleted: bool = False,
     ) -> None:
-
         assert len(data.data)
         assert data.kind == KindObject.grant
         assert data.kind_nesting == KindNesting.array
 
         for grant in data.data:
-
             _grant_loaded = dummy.session.get(Grant, grant.uuid)
             assert _grant_loaded is not None
             assert _grant_loaded.deleted is deleted
@@ -547,7 +552,6 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
     async def test_success_200_pending(
         self, dummy: DummyProvider, requests: Requests, include_uuids
     ):
-
         user = dummy.user
         fn = self.fn(requests)
 
@@ -587,7 +591,6 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
 
         count_nonempty = 0
         for pending_from in list(PendingFrom):
-
             res = await fn(user.uuid, pending_from=PendingFromStr[pending_from.name])
             if err := self.check_status(requests, res, 200):
                 raise err
@@ -625,7 +628,6 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         )
 
         for level, res in zip(levels, responses):
-
             if err := self.check_status(requests, res):
                 raise err
 

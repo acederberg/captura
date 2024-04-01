@@ -1,7 +1,10 @@
+# =========================================================================== #
 from datetime import datetime
 
 import httpx
 import typer
+
+# --------------------------------------------------------------------------- #
 from app.models import Assignment, KindObject, KindRecurse, Singular
 from client import flags
 from client.flags import Output
@@ -127,7 +130,6 @@ class EventsRequests(BaseRequests):
         uuid_object: flags.FlagUUIDEventObjectOptional = None,
         uuid_event: flags.FlagUUIDEventOptional = None,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         res = None
         match [uuid_object is None, uuid_event is None]:
@@ -160,7 +162,6 @@ class EventsRequests(BaseRequests):
         uuid_event: flags.ArgUUIDEvent,
         root: bool = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "GET",
@@ -171,6 +172,7 @@ class EventsRequests(BaseRequests):
 
 
 if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     events = typerize(EventsRequests)

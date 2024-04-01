@@ -1,19 +1,25 @@
+# =========================================================================== #
 import secrets
 from typing import List
 
 import httpx
 import pytest
-from app.err import (ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrDetail, ErrObjMinSchema)
-from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
-from app.models import Grant, User
-from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
-                         mwargs)
-from client.requests import Requests
 from pydantic import TypeAdapter
 from sqlalchemy import false, func, literal_column, select, true
+
+# --------------------------------------------------------------------------- #
+from app.err import (
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrDetail,
+    ErrObjMinSchema,
+)
+from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
+from app.models import Grant, User
+from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
+from client.requests import Requests
 from tests.dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest
 
@@ -238,7 +244,6 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
 #       dummies. I found it helpful to look directly at the documentation to
 #       come up with tests. The goal here is to test at a very fine scale.
 class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
-
     def fn(self, requests: Requests):
         return requests.grants.documents.read
 
@@ -422,13 +427,11 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
 
 @pytest.mark.asyncio
 class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
-
     def fn(self, requests: Requests):
         return requests.grants.documents.revoke
 
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-
         (document,) = dummy.get_user_documents(Level.own, exclude_pending=True)
         assert not document.deleted
 
@@ -572,7 +575,6 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
 
 
 class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
-
     def fn(self, requests: Requests):
         return requests.grants.documents.approve
 
@@ -750,13 +752,11 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
 
 
 class TestDocumentsGrantsInvite(CommonDocumentsGrantsTests):
-
     def fn(self, requests: Requests):
         return requests.grants.documents.invite
 
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-
         (document,) = dummy.get_user_documents(Level.own)
         users = dummy.get_users(5)
 

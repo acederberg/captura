@@ -1,3 +1,4 @@
+# =========================================================================== #
 import json
 from typing import Any, ClassVar, Dict, Generic, List, Self, Set, TypeVar
 
@@ -5,9 +6,9 @@ import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+# --------------------------------------------------------------------------- #
 from app import fields
 
-# --------------------------------------------------------------------------- #
 # Error Message Schemas.
 #
 # These are important for clients that might want to use these and for testing.
@@ -114,29 +115,29 @@ class ErrAccessDocumentGrantInsufficient(ErrAccessDocumentGrantBase):
 
 class ErrAccessDocumentPending(ErrAccessDocumentGrantInsufficient):
     _msg_grant_pending: ClassVar[str] = "Grant is pending."
-    _msg_grant_pending_created: ClassVar[str] = (
-        "Grant is pending with `pending_from=created`."
-    )
+    _msg_grant_pending_created: ClassVar[
+        str
+    ] = "Grant is pending with `pending_from=created`."
 
     pending_from: fields.FieldPendingFrom
 
 
 class ErrAccessDocumentCannotRejectOwner(ErrBase):
-    _msg_cannot_reject_owner: ClassVar[str] = (
-        "Owner cannot reject grants of other owners."
-    )
+    _msg_cannot_reject_owner: ClassVar[
+        str
+    ] = "Owner cannot reject grants of other owners."
     uuid_user_revoker: fields.FieldUUID
     uuid_document: fields.FieldUUID
     uuid_user_revokees: fields.FieldUUIDS
 
 
 class ErrUpdateGrantPendingFrom(ErrBase):
-    _msg_granter: ClassVar[str] = (
-        "Cannot accept grants because `pending_from` must be `granter`."
-    )
-    _msg_grantee: ClassVar[str] = (
-        "Cannot accept grants because `pending_from` must be `grantee`."
-    )
+    _msg_granter: ClassVar[
+        str
+    ] = "Cannot accept grants because `pending_from` must be `granter`."
+    _msg_grantee: ClassVar[
+        str
+    ] = "Cannot accept grants because `pending_from` must be `grantee`."
 
     uuid_obj: fields.FieldUUIDS
     kind_obj: fields.FieldKindObject

@@ -1,6 +1,11 @@
+# =========================================================================== #
 from http import HTTPMethod
 from typing import Any, Dict, Generic, Literal, Set, Tuple, Type, TypeVar, overload
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
 from app import util
 from app.auth import Token
 from app.controllers.access import Access, WithAccess
@@ -33,8 +38,6 @@ from app.schemas import (
     EventSearchSchema,
     UserSearchSchema,
 )
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 T_ReadParam = TypeVar(
     "T_ReadParam",
@@ -73,28 +76,32 @@ class Read(BaseController):
         self,
         user: User,
         param: UserSearchSchema,
-    ) -> Tuple[User, ...]: ...
+    ) -> Tuple[User, ...]:
+        ...
 
     @overload
     def search_user(
         self,
         user: User,
         param: DocumentSearchSchema,
-    ) -> Tuple[Document, ...]: ...
+    ) -> Tuple[Document, ...]:
+        ...
 
     @overload
     def search_user(
         self,
         user: User,
         param: CollectionSearchSchema,
-    ) -> Tuple[Collection, ...]: ...
+    ) -> Tuple[Collection, ...]:
+        ...
 
     @overload
     def search_user(
         self,
         user: User,
         param: EditSearchSchema,
-    ) -> Tuple[Edit, ...]: ...
+    ) -> Tuple[Edit, ...]:
+        ...
 
     def search_user(
         self,

@@ -1,12 +1,15 @@
+# =========================================================================== #
 import json
 from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias, TypeVar
 
 import pytest
-from app.models import Assignment, Collection, Document, Grant, User
-from app.schemas import CollectionSchema, DocumentSchema, GrantSchema, UserSchema
 from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
+from app.models import Assignment, Collection, Document, Grant, User
+from app.schemas import CollectionSchema, DocumentSchema, GrantSchema, UserSchema
 
 LeveledDocuments = Tuple[Document, Document, Document]
 
@@ -27,7 +30,6 @@ def check_exc(
     check_length=True,
     **expected_detail: Any,
 ) -> AssertionError | None:
-
     if not expected_detail:
         raise ValueError("Expected `expected` to be non-empty.")
 
@@ -58,7 +60,6 @@ def check_exc(
         for key, value_exp in expected_detail.items()
         if value_exp != (value := detail[key])
     ):
-
         lines = "  key: value_expected -> value\n"
         lines += "\n".join(bad_values)
         msg = "Detail has incorrect values:\n\n" + lines
@@ -80,7 +81,6 @@ def expect_exc(
     check_length=True,
     **expected,
 ) -> CallableExpectExc:
-
     with pytest.raises(HTTPException) as httperr:
         res = it()
         print(res)

@@ -1,5 +1,7 @@
 import httpx
 import typer
+
+# --------------------------------------------------------------------------- #
 from client import flags
 from client.config import ProfileConfig
 from client.handlers import CONSOLE
@@ -8,7 +10,6 @@ from .base import BaseRequests, ContextData, params
 
 
 class TokenRequests(BaseRequests):
-
     typer_commands = dict(
         read="req_read",
         create="req_create",
@@ -44,7 +45,6 @@ class TokenRequests(BaseRequests):
         uuid_user: flags.FlagUUIDUserOptional = None,
         admin: flags.FlagAdmin = None,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         uuid = uuid_user if uuid_user is not None else context.config.profile
         if not uuid:
@@ -63,6 +63,7 @@ __all__ = ("TokenRequests",)
 
 
 if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     tokens = typerize(TokenRequests)

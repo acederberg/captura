@@ -1,3 +1,4 @@
+# =========================================================================== #
 import functools
 import json
 import urllib
@@ -20,18 +21,19 @@ from urllib import parse
 
 import httpx
 import typer
-from app.models import Singular
-from app.schemas import mwargs
 from click.core import Context as ClickContext
-from client import flags
-from client.config import Config
-from client.flags import Output, Verbage
-from client.handlers import CONSOLE, ConsoleHandler
 from fastapi.openapi.models import OpenAPI, PathItem
 from pydantic import BaseModel, TypeAdapter, computed_field
 from rich.console import Console
 
-# =========================================================================== #
+# --------------------------------------------------------------------------- #
+from app.models import Singular
+from app.schemas import mwargs
+from client import flags
+from client.config import Config
+from client.flags import Output, Verbage
+from client.handlers import CONSOLE, ConsoleHandler
+
 # Helpers for decorators.
 
 url_chunks_accepted = {"users", "documents", "collections", "assignments"}

@@ -1,8 +1,15 @@
+# =========================================================================== #
 import inspect
 from http import HTTPMethod
 from typing import Callable, Set, Tuple, Type
 
 import pytest
+from sqlalchemy import Delete as sqaDelete
+from sqlalchemy import Update, update
+from sqlalchemy.orm import Session, make_transient
+from sqlalchemy.orm.attributes import Event
+
+# --------------------------------------------------------------------------- #
 from app import util
 from app.controllers.base import (
     Data,
@@ -28,10 +35,6 @@ from app.models import (
     User,
 )
 from app.schemas import EventSchema
-from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import Update, update
-from sqlalchemy.orm import Session, make_transient
-from sqlalchemy.orm.attributes import Event
 from tests.test_views import util
 
 # TEST_DETAIL = "From `test_delete.py`."
@@ -57,7 +60,6 @@ def create_data_from_params(
     T_assoc: Type,
     uuid_assoc: Set[str],
 ) -> Data:
-
     source = T_source.if_exists(delete.session, uuid_source)
     targets = T_target.if_many(delete.session, uuid_target)
     kind_source = KindObject(T_source.__tablename__)
@@ -226,7 +228,6 @@ class BaseTestAssoc:
             Type[Assignment],
         ],
     ]:
-
         # Get method (name should match data kind).
         if (mthd := getattr(delete, data.kind, None)) is None:
             msg = f"Expected attribute `{data.kind}` of `Delete`."
@@ -262,7 +263,6 @@ class BaseTestAssoc:
     indirect=["delete"],
 )
 class TestDeleteAssoc(BaseTestAssoc):
-
     # ----------------------------------------------------------------------- #
     # Tests
 
@@ -324,7 +324,6 @@ class TestDeleteAssoc(BaseTestAssoc):
         uuid_assoc: Set[str],
         force: bool,
     ) -> None:
-
         session = delete.session
         delete.force = force
 

@@ -1,6 +1,11 @@
+# =========================================================================== #
 import functools
 from typing import Callable, Concatenate, List, Literal, ParamSpec, Type, TypeVar
 
+from fastapi import Depends, HTTPException
+from pydantic import TypeAdapter
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.controllers.access import Access, WithAccess
 from app.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
@@ -37,10 +42,7 @@ from app.views.base import (
     OpenApiResponseUnauthorized,
     OpenApiTags,
 )
-from fastapi import Depends, HTTPException
-from pydantic import TypeAdapter
 
-# --------------------------------------------------------------------------- #
 # Decorators.
 #
 # Typing voodoo (from hell).
@@ -65,7 +67,6 @@ def admin_only(
 ) -> CallableControllerFirst[
     T_admin_only_self, T_admin_only_controller, P_admin_only, T_admin_only_return
 ]:
-
     @functools.wraps(fn)
     def wrapper(
         cls: Type[BaseView],
@@ -73,7 +74,6 @@ def admin_only(
         *args: P_admin_only.args,
         **kwargs: P_admin_only.kwargs,
     ):
-
         if not access.token.admin:
             detail = "This endpoint is for admins only."
             raise HTTPException(403, detail=detail)
@@ -84,7 +84,6 @@ def admin_only(
 
 # NOTE: Mounted directly on app. Easier to maintain here.
 class EventSearchView(BaseView):
-
     view_routes = dict(
         get_event_objects=dict(
             url="/events/{uuid_event}/objects",
@@ -154,7 +153,6 @@ class EventSearchView(BaseView):
         uuid_user: args.PathUUIDUser,
         param: EventParams = Depends(),
     ) -> OutputWithEvents[UserExtraSchema]:
-
         data: Data[ResolvedObjectEvents]
         data = access.d_object_events(uuid_user, KindObject.user, param)
         return mwargs(
@@ -205,7 +203,6 @@ class EventSearchView(BaseView):
         uuid_user: args.PathUUIDUser,
         param: EventParams = Depends(),
     ) -> OutputWithEvents[GrantExtraSchema]:
-
         session = access.session
         document = Document.resolve(session, uuid_document)
         user = User.resolve(session, uuid_user)
@@ -231,7 +228,6 @@ class EventSearchView(BaseView):
         uuid_collection: args.PathUUIDDocument,
         param: EventParams = Depends(),
     ) -> OutputWithEvents[AssignmentExtraSchema]:
-
         session = access.session
         document = Document.resolve(session, uuid_document)
         collection = Collection.resolve(session, uuid_collection)
@@ -366,7 +362,6 @@ class EventView(BaseView):
         access: DependsAccess,
         param_search: EventSearchSchema = Depends(),
     ) -> AsOutput[List[EventMetadataSchema]]:
-
         # NOTE: Build the search.
         kwargs_search = param_search.model_dump(exclude={"before", "after"})
         if not access.token.admin:

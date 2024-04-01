@@ -1,9 +1,15 @@
+# =========================================================================== #
 import inspect
 import secrets
 from http import HTTPMethod  # type: ignore[attr-defined]
 from typing import Any, ClassVar, Dict, NamedTuple, Set, Tuple, Type
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy import false, func, select, update
+from sqlalchemy.orm import Session, make_transient
+
+# --------------------------------------------------------------------------- #
 from app import util
 from app.auth import Auth, Token
 from app.controllers.access import Access, WithAccess, with_access
@@ -33,13 +39,9 @@ from app.models import (
     UUIDSplit,
     uuids,
 )
-from fastapi import HTTPException
-from sqlalchemy import false, func, select, update
-from sqlalchemy.orm import Session, make_transient
 from tests.dummy import DummyProvider
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
-# =========================================================================== #
 # Base
 
 logger = util.get_logger(__name__)
@@ -1485,7 +1487,6 @@ class TestAccessGrant(BaseTestAccess):
             doit(access, document_own)
 
     def test_overloads(self, session: Session):
-
         access = self.create_access(session)
 
         res = access.grant_user("000-000-000", {"aaa-aaa-aaa"})
@@ -1807,7 +1808,6 @@ class TestAccessEvent(BaseTestAccess):
         # NOTE: There is no public column!
         dummy.visability({KindObject.event}, deleted=False, public=True).refresh()
         for method in httpcommon:
-
             access = Access(dummy.session, dummy.token, method)
             data = access.event(dummy.events, return_data=True)
             assert isinstance(data, Data)
@@ -1825,7 +1825,6 @@ class TestAccessEvent(BaseTestAccess):
                 raise err
 
     def test_deleted(self, dummy: DummyProvider):
-
         event = dummy.events[0]
         dummy.visability(self.kinds, deleted=True, public=True).refresh()
 
@@ -1846,7 +1845,6 @@ class TestAccessEvent(BaseTestAccess):
             access.event(event, exclude_deleted=False)
 
     def test_dne(self, dummy: DummyProvider):
-
         for method in httpcommon:
             access = Access(dummy.session, dummy.token, method)
             uuid_obj = secrets.token_urlsafe(8)
@@ -1859,7 +1857,6 @@ class TestAccessEvent(BaseTestAccess):
             )
 
     def test_overloads(self, dummy: DummyProvider):
-
         dummy.visability(self.kinds, deleted=False, public=True).refresh()
         access = Access(dummy.session, dummy.token, HTTPMethod.GET)
 

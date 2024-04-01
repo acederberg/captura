@@ -14,23 +14,43 @@ uniquely to a corresponding database row (further, for tables with multiple
 foreign keys it is not necessary to specify multiple values).
 """
 
+# =========================================================================== #
 import enum
 import secrets
 from dataclasses import field
 from datetime import datetime, timedelta
-from typing import (Annotated, Any, ClassVar, Dict, Generic, List, Literal,
-                    Optional, Self, Set, Type, TypeAlias, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Self,
+    Set,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 
 from fastapi import Body, Query
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field,
-                      computed_field, field_serializer, field_validator,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from pydantic_core.core_schema import FieldValidationInfo
 
+# --------------------------------------------------------------------------- #
 from app import fields
 from app.util import check_enum_opt_attr
-
-# --------------------------------------------------------------------------- #
 
 
 # NOTE: Could use partials but I like this pattern more.
@@ -66,7 +86,6 @@ class KindNesting(str, enum.Enum):
 
 
 class Registry:
-
     schemas: Dict[fields.FieldKindObject, Dict[KindSchema, Type["BaseSchema"]]]
 
     def __init__(self):
@@ -107,7 +126,6 @@ registry = Registry()
 
 
 class BaseSchema(BaseModel):
-
     model_config = ConfigDict(use_enum_values=False, from_attributes=True)
 
     # NOT FIELDS SINCE THEY ARE CONSTANT. METADATA FOR CONSUMERS!
@@ -146,7 +164,6 @@ class BaseUpdateSchema(BaseSchema):
 
     @model_validator(mode="after")
     def at_least_one(self) -> Self:
-
         if not any(getattr(self, field) is not None for field in self.model_fields):
             msg = ", ".join((str(vv) for vv in self.model_fields.keys()))
             raise ValueError(f"Must specify at least one of `{msg}`.")
@@ -157,11 +174,11 @@ class BasePrimarySchema(BaseSchema):
     public: bool = True
 
 
-class BaseSecondarySchema(BaseSchema): ...
+class BaseSecondarySchema(BaseSchema):
+    ...
 
 
 class BasePrimaryTableExtraSchema(BaseSchema):
-
     id: fields.FieldID
     deleted: fields.FieldDeleted
 
@@ -218,7 +235,6 @@ class UserExtraSchema(BasePrimaryTableExtraSchema, UserSchema):
 
     @model_validator(mode="after")
     def check_invitation_fields(self) -> Self:
-
         match (self.invitation_code, self.invitation_email, self.invitation_pending):
             case (str(), str(), bool()):
                 return self
@@ -386,7 +402,6 @@ class DocumentSearchSchema(BaseSearchSchema):
 
 
 class TimespanLimitParams(BaseModel):
-
     limit: fields.FieldLimitOptional
     before: fields.FieldUnixTimestampOptional
     after: fields.FieldUnixTimestampOptional
@@ -453,9 +468,9 @@ class GrantSchema(GrantBaseSchema):
 
     # Metadata
     uuid_parent: Optional[fields.FieldUUID] = None
-    uuid_user_granter: Optional[fields.FieldUUID] = (
-        None  # should it reeally be optional
-    )
+    uuid_user_granter: Optional[
+        fields.FieldUUID
+    ] = None  # should it reeally be optional
 
 
 class GrantExtraSchema(GrantSchema):

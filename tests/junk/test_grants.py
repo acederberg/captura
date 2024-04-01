@@ -1,3 +1,4 @@
+# =========================================================================== #
 import asyncio
 from asyncio import gather
 from http import HTTPMethod
@@ -5,6 +6,11 @@ from typing import Any, Dict, List
 
 import httpx
 import pytest
+from fastapi import HTTPException
+from sqlalchemy import delete, literal_column, select
+from sqlalchemy.orm import Session, make_transient, sessionmaker
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.auth import Auth
 from app.models import (
@@ -18,9 +24,6 @@ from app.models import (
 )
 from app.schemas import DocumentSchema, EventSchema, GrantSchema
 from client.requests import GrantRequests, Requests
-from fastapi import HTTPException
-from sqlalchemy import delete, literal_column, select
-from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 from . import util
 

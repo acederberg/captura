@@ -1,16 +1,19 @@
+# =========================================================================== #
 import asyncio
 import secrets
 from typing import Tuple
 
 import httpx
 import pytest
+from sqlalchemy import update
+from sqlalchemy.orm import Session, sessionmaker
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.auth import Auth
 from app.models import ChildrenUser, Collection, Document, KindEvent, KindObject
 from app.schemas import EventSchema, UserSchema
 from client.requests import UserRequests
-from sqlalchemy import update
-from sqlalchemy.orm import Session, sessionmaker
 
 from . import util
 

@@ -1,8 +1,11 @@
+# =========================================================================== #
 from typing import Annotated, Dict
 
-from app import util
 from pydantic import BaseModel, Field, computed_field, model_validator
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
+
+# --------------------------------------------------------------------------- #
+from app import util
 
 
 class ProfileConfig(BaseModel):

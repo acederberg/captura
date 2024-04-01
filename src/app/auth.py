@@ -1,3 +1,4 @@
+# =========================================================================== #
 import base64
 import json
 import re
@@ -15,11 +16,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+# --------------------------------------------------------------------------- #
 from app import util
 from app.config import Config
 from app.models import User
 
-# Do not touch this! This pattern will have to run against many requests.
+# NOTE: Do not touch this! This pattern will have to run against many requests.
+# TODO: Appearently fastapi has this pattern somewhere. Replace this with that.
 logger = util.get_logger(__name__)
 PATTERN_TOKEN: re.Pattern = re.compile(
     "^(?P<token>(?P<header>[\\w_-]+).(?P<payload>[\\w_-]+).(?P<signature>[\\w_-]+))$",

@@ -1,5 +1,7 @@
 import httpx
 import typer
+
+# --------------------------------------------------------------------------- #
 from client import flags
 from client.requests.assignments import DocumentAssignmentRequests
 from client.requests.base import BaseRequests, ContextData, params
@@ -108,6 +110,7 @@ class DocumentRequests(BaseRequests):
 __all__ = ("DocumentRequests",)
 
 if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     documents = typerize(DocumentRequests)

@@ -1,11 +1,25 @@
+# =========================================================================== #
 import functools
 import secrets
 from http import HTTPMethod
-from typing import (Any, Awaitable, Callable, ClassVar, Concatenate, Dict,
-                    List, ParamSpec)
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Dict,
+    List,
+    ParamSpec,
+)
 
 import httpx
 import pytest
+from fastapi import Response
+from pydantic import TypeAdapter
+from sqlalchemy.sql.operators import op
+
+# --------------------------------------------------------------------------- #
 from app.controllers.access import H
 from app.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
 from app.fields import KindObject
@@ -13,20 +27,14 @@ from app.models import Collection
 from app.schemas import AsOutput, CollectionSchema, OutputWithEvents, mwargs
 from client.requests import Requests
 from client.requests.base import P_Wrapped
-from fastapi import Response
-from pydantic import TypeAdapter
-from sqlalchemy.sql.operators import op
 from tests.dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import (BaseEndpointTest,
-                                   BaseEndpointTestPrimaryCreateMixins)
+from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
 
 class CommonCollectionsTests(BaseEndpointTest):
-
     method: ClassVar[HTTPMethod]
     adapter = TypeAdapter(AsOutput[CollectionSchema])
     adapter_w_events = TypeAdapter(OutputWithEvents[CollectionSchema])
-
 
     @pytest.mark.asyncio
     async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
@@ -35,7 +43,7 @@ class CommonCollectionsTests(BaseEndpointTest):
             msg = "This test should not run for tests with `method=POST`."
             raise AttributeError(msg)
 
-        (collection, ), session= dummy.get_user_collections(1), dummy.session
+        (collection,), session = dummy.get_user_collections(1), dummy.session
         collection.deleted = True
         session.add(collection)
         session.commit()
@@ -48,7 +56,7 @@ class CommonCollectionsTests(BaseEndpointTest):
                 msg=ErrObjMinSchema._msg_deleted,
                 uuid_obj=collection.uuid,
                 kind_obj=KindObject.collection,
-            )
+            ),
         )
         if err := self.check_status(requests, res, 410, errhttp):
             raise err
@@ -65,10 +73,10 @@ class CommonCollectionsTests(BaseEndpointTest):
         errhttp = mwargs(
             ErrDetail[ErrObjMinSchema],
             detail=ErrObjMinSchema(
-            msg=ErrObjMinSchema._msg_dne,
-            uuid_obj=uuid_collection,
-                kind_obj=KindObject.collection
-            )
+                msg=ErrObjMinSchema._msg_dne,
+                uuid_obj=uuid_collection,
+                kind_obj=KindObject.collection,
+            ),
         )
         if err := self.check_status(requests, res, 404, errhttp):
             raise err
@@ -87,8 +95,6 @@ class CommonCollectionsTests(BaseEndpointTest):
         if err := self.check_status(requests, res, 401, err_content):
             raise err
 
-        
-
     @pytest.mark.asyncio
     async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
         if self.method == HTTPMethod.POST:
@@ -96,9 +102,11 @@ class CommonCollectionsTests(BaseEndpointTest):
             raise AttributeError(msg)
 
         user, session = dummy.user, dummy.session
-        user_other = next((item for item in dummy.get_users(2) if item.uuid != user.uuid))
+        user_other = next(
+            (item for item in dummy.get_users(2) if item.uuid != user.uuid)
+        )
 
-        collection, = dummy.get_collections(n=1)
+        (collection,) = dummy.get_collections(n=1)
         collection.public = True
         collection.deleted = False
         collection.id_user = user_other.id
@@ -113,7 +121,7 @@ class CommonCollectionsTests(BaseEndpointTest):
                 msg=ErrAccessCollection._msg_modify,
                 uuid_collection=collection.uuid,
                 uuid_user_token=user.uuid,
-            )
+            ),
         )
 
         # Should not be able to access unless get and public
@@ -135,7 +143,7 @@ class CommonCollectionsTests(BaseEndpointTest):
                 msg=ErrAccessCollection._msg_private,
                 uuid_collection=collection.uuid,
                 uuid_user_token=user.uuid,
-            )
+            ),
         )
         res = await fn(collection.uuid)
         if err := self.check_status(requests, res, 403, err_content):
@@ -152,14 +160,15 @@ class CommonCollectionsTests(BaseEndpointTest):
     #     session.add(collection)
     #     session.commit()
 
+
 class TestCollectionsRead(CommonCollectionsTests):
     method = H.GET
+
     def fn(self, requests: Requests):
-        return requests.collections.read 
+        return requests.collections.read
 
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-
         (collection,), session = dummy.get_user_collections(1), dummy.session
         fn = self.fn(requests)
 
@@ -178,7 +187,9 @@ class TestCollectionsRead(CommonCollectionsTests):
 
         # Test reading a public collection not ownend
         collection.public = True
-        collection.id_user = next(uu.id for uu in dummy.get_users(2) if uu.uuid != dummy.user.uuid)
+        collection.id_user = next(
+            uu.id for uu in dummy.get_users(2) if uu.uuid != dummy.user.uuid
+        )
         session.add(collection)
         session.commit()
 
@@ -189,14 +200,18 @@ class TestCollectionsRead(CommonCollectionsTests):
         data = self.adapter.validate_json(res.content)
         assert data.kind == KindObject.collection
 
-        
 
-
-def add_uuid_placeholder(fn: Callable[P_Wrapped, Awaitable[httpx.Response]], mixins: Dict[str, Any]) -> Callable[Concatenate[Any, P_Wrapped], Awaitable[httpx.Response]]:
-
-    async def fn_(uuid_placeholder: Any, *args: P_Wrapped.args, **kwargs: P_Wrapped.kwargs,) -> httpx.Response:
-
+def add_uuid_placeholder(
+    fn: Callable[P_Wrapped, Awaitable[httpx.Response]], mixins: Dict[str, Any]
+) -> Callable[Concatenate[Any, P_Wrapped], Awaitable[httpx.Response]]:
+    async def fn_(
+        uuid_placeholder: Any,
+        *args: P_Wrapped.args,
+        **kwargs: P_Wrapped.kwargs,
+    ) -> httpx.Response:
+        # =========================================================================== #
         from copy import copy
+
         mm = copy(mixins)
         mm.update(kwargs)
         return await fn(*args, **mm)
@@ -206,25 +221,26 @@ def add_uuid_placeholder(fn: Callable[P_Wrapped, Awaitable[httpx.Response]], mix
 
 class TestCollectionsCreate(
     BaseEndpointTestPrimaryCreateMixins,
-    CommonCollectionsTests, 
+    CommonCollectionsTests,
 ):
     method = H.POST
 
     def fn(self, requests: Requests, for_common: bool = True):
         fn_fn = requests.collections.create
         if for_common:
-            return add_uuid_placeholder(fn_fn, {
-                "description": f"From `{self.__class__.__name__}`.",
-                "name": f"Test {secrets.token_urlsafe()}",
-                "public": True,
-            })
+            return add_uuid_placeholder(
+                fn_fn,
+                {
+                    "description": f"From `{self.__class__.__name__}`.",
+                    "name": f"Test {secrets.token_urlsafe()}",
+                    "public": True,
+                },
+            )
 
         return fn_fn
 
-
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-
         # fn = self.fn(requests)
         # ^^^^^^^^^^^^^^^^^^^^^^ typehints suck
 
@@ -258,6 +274,7 @@ class TestCollectionsCreate(
         data_read = self.adapter.validate_json(res.content)
         assert data_read.data == data.data
 
+
 # NOTE: These do not apply to this endpoint since it accepts no uuid.
 # test_deleted_410 = pytest.mark.skip(TestCollectionsCreate.test_deleted_410)
 # test_not_found_404 = pytest.mark.skip(TestCollectionsCreate.test_not_found_404)
@@ -277,7 +294,7 @@ class TestCollectionsUpdate(CommonCollectionsTests):
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         user, session = dummy.user, dummy.session
-        collection, = dummy.get_user_collections(1, exclude_deleted=True)
+        (collection,) = dummy.get_user_collections(1, exclude_deleted=True)
         collection.public = True
         session.add(collection)
         session.commit()
@@ -316,7 +333,7 @@ class TestCollectionsUpdate(CommonCollectionsTests):
         assert data.kind_nesting is None
         assert data.kind is KindObject.collection
         assert data.data.description == description_new
-        assert data.data.uuid_user == user.uuid # For next test.
+        assert data.data.uuid_user == user.uuid  # For next test.
 
         # NOTE: Transfer ownership.
         user_other = next((uu for uu in dummy.get_users(2) if uu.id != user.id))
@@ -348,12 +365,12 @@ class TestCollectionsUpdate(CommonCollectionsTests):
 
 class TestCollectionsDelete(CommonCollectionsTests):
     method = H.DELETE
+
     def fn(self, requests: Requests):
         return requests.collections.delete
 
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-
         assert False, "Should test assignments first."
 
         (collection,), session = dummy.get_user_collections(1), dummy.session
@@ -376,9 +393,3 @@ class TestCollectionsDelete(CommonCollectionsTests):
         res = await fn(collection.uuid)
         if err := self.check_status(requests, res, 410):
             raise err
-
-
-
-
-
-

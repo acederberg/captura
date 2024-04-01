@@ -1,13 +1,17 @@
+# =========================================================================== #
 import enum
 from typing import Annotated, List, Optional, Tuple
 
 import httpx
 import typer
+
+# --------------------------------------------------------------------------- #
 from client import flags
 from client.flags import Output
 from client.handlers import CONSOLE
 
 from .assignments import AssignmentRequests
+
 # from .assignments import AssignmentRequests
 from .base import BaseRequests, ContextData, params
 from .collections import CollectionRequests

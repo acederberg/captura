@@ -1,6 +1,11 @@
+# =========================================================================== #
 from http import HTTPMethod
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy.orm import Session, sessionmaker
+
+# --------------------------------------------------------------------------- #
 from app.controllers.base import (
     BaseController,
     BaseResolved,
@@ -12,13 +17,10 @@ from app.controllers.base import (
 )
 from app.models import Collection, Document, Grant
 from app.schemas import mwargs
-from fastapi import HTTPException
-from sqlalchemy.orm import Session, sessionmaker
 from tests.dummy import DummyProvider
 
 
 def test_UuidSetFromModel(sessionmaker: sessionmaker):
-
     with sessionmaker() as session:
         uuids_expected = {"aaa-aaa-aaa", "draculaflow"}
         docs = Document.if_many(session, uuids_expected)
@@ -30,7 +32,6 @@ def test_UuidSetFromModel(sessionmaker: sessionmaker):
 
 
 def test_UuidFromModel(sessionmaker: sessionmaker):
-
     with sessionmaker() as session:
         uuid_doc_expected = "aaa-aaa-aaa"
         uuid_col_expected = {"foo-ooo-ool", "eee-eee-eee"}
@@ -53,7 +54,6 @@ def test_UuidFromModel(sessionmaker: sessionmaker):
 
 
 def test_base_controller(default: DummyProvider):
-
     dd = default
     base = BaseController(dd.session, None, HTTPMethod.GET)
     with pytest.raises(HTTPException) as err:
@@ -81,7 +81,6 @@ def test_base_controller(default: DummyProvider):
 
 class TestBaseResolved:
     def test_init_subclass(self):  # , default: DummyProvider):
-
         # dd = default
         def create_cls(**namespace):
             return type("Foo", (BaseResolved,), namespace)
@@ -107,7 +106,6 @@ class TestBaseResolvedPrimary:
     #     dd = default
 
     def test_instance_methods(self, dummy: DummyProvider):
-
         dd = dummy
         data = dd.data(KindData.user)
         assert isinstance(data.data, ResolvedUser)
@@ -123,7 +121,6 @@ class TestBaseResolvedPrimary:
 
 class TestResolvedSecondary:
     def test_instance_methods(self, dummy: DummyProvider):
-
         dd = dummy
         data = dd.data(KindData.grant_user)
         assert isinstance(data.data, ResolvedGrantUser)

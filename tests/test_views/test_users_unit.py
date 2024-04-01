@@ -1,11 +1,12 @@
 import pytest
+
+# --------------------------------------------------------------------------- #
 from client.requests import Requests
 from tests.dummy import DummyProvider
 from tests.test_views.util import BaseEndpointTest
 
 
 class CommonUserTests(BaseEndpointTest):
-
     @pytest.mark.asyncio
     async def test_unauthorized_401(
         self,

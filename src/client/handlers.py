@@ -1,3 +1,4 @@
+# =========================================================================== #
 import json
 from typing import (
     Annotated,
@@ -19,10 +20,10 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
+# --------------------------------------------------------------------------- #
 from client import flags
 from client.flags import Output
 
-# =========================================================================== #
 # Types and Constants
 # About `CONSOLE_THEME`: https://pygments.org/docs/styles/#getting-a-list-of-available-styles
 
@@ -32,50 +33,56 @@ CONSOLE = Console()
 
 # NOTE: Need distinct error type to not use vegue value error or risky
 #       `typer.Exit`.
-class HandlerError(Exception): ...
+class HandlerError(Exception):
+    ...
 
 
 class Handler(Protocol):
-
     @overload
     async def __call__(
         self,
         res: httpx.Response,
         data: Any | None = None,
-    ) -> httpx.Response: ...
+    ) -> httpx.Response:
+        ...
 
     @overload
     async def __call__(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] | None = None,
-    ) -> httpx.Response: ...
+    ) -> httpx.Response:
+        ...
 
     async def __call__(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] | None = None,
-    ) -> httpx.Response: ...
+    ) -> httpx.Response:
+        ...
 
     @overload
     async def handle(
         self,
         res: httpx.Response,
         data: Any | None = None,
-    ) -> int: ...
+    ) -> int:
+        ...
 
     @overload
     async def handle(
         self,
         res: Tuple[httpx.Response, ...],
         data: Tuple[Any, ...] | None = None,
-    ) -> int: ...
+    ) -> int:
+        ...
 
     async def handle(
         self,
         res: httpx.Response | Tuple[httpx.Response, ...],
         data: Any | Tuple[Any, ...] | None = None,
-    ) -> int: ...
+    ) -> int:
+        ...
 
 
 # =========================================================================== #

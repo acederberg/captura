@@ -1,20 +1,55 @@
+# =========================================================================== #
 import secrets
 from http import HTTPMethod
 from random import choice, randint
-from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
-                    NotRequired, Self, Set, Tuple, Type, TypedDict)
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    ClassVar,
+    Collection,
+    Dict,
+    NotRequired,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypedDict,
+)
 
 import httpx
+from sqlalchemy import Select, false, func, select, true, update
+from sqlalchemy.orm import Session
+from typing_extensions import Doc
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.auth import Auth, Token
 from app.controllers.access import Access
-from app.controllers.base import (BaseResolved, BaseResolvedPrimary,
-                                  BaseResolvedSecondary, Data, KindData,
-                                  T_ResolvedPrimary)
+from app.controllers.base import (
+    BaseResolved,
+    BaseResolvedPrimary,
+    BaseResolvedSecondary,
+    Data,
+    KindData,
+    T_ResolvedPrimary,
+)
 from app.controllers.delete import Delete
 from app.fields import KindObject, Level, Singular
-from app.models import (Assignment, Base, Collection, Document, Event, Grant,
-                        KindObject, Level, PendingFrom, Singular, Tables, User)
+from app.models import (
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    PendingFrom,
+    Singular,
+    Tables,
+    User,
+)
 from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
 from client.config import UseConfig
@@ -22,10 +57,6 @@ from client.flags import Output
 from client.handlers import ConsoleHandler
 from client.requests import Requests
 from client.requests.base import ContextData
-from sqlalchemy import Select, false, func, select, true, update
-from sqlalchemy.orm import Session
-from typing_extensions import Doc
-
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.mk import Mk
 from tests.test_models import ModelTestMeta
@@ -69,7 +100,6 @@ class BaseDummyProvider:
         public: bool | None = None,
         deleted: bool | None = None,
     ) -> Tuple[T_ResolvedPrimary, ...]:
-
         logger.debug("Getting data of kind `%s`.", Model.__tablename__)
         conds = list()
         if public is not None:
@@ -101,7 +131,6 @@ class BaseDummyProvider:
         n: int,
         kwargs_get_primary: GetPrimaryKwargs | None = None,
     ) -> Tuple[User, ...]:
-
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
         return self.get_primary(User, n, **kwargs_get_primary)
@@ -111,7 +140,6 @@ class BaseDummyProvider:
         n: int,
         kwargs_get_primary: GetPrimaryKwargs | None = None,
     ) -> Tuple[Document, ...]:
-
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
         return self.get_primary(Document, n, **kwargs_get_primary)
@@ -128,7 +156,6 @@ class BaseDummyProvider:
     def get_user_documents(
         self, level: Level, deleted: bool | None = False, *, n: int = 1, **kwargs
     ) -> Tuple[Document, ...]:
-
         logger.debug("Getting user documents.")
         kwargs.update(exclude_deleted=not deleted)
         q = self.user.q_select_documents(level=level, **kwargs)
@@ -147,10 +174,11 @@ class BaseDummyProvider:
         return docs
 
     def get_user_collections(self, n: int = 1, **kwargs) -> Tuple[Collection, ...]:
-
         logger.debug("Getting user collections.")
-        q = Collection.q_select_for_user(self.user.uuid, kwargs.pop("uuids", None), **kwargs)
-        q = q.order_by(func.random()).limit(n) 
+        q = Collection.q_select_for_user(
+            self.user.uuid, kwargs.pop("uuids", None), **kwargs
+        )
+        q = q.order_by(func.random()).limit(n)
         collections = tuple(self.session.scalars(q))
 
         assert len(collections)
@@ -347,7 +375,6 @@ class BaseDummyProvider:
         return self
 
     def refresh(self) -> Self:
-
         self.session.refresh(self.user)
         for items in (self.collections, self.documents):
             for item in items:
@@ -356,7 +383,6 @@ class BaseDummyProvider:
         return self
 
     def find(self, user: User):
-
         session = self.session
 
         self.user = user
@@ -365,7 +391,6 @@ class BaseDummyProvider:
 
 
 class DummyProviderYAML(BaseDummyProvider):
-
     def __init__(self, auth: Auth, session: Session, user: User):
         self.auth = auth
         self.session = session
@@ -373,7 +398,6 @@ class DummyProviderYAML(BaseDummyProvider):
 
     @classmethod
     def merge(cls, session: Session) -> None:
-
         logger.info("Merging YAML data into database.")
         backwards = list(Base.metadata.sorted_tables)
         backwards.reverse()
@@ -385,11 +409,9 @@ class DummyProviderYAML(BaseDummyProvider):
 
 
 class DummyProvider(BaseDummyProvider):
-
     dummy_user_uuids: ClassVar[list[str] | None] = None
 
     def __init__(self, auth: Auth, session: Session, use_existing: bool | User = False):
-
         self.auth = auth
         self.session = session
 

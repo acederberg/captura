@@ -1,26 +1,46 @@
+# =========================================================================== #
 import functools
 from http import HTTPMethod
 from typing import Any, Dict, Generator, List, Set, Tuple, Type, overload
 
-from app import __version__, util
-from app.auth import Token
-from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (Data, DataResolvedAssignment,
-                                  DataResolvedGrant,
-                                  ResolvedAssignmentCollection,
-                                  ResolvedAssignmentDocument,
-                                  ResolvedCollection, ResolvedDocument,
-                                  ResolvedEdit, ResolvedEvent,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedObjectEvents, ResolvedUser)
-from app.models import (Assignment, Collection, Document, Edit, Event, Grant,
-                        KindEvent, KindObject, Level, User)
-from app.schemas import CollectionSchema, mwargs
 from fastapi import HTTPException
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Select, Update, delete, false, true, update
 from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.auth import Token
+from app.controllers.access import Access, WithAccess, with_access
+from app.controllers.base import (
+    Data,
+    DataResolvedAssignment,
+    DataResolvedGrant,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
+    ResolvedCollection,
+    ResolvedDocument,
+    ResolvedEdit,
+    ResolvedEvent,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedObjectEvents,
+    ResolvedUser,
+)
+from app.models import (
+    Assignment,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
+from app.schemas import CollectionSchema, mwargs
 
 
 class AssocData(BaseModel):
@@ -64,7 +84,6 @@ class Delete(WithAccess):
         n: int,
         info: Set[Tuple[KindObject, str]],
     ) -> Event:
-
         token_user = data.token_user or self.token_user
         event = Event(
             **self.event_common,
@@ -109,14 +128,16 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedEvent],
         # commit: bool = False,
-    ) -> Data[ResolvedEvent]: ...
+    ) -> Data[ResolvedEvent]:
+        ...
 
     @overload
     def event(
         self,
         data: Data[ResolvedObjectEvents],
         # commit: bool = False,
-    ) -> Data[ResolvedObjectEvents]: ...
+    ) -> Data[ResolvedObjectEvents]:
+        ...
 
     def event(
         self,
@@ -133,7 +154,6 @@ class Delete(WithAccess):
         self,
         data: Data[ResolvedObjectEvents],
     ) -> Data[ResolvedObjectEvents]:
-
         _ = self.event(data)
         return data
 
@@ -250,7 +270,8 @@ class Delete(WithAccess):
         Tuple[Grant, ...],
         Update[Grant] | sqaDelete[Grant],
         Type[Grant] | Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def try_force(
@@ -262,7 +283,8 @@ class Delete(WithAccess):
         Tuple[Assignment, ...],
         Update[Assignment] | sqaDelete[Assignment],
         Type[Grant] | Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     def try_force(
         self,
@@ -320,7 +342,8 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def assoc(
@@ -333,7 +356,8 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def assoc(
@@ -346,7 +370,8 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     @overload
     def assoc(
@@ -359,7 +384,8 @@ class Delete(WithAccess):
         AssocData,
         Update[Assignment] | sqaDelete[Assignment],
         Type[Assignment],
-    ]: ...
+    ]:
+        ...
 
     def assoc(
         self,
@@ -384,7 +410,6 @@ class Delete(WithAccess):
         data: DataResolvedGrant | DataResolvedAssignment,
         assocs: Tuple[Grant, ...] | Tuple[Assignment, ...],
     ) -> Event:
-
         # NOTE: Base event indicates the document, secondary event
         #       indicates the users for which permissions were revoked.
         #       Tertiary event indicates information about the association
@@ -629,7 +654,6 @@ class Delete(WithAccess):
         # *,
         # commit: bool = False,
     ) -> None:
-
         # Delete grants
         session = self.session
         if not self.force:
@@ -693,7 +717,6 @@ class Delete(WithAccess):
         data: Data[ResolvedDocument],
         # commit: bool = False,
     ) -> Data[ResolvedDocument]:
-
         documents = data.data.documents
         if not len(documents):
             return data

@@ -1,12 +1,23 @@
+# =========================================================================== #
 import enum
 import pathlib
 from datetime import datetime
 from typing import Annotated, List, Optional, TypeAlias, TypeVar
 
 import typer
+
+# --------------------------------------------------------------------------- #
 from app.fields import PendingFromStr
-from app.models import (ChildrenCollection, ChildrenDocument, ChildrenUser,
-                        Format, KindEvent, KindObject, KindRecurse, LevelStr)
+from app.models import (
+    ChildrenCollection,
+    ChildrenDocument,
+    ChildrenUser,
+    Format,
+    KindEvent,
+    KindObject,
+    KindRecurse,
+    LevelStr,
+)
 
 
 class Verbage(str, enum.Enum):

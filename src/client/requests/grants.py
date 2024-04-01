@@ -1,7 +1,10 @@
+# =========================================================================== #
 from typing import Any, ClassVar, Dict
 
 import httpx
 import typer
+
+# --------------------------------------------------------------------------- #
 from app.models import LevelStr
 from client import flags
 from client.requests.base import BaseRequests, ContextData, methodize, params
@@ -100,7 +103,6 @@ class DocumentGrantRequests(BaseRequests):
 
 
 class UserGrantRequests(BaseRequests):
-
     @classmethod
     def req_read(
         cls,
@@ -171,7 +173,6 @@ class UserGrantRequests(BaseRequests):
         uuid_document: flags.FlagUUIDDocumentsOptional = None,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
@@ -200,7 +201,6 @@ class UserGrantRequests(BaseRequests):
 
 
 class GrantRequests(BaseRequests):
-
     typer_children = dict(
         documents=DocumentGrantRequests,
         users=UserGrantRequests,
@@ -229,6 +229,7 @@ __all__ = (
 
 
 if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     grants = typerize(GrantRequests)

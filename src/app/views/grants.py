@@ -1,29 +1,65 @@
+# =========================================================================== #
 from typing import Annotated, List, Set, Tuple
 
-from app import __version__, fields
-from app.controllers.base import (Data, ResolvedDocument,
-                                  ResolvedGrantDocument, ResolvedGrantUser,
-                                  ResolvedUser)
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsSessionMaker, DependsToken, DependsUpdate)
-from app.err import (AnyErrDetailAccessDocumentGrant,
-                     ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrAccessUser, ErrDetail)
-from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
-                        KindObject, Level, LevelStr, User)
-from app.schemas import (AsOutput, EventSchema, GrantCreateSchema, GrantSchema,
-                         OutputWithEvents, mwargs)
-from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseDocumentForbidden,
-                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException, status
 from pydantic import TypeAdapter
 from sqlalchemy import literal_column, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import false, true
+
+# --------------------------------------------------------------------------- #
+from app import __version__, fields
+from app.controllers.base import (
+    Data,
+    ResolvedDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
+    ResolvedUser,
+)
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsSessionMaker,
+    DependsToken,
+    DependsUpdate,
+)
+from app.err import (
+    AnyErrDetailAccessDocumentGrant,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrAccessUser,
+    ErrDetail,
+)
+from app.models import (
+    AssocUserDocument,
+    Document,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    Level,
+    LevelStr,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    EventSchema,
+    GrantCreateSchema,
+    GrantSchema,
+    OutputWithEvents,
+    mwargs,
+)
+from app.views import args
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseDocumentForbidden,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 
 
 class DocumentGrantView(BaseView):
@@ -274,7 +310,6 @@ class UserGrantView(BaseView):
 
         events, grants = list(), list()
         if len(data.data.documents):
-
             delete.grant_user(data)
             events.append(data.event)
             # NOTE: This must be done before the commit because the data

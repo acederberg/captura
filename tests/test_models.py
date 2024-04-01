@@ -1,8 +1,15 @@
+# =========================================================================== #
 import json
 from typing import Any, ClassVar, Dict, List, Self, Tuple, Type
 
 import pytest
 import yaml
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, make_transient, sessionmaker
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.models import (
     AssocCollectionDocument,
@@ -18,10 +25,6 @@ from app.models import (
     Level,
     User,
 )
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 logger = util.get_logger(__name__)
 
@@ -106,7 +109,8 @@ class BaseModelTest(metaclass=ModelTestMeta):
         session.commit()
 
     @pytest.fixture(scope="session", autouse=True)
-    def invoke_loader(self, load_tables, setup_cleanup): ...
+    def invoke_loader(self, load_tables, setup_cleanup):
+        ...
 
 
 # NOTE: Test suites must be defined in appropraite order to ensure that

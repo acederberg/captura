@@ -1,26 +1,54 @@
+# =========================================================================== #
 from http import HTTPMethod
 from typing import Any, Dict, List, Set, Tuple
 
-from app import __version__, util
-from app.controllers.access import Access
-from app.controllers.base import ResolvedGrantDocument
-from app.controllers.create import Create
-from app.controllers.delete import Delete
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsSessionMaker, DependsToken)
-from app.models import (Assignment, AssocCollectionDocument,
-                        ChildrenAssignment, Collection, Document, Event,
-                        KindEvent, KindObject, Level, User)
-from app.schemas import (AsOutput, AssignmentCreateSchema, AssignmentSchema,
-                         EventSchema, GrantSchema, OutputWithEvents, mwargs)
-from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException
 from pydantic import TypeAdapter
 from sqlalchemy import delete, func, literal_column, select, update
 from sqlalchemy.orm import Session, make_transient
 from sqlalchemy.sql.expression import false, true
+
+# --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.controllers.access import Access
+from app.controllers.base import ResolvedGrantDocument
+from app.controllers.create import Create
+from app.controllers.delete import Delete
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsSessionMaker,
+    DependsToken,
+)
+from app.models import (
+    Assignment,
+    AssocCollectionDocument,
+    ChildrenAssignment,
+    Collection,
+    Document,
+    Event,
+    KindEvent,
+    KindObject,
+    Level,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    AssignmentCreateSchema,
+    AssignmentSchema,
+    EventSchema,
+    GrantSchema,
+    OutputWithEvents,
+    mwargs,
+)
+from app.views import args
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 
 OpenApiResponseAssignment = {
     **OpenApiResponseUnauthorized,
@@ -76,7 +104,7 @@ class DocumentAssignmentView(BaseView):
         Collection ownership is not enforced here so that the document owner
         have the final say in which collections their document can be included.
 
-        Document ownership is enforced since only document owners can 
+        Document ownership is enforced since only document owners can
         reject/accept their document from being part of a particular collection.
         """
         data = delete.access.d_assignment_document(
@@ -105,7 +133,6 @@ class DocumentAssignmentView(BaseView):
             data=assignments,
         )
 
-
     @classmethod
     def post_assignments_document(
         cls,
@@ -120,7 +147,7 @@ class DocumentAssignmentView(BaseView):
         Collection ownership is not enforced here so that the document owner
         have the final say in which collections their document can be included.
 
-        Document ownership is enforced since only document owners can 
+        Document ownership is enforced since only document owners can
         reject/accept their document from being part of a particular collection.
         """
         data = create.access.d_assignment_document(
@@ -153,7 +180,7 @@ class DocumentAssignmentView(BaseView):
     ) -> AsOutput[List[AssignmentSchema]]:
         """Read the collections to which this document belongs.
 
-        For non-private documents all that is required is a token. 
+        For non-private documents all that is required is a token.
         For private documents a grant of level view is required.
         """
 
@@ -162,8 +189,12 @@ class DocumentAssignmentView(BaseView):
         #       to `ORDER BY RANDOM()`.
         document = access.document(uuid_document, allow_public=True, level=Level.view)
 
-        q = select(Collection).join(Assignment).where(
-            Assignment.id_document == document.id,
+        q = (
+            select(Collection)
+            .join(Assignment)
+            .where(
+                Assignment.id_document == document.id,
+            )
         )
         if uuid_collection is not None:
             q = q.where(Collection.uuid.in_(uuid_collection))
@@ -178,7 +209,7 @@ class DocumentAssignmentView(BaseView):
             document,
             collections,
             level=Level.view,
-            validate_document=False, # NOTE: Already validated.
+            validate_document=False,  # NOTE: Already validated.
             validate_collections=False,
             all_collections=False,
             allow_public=True,
@@ -192,7 +223,7 @@ class DocumentAssignmentView(BaseView):
         )
         return mwargs(
             AsOutput[List[AssignmentSchema]],
-            data=cls.adapter.validate_python(assignments)
+            data=cls.adapter.validate_python(assignments),
         )
 
 
@@ -278,7 +309,6 @@ class CollectionAssignmentView(BaseView):
         limit: int | None = None,
         randomize: bool = False,
     ) -> AsOutput[List[AssignmentSchema]]:
-
         q = select(Document).where(Document.deleted == false())
         if uuid_document is not None:
             q = q.where(Document.uuid.in_(uuid_document))
@@ -289,7 +319,11 @@ class CollectionAssignmentView(BaseView):
 
         documents = tuple(access.session.scalars(q))
 
-        data = access.d_assignment_collection(uuid_collection, documents, validate_documents=False,)
+        data = access.d_assignment_collection(
+            uuid_collection,
+            documents,
+            validate_documents=False,
+        )
         return mwargs(
             AsOutput[List[AssignmentSchema]],
             data=cls.adapter.validate_python(data.data.assignments.values()),

@@ -4,26 +4,64 @@ This includes a metaclass so that undecorated functions may be tested.
 
 """
 
+# =========================================================================== #
 import enum
 import logging
 from dataclasses import dataclass
 from functools import cached_property
 from http import HTTPMethod
 from traceback import print_tb
-from typing import (Annotated, Any, ClassVar, Dict, Generic, Iterable, List,
-                    Literal, Self, Set, Tuple, Type, TypeVar)
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Self,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
+from fastapi import HTTPException
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Tag,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+)
+from sqlalchemy.orm import Session, make_transient
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.auth import Token
-from app.models import (AnyModel, Assignment, Base, Collection, Document, Edit,
-                        Event, Grant, KindObject, Level, LevelHTTP,
-                        ResolvableSingular, ResolvedRawAny, Singular, User,
-                        uuids)
+from app.models import (
+    AnyModel,
+    Assignment,
+    Base,
+    Collection,
+    Document,
+    Edit,
+    Event,
+    Grant,
+    KindObject,
+    Level,
+    LevelHTTP,
+    ResolvableSingular,
+    ResolvedRawAny,
+    Singular,
+    User,
+    uuids,
+)
 from app.schemas import OutputWithEvents, T_Output
-from fastapi import HTTPException
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, Tag,
-                      ValidationInfo, computed_field, field_validator)
-from sqlalchemy.orm import Session, make_transient
 
 logger = util.get_logger(__name__)
 logger.level = logging.INFO
@@ -116,7 +154,6 @@ def _uuid_set_from_model(
     *,
     optional: bool = True,
 ) -> Set[str] | None:
-
     if data is not None:
         return data
 
@@ -220,9 +257,11 @@ class BaseResolved(BaseModel):
             )
         cls.registry[cls.kind] = cls
 
-    def register(self, session: Session) -> None: ...
+    def register(self, session: Session) -> None:
+        ...
 
-    def refresh(self, session: Session) -> None: ...
+    def refresh(self, session: Session) -> None:
+        ...
 
     @classmethod
     def get(cls, kind: KindData) -> "Type[BaseResolved]":
@@ -233,11 +272,11 @@ class BaseResolved(BaseModel):
         "Yes, I know an ABC could be used here."
         raise ValueError("Not implemented!")
 
+
 T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
 
 
 class BaseResolvedPrimary(BaseResolved):
-
     # ----------------------------------------------------------------------- #
 
     def __init_subclass__(cls) -> None:
@@ -273,7 +312,6 @@ class BaseResolvedPrimary(BaseResolved):
         return getattr(self, self._attr_name_targets)
 
     def err_nonempty(self) -> ValueError | None:
-
         # It is empty
         if not len(getattr(self, attr_name := self._attr_name_targets)):
             return None
@@ -304,7 +342,6 @@ class BaseResolvedPrimary(BaseResolved):
 
 
 class BaseResolvedSecondary(BaseResolved):
-
     kind: ClassVar[KindData]
     kind_source: ClassVar[KindObject]
     kind_target: ClassVar[KindObject]
@@ -595,7 +632,6 @@ class Data(BaseModel, Generic[T_Data]):
             token_user=self.token_user,
             children=list(),
         )
-
 
     def add(self, *items: "Data") -> None:
         for item in items:

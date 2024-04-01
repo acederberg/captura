@@ -1,4 +1,6 @@
 import pytest
+
+# --------------------------------------------------------------------------- #
 from app.auth import PATTERN_BEARER, Auth
 
 

@@ -1,16 +1,19 @@
+# =========================================================================== #
 from typing import Optional
 
 import httpx
 import rich
 import typer
 import yaml
+from fastapi import Request
+
+# --------------------------------------------------------------------------- #
 from app.models import ChildrenUser
 from client import flags
 from client.config import ProfileConfig
 from client.handlers import CONSOLE
 from client.requests.base import BaseRequests, ContextData, methodize, params
 from client.requests.grants import UserGrantRequests
-from fastapi import Request
 
 
 class DemoRequests(BaseRequests):
@@ -29,7 +32,6 @@ class DemoRequests(BaseRequests):
         invitation_code: flags.FlagInvitationCodesOptional = None,
         invitation_email: flags.FlagInvitationEmailsOptional = None,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "GET",
@@ -57,7 +59,6 @@ class DemoRequests(BaseRequests):
         public: flags.FlagPublic = True,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
@@ -139,7 +140,6 @@ class UserRequests(BaseRequests):
     def req_read(
         cls, _context: typer.Context, uuid_user: flags.ArgUUIDUser
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "GET",
@@ -187,7 +187,6 @@ class UserRequests(BaseRequests):
         url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = True,
     ) -> httpx.Request:
-
         # context = ContextData.resolve(_context)
         # json_data = dict(
         #     name=name,
@@ -207,7 +206,6 @@ class UserRequests(BaseRequests):
         *,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "DELETE",
@@ -247,6 +245,7 @@ __all__ = ("UserRequests", "DemoRequests")
 
 
 if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     users = typerize(UserRequests)

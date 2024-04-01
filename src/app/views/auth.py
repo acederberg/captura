@@ -1,7 +1,9 @@
+from fastapi import HTTPException
+
+# --------------------------------------------------------------------------- #
 from app.auth import Token
 from app.depends import DependsAuth, DependsConfig
 from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
-from fastapi import HTTPException
 
 
 class AuthView(BaseView):

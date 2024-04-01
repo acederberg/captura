@@ -1,3 +1,4 @@
+# =========================================================================== #
 import asyncio
 import secrets
 from http import HTTPMethod
@@ -5,6 +6,10 @@ from typing import List
 
 import httpx
 import pytest
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session, sessionmaker
+
+# --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.auth import Auth
 from app.models import (
@@ -20,8 +25,6 @@ from app.models import (
 )
 from app.schemas import CollectionMetadataSchema, CollectionSchema, EventSchema
 from client.requests import CollectionRequests, Requests, UserRequests
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session, sessionmaker
 
 from . import util
 from .test_assignments import TestAssignmentView

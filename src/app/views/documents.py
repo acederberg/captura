@@ -1,31 +1,63 @@
+# =========================================================================== #
 from http import HTTPMethod
 from typing import Annotated, List, Tuple, overload
 
-from app import __version__
-from app.controllers.access import Access
-from app.controllers.base import Data, ResolvedDocument
-from app.depends import (DependsAccess, DependsCreate, DependsDelete,
-                         DependsRead, DependsSessionMaker, DependsToken,
-                         DependsTokenOptional, DependsUpdate)
-from app.err import (AnyErrDetailAccessDocumentGrant,
-                     ErrAccessDocumentCannotRejectOwner,
-                     ErrAccessDocumentGrantBase,
-                     ErrAccessDocumentGrantInsufficient,
-                     ErrAccessDocumentPending, ErrDetail)
-from app.models import (AssocCollectionDocument, AssocUserDocument, Collection,
-                        Document, Level, User)
-from app.schemas import (AsOutput, DocumentCreateSchema,
-                         DocumentMetadataSchema, DocumentSchema,
-                         DocumentSearchSchema, DocumentUpdateSchema,
-                         EditSchema, EditSearchSchema, EventSchema,
-                         OutputWithEvents, TimespanLimitParams, mwargs)
-from app.views import args
-from app.views.base import (BaseView, OpenApiResponseCommon,
-                            OpenApiResponseDocumentForbidden,
-                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import Body, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
+
+# --------------------------------------------------------------------------- #
+from app import __version__
+from app.controllers.access import Access
+from app.controllers.base import Data, ResolvedDocument
+from app.depends import (
+    DependsAccess,
+    DependsCreate,
+    DependsDelete,
+    DependsRead,
+    DependsSessionMaker,
+    DependsToken,
+    DependsTokenOptional,
+    DependsUpdate,
+)
+from app.err import (
+    AnyErrDetailAccessDocumentGrant,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrDetail,
+)
+from app.models import (
+    AssocCollectionDocument,
+    AssocUserDocument,
+    Collection,
+    Document,
+    Level,
+    User,
+)
+from app.schemas import (
+    AsOutput,
+    DocumentCreateSchema,
+    DocumentMetadataSchema,
+    DocumentSchema,
+    DocumentSearchSchema,
+    DocumentUpdateSchema,
+    EditSchema,
+    EditSearchSchema,
+    EventSchema,
+    OutputWithEvents,
+    TimespanLimitParams,
+    mwargs,
+)
+from app.views import args
+from app.views.base import (
+    BaseView,
+    OpenApiResponseCommon,
+    OpenApiResponseDocumentForbidden,
+    OpenApiResponseUnauthorized,
+    OpenApiTags,
+)
 
 OpenApiResponseDocument = {
     **OpenApiResponseCommon,
@@ -179,7 +211,7 @@ class DocumentView(BaseView):
         )
         data_create = create.document(data)
         data_create.commit(create.session)
-        document, = data_create.data.documents
+        (document,) = data_create.data.documents
 
         return mwargs(
             OutputWithEvents[DocumentSchema],
@@ -207,7 +239,7 @@ class DocumentView(BaseView):
         the most recent edit, or use `uuid_rollback` to specify the exact edit
         uuid to rollback to.
 
-        When changing the public status of a document, bear in mind that it 
+        When changing the public status of a document, bear in mind that it
         will remove the document from any collection where the owner does not
         have a grant on the document.
 

@@ -1,13 +1,15 @@
+# =========================================================================== #
 from typing import Any, Dict
 
 import httpx
 import typer
+
+# --------------------------------------------------------------------------- #
 from client import flags
 from client.requests.base import BaseRequests, ContextData, methodize, params
 
 
 class CollectionAssignmentRequests(BaseRequests):
-
     @classmethod
     def req_read(
         cls,
@@ -16,9 +18,8 @@ class CollectionAssignmentRequests(BaseRequests):
         *,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
         limit: flags.FlagLimitOptional = None,
-        randomize: bool = False
+        randomize: bool = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "GET",
@@ -40,7 +41,6 @@ class CollectionAssignmentRequests(BaseRequests):
         uuid_document: flags.FlagUUIDDocuments,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "DELETE",
@@ -58,7 +58,6 @@ class CollectionAssignmentRequests(BaseRequests):
         uuid_document: flags.FlagUUIDDocuments,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
@@ -77,8 +76,8 @@ class CollectionAssignmentRequests(BaseRequests):
     delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
     read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
 
-class DocumentAssignmentRequests(BaseRequests):
 
+class DocumentAssignmentRequests(BaseRequests):
     @classmethod
     def req_read(
         cls,
@@ -87,7 +86,7 @@ class DocumentAssignmentRequests(BaseRequests):
         *,
         uuid_collection: flags.FlagUUIDCollectionsOptional = list(),
         limit: flags.FlagLimitOptional = None,
-        randomize: bool = False
+        randomize: bool = False,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
@@ -127,7 +126,6 @@ class DocumentAssignmentRequests(BaseRequests):
         uuid_collection: flags.FlagUUIDCollections,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
-
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
@@ -170,6 +168,7 @@ __all__ = (
 
 
 if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
     from client.requests.base import typerize
 
     assignments = typerize(AssignmentRequests)

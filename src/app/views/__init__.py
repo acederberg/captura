@@ -1,12 +1,7 @@
+# =========================================================================== #
 import traceback
 from typing import Annotated, Generator, List, Set
 
-from app import __version__, util
-from app.auth import Auth
-from app.config import Config
-from app.controllers.access import Access, H
-from app.depends import (DependsAccess, DependsAuth, DependsConfig,
-                         DependsSessionMaker)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.dependencies.utils import solve_dependencies
 from fastapi.responses import JSONResponse
@@ -14,6 +9,13 @@ from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from starlette.routing import Mount
+
+# --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.auth import Auth
+from app.config import Config
+from app.controllers.access import Access, H
+from app.depends import DependsAccess, DependsAuth, DependsConfig, DependsSessionMaker
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
 from .auth import AuthView
@@ -164,19 +166,13 @@ class AppView(BaseView):
 #       dependecies from the request directly.
 @AppView.view_router.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-
     # if config.app.is_dev and config.app.dev.httpexc_tb:
     traceback.print_exc()
 
     # https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/http/h11_impl.py
     if request.client:
         host, port = request.client.host, request.client.port
-        logger.info(
-            "%s:%s - %s",
-            host,
-            port,
-            exc.detail
-        )
+        logger.info("%s:%s - %s", host, port, exc.detail)
     else:
         logger.debug("No client for request.")
 
@@ -184,6 +180,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         exc.detail,
         exc.status_code,
     )
+
 
 __all__ = (
     "DocumentGrantView",

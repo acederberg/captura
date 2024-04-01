@@ -1,3 +1,4 @@
+# =========================================================================== #
 import json
 from os import path
 from random import choice
@@ -6,12 +7,6 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Set
 import httpx
 import pytest
 import pytest_asyncio
-from app import util
-from app.auth import Auth
-from app.config import AppConfig, Config
-from app.models import Base, User
-from app.views import AppView
-from client.config import Config as ClientConfig
 from fastapi import FastAPI
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import func, select, text
@@ -19,6 +14,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 
+# --------------------------------------------------------------------------- #
+from app import util
+from app.auth import Auth
+from app.config import AppConfig, Config
+from app.models import Base, User
+from app.views import AppView
+from client.config import Config as ClientConfig
 from tests.config import PytestClientConfig, PytestConfig
 from tests.test_models import ModelTestMeta
 
@@ -131,7 +133,6 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
 
 @pytest.fixture(scope="session", autouse=True)
 def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
-
     with sessionmaker() as session:
         logger.info("Loading tables with dummy data from `YAML`.")
         DummyProviderYAML.merge(session)
@@ -187,7 +188,6 @@ def dummy(auth: Auth, session: Session) -> DummyProvider:
 
 @pytest.fixture(scope="function")
 def default(auth: Auth, session: Session) -> DummyProviderYAML:
-
     logger.debug("Providing dummy for user uuid `000-000-000`.")
     user = session.get(User, 2)
     assert user is not None

@@ -1,11 +1,12 @@
-
+# =========================================================================== #
 from typing import List
 
 import pytest
-from app.schemas import (AsOutput, AssignmentSchema, GrantSchema,
-                         OutputWithEvents)
-from client.requests import Requests
 from pydantic import TypeAdapter
+
+# --------------------------------------------------------------------------- #
+from app.schemas import AsOutput, AssignmentSchema, GrantSchema, OutputWithEvents
+from client.requests import Requests
 from tests.dummy import DummyProvider
 from tests.test_views.util import BaseEndpointTest
 
@@ -26,8 +27,8 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
     async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
         assert False
 
-class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
 
+class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         (collection,) = dummy.get_user_collections(1)
@@ -44,16 +45,18 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
         data = self.adapter.validate_json(res.content)
 
         assignment_uuids: Set[str]
-        q_assignment_uuids = select(Assignment.uuid).where(Assignment.id_collection==collection.uuid, Assignment.deleted == false())
+        q_assignment_uuids = select(Assignment.uuid).where(
+            Assignment.id_collection == collection.uuid, Assignment.deleted == false()
+        )
         assignment_uuids = set(session.scalars(q_assignment_uuids))
 
         for assignment in data.data:
             assert assignment.uuid in assignment_uuids
-            assert not assignment.deleted 
+            assert not assignment.deleted
 
         assert len(data.data) == len(assignment_uuids)
 
-        # NOTE: Adding limit should limit the resources. Randomize should 
+        # NOTE: Adding limit should limit the resources. Randomize should
         #       gaurentee different order.
         limit = 10
         ress = await asyncio.gather(
@@ -71,15 +74,13 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
         assert data_ordered != data_rand1 != data_rand2
 
 
-
 class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
-
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         assert False
 
-class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
 
+class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
     @pytest.mark.asyncio
     async def test_success_200(self, dummy: DummyProvider, requests: Requests):
         assert False

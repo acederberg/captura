@@ -1,8 +1,11 @@
+# =========================================================================== #
 from typing import Annotated, Literal, Optional, Set, TypeAlias
 
+from fastapi import Path, Query
+
+# --------------------------------------------------------------------------- #
 # from app.fields import FieldLevel, KindEvent, KindObject, KindRecurse, LevelStr
 from app import fields
-from fastapi import Path, Query
 
 PathUUIDUser: TypeAlias = Annotated[str, Path(description="User uuids.")]
 PathUUIDCollection: TypeAlias = Annotated[str, Path(description="Collection uuids.")]

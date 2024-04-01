@@ -6,8 +6,6 @@
 requires = ["setuptools >= 40.6.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[black]
-
 [project]
 authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
 name = "captura"
@@ -76,6 +74,21 @@ client = "client.__main__:main"
 [tool.black]
 
 
+# NOTE: See the documentation for the various configuration fields here:
+#
+#       .. code:: txt
+#
+#           https://pycqa.github.io/isort/docs/configuration/options.html
+#
+# NOTE: Does not support multiline headings. Is not indempotent.
+[tool.isort]
+profile = "black"
+import_heading_stdlib = "=========================================================================== #"
+import_heading_firstparty = "--------------------------------------------------------------------------- #" #\n# Captura\n"
+skip = [".venv-local", ".venv"]
+src_paths = ["src", "tests"]
+
+
 [tool.flake8]
 # Read the [enumeration of available properties](https://flake8.pycqa.org/en/latest/user/options.html#cmdoption-flake8-color).
 indent_size = 4
@@ -92,7 +105,6 @@ ignore = [
 ]
 
 
-[tool.isort]
 
 
 [tool.mypy]

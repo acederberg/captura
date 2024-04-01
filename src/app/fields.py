@@ -1,3 +1,4 @@
+# =========================================================================== #
 import enum
 import secrets
 from datetime import datetime, timedelta
@@ -31,10 +32,9 @@ from pydantic import (
 )
 from pydantic_core.core_schema import FieldValidationInfo
 
+# --------------------------------------------------------------------------- #
 from app import models
 from app.util import check_enum_opt_attr
-
-# --------------------------------------------------------------------------- #
 
 LENGTH_NAME: int = 96
 LENGTH_TITLE: int = 128
@@ -53,7 +53,6 @@ class Level(enum.Enum):
 
     @classmethod
     def resolve(cls, v: "ResolvableLevel") -> "Level":
-
         match v:
             case LevelStr() as lvlstr:
                 return Level[lvlstr.name]

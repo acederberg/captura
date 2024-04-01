@@ -1,4 +1,7 @@
 import pytest
+from sqlalchemy import false, select
+
+# --------------------------------------------------------------------------- #
 from app.controllers.base import (
     Data,
     KindData,
@@ -8,7 +11,6 @@ from app.controllers.base import (
 )
 from app.models import Assignment, Collection, Document, Event, Grant, KindObject
 from app.schemas import PendingFrom, mwargs
-from sqlalchemy import false, select
 from tests.dummy import DummyProvider
 
 
@@ -85,7 +87,6 @@ class TestDelete:
         assert not len(assignments), "Collections should have no remaining assignments."
 
     def test_delete_document(self, dummy: DummyProvider):
-
         delete = dummy.visability(
             {KindObject.document}, public=False, deleted=False
         ).delete(api_origin=f"{__file__}::test_delete_document", force=False)

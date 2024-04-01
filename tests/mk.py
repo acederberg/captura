@@ -1,8 +1,14 @@
+# =========================================================================== #
 import secrets
 from datetime import datetime
 from random import choice, randint
 from typing import Any, Callable, ClassVar, Dict, Generic, List, Protocol, Type, TypeVar
 
+from faker import Faker
+from faker.providers import internet
+from sqlalchemy import Column, inspect
+
+# --------------------------------------------------------------------------- #
 from app import __version__
 from app.models import (
     LENGTH_CONTENT,
@@ -25,9 +31,6 @@ from app.models import (
     Tables,
     User,
 )
-from faker import Faker
-from faker.providers import internet
-from sqlalchemy import Column, inspect
 
 fkit = Faker()
 fkit.add_provider(internet)
@@ -63,7 +66,6 @@ _Mk: Dict[str, Callable[[], Any]] = dict(
 
 
 def get_mk(column: Column):
-
     if column.name.startswith("uuid"):
         return  # _Mk["uuid"]
     elif column.name.startswith("id"):
@@ -90,7 +92,8 @@ T_ResolvableContra = TypeVar(
 
 
 class MkDummyProvider(Protocol, Generic[T_ResolvableContra]):
-    def __call__(self, **kwargs) -> T_ResolvableContra: ...
+    def __call__(self, **kwargs) -> T_ResolvableContra:
+        ...
 
 
 def create_mk_dummy(

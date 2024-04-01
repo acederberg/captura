@@ -1,5 +1,6 @@
 import typer
 
+# --------------------------------------------------------------------------- #
 from client.config import Config
 from client.handlers import CONSOLE, ConsoleHandler
 from client.requests import Requests

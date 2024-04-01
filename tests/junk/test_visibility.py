@@ -7,32 +7,43 @@ publiic. The rules are as follows:
    those with the correct grants/foreign keys.
 """
 
+# =========================================================================== #
 from typing import Awaitable, Callable, ParamSpec
+
 import httpx
 import pytest
+
+# --------------------------------------------------------------------------- #
 from client.requests import Requests
+
 from . import util
 from .util import requests
 
 
 class TestPublic:
     @pytest.mark.asyncio
-    async def test_users(self, requests: Requests): ...
+    async def test_users(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_grants(self, requests: Requests): ...
+    async def test_grants(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_collections(self, requests: Requests): ...
+    async def test_collections(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_documents(self, requests: Requests): ...
+    async def test_documents(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_assignments(self, requests: Requests): ...
+    async def test_assignments(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_events(self, requests: Requests): ...
+    async def test_events(self, requests: Requests):
+        ...
 
 
 RequestLambda = Callable[[], Awaitable[httpx.Response]]
@@ -65,16 +76,21 @@ class TestDeleted:
             raise err
 
     @pytest.mark.asyncio
-    async def test_grants(self, requests: Requests): ...
+    async def test_grants(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_collections(self, requests: Requests): ...
+    async def test_collections(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_documents(self, requests: Requests): ...
+    async def test_documents(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_assignments(self, requests: Requests): ...
+    async def test_assignments(self, requests: Requests):
+        ...
 
     @pytest.mark.asyncio
-    async def test_events(self, requests: Requests): ...
+    async def test_events(self, requests: Requests):
+        ...

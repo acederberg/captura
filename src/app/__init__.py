@@ -2,24 +2,23 @@ __version__ = "0.0.0"
 
 from .auth import Auth
 from .config import Config
-from .views import AppView
 from .models import (
-    User,
-    Collection,
     AssocCollectionDocument,
     AssocUserDocument,
+    ChildrenCollection,
+    ChildrenDocument,
+    ChildrenUser,
+    Collection,
     Document,
     Edit,
-    Tables,
     KindEvent,
     KindObject,
     Level,
     LevelStr,
-    KindObject,
-    ChildrenUser,
-    ChildrenCollection,
-    ChildrenDocument,
+    Tables,
+    User,
 )
+from .views import AppView
 
 __all__ = (
     # Application
