@@ -8,7 +8,6 @@ from client.flags import Output
 from client.handlers import CONSOLE
 
 from .assignments import AssignmentRequests
-
 # from .assignments import AssignmentRequests
 from .base import BaseRequests, ContextData, params
 from .collections import CollectionRequests
@@ -50,7 +49,7 @@ class Requests(BaseRequests):
 
     def __init__(self, context: ContextData, client: httpx.AsyncClient):
         super().__init__(context, client)
-        self.assignents = AssignmentRequests.spawn_from(self)
+        self.assignments = AssignmentRequests.spawn_from(self)
         self.collections = CollectionRequests.spawn_from(self)
         self.docuents = DocumentRequests.spawn_from(self)
         self.grants = GrantRequests.spawn_from(self)

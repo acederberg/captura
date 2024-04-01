@@ -3,32 +3,23 @@ from typing import Any, Dict, List, Set, Tuple
 
 from app import __version__, util
 from app.controllers.access import Access
+from app.controllers.base import ResolvedGrantDocument
 from app.controllers.create import Create
 from app.controllers.delete import Delete
-from app.depends import DependsSessionMaker, DependsToken
-from app.models import (
-    Assignment,
-    AssocCollectionDocument,
-    ChildrenAssignment,
-    Collection,
-    Document,
-    Event,
-    KindEvent,
-    KindObject,
-    Level,
-    User,
-)
-from app.schemas import AssignmentSchema, EventSchema
+from app.depends import (DependsAccess, DependsCreate, DependsDelete,
+                         DependsSessionMaker, DependsToken)
+from app.models import (Assignment, AssocCollectionDocument,
+                        ChildrenAssignment, Collection, Document, Event,
+                        KindEvent, KindObject, Level, User)
+from app.schemas import (AsOutput, AssignmentCreateSchema, AssignmentSchema,
+                         EventSchema, GrantSchema, OutputWithEvents, mwargs)
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException
-from sqlalchemy import delete, literal_column, select, update
-from sqlalchemy.orm import Session
+from pydantic import TypeAdapter
+from sqlalchemy import delete, func, literal_column, select, update
+from sqlalchemy.orm import Session, make_transient
 from sqlalchemy.sql.expression import false, true
 
 OpenApiResponseAssignment = {
@@ -47,101 +38,177 @@ OpenApiResponseAssignment = {
 # NOTE: Should mirron :class:`GrantView`. Updates not supported, scoped by
 #       collection.
 class DocumentAssignmentView(BaseView):
+    adapter = TypeAdapter(List[AssignmentSchema])
+
     view_router_args = dict(
         tags=[OpenApiTags.assignments], responses=OpenApiResponseAssignment
     )
 
     view_routes = dict(
-        delete_assignment_document=dict(
+        delete_assignments_document=dict(
             url="/{uuid_document}",
             name="Remove Document from Collections by Deleting Assignments",
         ),
-        post_assignment_document=dict(
+        post_assignments_document=dict(
             url="/{uuid_document}",
             name="Add Document to Collections by Creating Assignments",
         ),
-        get_assignment_document=dict(
+        get_assignments_document=dict(
             url="/{uuid_document}",
             name="Read Assignments of Document to Collections",
         ),
     )
 
     @classmethod
-    def delete_assignment_document(
+    def delete_assignments_document(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        delete: DependsDelete,
         uuid_document: args.PathUUIDDocument,
         uuid_collection: args.QueryUUIDCollection,
-        force: args.QueryForce = False,
-    ) -> EventSchema:
-        """ """
-        with sessionmaker() as session:
-            access = Access(session, token, HTTPMethod.DELETE)
-            collection, documents = access.assignment_document(
-                uuid_document,
-                resolve_collections=uuid_collection,
-                level=Level.own,
-                exclude_deleted=False,
-            )
-            delete = access.then(Delete, force=force)
-            event = delete.assignment_document(
-                collection,
-                documents,
-                resolve_user=access.token_user,
-            )
-            return EventSchema.model_validate(event)
+    ) -> OutputWithEvents[List[AssignmentSchema]]:
+        """Remove document from some collections.
+
+        Collection owners should remove this document from their collection
+        using ``DELETE /assignments/collections/{uuid_collection}``.
+
+        All that is required is a token and document ownership.
+
+        Collection ownership is not enforced here so that the document owner
+        have the final say in which collections their document can be included.
+
+        Document ownership is enforced since only document owners can 
+        reject/accept their document from being part of a particular collection.
+        """
+        data = delete.access.d_assignment_document(
+            uuid_document,
+            uuid_collection,
+            allow_public=False,
+            validate_collections=False,
+            level=Level.own,
+            exclude_deleted=not delete.force,
+        )
+
+        print(data.data)
+
+        assignments, events = list(), list()
+        if len(data.data.collections):
+            delete.assignment_document(data)
+            assignments = cls.adapter.validate_python(data.data.assignments.values())
+            data.commit(delete.session)
+            events.append(EventSchema.model_validate(data.event))
+
+        print(assignments)
+
+        return mwargs(
+            OutputWithEvents[List[AssignmentSchema]],
+            events=events,
+            data=assignments,
+        )
+
 
     @classmethod
-    def post_assignment_document(
+    def post_assignments_document(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        create: DependsCreate,
         uuid_document: args.PathUUIDDocument,
         uuid_collection: args.QueryUUIDCollection,
-    ) -> EventSchema:
-        with sessionmaker() as session:
-            access = Access(session, token, HTTPMethod.POST)
-            document, collections = access.assignment_document(
-                uuid_document,
-                uuid_collection,
-            )
+    ) -> OutputWithEvents[List[AssignmentSchema]]:
+        """Add this document to collections.
 
-            upsert = access.then(Create)
-            event = upsert.assignment_document(document, collections)
-            return EventSchema.model_validate(event)
+        All that is required is a token and document ownership.
+
+        Collection ownership is not enforced here so that the document owner
+        have the final say in which collections their document can be included.
+
+        Document ownership is enforced since only document owners can 
+        reject/accept their document from being part of a particular collection.
+        """
+        data = create.access.d_assignment_document(
+            uuid_document,
+            uuid_collection,
+            allow_public=False,
+            level=Level.own,
+            validate_collections=False,
+        )
+        create.create_data = AssignmentCreateSchema()
+        data_final = create.assignment_document(data)
+        data_final.commit(create.session)
+
+        assignments = data_final.data.assignments
+        return mwargs(
+            OutputWithEvents[List[AssignmentSchema]],
+            data=cls.adapter.validate_python(assignments.values()),
+            events=[EventSchema.model_validate(data_final.event)],
+        )
 
     @classmethod
-    def get_assignment_document(
+    def get_assignments_document(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        access: DependsAccess,
         uuid_document: args.PathUUIDDocument,
+        *,
         uuid_collection: args.QueryUUIDCollectionOptional = None,
-    ) -> List[AssignmentSchema]:
-        with sessionmaker() as session:
-            access = Access(session, token, HTTPMethod.GET)
-            document = access.document(uuid_document)
-            q = document.q_select_assignment(
-                uuid_collection,
-                exclude_deleted=True,
-            )
+        limit: int | None = None,
+        randomize: bool = False,
+    ) -> AsOutput[List[AssignmentSchema]]:
+        """Read the collections to which this document belongs.
 
-            res = session.execute(q).scalars()
-            return list(AssignmentSchema.model_validate(item) for item in res)
+        For non-private documents all that is required is a token. 
+        For private documents a grant of level view is required.
+        """
+
+        # NOTE: Check document access first. Then data is constructed later.
+        #       This is done because get the collections can be expensive due
+        #       to `ORDER BY RANDOM()`.
+        document = access.document(uuid_document, allow_public=True, level=Level.view)
+
+        q = select(Collection).join(Assignment).where(
+            Assignment.id_document == document.id,
+        )
+        if uuid_collection is not None:
+            q = q.where(Collection.uuid.in_(uuid_collection))
+        if randomize:
+            q = q.order_by(func.random())
+        if limit:
+            q = q.limit(limit)
+        # util.sql(access.session, q)
+
+        collections = tuple(access.session.scalars(q))
+        data = access.d_assignment_document(
+            document,
+            collections,
+            level=Level.view,
+            validate_document=False, # NOTE: Already validated.
+            validate_collections=False,
+            all_collections=False,
+            allow_public=True,
+        )
+
+        # NOTE: So that the radomness of the collections is passed down here.
+        assignments = tuple(
+            ass
+            for collection in collections
+            if (ass := data.data.assignments.get(collection.uuid)) is not None
+        )
+        return mwargs(
+            AsOutput[List[AssignmentSchema]],
+            data=cls.adapter.validate_python(assignments)
+        )
 
 
 class CollectionAssignmentView(BaseView):
+    adapter = TypeAdapter(List[AssignmentSchema])
+
     view_routes = dict(
-        delete_assignment_collection=dict(
+        delete_assignments_collection=dict(
             url="/{uuid_collection}",
             description="Remove Documents from Collection (by Deleting Assignments)",
         ),
-        post_assignment_collection=dict(
+        post_assignments_collection=dict(
             url="/{uuid_collection}",
             description="Add Documents to Collection (by Creating Assignments)",
         ),
-        get_assignment_collection=dict(
+        get_assignments_collection=dict(
             url="/{uuid_collection}",
             description="Read Documents for Collection.",
         ),
@@ -151,64 +218,79 @@ class CollectionAssignmentView(BaseView):
     )
 
     @classmethod
-    def delete_assignment_collection(
+    def delete_assignments_collection(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        delete: DependsDelete,
         uuid_collection: args.PathUUIDCollection,
         uuid_document: args.QueryUUIDDocument,
-        force: args.QueryForce = False,
-    ) -> EventSchema:
-        with sessionmaker() as session:
-            # Users need to be able to access all for force deletion
-            access = Access(session, token, HTTPMethod.DELETE)
-            documents, collections = access.assignment_collection(
-                uuid_collection,
-                resolve_documents=uuid_document,
-                exclude_deleted=False,
-            )
-            delete = access.then(Delete)
-            event = delete.assignment_collection(
-                documents,
-                collections,
-                resolve_user=access.token_user,
-            )
-            return EventSchema.model_validate(event)
+    ) -> OutputWithEvents[List[AssignmentSchema]]:
+        data = delete.access.d_assignment_collection(
+            uuid_collection,
+            uuid_document,
+            allow_public=False,
+            level=Level.own,
+        )
+
+        assignments, events = list(), list()
+        if len(data.data.collections):
+            delete.assignment_document(data)
+            assignments = cls.adapter.validate_python(data.data.assignments.values())
+            data.commit(delete.session)
+            events.append(EventSchema.model_validate(data.event))
+
+        return mwargs(
+            OutputWithEvents[List[AssignmentSchema]],
+            events=events,
+            data=assignments,
+        )
 
     @classmethod
-    def post_assignment_collection(
+    def post_assignments_collection(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        create: DependsCreate,
         uuid_collection: args.PathUUIDCollection,
         uuid_document: args.QueryUUIDDocument,
-    ) -> EventSchema:
-        with sessionmaker() as session:
-            access = Access(session, token, HTTPMethod.POST)
-            collection, documents = access.assignment_collection(
-                uuid_collection,
-                uuid_document,
-            )
+    ) -> OutputWithEvents[List[AssignmentSchema]]:
+        data = create.access.d_assignment_collection(
+            uuid_collection,
+            uuid_document,
+            level=Level.view,
+            allow_public=True,
+            validate_documents=True,
+        )
+        create.create_data = AssignmentCreateSchema()
+        data_final = create.assignment_document(data)
+        data_final.commit(create.session)
 
-            upsert = access.then(Create)
-            event = upsert.assignment_collection(collection, documents)
-            return EventSchema.model_validate(event)
+        return mwargs(
+            OutputWithEvents[List[AssignmentSchema]],
+            data=cls.adapter.validate_python(data_final.data.assignments.values()),
+            events=[EventSchema.model_validate(data_final.event)],
+        )
 
     @classmethod
-    def get_assignment_collection(
+    def get_assignments_collection(
         cls,
-        sessionmaker: DependsSessionMaker,
-        token: DependsToken,
+        access: DependsAccess,
         uuid_collection: args.PathUUIDCollection,
+        *,
         uuid_document: args.QueryUUIDDocumentOptional = None,
-    ) -> List[AssignmentSchema]:
-        with sessionmaker() as session:
-            access = Access(session, token, HTTPMethod.GET)
-            collection = access.collection(uuid_collection)
-            q = collection.q_select_assignment(
-                uuid_document,
-                exclude_deleted=True,
-            )
-            res = session.execute(q).scalars()
+        limit: int | None = None,
+        randomize: bool = False,
+    ) -> AsOutput[List[AssignmentSchema]]:
 
-            return list(AssignmentSchema.model_validate(item) for item in res)
+        q = select(Document).where(Document.deleted == false())
+        if uuid_document is not None:
+            q = q.where(Document.uuid.in_(uuid_document))
+        if randomize:
+            q = q.order_by(func.random())
+        if limit:
+            q = q.limit(limit)
+
+        documents = tuple(access.session.scalars(q))
+
+        data = access.d_assignment_collection(uuid_collection, documents, validate_documents=False,)
+        return mwargs(
+            AsOutput[List[AssignmentSchema]],
+            data=cls.adapter.validate_python(data.data.assignments.values()),
+        )

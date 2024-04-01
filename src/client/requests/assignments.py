@@ -3,15 +3,10 @@ from typing import Any, Dict
 import httpx
 import typer
 from client import flags
-from client.requests.base import BaseRequests, ContextData
+from client.requests.base import BaseRequests, ContextData, methodize, params
 
 
 class CollectionAssignmentRequests(BaseRequests):
-    typer_commands = dict(
-        read="req_read",
-        create="req_create",
-        delete="req_delete",
-    )
 
     @classmethod
     def req_read(
@@ -20,16 +15,19 @@ class CollectionAssignmentRequests(BaseRequests):
         uuid_collection: flags.ArgUUIDCollection,
         *,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
+        limit: flags.FlagLimitOptional = None,
+        randomize: bool = False
     ) -> httpx.Request:
 
         context = ContextData.resolve(_context)
-        params: Dict[str, Any] = dict()
-        if uuid_document:
-            params.update(uuid_document=uuid_document)
         return httpx.Request(
             "GET",
             context.url(f"/assignments/collections/{uuid_collection}"),
-            params=params,
+            params=params(
+                uuid_document=uuid_document,
+                limit=limit,
+                randomize=randomize,
+            ),
             headers=context.headers,
         )
 
@@ -58,23 +56,28 @@ class CollectionAssignmentRequests(BaseRequests):
         uuid_collection: flags.ArgUUIDCollection,
         *,
         uuid_document: flags.FlagUUIDDocuments,
+        force: flags.FlagForce = False,
     ) -> httpx.Request:
 
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
             context.url(f"/assignments/collections/{uuid_collection}"),
-            params=dict(uuid_document=uuid_document),
+            params=dict(uuid_document=uuid_document, force=force),
             headers=context.headers,
         )
 
-
-class DocumentAssignmentRequests(BaseRequests):
     typer_commands = dict(
         read="req_read",
         create="req_create",
         delete="req_delete",
     )
+
+    create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
+    delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
+
+class DocumentAssignmentRequests(BaseRequests):
 
     @classmethod
     def req_read(
@@ -83,15 +86,18 @@ class DocumentAssignmentRequests(BaseRequests):
         uuid_document: flags.ArgUUIDDocument,
         *,
         uuid_collection: flags.FlagUUIDCollectionsOptional = list(),
+        limit: flags.FlagLimitOptional = None,
+        randomize: bool = False
     ) -> httpx.Request:
-        params: Dict[str, Any] = dict()
-        if uuid_collection:
-            params.update(uuid_collection=uuid_collection)
         context = ContextData.resolve(_context)
         return httpx.Request(
             "GET",
             context.url(f"/assignments/documents/{uuid_document}"),
-            params=params,
+            params=params(
+                uuid_collection=uuid_collection,
+                limit=limit,
+                randomize=randomize,
+            ),
             headers=context.headers,
         )
 
@@ -119,15 +125,26 @@ class DocumentAssignmentRequests(BaseRequests):
         uuid_document: flags.ArgUUIDDocument,
         *,
         uuid_collection: flags.FlagUUIDCollections,
+        force: flags.FlagForce = False,
     ) -> httpx.Request:
 
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
             context.url(f"/assignments/documents/{uuid_document}"),
-            params=dict(uuid_collection=uuid_collection),
+            params=dict(uuid_collection=uuid_collection, force=force),
             headers=context.headers,
         )
+
+    typer_commands = dict(
+        read="req_read",
+        create="req_create",
+        delete="req_delete",
+    )
+
+    create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
+    delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
 
 
 class AssignmentRequests(BaseRequests):

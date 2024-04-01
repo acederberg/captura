@@ -187,6 +187,10 @@ class DocumentView(BaseView):
             data=DocumentSchema.model_validate(document),
         )
 
+    # TODO: Changing a document from public to private should prune the
+    #       assignments from collections where the collection owner does not
+    #       level of view. For now, this is not the case and they will be
+    #       filtered out of results instead.
     @classmethod
     def patch_document(
         cls,
@@ -202,6 +206,10 @@ class DocumentView(BaseView):
         To undo updates of the `content` field use **rollback** to revert to
         the most recent edit, or use `uuid_rollback` to specify the exact edit
         uuid to rollback to.
+
+        When changing the public status of a document, bear in mind that it 
+        will remove the document from any collection where the owner does not
+        have a grant on the document.
 
         To read the edits for a document use
         `GET /documents/{uuid_document}/edits`.

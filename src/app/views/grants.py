@@ -1,57 +1,24 @@
 from typing import Annotated, List, Set, Tuple
 
 from app import __version__, fields
-from app.controllers.base import (
-    Data,
-    ResolvedDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-    ResolvedUser,
-)
-from app.depends import (
-    DependsAccess,
-    DependsCreate,
-    DependsDelete,
-    DependsSessionMaker,
-    DependsToken,
-    DependsUpdate,
-)
-from app.err import (
-    AnyErrDetailAccessDocumentGrant,
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrAccessUser,
-    ErrDetail,
-)
-from app.models import (
-    AssocUserDocument,
-    Document,
-    Event,
-    Grant,
-    KindEvent,
-    KindObject,
-    Level,
-    LevelStr,
-    User,
-)
-from app.schemas import (
-    AsOutput,
-    EventSchema,
-    GrantCreateSchema,
-    GrantSchema,
-    OutputWithEvents,
-    mwargs,
-)
+from app.controllers.base import (Data, ResolvedDocument,
+                                  ResolvedGrantDocument, ResolvedGrantUser,
+                                  ResolvedUser)
+from app.depends import (DependsAccess, DependsCreate, DependsDelete,
+                         DependsSessionMaker, DependsToken, DependsUpdate)
+from app.err import (AnyErrDetailAccessDocumentGrant,
+                     ErrAccessDocumentCannotRejectOwner,
+                     ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrAccessUser, ErrDetail)
+from app.models import (AssocUserDocument, Document, Event, Grant, KindEvent,
+                        KindObject, Level, LevelStr, User)
+from app.schemas import (AsOutput, EventSchema, GrantCreateSchema, GrantSchema,
+                         OutputWithEvents, mwargs)
 from app.views import args
-from app.views.base import (
-    BaseView,
-    OpenApiResponseCommon,
-    OpenApiResponseDocumentForbidden,
-    OpenApiResponseUnauthorized,
-    OpenApiTags,
-)
+from app.views.base import (BaseView, OpenApiResponseCommon,
+                            OpenApiResponseDocumentForbidden,
+                            OpenApiResponseUnauthorized, OpenApiTags)
 from fastapi import HTTPException, status
 from pydantic import TypeAdapter
 from sqlalchemy import literal_column, select, update
@@ -136,6 +103,7 @@ class DocumentGrantView(BaseView):
         access: DependsAccess,
         uuid_document: args.PathUUIDDocument,
         uuid_user: args.QueryUUIDUserOptional = None,
+        *,
         pending: bool = False,
         pending_from: args.QueryPendingFromOptional = None,
     ) -> AsOutput[List[GrantSchema]]:
@@ -171,6 +139,7 @@ class DocumentGrantView(BaseView):
         create: DependsCreate,
         uuid_document: args.PathUUIDDocument,
         uuid_user: args.QueryUUIDUser,
+        *,
         level: args.QueryLevel = LevelStr.view,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Invite users to access a document by creating pending grants. Users
@@ -327,6 +296,7 @@ class UserGrantView(BaseView):
         access: DependsAccess,
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocumentOptional = None,
+        *,
         level: args.QueryLevel | None = None,
         pending: bool = False,
         pending_from: args.QueryPendingFromOptional = None,
@@ -398,6 +368,7 @@ class UserGrantView(BaseView):
         create: DependsCreate,
         uuid_user: args.PathUUIDUser,
         uuid_document: args.QueryUUIDDocument,
+        *,
         level: args.QueryLevel,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Request **user** access to *public* **documents** specified by

@@ -255,6 +255,7 @@ class Create(WithDelete, Generic[T_Create]):
 
                 # This makes force possible when committing. It will be necessary
                 # to delete so that ew entries are added without conflicts.
+                # THIS DELETES ALL ASSOCS!
                 event_rm = self.delete.create_event_assoc(data, rm_assocs)
                 self.session.execute(rm_q)
             case _:
@@ -262,25 +263,22 @@ class Create(WithDelete, Generic[T_Create]):
 
         attr_uuid_target = "uuid_" + Singular[data.data._attr_name_target].value
 
-        print(
-            json.dumps(
-                [
-                    item.model_dump(mode="json")
-                    for item in TypeAdapter(List[GrantSchema]).validate_python(
-                        data.data.assoc.values()
-                    )
-                ]
-            )
-        )
-
         uuid_target_exists = {
             getattr(value, attr_uuid_target) for value in data.data.assoc.values()
         }
+
+        # NOTE: Must recreate entries getting deleted.
+        if self.force:
+            uuid_target_final = uuid_target_create | uuid_target_exists
+        else:
+            uuid_target_final = uuid_target_create - uuid_target_exists
+
+        print(uuid_target_final)
+
         targets: Tuple = tuple(
             target
             for target in data.data.target  # type: ignore
-            if target.uuid in uuid_target_create
-            if target.uuid not in uuid_target_exists
+            if target.uuid in uuid_target_final
         )
         assocs: Dict[str, Grant] | Dict[str, Assignment] = {
             target.uuid: create_assoc(data, target)  # type: ignore
@@ -289,9 +287,6 @@ class Create(WithDelete, Generic[T_Create]):
 
         # WARNING! OVERWRITES! NECESSARY FOR
         data_final = data.model_copy(deep=True)
-        print("uuid_target_exists", uuid_target_exists)
-        print("targets", targets)
-        print("assocs", assocs)
         setattr(data_final.data, data_final.data._attr_name_target, targets)
         setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
         # data_final.data.target = targets
@@ -386,7 +381,7 @@ class Create(WithDelete, Generic[T_Create]):
         }
         return Assignment(
             **kwargs,
-            **self.create_data.model_dump(exclude={"kind"}),
+            **self.create_data.model_dump(),
         )
 
     def assignment_document(
@@ -394,6 +389,8 @@ class Create(WithDelete, Generic[T_Create]):
         data: Data[ResolvedAssignmentDocument],
     ) -> Data[ResolvedAssignmentDocument]:
         data, *_ = self.assoc(data, self.create_assignment)
+        assert data.event
+        print(data.event)
         return data
 
     def assignment_collection(

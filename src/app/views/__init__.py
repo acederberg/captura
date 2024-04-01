@@ -166,7 +166,7 @@ class AppView(BaseView):
 async def http_exception_handler(request: Request, exc: HTTPException):
 
     # if config.app.is_dev and config.app.dev.httpexc_tb:
-    #     traceback.print_exc()
+    traceback.print_exc()
 
     # https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/http/h11_impl.py
     if request.client:

@@ -5,16 +5,8 @@ from typing import Annotated, List, Optional, TypeAlias, TypeVar
 
 import typer
 from app.fields import PendingFromStr
-from app.models import (
-    ChildrenCollection,
-    ChildrenDocument,
-    ChildrenUser,
-    Format,
-    KindEvent,
-    KindObject,
-    KindRecurse,
-    LevelStr,
-)
+from app.models import (ChildrenCollection, ChildrenDocument, ChildrenUser,
+                        Format, KindEvent, KindObject, KindRecurse, LevelStr)
 
 
 class Verbage(str, enum.Enum):
@@ -176,6 +168,7 @@ FlagDescriptionLike: TypeAlias = Annotated[
 ]
 FlagIncludePublic: TypeAlias = Annotated[int, typer.Option("--include-public")]
 FlagLimit: TypeAlias = Annotated[int, typer.Option("--limit")]
+FlagLimitOptional: TypeAlias = Annotated[Optional[int], typer.Option("--limit")]
 
 
 # --------------------------------------------------------------------------- #

@@ -531,6 +531,7 @@ class Access(BaseController):
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
         validate: bool = True,
+        allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
     ) -> Document: ...
 
@@ -547,6 +548,7 @@ class Access(BaseController):
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
         validate: bool = True,
+        allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
     ) -> Tuple[Document, ...]: ...
 
@@ -563,6 +565,7 @@ class Access(BaseController):
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
         validate: bool = True,
+        allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
     ) -> Data[ResolvedDocument]: ...
 
@@ -578,6 +581,7 @@ class Access(BaseController):
         grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
         pending: bool = False,
         validate: bool = True,
+        allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
     ) -> Document | Tuple[Document, ...] | Data[ResolvedDocument]:
         level = level if level is not None else self.level
@@ -590,15 +594,18 @@ class Access(BaseController):
         def check_one(document: Document) -> Document:
             if exclude_deleted:
                 document = document.check_not_deleted()
-            token_user.check_can_access_document(
-                document,
-                level,
-                grants=grants,
-                grants_index=grants_index,
-                pending=pending,
-                exclude_deleted=exclude_deleted,
-                validate=validate,
-            )
+            if allow_public and document.public:
+                return document
+            else:
+                token_user.check_can_access_document(
+                    document,
+                    level,
+                    grants=grants,
+                    grants_index=grants_index,
+                    pending=pending,
+                    exclude_deleted=exclude_deleted,
+                    validate=validate,
+                )
             return document
 
         documents: Tuple[Document, ...]
@@ -1110,6 +1117,8 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
+        allow_public: bool = False,
+        validate_documents: bool = True,
     ) -> Tuple[Collection, Tuple[Document, ...]]: ...
 
     @overload
@@ -1122,6 +1131,8 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
+        allow_public: bool = False,
+        validate_documents: bool = True,
     ) -> Data[ResolvedAssignmentCollection]: ...
 
     def assignment_collection(
@@ -1133,6 +1144,8 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
         return_data: bool = False,
+        allow_public: bool = False,
+        validate_documents: bool = True,
     ) -> Tuple[Collection, Tuple[Document, ...]] | Data[ResolvedAssignmentCollection]:
         # NOTE: Keep `token_user` here so that the user is checked.
         token_user = self.token_user_or(resolve_user_token)
@@ -1146,6 +1159,8 @@ class Access(BaseController):
             level=level or self.level,
             exclude_deleted=exclude_deleted,
             resolve_user_token=token_user,
+            allow_public=allow_public,
+            validate=validate_documents,
         )
 
         uuid_documents = Document.resolve_uuid(self.session, resolve_documents)
@@ -1179,6 +1194,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: ResolvableLevel | None = None,
+        validate_documents: bool = True,
     ) -> Data[ResolvedAssignmentCollection]:
         return self.assignment_collection(
             resolve_collection,
@@ -1187,6 +1203,7 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             level=level,
             return_data=True,
+            validate_documents=validate_documents,
         )
 
     @overload
@@ -1199,6 +1216,10 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
+        validate_collections: bool = True,
+        validate_document: bool = True,
+        allow_public: bool = False,
+        all_collections: bool = False,
     ) -> Tuple[Document, Tuple[Collection, ...]]: ...
 
     @overload
@@ -1211,6 +1232,10 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
+        validate_collections: bool = True,
+        validate_document: bool = True,
+        allow_public: bool = False,
+        all_collections: bool = False,
     ) -> Data[ResolvedAssignmentDocument]: ...
 
     def assignment_document(
@@ -1222,6 +1247,10 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: ResolvableLevel | None = None,
         return_data: bool = False,
+        validate_collections: bool = True,
+        validate_document: bool = True,
+        allow_public: bool = False,
+        all_collections: bool = False,
     ) -> Tuple[Document, Tuple[Collection, ...]] | Data[ResolvedAssignmentDocument]:
         token_user = self.token_user_or(resolve_user_token)
         document = self.document(
@@ -1229,17 +1258,30 @@ class Access(BaseController):
             level=level or self.level,
             exclude_deleted=exclude_deleted,
             resolve_user_token=token_user,
+            allow_public=allow_public,
+            validate=validate_document,
         )
-        collections = self.collection(
-            resolve_collections,
-            exclude_deleted=exclude_deleted,
-            resolve_user_token=token_user,
-        )
+        if validate_collections:
+            collections = self.collection(
+                resolve_collections,
+                exclude_deleted=exclude_deleted,
+                resolve_user_token=token_user,
+            )
+        else:
+            collections = Collection.resolve(self.session, resolve_collections)
+
+        if all_collections:
+            collections = tuple(
+                collection
+                for collection in collections
+                if collection.public or collection.uuid_user == token_user.uuid
+            )
 
         uuid_collections = Collection.resolve_uuid(self.session, resolve_collections)
-        q_assignments = document.q_select_assignment(uuid_collections)
+        q_assignments = document.q_select_assignment(uuid_collections,
+                                                     exclude_deleted=exclude_deleted)
         assignments = {
-            assignment.uuid_document: assignment
+            assignment.uuid_collection: assignment
             for assignment in self.session.execute(q_assignments).scalars()
         }
 
@@ -1267,6 +1309,10 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: ResolvableLevel | None = None,
+        validate_collections: bool = True,
+        allow_public: bool = False,
+        validate_document: bool = True,
+        all_collections: bool = False,
     ) -> Data[ResolvedAssignmentDocument]:
         return self.assignment_document(
             resolve_document,
@@ -1275,6 +1321,10 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             level=level,
             return_data=True,
+            validate_collections=validate_collections,
+            allow_public=allow_public,
+            validate_document=validate_document,
+            all_collections=all_collections,
         )
 
     def assignment(

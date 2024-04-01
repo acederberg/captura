@@ -493,7 +493,7 @@ class ResolvedAssignmentCollection(BaseResolvedSecondary):
     kind_assoc = KindObject.assignment
 
     collection: Collection
-    assignments: Dict[str, Assignment] | None
+    assignments: Dict[str, Assignment]
     documents: Tuple[Document, ...]
     uuid_collection: UuidFromModel
     uuid_assignments: UuidSetFromModelOptional
@@ -509,7 +509,7 @@ class ResolvedAssignmentDocument(BaseResolvedSecondary):
     kind_assoc = KindObject.assignment
 
     document: Document
-    assignments: Dict[str, Assignment] | None
+    assignments: Dict[str, Assignment]
     collections: Tuple[Collection, ...]
     uuid_document: UuidFromModel
     uuid_assignments: UuidSetFromModelOptional

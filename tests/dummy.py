@@ -77,7 +77,7 @@ class BaseDummyProvider:
             conds.append(Model.public == bool_)
         if deleted is not None:
             bool_ = true() if deleted else false()
-            conds.append(Model.deleted == false())
+            conds.append(Model.deleted == bool_)
 
         q = select(Model).where(*conds).order_by(func.random()).limit(n)
         if callback:
@@ -87,10 +87,10 @@ class BaseDummyProvider:
         models = tuple(self.session.scalars(q))
         assert len(models)
         if deleted is not None:
+            print("Checking deleted...")
+            for mm in models:
+                print(mm.uuid, "->", mm.deleted)
             assert all(mm.deleted is deleted for mm in models)
-            # print("Checking deleted...")
-            # for mm in models:
-            #     print(mm.uuid, "->", mm.deleted)
 
         if public is not None:
             assert all(mm.public is public for mm in models)
@@ -126,20 +126,23 @@ class BaseDummyProvider:
         return self.get_primary(Collection, n, **kwargs_get_primary)
 
     def get_user_documents(
-        self, level: Level, deleted: bool = False, *, n: int = 1, **kwargs
+        self, level: Level, deleted: bool | None = False, *, n: int = 1, **kwargs
     ) -> Tuple[Document, ...]:
 
         logger.debug("Getting user documents.")
         kwargs.update(exclude_deleted=not deleted)
         q = self.user.q_select_documents(level=level, **kwargs)
-        if deleted:
-            q = q.where(Document.deleted)
+        if deleted is not None:
+            bool_ = true() if deleted else false()
+            q = q.where(Document.deleted == bool_)
 
         q = q.order_by(func.random()).limit(n)
+        util.sql(self.session, q)
         docs = tuple(self.session.scalars(q))
 
         assert len(docs)
-        assert all(dd.deleted is deleted for dd in docs)
+        if deleted is not None:
+            assert all(dd.deleted is deleted for dd in docs)
 
         return docs
 

@@ -151,8 +151,15 @@ class BaseEndpointTest(abc.ABC):
         err: ErrDetail | None = None,
     ) -> AssertionError | None:
         # DO RECURSE
-        if isinstance(response, tuple):
-            raise ValueError("No longer supported.")
+        if isinstance(response, tuple) or isinstance(response, list):
+            err: AssertionError | None
+            return next(
+                (
+                    err for rr in response
+                    if (err := self.check_status(requests, rr) ) is not None
+                ),
+                None
+            )
 
         if expect is None:
             match response.request.method:

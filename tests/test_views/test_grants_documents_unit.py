@@ -55,7 +55,6 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         if err := self.check_status(requests, res, 401, err_content):
             raise err
 
-
     @pytest.mark.asyncio
     async def test_forbidden_403_insufficient(
         self,

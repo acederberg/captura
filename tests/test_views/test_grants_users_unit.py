@@ -6,18 +6,13 @@ from typing import Dict, List, Tuple
 
 import httpx
 import pytest
-from app.err import (
-    ErrAccessDocumentPending,
-    ErrAccessUser,
-    ErrAssocRequestMustForce,
-    ErrBase,
-    ErrDetail,
-    ErrObjMinSchema,
-    ErrUpdateGrantPendingFrom,
-)
+from app.err import (ErrAccessDocumentPending, ErrAccessUser,
+                     ErrAssocRequestMustForce, ErrBase, ErrDetail,
+                     ErrObjMinSchema, ErrUpdateGrantPendingFrom)
 from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from app.models import Document, Grant, User
-from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
+from app.schemas import (AsOutput, GrantSchema, KindNesting, OutputWithEvents,
+                         mwargs)
 from client.requests import Requests
 from pydantic import TypeAdapter
 from sqlalchemy import delete, select, true

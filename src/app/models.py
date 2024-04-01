@@ -2,92 +2,34 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    ClassVar,
-    Collection,
-    Dict,
-    Generator,
-    List,
-    Literal,
-    Self,
-    Set,
-    Tuple,
-    TypeAlias,
-    TypeVar,
-    overload,
-)
+from typing import (Annotated, Any, Callable, ClassVar, Collection, Dict,
+                    Generator, List, Literal, Self, Set, Tuple, TypeAlias,
+                    TypeVar, overload)
 
 from fastapi import HTTPException
-from sqlalchemy import (
-    CTE,
-    BooleanClauseList,
-    Column,
-    ColumnElement,
-    CompoundSelect,
-    Enum,
-    ForeignKey,
-    Select,
-    String,
-    UniqueConstraint,
-    and_,
-    func,
-    literal_column,
-    select,
-    true,
-    union,
-)
+from sqlalchemy import (CTE, BooleanClauseList, Column, ColumnElement,
+                        CompoundSelect, Enum, ForeignKey, Select, String,
+                        UniqueConstraint, and_, func, literal_column, select,
+                        true, union)
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import (
-    DeclarativeBase,
-    InstrumentedAttribute,
-    Mapped,
-    Session,
-    mapped_column,
-    object_session,
-    relationship,
-)
+from sqlalchemy.orm import (DeclarativeBase, InstrumentedAttribute, Mapped,
+                            Session, mapped_column, object_session,
+                            relationship)
 from sqlalchemy.orm.mapped_collection import attribute_keyed_dict
 from sqlalchemy.sql import false
 
 from app import __version__, fields, util
-from app.err import (
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrAccessEvent,
-    ErrEventGeneral,
-    ErrEventKind,
-    ErrEventUndone,
-    ErrObjMinSchema,
-)
-from app.fields import (
-    LENGTH_CONTENT,
-    LENGTH_DESCRIPTION,
-    LENGTH_FORMAT,
-    LENGTH_MESSAGE,
-    LENGTH_NAME,
-    LENGTH_TITLE,
-    LENGTH_URL,
-    ChildrenAssignment,
-    ChildrenCollection,
-    ChildrenDocument,
-    ChildrenGrant,
-    ChildrenUser,
-    Format,
-    KindEvent,
-    KindObject,
-    KindRecurse,
-    Level,
-    LevelHTTP,
-    LevelStr,
-    PendingFrom,
-    Plural,
-    ResolvableLevel,
-    Singular,
-)
+from app.err import (ErrAccessDocumentGrantBase,
+                     ErrAccessDocumentGrantInsufficient,
+                     ErrAccessDocumentPending, ErrAccessEvent, ErrEventGeneral,
+                     ErrEventKind, ErrEventUndone, ErrObjMinSchema)
+from app.fields import (LENGTH_CONTENT, LENGTH_DESCRIPTION, LENGTH_FORMAT,
+                        LENGTH_MESSAGE, LENGTH_NAME, LENGTH_TITLE, LENGTH_URL,
+                        ChildrenAssignment, ChildrenCollection,
+                        ChildrenDocument, ChildrenGrant, ChildrenUser, Format,
+                        KindEvent, KindObject, KindRecurse, Level, LevelHTTP,
+                        LevelStr, PendingFrom, Plural, ResolvableLevel,
+                        Singular)
 
 # =========================================================================== #
 # CONSTANTS, ENUMS, ETC.
