@@ -1,4 +1,5 @@
 # =========================================================================== #
+import importlib
 import json
 from typing import Annotated
 
@@ -14,6 +15,11 @@ from app.config import Config
 from app.depends import session_maker
 
 from . import util
+
+# try:
+#     docker = importlib.import_module("docker")
+# except ImportError:
+#     docker = None
 
 logger = util.get_logger(__name__)
 

@@ -318,6 +318,13 @@ class DemoUserView(BaseView):
         )
 
 
+def user(access: DependsAccess, uuid_user: args.PathUUIDUser) -> User:
+    return access.user(uuid_user, exclude_public=True)
+
+
+DependsUser = Annotated[User, Depends(user)]
+
+
 class UserSearchView(BaseView):
     """Separate from :class:`UserView` so that it is clear that this is the
     sole batch of endpoints through which ``search`` style results are
@@ -336,10 +343,10 @@ class UserSearchView(BaseView):
             url="/{uuid_user}/documents",
             name="Search User Documents",
         ),
-        get_search_edits=dict(
-            url="/{uuid_user}/edits",
-            name="Search User Edits",
-        ),
+        # get_search_edits=dict(
+        #     url="/{uuid_user}/edits",
+        #     name="Search User Edits",
+        # ),
         get_search_collections=dict(
             url="/{uuid_user}/collections",
             name="Search User Collections",
@@ -357,13 +364,12 @@ class UserSearchView(BaseView):
     @classmethod
     def get_search_users(
         cls,
-        uuid_user: args.PathUUIDUser,
+        user: DependsUser,
         read: DependsRead,
         param: Annotated[UserSearchSchema, Depends()],
     ) -> AsOutput[List[UserSchema]]:
         """Get user collaborators or just list some users."""
 
-        user: User = read.access.user(uuid_user)
         res: Tuple[User, ...] = read.search_user(user, param)
         return mwargs(
             AsOutput[List[UserSchema]],
@@ -374,11 +380,10 @@ class UserSearchView(BaseView):
     @classmethod
     def get_search_documents(
         cls,
-        uuid_user: args.PathUUIDUser,
+        user: DependsUser,
         read: DependsRead,
         param: DocumentSearchSchema = Depends(),
     ) -> AsOutput[List[DocumentMetadataSchema]]:
-        user: User = read.access.user(uuid_user)
         res: Tuple[Document, ...] = read.search_user(user, param)
         return mwargs(
             AsOutput[List[DocumentMetadataSchema]],
@@ -399,19 +404,19 @@ class UserSearchView(BaseView):
             data=TypeAdapter(List[CollectionMetadataSchema]).validate_python(res),
         )
 
-    @classmethod
-    def get_search_edits(
-        cls,
-        uuid_user: args.PathUUIDUser,
-        read: DependsRead,
-        param: EditSearchSchema = Depends(),
-    ) -> AsOutput[List[EditMetadataSchema]]:
-        user: User = read.access.user(uuid_user)
-        res: Tuple[Edit, ...] = read.search_user(user, param)
-        return mwargs(
-            AsOutput[List[EditMetadataSchema]],
-            data=TypeAdapter(List[EditMetadataSchema]).validate_python(res),
-        )
+    # @classmethod
+    # def get_search_edits(
+    #     cls,
+    #     uuid_user: args.PathUUIDUser,
+    #     read: DependsRead,
+    #     param: EditSearchSchema = Depends(),
+    # ) -> AsOutput[List[EditMetadataSchema]]:
+    #     user: User = read.access.user(uuid_user)
+    #     res: Tuple[Edit, ...] = read.search_user(user, param)
+    #     return mwargs(
+    #         AsOutput[List[EditMetadataSchema]],
+    #         data=TypeAdapter(List[EditMetadataSchema]).validate_python(res),
+    #     )
 
 
 class UserView(BaseView):

@@ -45,6 +45,7 @@ from sqlalchemy.orm import (
     InstrumentedAttribute,
     Mapped,
     Session,
+    aliased,
     mapped_column,
     object_session,
     relationship,
@@ -340,19 +341,22 @@ class SearchableTableMixins(PrimaryTableMixins):
     def q_search(
         cls,
         user_uuid: str | None,
-        uuids: Set[str] | str | None = None,
+        uuids: Set[str] | None = None,
         exclude_deleted: bool = True,
         *,
         all_: bool = True,
         name_like: str | None = None,
         description_like: str | None = None,
-        session=None,
+        limit: int | None = None,
     ):
+        print("q_search_conds", uuids)
+
         if not all_ and user_uuid is None:
-            raise ValueError("`all_` must be true when a user is not provided.")
+            msg = "`all_` must be true when a user is not provided." 
+            raise ValueError(msg)
         q = None
         if user_uuid:
-            q = cls.q_select_for_user(user_uuid, uuids, exclude_deleted)
+            q = cls.q_select_for_user(user_uuid, uuids, exclude_deleted=exclude_deleted,)
 
         r = None
         if all_:
@@ -367,13 +371,26 @@ class SearchableTableMixins(PrimaryTableMixins):
         if not len(items):
             raise ValueError()
 
-        return union(*items)
+        # NOTE: The following steps are necessary to not end up with a
+        #       cartesian product in the results. See
+        #
+        #       .. code:: txt
+        #
+        #         https://docs.sqlalchemy.org/en/20/orm/queryguide/select.html#selecting-entities-from-unions-and-other-set-operations
+        #
+        rr = union(*items).subquery()
+        cls_alias = aliased(cls, rr)  # type: ignore
+        q = select(cls_alias).distinct().select_from(q)  # type: ignore
+        if limit is not None:
+            q = q.limit(limit)
+        return q
 
     @classmethod
     def q_select_for_user(
         cls,
-        user_uuid: str,
-        uuids: Set[str] | None,
+        user_uuid,
+        uuids: Set[str] | None = None,
+        *,
         exclude_deleted: bool = True,
     ) -> Select:
         ...
@@ -1582,6 +1599,7 @@ class Edit(PrimaryTableMixins, Base):
             q_edits = q_edits.where(Edit.deleted == false())
 
         return q_edits
+
 
 
 # --------------------------------------------------------------------------- #

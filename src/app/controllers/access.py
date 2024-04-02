@@ -1,4 +1,3 @@
-
 # =========================================================================== #
 import abc
 import functools
@@ -289,6 +288,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
+        exclude_public: bool = False,
         return_data: Literal[False] = False,
     ) -> User:
         ...
@@ -300,6 +300,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
+        exclude_public: bool = False,
         return_data: Literal[False] = False,
     ) -> Tuple[User, ...]:
         ...
@@ -311,6 +312,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
+        exclude_public: bool = False,
         return_data: Literal[True] = True,
     ) -> Data[ResolvedUser]:
         ...
@@ -321,6 +323,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
+        exclude_public: bool = False,
         return_data: bool = False,
     ) -> User | Tuple[User, ...] | Data[ResolvedUser]:
         """See if the token user can view another user.
@@ -336,7 +339,7 @@ class Access(BaseController):
                     self._user(
                         user,
                         user_token,
-                        exclude_public=False,
+                        exclude_public=exclude_public,
                         exclude_deleted=exclude_deleted,
                     )
                     for user in users
@@ -346,7 +349,7 @@ class Access(BaseController):
                     user,
                     user_token,
                     exclude_deleted=exclude_deleted,
-                    exclude_public=False,
+                    exclude_public=exclude_public,
                 )
                 if not return_data:
                     return user
@@ -407,6 +410,9 @@ class Access(BaseController):
                 return user
             case H.POST | H.PATCH | H.PUT | H.DELETE | H.GET:
                 if user.uuid != user_token.uuid:
+                    if self.method == H.GET:
+                        msg_name = "_msg_private"
+
                     raise ErrAccessUser.httpexception(
                         msg_name or "_msg_modify",
                         403,
@@ -426,6 +432,7 @@ class Access(BaseController):
         resolve_user: Resolvable[User],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
+        exclude_public: bool = False,
         exclude_deleted: bool = True,
     ) -> Data[ResolvedUser]:
         return self.user(
@@ -433,6 +440,7 @@ class Access(BaseController):
             resolve_user_token=resolve_user_token,
             return_data=True,
             exclude_deleted=exclude_deleted,
+            exclude_public=exclude_public,
         )
 
     # ----------------------------------------------------------------------- #

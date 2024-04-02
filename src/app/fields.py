@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime
 from typing import Annotated, Any, Callable, Set, Type, TypeAlias
 
+from fastapi import Query
 from pydantic import BeforeValidator, Field
 
 LENGTH_NAME: int = 96
@@ -323,6 +324,7 @@ FieldKindObject = Annotated[
 
 
 FieldPending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
+
 
 __all__ = (
     "ChildrenAssignment",

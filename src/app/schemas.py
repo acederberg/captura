@@ -142,11 +142,17 @@ class BaseSearchSchema(BaseSchema):
     kind_mapped: ClassVar[fields.FieldKindObject]
     kind_schema: ClassVar[KindSchema]
 
-    uuid: fields.FieldUUIDOptional = None
+    # NOTE: It appears that using `Query(None)` as the field default is what
+    #       will help fastapi find `uuid_event`. This was tricky to find so do
+    #       not touch this. The result was though up on the basis that using
+    #       `uuid_event: Set[str] | None = Query(None)` in the endpoint
+    #       signature worked.
+    uuids: Annotated[Set[str] | None, Field(default=Query(None))]
     limit: fields.FieldLimitOptional
     name_like: fields.FieldNameLike
     description_like: fields.FieldDescriptionLike
     include_public: Annotated[bool, Field(default=True)]
+    randomize: Annotated[bool, Field(default= False)]
 
 
 class BaseUpdateSchema(BaseSchema):
@@ -292,8 +298,6 @@ class CollectionSearchSchema(BaseSearchSchema):
     kind_schema = KindSchema.search
     kind_mapped = fields.KindObject.collection
 
-    uuid_collection: fields.FieldUUIDS
-
 
 # =========================================================================== #
 # Assignments
@@ -393,8 +397,6 @@ class DocumentExtraSchema(BasePrimaryTableExtraSchema, DocumentSchema):
 class DocumentSearchSchema(BaseSearchSchema):
     kind_mapped = fields.KindObject.document
     kind_schema = KindSchema.search
-
-    uuid_document: fields.FieldUUIDS
 
 
 class TimespanLimitParams(BaseModel):

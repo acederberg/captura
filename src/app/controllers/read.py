@@ -1,10 +1,14 @@
 # =========================================================================== #
+import json
 from http import HTTPMethod
 from typing import Any, Dict, Tuple, Type, TypeVar, overload
 
-from sqlalchemy.orm import Session
+from fastapi import HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, aliased
 
 # --------------------------------------------------------------------------- #
+from app import util
 from app.auth import Token
 from app.controllers.access import Access
 from app.controllers.base import BaseController
@@ -73,13 +77,13 @@ class Read(BaseController):
     ) -> Tuple[Collection, ...]:
         ...
 
-    @overload
-    def search_user(
-        self,
-        user: User,
-        param: EditSearchSchema,
-    ) -> Tuple[Edit, ...]:
-        ...
+    # @overload
+    # def search_user(
+    #     self,
+    #     user: User,
+    #     param: EditSearchSchema,
+    # ) -> Tuple[Edit, ...]:
+    #     ...
 
     def search_user(
         self,
@@ -88,26 +92,32 @@ class Read(BaseController):
             UserSearchSchema
             | DocumentSearchSchema
             | CollectionSearchSchema
-            | EditSearchSchema
+            # | EditSearchSchema
         ),
     ) -> (
         Tuple[User, ...]
         | Tuple[Document, ...]
         | Tuple[Collection, ...]
-        | Tuple[Edit, ...]
+        # | Tuple[Edit, ...]
     ):
+        if param.kind_mapped is None:
+            raise HTTPException(500)
+
         singular = Singular(param.kind_mapped.name)
 
-        T_kind: Type[User] | Type[Document] | Type[Collection] | Type[Edit]
+        T_kind: Type[User] | Type[Document] | Type[Collection]  # | Type[Edit]
         T_kind = Tables[singular.name].value  # type: ignore[reportGeneralTypeErrors]
+
         q = T_kind.q_search(
             user.uuid,
-            param.uuid,
+            param.uuids,
             all_=True,
             name_like=param.name_like,
             description_like=param.description_like,
-            session=self.session,
-        )
-        # util.sql(self.session, q)
-        res = self.session.execute(q)
-        return tuple(res)  # type: ignore
+            limit=param.limit,
+        ) 
+
+        if param.randomize:
+            q = q.order_by(func.random())
+
+        return tuple(self.session.scalars(q))

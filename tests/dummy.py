@@ -33,7 +33,7 @@ from app.controllers.base import (
     T_ResolvedPrimary,
 )
 from app.controllers.delete import Delete
-from app.fields import KindObject, Level, Singular
+from app.fields import KindObject, Level, Plural, Singular
 from app.models import (
     Assignment,
     Base,
@@ -90,13 +90,23 @@ class BaseDummyProvider:
 
     def get_primary(
         self,
-        Model: Type[T_ResolvedPrimary],
+        Model_: Type[T_ResolvedPrimary] | KindObject,
         n: int,
         *,
         callback: Callable[[Any], Any] | None = None,
         public: bool | None = None,
         deleted: bool | None = None,
     ) -> Tuple[T_ResolvedPrimary, ...]:
+
+        match Model_:
+            case KindObject() as kind:
+                Model = Tables[Plural[kind.name].value].value
+            case _:
+                Model = Model_
+
+        if Model in (Grant, Assignment):
+            raise ValueError()
+
         logger.debug("Getting data of kind `%s`.", Model.__tablename__)
         conds = list()
         if public is not None:

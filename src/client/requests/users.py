@@ -107,6 +107,7 @@ class UserRequests(BaseRequests):
         description_like: flags.FlagDescriptionLike = None,
         limit: flags.FlagLimit = 10,
         include_public: flags.FlagIncludePublic = True,
+        randomize: bool = True,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
 
@@ -120,11 +121,12 @@ class UserRequests(BaseRequests):
             context.url(f"/users/{uuid_user}/{child_name}"),
             headers=context.headers,
             params=params(
-                uuid=uuids,
+                uuids=uuids,
                 limit=limit,
                 name_like=name_like,
                 description_like=description_like,
                 include_public=include_public,
+                randomize=randomize,
             ),
         )
 
