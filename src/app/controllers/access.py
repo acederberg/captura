@@ -1,3 +1,4 @@
+
 # =========================================================================== #
 import abc
 import functools
@@ -445,6 +446,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
+        allow_public: bool = True,
     ) -> Collection:
         ...
 
@@ -456,6 +458,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[False] = False,
+        allow_public: bool = True,
     ) -> Tuple[Collection, ...]:
         ...
 
@@ -467,6 +470,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: Literal[True] = True,
+        allow_public: bool = True,
     ) -> Data[ResolvedCollection]:
         ...
 
@@ -477,6 +481,7 @@ class Access(BaseController):
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
         return_data: bool = False,
+        allow_public: bool = True,
     ) -> Collection | Tuple[Collection, ...] | Data[ResolvedCollection]:
         # NOTE: `exclude_deleted` should only be ``True`` when a force
         #       deletion is occuring.
@@ -484,17 +489,8 @@ class Access(BaseController):
             if exclude_deleted:
                 collection = collection.check_not_deleted()
 
-            # Not sure how this happens on occasion.
-            # if collection.id_user is None:
-            #     raise ErrAccessCollection.httpexception(
-            #         "_msg_homeless",
-            #         418,
-            #         uuid_user_token=token_user.uuid,
-            #         uuid_collection=collection.uuid,
-            #     )
-
             match self.method:
-                case H.GET:
+                case H.GET if allow_public:
                     if not collection.public and collection.id_user != token_user.id:
                         raise ErrAccessCollection.httpexception(
                             "_msg_private",
@@ -503,7 +499,7 @@ class Access(BaseController):
                             uuid_collection=collection.uuid,
                         )
                     return collection
-                case H.POST | H.DELETE | H.PUT | H.PATCH:
+                case H.GET | H.POST | H.DELETE | H.PUT | H.PATCH:
                     if token_user.id != collection.id_user:
                         raise ErrAccessCollection.httpexception(
                             "_msg_modify",
@@ -1172,6 +1168,7 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
         allow_public: bool = False,
+        allow_public_collection: bool = False,
         validate_documents: bool = True,
     ) -> Tuple[Collection, Tuple[Document, ...]]:
         ...
@@ -1187,6 +1184,7 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
         allow_public: bool = False,
+        allow_public_collection: bool = False,
         validate_documents: bool = True,
     ) -> Data[ResolvedAssignmentCollection]:
         ...
@@ -1201,6 +1199,7 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         return_data: bool = False,
         allow_public: bool = False,
+        allow_public_collection: bool = False,
         validate_documents: bool = True,
     ) -> Tuple[Collection, Tuple[Document, ...]] | Data[ResolvedAssignmentCollection]:
         # NOTE: Keep `token_user` here so that the user is checked.
@@ -1209,6 +1208,7 @@ class Access(BaseController):
             resolve_collection,
             exclude_deleted=exclude_deleted,
             resolve_user_token=token_user,
+            allow_public=allow_public_collection,
         )
         documents = self.document(
             resolve_documents,
@@ -1251,6 +1251,8 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         level: ResolvableLevel | None = None,
         validate_documents: bool = True,
+        allow_public: bool = False,
+        allow_public_collection: bool =False,
     ) -> Data[ResolvedAssignmentCollection]:
         return self.assignment_collection(
             resolve_collection,
@@ -1260,6 +1262,8 @@ class Access(BaseController):
             level=level,
             return_data=True,
             validate_documents=validate_documents,
+            allow_public=allow_public,
+            allow_public_collection=allow_public_collection,
         )
 
     @overload

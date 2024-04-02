@@ -365,7 +365,6 @@ class EventView(BaseView):
         kwargs_search = param_search.model_dump(exclude={"before", "after"})
         if not access.token.admin:
             kwargs_search.update(uuid_user=access.token_user.uuid)
-        print(kwargs_search)
 
         session = access.session
         q = Event.q_select_search(

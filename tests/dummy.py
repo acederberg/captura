@@ -7,7 +7,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
     Dict,
     NotRequired,
     Self,

@@ -156,22 +156,27 @@ class AppView(BaseView):
         return t.validate_python(items)
 
 
+# =========================================================================== #
+import json
+
+
 # TODO: The traceback should not show up in prod unless the status `500`.
 #       In fact, the traceback should be stored by the logger instead.
 # TODO: Figure out how to use config to turn this on or off. Unfortunately
 #       exception handlers do not use dependencies and it is hard to build
 #       dependecies from the request directly.
-@AppView.view_router.exception_handler(HTTPException)
+@AppView.view_router.exception_handler(HTTPException)  # type: ignore
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # if config.app.is_dev and config.app.dev.httpexc_tb:
-    traceback.print_exc()
-
     # https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/http/h11_impl.py
-    if request.client:
-        host, port = request.client.host, request.client.port
-        logger.info("%s:%s - %s", host, port, exc.detail)
-    else:
-        logger.debug("No client for request.")
+    if util.VERBOSE_HTTPEXCEPTIONS:
+        traceback.print_exc()
+
+    if util.VERBOSE:
+        if request.client:
+            host, port = request.client.host, request.client.port
+            logger.info("%s:%s - %s", host, port, json.dumps(exc.detail, indent=2))
+        else:
+            logger.debug("No client for request.")
 
     return JSONResponse(
         exc.detail,
@@ -182,7 +187,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 __all__ = (
     "DocumentGrantView",
     "UserGrantView",
-    "AssignmentView",
     "CollectionView",
     "AuthView",
     "EventView",

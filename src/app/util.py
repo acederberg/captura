@@ -10,7 +10,9 @@ import yaml
 from rich.console import Console
 from rich.syntax import Syntax
 
-ENV_PREFIX = "ARTICLES_"
+ENV_PREFIX = "CAPTURA_"
+VERBOSE = environ.get(f"{ENV_PREFIX}VERBOSE")
+VERBOSE_HTTPEXCEPTIONS = environ.get(f"{ENV_PREFIX}VERBOSE-HTTPEXCEPTIONS")
 LOG_LEVEL = logging.INFO
 
 # =========================================================================== #

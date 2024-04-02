@@ -241,6 +241,8 @@ class Create(WithDelete, Generic[T_Create]):
         event_rm: Event | None = None
         match self.method:
             case H.POST if not force:
+                print("HERQERQERQRKGNQERKGNQEKRJGTF:QKETR")
+                print(rm_assoc_data)
                 if rm_assoc_data.uuid_assoc_deleted:
                     raise ErrAssocRequestMustForce.httpexception(
                         "_msg_force",
@@ -289,8 +291,6 @@ class Create(WithDelete, Generic[T_Create]):
             uuid_target_final = uuid_target_create | uuid_target_exists
         else:
             uuid_target_final = uuid_target_create - uuid_target_exists
-
-        print(uuid_target_final)
 
         targets: Tuple = tuple(
             target
@@ -407,7 +407,6 @@ class Create(WithDelete, Generic[T_Create]):
     ) -> Data[ResolvedAssignmentDocument]:
         data, *_ = self.assoc(data, self.create_assignment)
         assert data.event
-        print(data.event)
         return data
 
     def assignment_collection(

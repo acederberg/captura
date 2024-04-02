@@ -195,7 +195,6 @@ def try_decode(
         _msg = "Invalid bearer token."
     except ValueError as err:
         _msg = err.args[0]
-        print(err)
     return None, HTTPException(401, detail="Invalid Token: " + _msg)
 
 

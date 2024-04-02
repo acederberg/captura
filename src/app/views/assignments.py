@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.sql.expression import false
 
 # --------------------------------------------------------------------------- #
+from app import util
 from app.depends import DependsAccess, DependsCreate, DependsDelete
 from app.models import Assignment, Collection, Document, Level
 from app.schemas import (
@@ -85,16 +86,12 @@ class DocumentAssignmentView(BaseView):
             exclude_deleted=not delete.force,
         )
 
-        print(data.data)
-
         assignments, events = list(), list()
         if len(data.data.collections):
             delete.assignment_document(data)
             assignments = cls.adapter.validate_python(data.data.assignments.values())
             data.commit(delete.session)
             events.append(EventSchema.model_validate(data.event))
-
-        print(assignments)
 
         return mwargs(
             OutputWithEvents[List[AssignmentSchema]],
@@ -163,6 +160,8 @@ class DocumentAssignmentView(BaseView):
             .join(Assignment)
             .where(
                 Assignment.id_document == document.id,
+                Assignment.deleted == false(),
+                Collection.deleted == false(),
             )
         )
         if uuid_collection is not None:
@@ -229,11 +228,12 @@ class CollectionAssignmentView(BaseView):
             uuid_document,
             allow_public=False,
             level=Level.own,
+            validate_documents=False,
         )
 
         assignments, events = list(), list()
-        if len(data.data.collections):
-            delete.assignment_document(data)
+        if len(data.data.documents):
+            delete.assignment_collection(data)
             assignments = cls.adapter.validate_python(data.data.assignments.values())
             data.commit(delete.session)
             events.append(EventSchema.model_validate(data.event))
@@ -255,11 +255,11 @@ class CollectionAssignmentView(BaseView):
             uuid_collection,
             uuid_document,
             level=Level.view,
-            allow_public=True,
-            validate_documents=True,
+            allow_public=False,
+            validate_documents=False,
         )
         create.create_data = AssignmentCreateSchema()
-        data_final = create.assignment_document(data)
+        data_final = create.assignment_collection(data)
         data_final.commit(create.session)
 
         return mwargs(
@@ -278,7 +278,11 @@ class CollectionAssignmentView(BaseView):
         limit: int | None = None,
         randomize: bool = False,
     ) -> AsOutput[List[AssignmentSchema]]:
-        q = select(Document).where(Document.deleted == false())
+
+        collection = access.collection(uuid_collection)
+        q = select(Document).join(Assignment).where(Document.deleted == false(),
+                                   Assignment.deleted==false(),
+                                   Assignment.id_collection == collection.id)
         if uuid_document is not None:
             q = q.where(Document.uuid.in_(uuid_document))
         if randomize:
@@ -286,14 +290,19 @@ class CollectionAssignmentView(BaseView):
         if limit:
             q = q.limit(limit)
 
+        util.sql(access.session, q)
         documents = tuple(access.session.scalars(q))
-
         data = access.d_assignment_collection(
-            uuid_collection,
+            collection,
             documents,
             validate_documents=False,
         )
+        assignments = tuple(
+            ass
+            for document in documents
+            if (ass := data.data.assignments.get(document.uuid)) is not None
+        )
         return mwargs(
             AsOutput[List[AssignmentSchema]],
-            data=cls.adapter.validate_python(data.data.assignments.values()),
+            data=cls.adapter.validate_python(assignments),
         )
