@@ -1,8 +1,9 @@
 # =========================================================================== #
 import secrets
-from typing import List
+from typing import ClassVar, List
 
 import httpx
+from app.controllers.access import H
 import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import false, select
@@ -16,7 +17,14 @@ from app.err import (
     ErrDetail,
     ErrObjMinSchema,
 )
-from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
+from app.fields import (
+    KindObject,
+    Level,
+    LevelHTTP,
+    LevelStr,
+    PendingFrom,
+    PendingFromStr,
+)
 from app.models import Grant, User
 from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from client.requests import Requests
@@ -32,6 +40,7 @@ N_CASES: int = 1
 
 
 class CommonDocumentsGrantsTests(BaseEndpointTest):
+    method: ClassVar[H]
     adapter = TypeAdapter(AsOutput[List[GrantSchema]])
     adapter_w_events = TypeAdapter(OutputWithEvents[List[GrantSchema]])
 
@@ -130,6 +139,34 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
                 level_grant=Level.own,
                 level_grant_required=Level.own,
                 uuid_grant=grant.uuid,
+            ),
+        )
+        if err := self.check_status(requests, res, 403, httperr):
+            raise err
+
+    @pytest.mark.asyncio
+    async def test_forbidden_403_no_grant(
+        self, dummy: DummyProvider, requests: Requests
+    ):
+        """Should always raise 403 when no grant on private document."""
+
+        (document,) = dummy.get_user_documents(Level.view, n=1)
+        grant = dummy.get_document_grant(document)
+        session = dummy.session
+        document.public = False
+        session.add(document)
+        session.delete(grant)
+        session.commit()
+
+        fn = self.fn(requests)
+        res = await fn(document.uuid, uuid_user=["abcdef1234"])
+        httperr = mwargs(
+            ErrDetail[ErrAccessDocumentGrantBase],
+            detail=ErrAccessDocumentGrantBase(
+                msg=ErrAccessDocumentGrantBase._msg_dne,
+                uuid_user=dummy.user.uuid,
+                uuid_document=document.uuid,
+                level_grant_required=Level.own,
             ),
         )
         if err := self.check_status(requests, res, 403, httperr):
@@ -244,6 +281,8 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
 #       dummies. I found it helpful to look directly at the documentation to
 #       come up with tests. The goal here is to test at a very fine scale.
 class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
+    method = H.GET
+
     def fn(self, requests: Requests):
         return requests.grants.documents.read
 
@@ -427,6 +466,8 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
 
 @pytest.mark.asyncio
 class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
+    method = H.DELETE
+
     def fn(self, requests: Requests):
         return requests.grants.documents.revoke
 
@@ -575,6 +616,8 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
 
 
 class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
+    method = H.PATCH
+
     def fn(self, requests: Requests):
         return requests.grants.documents.approve
 
@@ -752,6 +795,8 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
 
 
 class TestDocumentsGrantsInvite(CommonDocumentsGrantsTests):
+    method = H.POST
+
     def fn(self, requests: Requests):
         return requests.grants.documents.invite
 

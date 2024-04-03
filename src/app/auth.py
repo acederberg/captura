@@ -4,11 +4,13 @@ import json
 import re
 from os import path
 from typing import Annotated, Any, Dict, List, Self, Tuple
+from typing_extensions import Doc
 
 import httpx
 import jwt
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.backends.openssl.rsa import _RSAPrivateKey, _RSAPublicKey
+
+# from cryptography.hazmat.backends.openssl import _RSAPrivateKey, _RSAPublicKey
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
@@ -36,6 +38,15 @@ PYTEST_KID = "000-000-000"
 PATH_PYTEST_PUBLIC_KEY: str = util.Path.docker("pytest-public.pem")
 PATH_PYTEST_PRIVATE_KEY: str = util.Path.docker("pytest-private.pem")
 
+PrivateKey = Annotated[
+    None | Any,
+    Doc("RIP to type annotations here since the removal of `_RSAPublicKey`."),
+]
+PublicKey = Annotated[
+    Dict[str, Any],
+    Doc("RIP to type annotations here since the removal of `_RSAPublicKey`."),
+]
+
 
 # TODO: Add https://github.com/cak/secure. See https://github.com/auth0-developer-hub/api_fastapi_python_hello-world/tree/main for an example.
 # https://github.com/auth0-developer-hub/api_fastapi_python_hello-world/blob/main/application/main.py
@@ -51,14 +62,14 @@ class Auth:
     config: Config
     issuer: str
     audience: str
-    private_key: None | _RSAPrivateKey
-    public_keys: Dict[str, _RSAPublicKey]
+    private_key: PrivateKey
+    public_keys: PublicKey
 
     def __init__(
         self,
         config: Config,
-        public_keys: Dict[str, _RSAPublicKey],
-        private_key: None | _RSAPrivateKey = None,
+        public_keys: PublicKey,
+        private_key: PrivateKey = None,
     ):
         # `issuer` and `audience` will not notice changes in config. Should not
         #  matter as config should be static.

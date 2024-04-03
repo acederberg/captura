@@ -221,7 +221,7 @@ class TestCollectionsCreate(
                 fn_fn,
                 {
                     "description": f"From `{self.__class__.__name__}`.",
-                    "name": f"Test {secrets.token_urlsafe()}",
+                    "name": f"Test {secrets.token_urlsafe(8)}",
                     "public": True,
                 },
             )

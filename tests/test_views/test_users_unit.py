@@ -1,6 +1,7 @@
 # =========================================================================== #
 import asyncio
 import functools
+import re
 import secrets
 from typing import Callable, ClassVar, List, Self
 
@@ -17,17 +18,14 @@ from app.schemas import (
     AsOutput,
     CollectionSchema,
     DocumentMetadataSchema,
-    DocumentSchema,
-    KindNesting,
     OutputWithEvents,
     UserExtraSchema,
     UserSchema,
     mwargs,
 )
 from client.requests import Requests
-from client.requests.base import MkRequestInstance
-from client.requests.users import UserRequests
 from tests.dummy import DummyProvider
+from tests.mk import fkit
 from tests.test_views.util import BaseEndpointTest
 
 
@@ -49,8 +47,8 @@ class CommonUserTests(BaseEndpointTest):
         fn = self.fn(requests)
 
         requests.context.auth_exclude = True
-        res = await fn(secrets.token_urlsafe())
-        httperr = ErrDetail[str]( detail="Token required.")
+        res = await fn(secrets.token_urlsafe(8))
+        httperr = ErrDetail[str](detail="Token required.")
         if err := self.check_status(requests, res, 401, httperr):
             raise err
 
@@ -71,9 +69,9 @@ class CommonUserTests(BaseEndpointTest):
                 msg=ErrObjMinSchema._msg_dne,
                 uuid_obj=uuid,
                 kind_obj=KindObject.user,
-            )
+            ),
         )
-        if err:= self.check_status(requests, res, 404, httperr):
+        if err := self.check_status(requests, res, 404, httperr):
             raise err
 
     @pytest.mark.asyncio
@@ -97,7 +95,7 @@ class CommonUserTests(BaseEndpointTest):
                 msg=ErrObjMinSchema._msg_deleted,
                 uuid_obj=user_other.uuid,
                 kind_obj=KindObject.user,
-            )
+            ),
         )
         if err := self.check_status(requests, res, 410, httperr):
             raise err
@@ -108,9 +106,9 @@ class CommonUserTests(BaseEndpointTest):
         dummy: DummyProvider,
         requests: Requests,
     ):
-
         session = dummy.session
         user_other = next(user for user in dummy.get_users(2) if user != dummy.user)
+        user_other.deleted = False
         if self.method == H.GET:
             user_other.public = False
             msg = ErrAccessUser._msg_private
@@ -124,7 +122,7 @@ class CommonUserTests(BaseEndpointTest):
         res = await fn(user_other.uuid)
         httperr = mwargs(
             ErrDetail[ErrAccessUser],
-            detail = ErrAccessUser(
+            detail=ErrAccessUser(
                 msg=msg,
                 uuid_user=user_other.uuid,
                 uuid_user_token=dummy.user.uuid,
@@ -155,10 +153,14 @@ class TestUserRead(CommonUserTests):
         self,
         dummy: DummyProvider,
         requests: Requests,
-    ): 
+    ):
         "Test can read own user and public users."
 
         user, fn, session = dummy.user, self.fn(requests), dummy.session
+        user.deleted = False
+        session.add(user)
+        session.commit()
+
         res = await fn(user.uuid)
         if err := self.check_status(requests, res):
             raise err
@@ -170,6 +172,7 @@ class TestUserRead(CommonUserTests):
 
         user_other = next(uu for uu in dummy.get_users(2) if uu != user)
         user_other.public = True
+        user_other.deleted = False
         session.add(user_other)
         session.commit()
 
@@ -183,8 +186,6 @@ class TestUserRead(CommonUserTests):
         assert data.data.uuid == user_other.uuid
 
 
-
-
 class TestUserUpdate(CommonUserTests):
     method = H.PATCH
 
@@ -192,7 +193,7 @@ class TestUserUpdate(CommonUserTests):
         if for_common:
             return functools.partial(
                 requests.users.update,
-                name="Updated via `tests.test_views.test_update::TestUserUpdate`."
+                name="Updated via `tests.test_views.test_update::TestUserUpdate`.",
             )
 
         return requests.users.update
@@ -202,9 +203,9 @@ class TestUserUpdate(CommonUserTests):
         self,
         dummy: DummyProvider,
         requests: Requests,
-    ): 
+    ):
         user, fn = dummy.user, self.fn(requests, False)
-        user_name_new = secrets.token_urlsafe()
+        user_name_new = secrets.token_urlsafe(8)
         res = await fn(user.uuid, name=user_name_new)
         if err := self.check_status(requests, res):
             raise err
@@ -224,8 +225,6 @@ class TestUserUpdate(CommonUserTests):
         assert data.data.name == user_name_new
 
 
-
-
 class TestUserDelete(CommonUserTests):
     method = H.DELETE
 
@@ -238,6 +237,7 @@ class TestUserDelete(CommonUserTests):
         dummy: DummyProvider,
         requests: Requests,
     ):
+        assert False, "Should finish other deletion tests first."
         session, user, fn = dummy.session, dummy.user, self.fn(requests)
         user.deleted = False
         session.add(user)
@@ -257,10 +257,11 @@ class TestUserDelete(CommonUserTests):
         res = await fn_read(user.uuid)
         if err := self.check_status(requests, res, 410):
             raise err
-        
+
 
 # --------------------------------------------------------------------------- #
 # Search Stuff
+
 
 class CommonUserSearchTests(CommonUserTests):
     is_search: ClassVar[bool] = True
@@ -277,13 +278,15 @@ class CommonUserSearchTests(CommonUserTests):
         assert data.kind is self.kind
         assert len(data.data) == 1
 
-
     @pytest.mark.asyncio
-    async def test_success_200_randomize(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_randomize(
+        self, dummy: DummyProvider, requests: Requests
+    ):
+        N = 25
         fn = self.fn(requests)
         res1, res2 = await asyncio.gather(
-            fn(dummy.user.uuid, limit=3, randomize=True),
-            fn(dummy.user.uuid, limit=3, randomize=True),
+            fn(dummy.user.uuid, limit=N, randomize=True),
+            fn(dummy.user.uuid, limit=N, randomize=True),
         )
         if err := self.check_status(requests, res1):
             raise err
@@ -294,12 +297,11 @@ class CommonUserSearchTests(CommonUserTests):
         data2 = self.adapter.validate_json(res2.content)
 
         assert data1.kind == data2.kind == self.kind
-        assert len(data1.data) == len(data2.data) == 3
+        assert len(data1.data) == len(data2.data) == N
         assert data1.data != data2.data
 
     @pytest.mark.asyncio
     async def test_success_200_uuids(self, dummy: DummyProvider, requests: Requests):
-
         fn = self.fn(requests)
 
         # NOTE: Read w/o uuids
@@ -335,24 +337,60 @@ class CommonUserSearchTests(CommonUserTests):
             )
 
     @pytest.mark.asyncio
-    async def test_success_200_name_like(self, dummy: DummyProvider, requests: Requests):
-        # fn = self.fn(requests)
-        # res = await fn(dummy.user.uuid)
-        # if err := self.check_status(requests, res):
-        #     raise err
-        #
-        # self.adapter.validate_json(res.content)
-        ...
+    @pytest.mark.parametrize(
+        "dummy, requests, field",
+        [(None, None, field_name) for field_name in ("name_like", "description_like")],
+        indirect=["dummy", "requests"],
+    )
+    async def test_success_200_like(
+        self, dummy: DummyProvider, requests: Requests, field: str
+    ):
+        fn = self.fn(requests)
+        names = {fkit.word() for _ in range(25)}
 
-    @pytest.mark.asyncio
-    async def test_success_200_description_like(self, dummy: DummyProvider, requests: Requests):
-        assert False
-        # fn = self.fn(requests)
-        # res = await fn(dummy.user.uuid)
-        # if err := self.check_status(requests, res):
-        #     raise err
-        #
-        # self.adapter.validate_json(res.content)
+        res = await asyncio.gather(
+            *(fn(dummy.user.uuid, **{field: name}) for name in names)
+        )
+        errs = (self.check_status(requests, rr) for rr in res)
+        if err := next((ee for ee in errs if ee is not None), None):
+            raise err
+
+        n_mt = 0
+        for name_like, data in zip(
+            names, (self.adapter.validate_json(rr.content) for rr in res)
+        ):
+            if data.kind is None:
+                n_mt += 1
+                continue
+
+            assert data.kind == self.kind
+            pattern = re.compile(f".*{name_like}.*", flags=re.I)
+            attr = field.replace("_like", "")
+
+            bad = tuple(
+                item
+                for item in data.data
+                if pattern.search(getattr(item, attr)) is None
+            )
+            if n := len(bad):
+                m = len(data.data)
+                print(name_like)
+                print(bad)
+                msg = f"Recieved `{n}` unexpected items out of `{m}`."
+                raise AssertionError(msg)
+
+        if n_mt == 10:
+            raise AssertionError("All filtered data is empty.")
+
+    # @pytest.mark.asyncio
+    # async def test_success_200_description_like(self, dummy: DummyProvider, requests: Requests):
+    #     assert False
+    #     # fn = self.fn(requests)
+    #     # res = await fn(dummy.user.uuid)
+    #     # if err := self.check_status(requests, res):
+    #     #     raise err
+    #     #
+    #     # self.adapter.validate_json(res.content)
 
 
 class TestUsersSearch(CommonUserSearchTests):
@@ -363,18 +401,15 @@ class TestUsersSearch(CommonUserSearchTests):
 
     def fn(self, requests: Requests):
         requests.users.search
-        return functools.partial(
-            requests.users.search,
-            child=ChildrenUser.users
-        )
+        return functools.partial(requests.users.search, child=ChildrenUser.users)
 
-    @pytest.mark.asyncio
-    async def test_success_200(
-        self,
-        dummy: DummyProvider,
-        requests: Requests,
-    ):
-        assert False
+    # @pytest.mark.asyncio
+    # async def test_success_200(
+    #     self,
+    #     dummy: DummyProvider,
+    #     requests: Requests,
+    # ):
+    #     assert False
 
 
 class TestUserDocumentsSearch(CommonUserSearchTests):
@@ -391,13 +426,13 @@ class TestUserDocumentsSearch(CommonUserSearchTests):
             limit=5,
         )
 
-    @pytest.mark.asyncio
-    async def test_success_200(
-        self,
-        dummy: DummyProvider,
-        requests: Requests,
-    ):
-        assert False
+    # @pytest.mark.asyncio
+    # async def test_success_200(
+    #     self,
+    #     dummy: DummyProvider,
+    #     requests: Requests,
+    # ):
+    #     assert False
 
 
 class TestUserCollectionsSearch(CommonUserSearchTests):
@@ -408,18 +443,16 @@ class TestUserCollectionsSearch(CommonUserSearchTests):
 
     def fn(self, requests: Requests):
         requests.users.search
-        return functools.partial(
-            requests.users.search,
-            child=ChildrenUser.collections
-        )
+        return functools.partial(requests.users.search, child=ChildrenUser.collections)
 
-    @pytest.mark.asyncio
-    async def test_success_200(
-        self,
-        dummy: DummyProvider,
-        requests: Requests,
-    ):
-        assert False
+    # @pytest.mark.asyncio
+    # async def test_success_200(
+    #     self,
+    #     dummy: DummyProvider,
+    #     requests: Requests,
+    # ):
+    #     assert False
+    #
 
 
 # class TestEditsSearch(CommonUserSearchTests):

@@ -695,7 +695,9 @@ class Access(BaseController):
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         level: ResolvableLevel | None = None,
-        pending: bool = True,
+        pending: bool = False,
+        validate: bool = True,
+        allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
     ) -> Data[ResolvedDocument]:
         return self.document(
@@ -705,6 +707,8 @@ class Access(BaseController):
             level=level,
             return_data=True,
             pending=pending,
+            validate=validate,
+            allow_public=allow_public,
             # pending_from=pending_from,
         )
 
@@ -1260,7 +1264,7 @@ class Access(BaseController):
         level: ResolvableLevel | None = None,
         validate_documents: bool = True,
         allow_public: bool = False,
-        allow_public_collection: bool =False,
+        allow_public_collection: bool = False,
     ) -> Data[ResolvedAssignmentCollection]:
         return self.assignment_collection(
             resolve_collection,

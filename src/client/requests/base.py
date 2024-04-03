@@ -20,7 +20,7 @@ import httpx
 import typer
 from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, SecretStr, computed_field
 from rich.console import Console
 
 # --------------------------------------------------------------------------- #
@@ -95,7 +95,7 @@ class ContextData(BaseModel):
     openapi: flags.FlagOpenApi = False
     show_request: flags.FlagShowRequest = False
     auth_exclude: flags.FlagNoAuthorization = False
-    token: flags.FlagTokenOptional = None
+    token_from_global: SecretStr | None = None
 
     def openapijson(self, client: httpx.Client) -> OpenAPI:
         res = client.send(self.req_openapijson())
@@ -110,10 +110,15 @@ class ContextData(BaseModel):
 
     @computed_field
     @property
+    def token(self) -> SecretStr | None:
+        return self.token_from_global or self.config.token
+
+    @computed_field
+    @property
     def headers(self) -> Dict[str, str]:
         h = dict(content_type="application/json")
-        if self.config.token is not None and not self.auth_exclude:
-            h.update(authorization=f"bearer {self.token or self.config.token}")
+        if not self.auth_exclude and (token := self.token) is not None:
+            h.update(authorization=f"bearer {token.get_secret_value()}")
         return h
 
     @classmethod
@@ -159,7 +164,7 @@ class ContextData(BaseModel):
             console_handler=console_handler,
             show_request=show_request,
             auth_exclude=auth_exclude,
-            token=token,
+            token_from_global=token,
         )
         context.obj.openapi = openapi
 
@@ -247,8 +252,10 @@ def typerize_fn(
     return wrapper
 
 
-def typerize(cls: Type["BaseTyperizable"], *, is_recurse: bool = False) -> typer.Typer:
-    tt = typer.Typer(callback=ContextData.for_typer if not is_recurse else None)
+def typerize(
+    cls: Type["BaseTyperizable"], *, exclude_callback: bool = False
+) -> typer.Typer:
+    tt = typer.Typer(callback=ContextData.for_typer if not exclude_callback else None)
 
     for command_name, command_name_fn in cls.typer_commands.items():
         if cls.typer_check_verbage:
@@ -263,7 +270,7 @@ def typerize(cls: Type["BaseTyperizable"], *, is_recurse: bool = False) -> typer
         tt.command(command_name)(command_fn)
 
     for group_name, group_cls in cls.typer_children.items():
-        tt.add_typer(typerize(group_cls, is_recurse=True), name=group_name)
+        tt.add_typer(typerize(group_cls, exclude_callback=True), name=group_name)
 
     return tt
 

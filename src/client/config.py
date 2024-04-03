@@ -1,7 +1,7 @@
 # =========================================================================== #
 from typing import Annotated, Dict
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, SecretStr, computed_field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
@@ -11,7 +11,7 @@ from app import util
 class ProfileConfig(BaseModel):
     # name: Annotated[str, Field()]
     uuid_user: Annotated[str, Field()]
-    token: Annotated[str, Field()]
+    token: Annotated[SecretStr, Field()]
 
 
 class HostConfig(BaseModel):
@@ -25,9 +25,10 @@ class UseConfig(BaseModel):
 
 
 class Config(BaseYamlSettings):
-    model_config = YamlSettingsConfigDict(yaml_files=util.PATH_CONFIG_CLIENT)
+    model_config = YamlSettingsConfigDict(  # type: ignore
+        yaml_files=util.PATH_CONFIG_CLIENT,
+    )
 
-    # when host is None, use `app` instance.
     profiles: Annotated[Dict[str, ProfileConfig], Field()]
     hosts: Annotated[Dict[str, HostConfig], Field()]
     use: Annotated[UseConfig, Field()]
@@ -44,9 +45,8 @@ class Config(BaseYamlSettings):
 
     @computed_field
     @property
-    def token(self) -> str | None:
+    def token(self) -> SecretStr | None:
         if (pp := self.profile) is None:
             return None
-            # raise ValueError("No profile to get token from.")
 
         return pp.token

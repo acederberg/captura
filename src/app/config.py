@@ -26,7 +26,7 @@ Instead do
 import enum
 from typing import Annotated
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, SecretStr, computed_field
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
@@ -69,7 +69,7 @@ class MySqlHostConfig(BaseHashable):
     host: Annotated[str, Field("db")]
     port: Annotated[int, Field(3306)]
     username: Annotated[str, Field("documents")]
-    password: Annotated[str, Field("abcd1234")]
+    password: Annotated[SecretStr, Field("abcd1234")]
     database: Annotated[str, Field("documents")]
 
 
@@ -83,7 +83,7 @@ class Auth0ApiConfig(BaseHashable):
 
 class Auth0AppConfig(BaseHashable):
     client_id: str
-    client_secret: str
+    client_secret: SecretStr
 
 
 class Auth0Config(BaseHashable):
@@ -143,7 +143,10 @@ class Config(BaseHashable, BaseYamlSettings):
 
     def engine(self, **kwargs) -> Engine:
         url = URL.create(
-            **self.mysql.host.model_dump(exclude={"drivername", "drivername_async"}),
+            **self.mysql.host.model_dump(
+                exclude={"drivername", "drivername_async", "password"}
+            ),
+            password=self.mysql.host.password.get_secret_value(),
             drivername=self.mysql.host.drivername,
         )
         return create_engine(url, **kwargs)

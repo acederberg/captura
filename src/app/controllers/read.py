@@ -1,14 +1,16 @@
 # =========================================================================== #
 import json
+import secrets
 from http import HTTPMethod
-from typing import Any, Dict, Tuple, Type, TypeVar, overload
+from random import shuffle
+from typing import Any, Dict, List, Tuple, Type, TypeVar, overload
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 # --------------------------------------------------------------------------- #
-from app import util
+# from app import util
 from app.auth import Token
 from app.controllers.access import Access
 from app.controllers.base import BaseController
@@ -17,7 +19,7 @@ from app.models import Collection, Document, Edit, Tables, User
 from app.schemas import (
     CollectionSearchSchema,
     DocumentSearchSchema,
-    EditSearchSchema,
+    # EditSearchSchema,
     UserSearchSchema,
 )
 
@@ -58,7 +60,7 @@ class Read(BaseController):
         self,
         user: User,
         param: UserSearchSchema,
-    ) -> Tuple[User, ...]:
+    ) -> List[User]:
         ...
 
     @overload
@@ -66,7 +68,7 @@ class Read(BaseController):
         self,
         user: User,
         param: DocumentSearchSchema,
-    ) -> Tuple[Document, ...]:
+    ) -> List[Document]:
         ...
 
     @overload
@@ -74,7 +76,7 @@ class Read(BaseController):
         self,
         user: User,
         param: CollectionSearchSchema,
-    ) -> Tuple[Collection, ...]:
+    ) -> List[Collection]:
         ...
 
     # @overload
@@ -95,9 +97,9 @@ class Read(BaseController):
             # | EditSearchSchema
         ),
     ) -> (
-        Tuple[User, ...]
-        | Tuple[Document, ...]
-        | Tuple[Collection, ...]
+        List[User]
+        | List[Document]
+        | List[Collection]
         # | Tuple[Edit, ...]
     ):
         if param.kind_mapped is None:
@@ -115,9 +117,19 @@ class Read(BaseController):
             name_like=param.name_like,
             description_like=param.description_like,
             limit=param.limit,
-        ) 
+        )
 
-        if param.randomize:
+        if param.randomize and param.uuids is None:
+            # if param.limit is None or param.limit > 25:
+            #     msg = "Limit must be less than `25` to randomize."
+            #     raise HTTPException(400, detail=msg)
+
             q = q.order_by(func.random())
 
-        return tuple(self.session.scalars(q))
+        res: List[User] | List[Document] | List[Collection]
+        res = list(self.session.scalars(q))
+
+        if param.randomize and param.uuids is not None:
+            shuffle(res)
+
+        return res

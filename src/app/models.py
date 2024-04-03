@@ -1,4 +1,3 @@
-# import abc
 # =========================================================================== #
 import enum
 import secrets
@@ -53,7 +52,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql import false
 
 # --------------------------------------------------------------------------- #
-from app import __version__, fields
+from app import __version__, fields, util
 from app.err import (
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
@@ -348,6 +347,7 @@ class SearchableTableMixins(PrimaryTableMixins):
         name_like: str | None = None,
         description_like: str | None = None,
         limit: int | None = None,
+        randomize: bool = False
     ):
         print("q_search_conds", uuids)
 
@@ -363,11 +363,17 @@ class SearchableTableMixins(PrimaryTableMixins):
             r = cls.q_select_public(uuids, exclude_deleted)
 
         search_conds = cls.q_search_conds(name_like, description_like)
-        items = tuple(
+        _items = (
             p.where(search_conds) if search_conds is not None else p
             for p in (q, r)
             if p is not None
         )
+        if limit:
+            _items = (p.limit(limit) for p in _items)
+            if randomize:
+                _items = (p.order_by(func.random()) for p in _items)
+
+        items = tuple(_items)
         if not len(items):
             raise ValueError()
 
@@ -378,9 +384,10 @@ class SearchableTableMixins(PrimaryTableMixins):
         #
         #         https://docs.sqlalchemy.org/en/20/orm/queryguide/select.html#selecting-entities-from-unions-and-other-set-operations
         #
+
         rr = union(*items).subquery()
         cls_alias = aliased(cls, rr)  # type: ignore
-        q = select(cls_alias).distinct().select_from(q)  # type: ignore
+        q = select(cls_alias)  # type: ignore
         if limit is not None:
             q = q.limit(limit)
         return q

@@ -33,7 +33,7 @@ class TokenRequests(BaseRequests):
         return httpx.Request(
             "GET",
             context.url("/auth/token"),
-            params=params(data=token),
+            params=params(data=token.get_secret_value()),
             headers=context.headers,
         )
 
@@ -42,12 +42,16 @@ class TokenRequests(BaseRequests):
         cls,
         _context: typer.Context,
         uuid_user: flags.FlagUUIDUserOptional = None,
-        admin: flags.FlagAdmin = None,
+        admin: flags.FlagAdmin = False,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
-        uuid = uuid_user if uuid_user is not None else context.config.profile
-        if not uuid:
-            raise ValueError("Profile not set.")
+        if uuid_user is not None:
+            uuid = uuid_user
+        elif context.config.profile is not None:
+            uuid = context.config.profile.uuid_user
+        else:
+            context.console_handler.console.print("[red]Could not determine uuid.")
+            raise typer.Exit(1)
 
         token_payload = dict(uuid=uuid, admin=admin)
         return httpx.Request(

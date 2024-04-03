@@ -50,7 +50,7 @@ class Requests(BaseRequests):
         super().__init__(context, client)
         self.assignments = AssignmentRequests.spawn_from(self)
         self.collections = CollectionRequests.spawn_from(self)
-        self.docuents = DocumentRequests.spawn_from(self)
+        self.documents = DocumentRequests.spawn_from(self)
         self.grants = GrantRequests.spawn_from(self)
         self.users = UserRequests.spawn_from(self)
         self.tokens = TokenRequests.spawn_from(self)

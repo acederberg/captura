@@ -242,14 +242,17 @@ class BaseEndpointTest(abc.ABC):
 
 class BaseEndpointTestPrimaryCreateMixins:
     @pytest.mark.skip
+    @pytest.mark.asyncio
     async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
         ...
 
     @pytest.mark.skip
+    @pytest.mark.asyncio
     async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
         ...
 
     @pytest.mark.skip
+    @pytest.mark.asyncio
     async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
         ...
 

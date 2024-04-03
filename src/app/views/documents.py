@@ -149,7 +149,11 @@ class DocumentView(BaseView):
 
         To render a document, use `GET /documents/{uuid}/rendered`.
         """
-        document: Document = access.document(uuid_document, level=Level.view)
+        document: Document = access.document(
+            uuid_document,
+            level=Level.view,
+            allow_public=False,
+        )
         return mwargs(
             AsOutput[DocumentSchema], data=DocumentSchema.model_validate(document)
         )
@@ -224,7 +228,8 @@ class DocumentView(BaseView):
         """
 
         update.update_data = update_data
-        data = update.a_document(uuid_document)
+        data = update.access.d_document(uuid_document, allow_public=False)
+        update.document(data)
         data.commit(update.session)
 
         return mwargs(
@@ -251,7 +256,7 @@ class DocumentView(BaseView):
         then eventually pruned.
         """
 
-        data = delete.a_document(uuid_document, commit=True)
+        data = delete.a_document(uuid_document)
         return mwargs(
             OutputWithEvents[EventSchema],
             data=DocumentSchema.model_validate(data.data.documents[0]),

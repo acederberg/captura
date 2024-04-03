@@ -181,6 +181,9 @@ class ConsoleHandler(BaseModel):
                 return self.print_table(res, data)
             case Output.yaml:
                 return self.print_yaml(data)
+            case Output.raw:
+                print(data)  # DO NOT DELETE THIS PRINT!
+                return 0
             case _ as bad:
                 CONSOLE.print(f"[red]Unknown output format `{bad}`.")
                 return 1
@@ -188,12 +191,6 @@ class ConsoleHandler(BaseModel):
     def print_err(
         self, res: httpx.Response, data, *, expected: int | None = None
     ) -> int:
-        #     msg = (
-        #         f"Unexpected status code `{response.status_code}` (expected "
-        #         f"`{expect}`) from {msg}. The response included the following "
-        #         f"detail: {res_json}."
-        #     )
-
         msg = f"[bold red]Request failed with status[/bold red] [bold yellow]`{res.status_code}`"
         if expected is not None:
             msg += f", expected `{expected}`"
@@ -208,7 +205,6 @@ class ConsoleHandler(BaseModel):
         return 1
 
     def print_json(self, data=None) -> int:
-        # data = res.json() or data
         try:
             stringified = json.dumps(data, indent=2)
         except TypeError as err:
@@ -220,7 +216,6 @@ class ConsoleHandler(BaseModel):
         return 0
 
     def print_yaml(self, data=None) -> int:
-        # data = res.json() or data
         try:
             stringified = yaml.dump(data)
         except yaml.YAMLError as err:
@@ -305,6 +300,3 @@ class ConsoleHandler(BaseModel):
             raise HandlerError(msg)
 
         return data
-
-
-# foo: Handler = ConsoleHandler(output=Output.json, columns=list(), data=None)

@@ -31,6 +31,7 @@ classifiers = [
 ]
 dependencies = [
   "uvicorn",
+  "cryptography",
   "fastapi",
 	"pydantic>=2",
   "pydantic-settings>=2",
@@ -59,11 +60,13 @@ dev = [
 	"mypy",
 	"isort",
   "autoflake",
-  "jedi-language-server"
+  "jedi-language-server",
+  "docker",
 ]
 test = [
 	"pytest",
   "pytest-asyncio",
+  "faker",
 ]
 
 

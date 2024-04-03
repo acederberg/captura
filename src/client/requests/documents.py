@@ -4,14 +4,14 @@ import typer
 # --------------------------------------------------------------------------- #
 from client import flags
 from client.requests.assignments import DocumentAssignmentRequests
-from client.requests.base import BaseRequests, ContextData, params
+from client.requests.base import BaseRequests, ContextData, methodize, params
 from client.requests.grants import DocumentGrantRequests
 
 
 class DocumentRequests(BaseRequests):
     typer_commands = dict(
         read="req_read",
-        search="req_search",
+        # search="req_search",
         delete="req_delete",
         update="req_update",
         create="req_create",
@@ -22,10 +22,10 @@ class DocumentRequests(BaseRequests):
 
     @classmethod
     def req_delete(
-        cls, _context: typer.Context, *, uuid_document: flags.ArgUUIDDocument
+        cls, _context: typer.Context, uuid_document: flags.ArgUUIDDocument
     ) -> httpx.Request:
-        url = f"/documents/{uuid_document}"
         context = ContextData.resolve(_context)
+        url = context.url(f"/documents/{uuid_document}")
         return httpx.Request("DELETE", url, headers=context.headers)
 
     @classmethod
@@ -85,26 +85,32 @@ class DocumentRequests(BaseRequests):
         url = context.url(f"/documents/{uuid_document}")
         return httpx.Request("GET", url, headers=context.headers)
 
-    @classmethod
-    def req_search(
-        cls,
-        _context: typer.Context,
-        *,
-        limit: flags.FlagLimit = 10,
-        name_like: flags.FlagNameLike = None,
-        description_like: flags.FlagDescriptionLike = None,
-    ):
-        context = ContextData.resolve(_context)
-        return httpx.Request(
-            "GET",
-            context.url("/documents"),
-            params=params(
-                limit=limit,
-                name_like=name_like,
-                description_like=description_like,
-            ),
-            headers=context.headers,
-        )
+    # @classmethod
+    # def req_search(
+    #     cls,
+    #     _context: typer.Context,
+    #     *,
+    #     limit: flags.FlagLimit = 10,
+    #     name_like: flags.FlagNameLike = None,
+    #     description_like: flags.FlagDescriptionLike = None,
+    # ):
+    #     context = ContextData.resolve(_context)
+    #     return httpx.Request(
+    #         "GET",
+    #         context.url("/documents"),
+    #         params=params(
+    #             limit=limit,
+    #             name_like=name_like,
+    #             description_like=description_like,
+    #         ),
+    #         headers=context.headers,
+    #     )
+
+    delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
+    update = methodize(req_update, __func__=req_update.__func__)  # type: ignore
+    create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
+    # search = methodize(req_search, __func__=req_search.__func__)  # type: ignore
 
 
 __all__ = ("DocumentRequests",)

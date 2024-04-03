@@ -17,6 +17,7 @@ from typing import (
 )
 
 import httpx
+from pydantic import SecretStr
 from sqlalchemy import Select, false, func, select, true, update
 from sqlalchemy.orm import Session
 
@@ -97,7 +98,6 @@ class BaseDummyProvider:
         public: bool | None = None,
         deleted: bool | None = None,
     ) -> Tuple[T_ResolvedPrimary, ...]:
-
         match Model_:
             case KindObject() as kind:
                 Model = Tables[Plural[kind.name].value].value

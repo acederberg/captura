@@ -1,7 +1,7 @@
 # =========================================================================== #
 from typing import Annotated, Dict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
@@ -40,7 +40,7 @@ class PytestConfig(Config):
 
 
 class PyTestClientProfileConfig(ProfileConfig):
-    token: Annotated[str | None, Field()]  # type: ignore
+    token: Annotated[SecretStr | None, Field()]  # type: ignore
 
 
 class PytestClientConfig(ClientConfig):

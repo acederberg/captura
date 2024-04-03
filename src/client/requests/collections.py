@@ -11,8 +11,6 @@ from client.handlers import CONSOLE
 from client.requests.assignments import CollectionAssignmentRequests
 from client.requests.base import BaseRequests, ContextData, methodize, params
 
-__all__ = ("CollectionRequests",)
-
 
 class CollectionRequests(BaseRequests):
     typer_commands = dict(

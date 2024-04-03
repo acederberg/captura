@@ -19,8 +19,6 @@ from app.schemas import (
     CollectionSearchSchema,
     DocumentMetadataSchema,
     DocumentSearchSchema,
-    EditMetadataSchema,
-    EditSearchSchema,
     EventSchema,
     OutputWithEvents,
     UserCreateSchema,

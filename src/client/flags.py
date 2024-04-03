@@ -38,6 +38,7 @@ class Verbage(str, enum.Enum):
 
 
 class Output(str, enum.Enum):
+    raw = "raw"
     json = "json"
     yaml = "yaml"
     table = "table"
