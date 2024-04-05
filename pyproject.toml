@@ -140,8 +140,14 @@ push            = false
 "pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
 "src/app/__init__.py" = ["{version}"]
 
+
 [tool.setuptools_scm]
 
 
 [tool.setuptools.package-data]
 "captura" = ["py.typed"]
+
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+addopts = "--ignore tests/junk"

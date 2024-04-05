@@ -178,7 +178,7 @@ def auth(config: Config) -> Auth:
 @pytest.fixture
 def dummy(auth: Auth, session: Session) -> DummyProvider:
     logger.warning("Providing random dummy.")
-    return DummyProvider(auth, session)
+    return DummyProvider(auth, session, use_existing=True)
 
 
 @pytest.fixture(scope="function")

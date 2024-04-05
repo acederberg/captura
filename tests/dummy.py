@@ -18,7 +18,7 @@ from typing import (
 
 import httpx
 from pydantic import SecretStr
-from sqlalchemy import Select, false, func, literal_column, select, true, update
+from sqlalchemy import Select, desc, false, func, literal_column, select, true, update
 from sqlalchemy.orm import Session, aliased
 
 # --------------------------------------------------------------------------- #
@@ -221,9 +221,28 @@ class BaseDummyProvider:
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
 
-        callback = None
-        if other:
-            callback = lambda q: q.where(Collection.id_user != self.user.id)
+        q_ass = (
+            select(
+                func.count(Assignment.id_document).label("n_documents"),
+                Collection.id.label("id_collection"),
+            )
+            .select_from(Collection)
+            .join(Assignment)
+            .group_by(Collection.id)
+            .order_by(desc(literal_column("n_documents")))
+            .limit(100)
+            .subquery()
+        )
+
+        q_ids = select(literal_column("id_collection")).select_from(q_ass)
+
+        def callback(q):
+            if other:
+                q = q.where(Collection.id_user != self.user.id)
+
+            q = q.where(Collection.id.in_(q_ids))
+            return q
+
         return self.get_primary(Collection, n, callback=callback, **kwargs_get_primary)
 
     def get_user_documents(
@@ -255,13 +274,16 @@ class BaseDummyProvider:
                     **kwargs,
                 )
             else:
-                raise ValueError("Could not find user documents.")
+                msg = f"Could not find documents for user `{self.user.uuid}`."
+                raise ValueError(msg)
         if deleted is not None:
             assert all(dd.deleted is deleted for dd in docs)
 
         return docs
 
-    def get_user_collections(self, n: int = 1, **kwargs) -> Tuple[Collection, ...]:
+    def get_user_collections(
+        self, n: int = 1, count: int = 0, **kwargs
+    ) -> Tuple[Collection, ...]:
         logger.debug("Getting user collections.")
         q = Collection.q_select_for_user(
             self.user.uuid, kwargs.pop("uuids", None), **kwargs
@@ -269,7 +291,17 @@ class BaseDummyProvider:
         q = q.order_by(func.random()).limit(n)
         collections = tuple(self.session.scalars(q))
 
-        assert len(collections)
+        if not len(collections):
+            self.randomize_primary(Collection)
+            if count < 2:
+                return self.get_user_collections(
+                    count=count + 1,
+                    **kwargs,
+                )
+            else:
+                msg = f"Could not find collections for user `{self.user.uuid}`."
+                raise ValueError(msg)
+
         if kwargs.get("exclude_deleted") in (True, None):
             assert all(cc.deleted is False for cc in collections)
 
@@ -568,7 +600,7 @@ class DummyProvider(BaseDummyProvider):
                 )
                 for collection in self.collections
                 for document in self.documents
-                if bool(randint(0, 3) % 3)
+                if randint(0, 2)
             )
         )
         return assignments

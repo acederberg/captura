@@ -43,18 +43,18 @@ def test_UuidFromModel(sessionmaker: sessionmaker):
             ResolvedAssignmentDocument,
             document=doc,
             collections=collections,
-            assignments=None,
+            assignments=dict(),
         )
         assert res.uuid_collections == uuid_col_expected
         assert res.uuid_document == uuid_doc_expected
-        assert res.assignments is None
-        assert res.uuid_assignments is None
+        assert isinstance(res.assignments, dict)
+        assert isinstance(res.uuid_assignments, set)
         assert isinstance(res.uuid_document, str)
         assert isinstance(res.uuid_collections, set)
 
 
-def test_base_controller(default: DummyProvider):
-    dd = default
+def test_base_controller(dummy: DummyProvider):
+    dd = dummy
     base = BaseController(dd.session, None, HTTPMethod.GET)
     with pytest.raises(HTTPException) as err:
         base.token

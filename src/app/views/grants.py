@@ -122,6 +122,7 @@ class DocumentGrantView(BaseView):
             uuid_user,
             level=Level.view,
             pending=pending,
+            exclude_pending=False,
         )
         grants = data.data.grants.values()
         if pending_from:

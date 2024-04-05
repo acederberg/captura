@@ -28,9 +28,9 @@ from app.models import (
     Document,
     Grant,
     KindObject,
-    Singular,
     User,
 )
+from app.fields import Singular
 from app.schemas import EventSchema
 from tests.test_views import util
 

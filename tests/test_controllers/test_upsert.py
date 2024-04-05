@@ -5,7 +5,7 @@ from typing import Set, Type
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import Update, select
-from sqlalchemy.orm import make_transient
+from sqlalchemy.orm import Session, make_transient
 
 # --------------------------------------------------------------------------- #
 from app.controllers.access import H
@@ -25,15 +25,12 @@ TEST_API_ORIGIN = "./tests/test_controllers/test_upsert.py"
 
 
 @pytest.fixture
-def upsert(delete: Delete) -> Create:
+def upsert(session: Session) -> Create:
     res = Create(
-        delete.session,  # type: ignore
+        session,  # type: ignore
         dict(uuid="000-000-000"),
         HTTPMethod.POST,
-        detail=TEST_DETAIL,
         api_origin=TEST_API_ORIGIN,
-        delete=delete,
-        access=delete.access,
     )
     return res
 
@@ -53,9 +50,9 @@ CASES_ASSOCS_GRANTS_NOT_OWN = [
 
 
 @pytest.mark.parametrize(
-    "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
+    "upsert, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
     CASES_ASSOCS_GRANTS_NOT_OWN + CASES_ASSOCS[2:4],
-    indirect=["delete"],
+    indirect=["upsert"],
 )
 class TestAssoc(BaseTestAssoc):
     grant_data = GrantCreateSchema(level=Level.own)
