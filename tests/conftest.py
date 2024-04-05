@@ -144,7 +144,6 @@ def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
         if (n_generate := 100 - n_users) > 0:
             while n_generate > 0:
                 DummyProvider(auth, session)
-                print(n_generate)
                 n_generate -= 1
 
     return
@@ -178,12 +177,12 @@ def auth(config: Config) -> Auth:
 
 @pytest.fixture
 def dummy(auth: Auth, session: Session) -> DummyProvider:
-    logger.debug("Providing random dummy.")
+    logger.warning("Providing random dummy.")
     return DummyProvider(auth, session)
 
 
 @pytest.fixture(scope="function")
-def default(auth: Auth, session: Session) -> DummyProviderYAML:
+def yaml_dummy(auth: Auth, session: Session) -> DummyProviderYAML:
     logger.debug("Providing dummy for user uuid `000-000-000`.")
     user = session.get(User, 2)
     assert user is not None

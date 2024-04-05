@@ -1,6 +1,7 @@
 # =========================================================================== #
 import json
 from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias
+from app.err import ErrBase
 
 import pytest
 from fastapi import HTTPException
@@ -78,22 +79,29 @@ def expect_exc(
     it: CallableExpectExcIt,
     expected_status: int,
     *,
+    detail: ErrBase | None = None,
     check_length=True,
     **expected,
-) -> CallableExpectExc:
+) -> None | AssertionError:
+    match (detail, expected):
+        case (None, expected):
+            expected_detail = expected
+        case (detail, dict()):
+            expected_detail = detail.model_dump(mode="json")
+        case bad:
+            print(bad)
+            raise ValueError("Must specify one of `detail` or `expected`.")
+
     with pytest.raises(HTTPException) as httperr:
-        res = it()
-        print(res)
+        it()
 
     httperr = httperr.value
-    err = check_exc(
+    return check_exc(
         httperr,
         expected_status,
         check_length=check_length,
-        **expected,
+        **expected_detail,
     )
-
-    return err, httperr
 
 
 def pre_stringify(data: Any) -> Any:

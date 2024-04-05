@@ -389,6 +389,10 @@ class Access(BaseController):
         """
         # if user.admin:
         #     return user
+        # print("======================================================")
+        # print(user.deleted)
+        # print(user.uuid)
+        # input()
         if exclude_deleted:
             user.check_not_deleted()
 
@@ -507,7 +511,7 @@ class Access(BaseController):
                             uuid_collection=collection.uuid,
                         )
                     return collection
-                case H.GET | H.POST | H.DELETE | H.PUT | H.PATCH:
+                case H.GET | H.POST | H.DELETE | H.PUT | H.PATCH as method:
                     if token_user.id != collection.id_user:
                         raise ErrAccessCollection.httpexception(
                             "_msg_modify",
@@ -556,11 +560,13 @@ class Access(BaseController):
         *,
         exclude_deleted: bool = True,
         resolve_user_token: ResolvableSingular[User] | None = None,
+        allow_public: bool = True,
     ) -> Data[ResolvedCollection]:
         return self.collection(
             resolve_collection,
             exclude_deleted=exclude_deleted,
             resolve_user_token=resolve_user_token,
+            allow_public=allow_public,
             return_data=True,
         )
 
@@ -981,6 +987,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
+        # exclude_pending: bool = True,
         level: ResolvableLevel | None = None,
         pending: bool = False,
         validate: bool = False,
@@ -1004,6 +1011,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
+        exclude_pending: bool = False,
         level: ResolvableLevel | None = None,
         return_data: Literal[False] = False,
         pending: bool = False,
@@ -1018,6 +1026,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
+        exclude_pending: bool = False,
         level: ResolvableLevel | None = None,
         return_data: Literal[True] = True,
         pending: bool = False,
@@ -1094,6 +1103,9 @@ class Access(BaseController):
 
                 uuid_owners: set[str]
                 uuid_owners = set(item.uuid for item in session.scalars(q_owners))
+                if user_token.uuid in uuid_owners:
+                    uuid_owners.remove(user_token.uuid)
+
                 if len(uuid_bad := uuid_owners & uuid_users):
                     raise ErrAccessDocumentCannotRejectOwner.httpexception(
                         "_msg_cannot_reject_owner",
@@ -1153,6 +1165,7 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular | None = None,
         exclude_deleted: bool = True,
+        exclude_pending: bool = True,
         level: ResolvableLevel | None = None,
         pending: bool = False,
     ) -> Data[ResolvedGrantDocument]:
@@ -1164,6 +1177,7 @@ class Access(BaseController):
             level=level,
             return_data=True,
             pending=pending,
+            exclude_pending=exclude_pending,
         )
 
     # ----------------------------------------------------------------------- #

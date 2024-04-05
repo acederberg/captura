@@ -41,7 +41,7 @@ handlers:
   #   stream: ext://sys.stdout
 loggers:
   root:
-    level: INFO
+    level: WARNING
     handlers:
       - stdout_dev
       - file_json
@@ -50,8 +50,6 @@ loggers:
     level: DEBUG
   tests.dummy:
     level: DEBUG
-  # app.views.base:
-  #   level: WARNING
-  # app.depends:
-  #   level: DEBUG
+  tests.test_controllers.test_access:
+    level: DEBUG
 

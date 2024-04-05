@@ -15,6 +15,7 @@ from typing import (
     Self,
     Set,
     Tuple,
+    Type,
     TypeAlias,
     TypeVar,
     overload,
@@ -75,6 +76,7 @@ from app.fields import (
     Level,
     LevelStr,
     PendingFrom,
+    Plural,
     ResolvableLevel,
 )
 
@@ -347,16 +349,20 @@ class SearchableTableMixins(PrimaryTableMixins):
         name_like: str | None = None,
         description_like: str | None = None,
         limit: int | None = None,
-        randomize: bool = False
+        randomize: bool = False,
     ):
         print("q_search_conds", uuids)
 
         if not all_ and user_uuid is None:
-            msg = "`all_` must be true when a user is not provided." 
+            msg = "`all_` must be true when a user is not provided."
             raise ValueError(msg)
         q = None
         if user_uuid:
-            q = cls.q_select_for_user(user_uuid, uuids, exclude_deleted=exclude_deleted,)
+            q = cls.q_select_for_user(
+                user_uuid,
+                uuids,
+                exclude_deleted=exclude_deleted,
+            )
 
         r = None
         if all_:
@@ -1182,10 +1188,17 @@ class User(SearchableTableMixins, Base):
     def check_sole_owner_document(self, document: "Document") -> Self:
         ...
 
-    def check_can_access_event(self, event: Event, status_code: int = 403) -> Self:
+    def check_can_access_event(
+        self,
+        event: Event,
+        status_code: int = 403,
+    ) -> Self:
         if self.uuid != event.uuid_user:
             raise ErrAccessEvent.httpexception(
-                "_msg_not_owner", 403, uuid_event=event.uuid, uuid_user=self.uuid
+                "_msg_not_owner",
+                403,
+                uuid_event=event.uuid,
+                uuid_user_token=self.uuid,
             )
 
         return self
@@ -1608,7 +1621,6 @@ class Edit(PrimaryTableMixins, Base):
         return q_edits
 
 
-
 # --------------------------------------------------------------------------- #
 # After the matter constants and types.
 
@@ -1632,6 +1644,25 @@ AnyModelBesidesEvent = (
     AssocUserDocument | AssocCollectionDocument | User | Collection | Document | Edit
 )
 AnyModel = Event | AnyModelBesidesEvent
+AnyModelType = Type[AnyModel]
+ResolvableModel = AnyModelType | KindObject
+
+
+def resolve_model(
+    resolvable: ResolvableModel, exclude_secondary: bool = False
+) -> AnyModelType:
+    match resolvable:
+        case KindObject() as kind:
+            Model = Tables[Plural[kind.name].value].value
+        case type(__tablename__=str()) as Model:
+            ...
+        case bad:
+            raise ValueError(f"Cannot resolve `{bad}` to model.")
+
+    if exclude_secondary and Model in (Grant, Assignment):
+        raise ValueError(f"Excluding secondary model `{Model.__tablename__}`.")
+
+    return Model
 
 
 # Resolvables

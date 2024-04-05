@@ -70,6 +70,7 @@ class ErrAccessEvent(ErrBase):
     _msg_not_owner: ClassVar[str] = "Cannot access event."
 
     uuid_event: fields.FieldUUID
+    uuid_user_token: fields.FieldUUID
 
 
 class ErrEventGeneral(ErrBase):

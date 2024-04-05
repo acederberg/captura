@@ -18,8 +18,8 @@ from typing import (
 
 import httpx
 from pydantic import SecretStr
-from sqlalchemy import Select, false, func, select, true, update
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, false, func, literal_column, select, true, update
+from sqlalchemy.orm import Session, aliased
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -36,6 +36,7 @@ from app.controllers.base import (
 from app.controllers.delete import Delete
 from app.fields import KindObject, Level, Plural, Singular
 from app.models import (
+    AnyModelType,
     Assignment,
     Base,
     Collection,
@@ -45,8 +46,10 @@ from app.models import (
     KindObject,
     Level,
     PendingFrom,
+    ResolvableModel,
     Tables,
     User,
+    resolve_model,
 )
 from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
@@ -89,23 +92,26 @@ class BaseDummyProvider:
     # ----------------------------------------------------------------------- #
     # Getters
 
+    def randomize_primary(self, model: ResolvableModel) -> None:
+        Model = resolve_model(model)
+        q = update(Model).where(func.random() < 0.5)
+        tuple(
+            self.session.execute(q.values(deleted=deleted, public=public))
+            for deleted in (0, 1)
+            for public in (0, 1)
+        )
+
     def get_primary(
         self,
-        Model_: Type[T_ResolvedPrimary] | KindObject,
+        model: ResolvableModel,
         n: int,
         *,
         callback: Callable[[Any], Any] | None = None,
         public: bool | None = None,
         deleted: bool | None = None,
+        count: int = 0,
     ) -> Tuple[T_ResolvedPrimary, ...]:
-        match Model_:
-            case KindObject() as kind:
-                Model = Tables[Plural[kind.name].value].value
-            case _:
-                Model = Model_
-
-        if Model in (Grant, Assignment):
-            raise ValueError()
+        Model = resolve_model(model)
 
         logger.debug("Getting data of kind `%s`.", Model.__tablename__)
         conds = list()
@@ -116,52 +122,118 @@ class BaseDummyProvider:
             bool_ = true() if deleted else false()
             conds.append(Model.deleted == bool_)
 
-        q = select(Model).where(*conds).order_by(func.random()).limit(n)
+        q = (
+            select(Model)
+            .where(*conds)
+            .order_by(func.random())
+            .limit(n)
+            .distinct(Model.uuid)
+        )
         if callback:
             q = callback(q)
 
-        # NOTE: Move assertions here to avoid perflight checks in tests.
+        # NOTE: Move assertions here to avoid preflight checks in tests.
         models = tuple(self.session.scalars(q))
-        assert len(models)
+        if not len(models):
+            logger.debug(
+                "Found empty results for kind `%s`.",
+                Model.__tablename__,
+            )
+            if not count:
+                self.randomize_primary(Model)
+                models = self.get_primary(
+                    Model,
+                    n,
+                    callback=callback,
+                    public=public,
+                    deleted=deleted,
+                    count=count + 1,
+                )
+                return models
+            else:
+                msg = "Could not find test data after `{}` randomizations."
+                raise AssertionError(msg.format(count))
+
         if deleted is not None:
-            print("Checking deleted...")
-            for mm in models:
-                print(mm.uuid, "->", mm.deleted)
+            logger.debug("Checking deleted.")
             assert all(mm.deleted is deleted for mm in models)
 
         if public is not None:
+            logger.debug("Checking public.")
             assert all(mm.public is public for mm in models)
-        return models
+        return models  # type: ignore
 
     def get_users(
         self,
         n: int,
         kwargs_get_primary: GetPrimaryKwargs | None = None,
+        other: bool = False,
     ) -> Tuple[User, ...]:
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
-        return self.get_primary(User, n, **kwargs_get_primary)
+
+        callback = None
+        if other:
+            callback = lambda q: q.where(User.id != self.user.id)
+
+        return self.get_primary(
+            User,
+            n,
+            callback=callback,
+            **kwargs_get_primary,
+        )
+
+    def get_user_other(self, kwargs_get_primary: GetPrimaryKwargs) -> User:
+        _uus = self.get_users(3, kwargs_get_primary)
+        user_other = next(uu for uu in _uus if uu.uuid != self.user.uuid)
+        return user_other
 
     def get_documents(
         self,
         n: int,
         kwargs_get_primary: GetPrimaryKwargs | None = None,
+        other: bool = False,
     ) -> Tuple[Document, ...]:
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
-        return self.get_primary(Document, n, **kwargs_get_primary)
+        callback = None
+        if other:
+            q = (
+                select(
+                    Grant.id_document.label("id_document"),
+                    func.count(Grant.uuid).label("count"),
+                )
+                .where(Grant.id_user == self.user.id)
+                .group_by(Grant.id_document)
+            )
+            q_id_documents_has_grants = select(
+                literal_column("id_document")
+            ).select_from(q)
+            callback = lambda q: q.where(Document.id.not_in(q_id_documents_has_grants))
+        return self.get_primary(Document, n, callback=callback, **kwargs_get_primary)
 
     def get_collections(
         self,
         n: int,
         kwargs_get_primary: GetPrimaryKwargs | None = None,
+        other: bool = False,
     ) -> Tuple[Collection, ...]:
         if kwargs_get_primary is None:
             kwargs_get_primary = {}
-        return self.get_primary(Collection, n, **kwargs_get_primary)
+
+        callback = None
+        if other:
+            callback = lambda q: q.where(Collection.id_user != self.user.id)
+        return self.get_primary(Collection, n, callback=callback, **kwargs_get_primary)
 
     def get_user_documents(
-        self, level: Level, deleted: bool | None = False, *, n: int = 1, **kwargs
+        self,
+        level: Level,
+        deleted: bool | None = False,
+        *,
+        n: int = 1,
+        count: int = 0,
+        **kwargs,
     ) -> Tuple[Document, ...]:
         logger.debug("Getting user documents.")
         kwargs.update(exclude_deleted=not deleted)
@@ -171,10 +243,19 @@ class BaseDummyProvider:
             q = q.where(Document.deleted == bool_)
 
         q = q.order_by(func.random()).limit(n)
-        util.sql(self.session, q)
         docs = tuple(self.session.scalars(q))
 
-        assert len(docs)
+        if not len(docs):
+            self.randomize_primary(Document)
+            if count < 2:
+                return self.get_user_documents(
+                    level,
+                    count=count + 1,
+                    deleted=deleted,
+                    **kwargs,
+                )
+            else:
+                raise ValueError("Could not find user documents.")
         if deleted is not None:
             assert all(dd.deleted is deleted for dd in docs)
 
@@ -202,6 +283,39 @@ class BaseDummyProvider:
         if grant is None:
             raise AssertionError("Grant should have been created for document.")
         return grant
+
+    def get_events(
+        self, n: int, deleted: bool = True, own: bool = True, count: int = 0
+    ) -> Tuple[Event, ...]:
+        q = select(Event)
+        if deleted is not None:
+            q = q.where(Event.deleted == true() if deleted else false())
+        if own:
+            q = q.where(Event.uuid_user == self.user.uuid)
+
+        session = self.session
+        q = q.limit(n).order_by(func.random())
+        events = tuple(session.scalars(q))
+
+        # NOTE: If no documents, try randomizing vis.
+        if not len(events):
+            if not count:
+                q1 = update(Event).values(deleted=True).where(func.random() < 0.5)
+                q2 = update(Event).values(deleted=True).where(func.random() < 0.5)
+                session.execute(q1)
+                session.execute(q2)
+                session.commit()
+                return self.get_events(
+                    n,
+                    deleted=deleted,
+                    own=own,
+                    count=count + 1,
+                )
+            else:
+                msg = f"Cannot find events for user `{self.user.uuid}`."
+                raise ValueError(msg)
+
+        return events
 
     @property
     def token(self) -> Token:
@@ -481,8 +595,6 @@ class DummyProvider(BaseDummyProvider):
         id_users_shared = set(k for k in range(1, id_user_max) if not bool(k % 3))
         if self.user.id in id_users_shared:
             id_users_shared.remove(self.user.id)
-
-        # print(id_user_max)
 
         # ------------------------------------------------------------------- #
         # For self.

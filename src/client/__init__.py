@@ -22,7 +22,7 @@ class ConfigCommands(BaseTyperizable):
     typer_check_verbage = False
     typer_decorate = False
     typer_commands = dict(profiles="profiles", hosts="hosts", show="show")
-    typer_commands.update({"docker-host": "docker_host"})
+    typer_commands.update({"docker-host": "docker_host", "docker-db": "docker_mysql"})
     typer_children = dict()
 
     @classmethod
@@ -147,11 +147,30 @@ class ConfigCommands(BaseTyperizable):
 
                     console.print("# [green]Updated client config: ")
                     context.console_handler.handle(data=data)
-                    raise typer.Exit(0)
+                    return
                 data = {k: v.model_dump(mode="json") for k, v in data.items()}
 
         context.console_handler.handle(data=data)
-        raise typer.Exit(0)
+
+    @classmethod
+    def docker_mysql(cls, _context: typer.Context):
+        import docker
+
+        context = ContextData.resolve(_context)
+        console = context.console_handler.console
+
+        client = docker.DockerClient()
+        if (container := client.containers.get("captura-db")) is None:
+            console.print("[red]Docker compose project is not running.")
+            raise typer.Exit(1)
+
+        res = client.api.inspect_container(container.name)
+        networks = res["NetworkSettings"]["Networks"]
+        data = {
+            network_name: network_detail["IPAddress"]
+            for network_name, network_detail in networks.items()
+        }
+        context.console_handler.handle(data=data)
 
 
 __all__ = (
