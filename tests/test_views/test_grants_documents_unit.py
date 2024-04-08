@@ -53,6 +53,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test unauthorized access."
 
@@ -75,6 +76,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test cannot access when not an owner."
         (document,) = dummy.get_user_documents(Level.modify)
@@ -111,6 +113,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test cannot use when ownership is pending."
         kwargs = dict(pending=True, exclude_pending=False)
@@ -146,7 +149,10 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
 
     @pytest.mark.asyncio
     async def test_forbidden_403_no_grant(
-        self, dummy: DummyProvider, requests: Requests
+        self,
+        dummy: DummyProvider,
+        requests: Requests,
+        count: int,
     ):
         """Should always raise 403 when no grant on private document."""
 
@@ -177,6 +183,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test not found response with bad document uuid."
         fn = self.fn(requests)
@@ -199,6 +206,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test cannot use grant is deleted."
         kwargs = dict(exclude_pending=False, exclude_deleted=False)
@@ -240,6 +248,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test deleted document"
 
@@ -280,6 +289,11 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
 # NOTE: Test classes will be per endpoint. They will be parameterized with many
 #       dummies. I found it helpful to look directly at the documentation to
 #       come up with tests. The goal here is to test at a very fine scale.
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
     method = H.GET
 
@@ -330,7 +344,9 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
         return data
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test a successful response."
 
         fn = self.fn(requests)
@@ -350,7 +366,9 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
         self.check_success(dummy, requests, res, pending=False)
 
     @pytest.mark.asyncio
-    async def test_success_200_pending(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_pending(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test the pending query parameter."
 
         fn = self.fn(requests)
@@ -364,7 +382,7 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
 
     @pytest.mark.asyncio
     async def test_success_200_pending_from(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         "Test the pending_from query parameter."
 
@@ -430,6 +448,7 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test the pending query parameter."
 
@@ -464,7 +483,11 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
             raise AssertionError("All empty! Check dummy data.")
 
 
-@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
     method = H.DELETE
 
@@ -472,7 +495,9 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
         return requests.grants.documents.revoke
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         (document,) = dummy.get_user_documents(Level.own, exclude_pending=True)
         assert not document.deleted
 
@@ -578,7 +603,7 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
 
     @pytest.mark.asyncio
     async def test_forbidden_403_cannot_reject_other_owner(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         (document,) = dummy.get_user_documents(Level.own)
         assert not document.deleted
@@ -615,6 +640,11 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
             raise err
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
     method = H.PATCH
 
@@ -626,6 +656,7 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         """Test that grants with ``pending_from != granter`` cannot be approved
         with this endpoint.
@@ -705,7 +736,9 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
             raise err
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test with grants pending frwith the correct pending_from value"
 
         # Get owned document
@@ -794,6 +827,11 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
         assert data.events is not None
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestDocumentsGrantsInvite(CommonDocumentsGrantsTests):
     method = H.POST
 
@@ -801,7 +839,9 @@ class TestDocumentsGrantsInvite(CommonDocumentsGrantsTests):
         return requests.grants.documents.invite
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         (document,) = dummy.get_user_documents(Level.own)
         users = dummy.get_users(5)
 

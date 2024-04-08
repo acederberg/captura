@@ -3,7 +3,7 @@ import asyncio
 import json
 import secrets
 from random import choice, randint
-from typing import ClassVar, List, Set
+from typing import ClassVar, List, Set, Tuple
 
 import pytest
 from pydantic import TypeAdapter
@@ -33,8 +33,10 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
     adapter_w_events = TypeAdapter(OutputWithEvents[List[AssignmentSchema]])
 
     @pytest.mark.asyncio
-    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
-        collection, = dummy.get_collections(1, GetPrimaryKwargs(deleted=True))
+    async def test_deleted_410(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
+        (collection,) = dummy.get_collections(1, GetPrimaryKwargs(deleted=True))
 
         fn = self.fn(requests)
         res = await fn(collection.uuid, uuid_document=[secrets.token_urlsafe(9)])
@@ -44,14 +46,16 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
                 msg=ErrObjMinSchema._msg_deleted,
                 uuid_obj=collection.uuid,
                 kind_obj=KindObject.collection,
-            )
+            ),
         )
 
         if err := self.check_status(requests, res, 410, httperr):
             raise err
 
     @pytest.mark.asyncio
-    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
+    async def test_not_found_404(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         uuid_collection = secrets.token_urlsafe(9)
         uuid_document = {secrets.token_urlsafe(9) for _ in range(3)}
 
@@ -69,7 +73,9 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
+    async def test_unauthorized_401(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         assert requests.context.auth_exclude is False, "Auth should not be excluded."
         session, fn = dummy.session, self.fn(requests)
 
@@ -85,11 +91,13 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
+    async def test_forbidden_403(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         session = dummy.session
         user = dummy.user
         user_other = next(uwu for uwu in dummy.get_users(2) if uwu.uuid != user.uuid)
-        collection, = dummy.get_user_collections(1)
+        (collection,) = dummy.get_user_collections(1)
         uuid_document = [secrets.token_urlsafe(9)]
 
         collection.id_user = user_other.id
@@ -102,7 +110,6 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
         session.add(collection)
         session.commit()
 
-
         fn = self.fn(requests)
         res = await fn(collection.uuid, uuid_document=uuid_document)
         httperr = mwargs(
@@ -111,49 +118,91 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
                 msg=msg,
                 uuid_collection=collection.uuid,
                 uuid_user_token=user.uuid,
-            )
+            ),
         )
 
         if err := self.check_status(requests, res, 403, httperr):
             raise err
 
 
-
-
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
     method = H.GET
 
     def fn(self, requests: Requests):
         return requests.assignments.collections.read
 
-    @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-        session = dummy.session
-        (collection,) = dummy.get_user_collections(1)
-        assert not collection.deleted
-
+    async def get_nonempty(
+        self, requests: Requests, collections: Tuple[Collection, ...]
+    ):
         fn = self.fn(requests)
+        count = 0
+        for cc in collections:
+            assert not cc.deleted
+            res = await fn(cc.uuid)
+            if err := self.check_status(requests, res, 200):
+                raise err
+
+            data = self.adapter.validate_json(res.content)
+
+            if data.kind is not None:
+                assert data.kind == KindObject.assignment
+                return cc, data
+
+            count += 1
+
+        raise AssertionError(
+            "Could not find collection with nonempty data after `5` tries."
+        )
+
+    @pytest.mark.asyncio
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
+        session = dummy.session
+        collections = dummy.get_user_collections(5)
+        fn = self.fn(requests)
+        collection, data = await self.get_nonempty(requests, collections)
 
         # NOTE: Providing no parameters should return all assignments.
-        res = await fn(collection.uuid)
-        if err := self.check_status(requests, res, 200):
-            raise err
+        collection: Collection
+        count = 0
+        for cc in collections:
+            assert not cc.deleted
+            res = await fn(cc.uuid)
+            if err := self.check_status(requests, res, 200):
+                raise err
 
-        data = self.adapter.validate_json(res.content)
+            data = self.adapter.validate_json(res.content)
+            if data.data:
+                collection = cc
+                break
+
+            count += 1
+
+        if count == 5:
+            raise AssertionError("Could not find collection with nonempty data after ")
 
         assignment_uuids: Set[str]
-        q = select(Assignment).join(Document).where(
-            Assignment.id_collection == collection.id, 
-            Assignment.deleted == false(),
-            Document.deleted == false(),
+        q = (
+            select(Assignment)
+            .join(Document)
+            .where(
+                Assignment.id_collection == collection.id,
+                Assignment.deleted == false(),
+                Document.deleted == false(),
+            )
         )
         assignments = tuple(session.scalars(q))
         assignment_uuids = Assignment.resolve_uuid(session, assignments)
-        assert len(assignment_uuids) > 0
 
         for assignment in data.data:
             assert assignment.uuid in assignment_uuids
-            q = select(Assignment).where(Assignment.uuid!=assignment.uuid)
+            q = select(Assignment).where(Assignment.uuid != assignment.uuid)
             assignment_db = session.scalar(q.limit(1))
             assert assignment_db is not None
             assert not assignment_db.deleted
@@ -179,31 +228,36 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
             assert data_ordered.data != data_rand1.data != data_rand2.data
 
     @pytest.mark.asyncio
-    async def test_success_200_filter_by_uuids(self, dummy: DummyProvider, requests: Requests):
-        collection, = dummy.get_user_collections(1)
+    async def test_success_200_filter_by_uuids(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
+        collections = dummy.get_user_collections(8, exclude_deleted=False)
+
+        for collection in collections:
+            collection.deleted = False
+
+        dummy.session.add_all(collections)
+        dummy.session.commit()
+
         fn = self.fn(requests)
-
-        # NOTE: Read to get some document uuids for filtering.
-        res = await fn(collection.uuid)
-        if err := self.check_status(requests, res):
-            raise err
-
-        data_all = self.adapter.validate_json(res.content)
+        collection, data_all = await self.get_nonempty(requests, collections)
         assert data_all.kind == KindObject.assignment
         assert len(data_all.data) > 0
 
         uuid_documents_all: Set[str] = set(dd.uuid_document for dd in data_all.data)
         uuid_documents_all_list = list(uuid_documents_all)
-        uuid_documents = {k for k in uuid_documents_all if randint(0,1)} 
+        uuid_documents = {k for k in uuid_documents_all if randint(0, 1)}
         uuid_documents.add(choice(uuid_documents_all_list))
         n, n_total = len(uuid_documents), len(uuid_documents_all)
 
         # NOTE: Use all uuids and expect the same result randomized.
-        res = await fn(collection.uuid, uuid_document=uuid_documents_all_list, randomize=True)
+        res = await fn(
+            collection.uuid, uuid_document=uuid_documents_all_list, randomize=True
+        )
         if err := self.check_status(requests, res):
             raise err
 
-        data_all_again = self.adapter.validate_json(res.content) 
+        data_all_again = self.adapter.validate_json(res.content)
         assert data_all_again.kind is not None
         assert len(data_all_again.data) == n_total
 
@@ -221,8 +275,11 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
         assert len(data.data) == n
 
 
-
-
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
     method = H.DELETE
 
@@ -230,7 +287,9 @@ class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
         return requests.assignments.collections.delete
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         (collection,), session = dummy.get_user_collections(1), dummy.session
         documents = tuple(session.scalars(collection.q_select_documents()))
         uuid_document_list = list(dd.uuid for dd in documents)
@@ -267,7 +326,7 @@ class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
         # NOTE: Verify with read and db.
         session.reset()
         for assignment in data.data:
-            q = select(Assignment).where(Assignment.uuid==assignment.uuid)
+            q = select(Assignment).where(Assignment.uuid == assignment.uuid)
             assignment_db = session.scalar(q.limit(1))
 
             assert assignment_db is not None
@@ -288,7 +347,7 @@ class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
         data = self.adapter_w_events.validate_json(res.content)
         assert data.kind is None
         assert len(data.events) == 1
-        assert not len(data.events[0].children) 
+        assert not len(data.events[0].children)
 
         # NOTE: Force.
         res = await fn(collection.uuid, uuid_document=uuid_document_list, force=True)
@@ -302,17 +361,16 @@ class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
 
         session.reset()
         for assignment in data_read.data:
-            q = select(Assignment).where(Assignment.uuid==assignment.uuid)
+            q = select(Assignment).where(Assignment.uuid == assignment.uuid)
             assignment_db = session.scalar(q.limit(1))
             assert assignment_db is None
 
 
-
-
-
-
-
-
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
     method = H.POST
 
@@ -320,19 +378,21 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
         return requests.assignments.collections.create
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
-
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         session = dummy.session
-        collection, = dummy.get_user_collections(1)
+        (collection,) = dummy.get_user_collections(1)
         documents = dummy.get_documents(9, GetPrimaryKwargs(deleted=False))
         uuid_document_list = list(dd.uuid for dd in documents)
         id_document_list = [dd.id for dd in documents]
         assert (n_documents := len(uuid_document_list)) > 1
 
         session.execute(
-            delete(Assignment).where(Assignment.id_document.in_(id_document_list), 
-                                     Assignment.id_collection == collection.id)
-
+            delete(Assignment).where(
+                Assignment.id_document.in_(id_document_list),
+                Assignment.id_collection == collection.id,
+            )
         )
         session.commit()
 
@@ -343,10 +403,8 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
         if err := self.check_status(requests, res):
             raise err
 
-
         data = self.adapter.validate_json(res.content)
         assert data.kind is None
-
 
         # NOTE: Try create.
         fn = self.fn(requests)
@@ -371,7 +429,9 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
 
         session.reset()
         for assignment in data.data:
-            assignment_db = session.scalar(select(Assignment).where(Assignment.uuid == assignment.uuid).limit(1))
+            assignment_db = session.scalar(
+                select(Assignment).where(Assignment.uuid == assignment.uuid).limit(1)
+            )
             assert assignment_db is not None
             assert not assignment_db.deleted
 
@@ -390,8 +450,12 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
         # NOTE: Force. Start by deleting most.
 
         session.execute(
-            update(Assignment).values(deleted=True).where(Assignment.id_document.in_(id_document_list[:n_documents-2]), 
-                                     Assignment.id_collection == collection.id)
+            update(Assignment)
+            .values(deleted=True)
+            .where(
+                Assignment.id_document.in_(id_document_list[: n_documents - 2]),
+                Assignment.id_collection == collection.id,
+            )
         )
         session.commit()
 
@@ -402,5 +466,3 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
         res = await fn(collection.uuid, uuid_document=uuid_document_list, force=True)
         if err := self.check_status(requests, res):
             raise err
-
-

@@ -126,27 +126,45 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
 
     yield
 
+    uuids_dispose = DummyProvider.dummy_user_uuids_dispose
+    if uuids_dispose is None:
+        logger.warning("No users to dispose.")
+        return
+
+    n = len(uuids_dispose)
+    logger.info("Disposing `%s` dummy users.", n)
+    with _sessionmaker(engine)() as session:
+        q = select(User).where(User.uuid.in_(uuids_dispose))
+        users = session.scalars(q)
+        tuple(map(session.delete, users))
+        session.commit()
+
 
 @pytest.fixture(scope="session", autouse=True)
 def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
     with sessionmaker() as session:
         logger.info("Loading tables with dummy data from `YAML`.")
         DummyProviderYAML.merge(session)
-        uuids_existing = list(session.scalars(select(User.uuid)))
+
+        logger.debug("Getting current user count.")
+        uuids_existing = list(session.scalars(select(User.id, User.uuid)))
         n_users = len(uuids_existing)
         assert n_users is not None
-        assert isinstance(n_users, int)
-
-        # NOTE: This line is important!
-        DummyProvider.dummy_user_uuids = uuids_existing
 
         logger.info("Loading tables with generated dummy data.")
+        DummyProvider.dummy_user_uuids = list()
+        DummyProvider.dummy_user_uuids_dispose = list()
         if (n_generate := 100 - n_users) > 0:
             while n_generate > 0:
                 DummyProvider(auth, session)
                 n_generate -= 1
 
-    return
+        # NOTE: This line is important to gaurentee that test assets have a
+        #       reasonable amount of data (to avoid ``AssertionError``s raised
+        #       via ``dummy.py``).
+        DummyProvider.dummy_user_uuids = list(
+            session.scalars(select(User.uuid).where(User.id > 25))
+        )
 
 
 # --------------------------------------------------------------------------- #

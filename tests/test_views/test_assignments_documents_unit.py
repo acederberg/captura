@@ -34,7 +34,9 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
     adapter_w_events = TypeAdapter(OutputWithEvents[List[AssignmentSchema]])
 
     @pytest.mark.asyncio
-    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
+    async def test_deleted_410(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         (document,) = dummy.get_documents(1, GetPrimaryKwargs(deleted=True))
 
         fn = self.fn(requests)
@@ -53,7 +55,9 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
+    async def test_not_found_404(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         uuid_document = secrets.token_urlsafe(9)
         uuid_collection = {secrets.token_urlsafe(9) for _ in range(3)}
 
@@ -71,7 +75,9 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
+    async def test_unauthorized_401(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         assert requests.context.auth_exclude is False, "Auth should not be excluded."
         session, fn = dummy.session, self.fn(requests)
 
@@ -91,7 +97,9 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
+    async def test_forbidden_403(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         session, level = dummy.session, Level.view
         (document,) = dummy.get_user_documents(level, n=1)
         grant = dummy.get_document_grant(document, exclude_deleted=False)
@@ -149,6 +157,11 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
 
 # NOTE: The ownership of documents should work exactly as it does in grants.
 #       Should find a way to reuse.
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
     method = H.GET
 
@@ -156,7 +169,9 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
         return requests.assignments.documents.read
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         session = dummy.session
         fn = self.fn(requests)
 
@@ -180,9 +195,8 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
                 Collection.deleted == false(),
             )
         )
-        from app import util
-
-        util.sql(dummy.session, q_assignment_uuids)
+        # from app import util
+        # util.sql(dummy.session, q_assignment_uuids)
         assignment_uuids: Set[str]
         assignment_uuids = set(session.scalars(q_assignment_uuids))
 
@@ -229,19 +243,21 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
             assert aa != bb != cc
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
     method = H.POST
 
     def fn(self, requests: Requests):
         return requests.assignments.documents.delete
 
-    # @pytest.mark.parametrize(
-    #     "dummy, requests, count",
-    #     [],
-    #     indirect=["dummy", "requests"],
-    # )
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         session, fn = dummy.session, self.fn(requests)
         fn_read = requests.assignments.documents.read
 
@@ -325,6 +341,11 @@ class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
             assert assignment_db is None
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
     method = H.POST
 
@@ -332,7 +353,9 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
         return requests.assignments.documents.create
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         session, fn = dummy.session, self.fn(requests)
         fn_read = requests.assignments.documents.read
 

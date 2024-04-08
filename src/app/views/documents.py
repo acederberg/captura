@@ -152,7 +152,7 @@ class DocumentView(BaseView):
         document: Document = access.document(
             uuid_document,
             level=Level.view,
-            allow_public=False,
+            allow_public=True,
         )
         return mwargs(
             AsOutput[DocumentSchema], data=DocumentSchema.model_validate(document)
@@ -186,7 +186,7 @@ class DocumentView(BaseView):
         data = Data(
             token_user=create.token_user,
             event=None,
-            data=ResolvedDocument.empty(),
+            data=ResolvedDocument.empty(token_user_grants=dict()),
             children=list(),
         )
         data_create = create.document(data)

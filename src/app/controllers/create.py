@@ -554,13 +554,13 @@ class Create(WithDelete, Generic[T_Create]):
         data.data.token_user_grants = {
             user.uuid: (
                 grant := Grant(
-                    user=user.uuid,
-                    document=document,
+                    id_user=user.id,
+                    id_document=document.id,
                     level=Level.own,
                     pending=False,
                     pending_from=PendingFrom.created,
                     uuid=uuid_grant,
-                    uuid_user_granter=user.uuid,
+                    # id_user_granter=user.id,
                 )
             )
         }
@@ -571,6 +571,7 @@ class Create(WithDelete, Generic[T_Create]):
             detail="Document created.",
             children=[
                 Event(
+                    **self.event_common,
                     kind_obj=KindObject.user,
                     uuid_obj=user.uuid,
                     detail="Ownership granted by creation.",
@@ -585,13 +586,6 @@ class Create(WithDelete, Generic[T_Create]):
                 )
             ],
         )
-        session = self.session
-        session.add(data.event)
-        session.add(grant)
-        session.add(document)
-        session.commit()
-        session.refresh(data.event)
-        session.refresh(document)
         return data
 
     # e_document = with_empty_data(document)

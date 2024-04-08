@@ -55,9 +55,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
 
     @pytest.mark.asyncio
     async def test_unauthorized_401(
-        self,
-        dummy: DummyProvider,
-        requests: Requests,
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         "Test unauthorized access."
 
@@ -81,6 +79,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         """User must be logged in as user."""
         user, (user_other,) = dummy.user, dummy.get_users(
@@ -112,6 +111,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test not found response with bad document uuid."
 
@@ -137,6 +137,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test deleted document"
 
@@ -161,6 +162,11 @@ class CommonUsersGrantsTests(BaseEndpointTest):
             raise err
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUsersGrantsRequest(CommonUsersGrantsTests):
     "For example requesting access to a document."
 
@@ -169,11 +175,6 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
 
     # NOTE: Many tests bc pain in the ass.
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "dummy, requests, count",
-        [(None, None, k) for k in range(10)],
-        indirect=["dummy", "requests"],
-    )
     async def test_success_200_simple(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
@@ -266,7 +267,9 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         assert data.kind is None
 
     @pytest.mark.asyncio
-    async def test_bad_request_400(self, dummy: DummyProvider, requests: Requests):
+    async def test_bad_request_400(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test what happens when requesting deleted grants."
 
         user, session = dummy.user, dummy.session
@@ -346,7 +349,9 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         assert msg.endswith("done by directly deleting these grants.")
 
     @pytest.mark.asyncio
-    async def test_success_200_ideal(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_ideal(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test requesting a grant after grants cleared."
 
         user, session = dummy.user, dummy.session
@@ -451,7 +456,10 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
     #       long as they know the document uuid.
     @pytest.mark.skip
     async def test_forbidden_403_only_public_documents(
-        self, dummy: DummyProvider, requests: Requests
+        self,
+        dummy: DummyProvider,
+        requests: Requests,
+        count: int,
     ):
         """Test requesting a grant on a public document.
 
@@ -461,13 +469,18 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         assert False
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUsersGrantsRead(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.read
 
     @pytest.mark.asyncio
     async def test_success_200_random_documents(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         """Test user can read own grants.
 
@@ -502,7 +515,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
 
     @pytest.mark.asyncio
     async def test_success_200_dne_documents(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         """Like `test_success_200_random_documents` but gaurenteed empty."""
 
@@ -519,7 +532,9 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         assert data.kind is None
 
     @pytest.mark.asyncio
-    async def test_success_200_private(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_private(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         """Test can read user pending grants for private documents."""
 
         user = dummy.user
@@ -538,14 +553,10 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
 
     # NOTE: The `pending` filter only works when `uuid_document` is not
     #       specified.
-    @pytest.mark.parametrize(
-        "dummy, requests, include_uuids",
-        [(None, None, bool(vv)) for vv in (0, 1)],
-        indirect=["dummy", "requests"],
-    )
+    @pytest.mark.parametrize("include_uuids", (0, 1))
     @pytest.mark.asyncio
     async def test_success_200_pending(
-        self, dummy: DummyProvider, requests: Requests, include_uuids
+        self, dummy: DummyProvider, requests: Requests, count: int, include_uuids
     ):
         user = dummy.user
         fn = self.fn(requests)
@@ -577,7 +588,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
 
     @pytest.mark.asyncio
     async def test_success_200_pending_from(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         """Test the `pending_from` query parameter."""
 
@@ -613,7 +624,9 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
             raise AssertionError("All empty.")
 
     @pytest.mark.asyncio
-    async def test_success_200_level(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_level(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         user = dummy.user
         fn = self.fn(requests)
 
@@ -630,12 +643,19 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
             self.check_data(dummy, data, level=level)
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUsersGrantsReject(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.reject
 
     @pytest.mark.asyncio
-    async def test_success_200_ideal(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_ideal(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         """User can remove own grants."""
 
         user, session = dummy.user, dummy.session
@@ -726,12 +746,19 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
             assert grant_db is None
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUsersGrantsAccept(CommonUsersGrantsTests):
     def fn(self, requests: Requests):
         return requests.grants.users.accept
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         """User can accept own grants."""
 
         session = dummy.session
@@ -837,7 +864,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
     @pytest.mark.asyncio
     async def test_success_200_uuid_document_dne(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         """Test filtering by using fake document uuids."""
         uuid_document = [secrets.token_urlsafe(9) for _ in range(5)]
@@ -855,9 +882,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
     @pytest.mark.asyncio
     async def test_forbidden_403_pending_from(
-        self,
-        dummy: DummyProvider,
-        requests: Requests,
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         """Test that grants with ``pending_from != granter`` cannot be approved
         with this endpoint.

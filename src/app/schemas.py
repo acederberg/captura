@@ -152,7 +152,7 @@ class BaseSearchSchema(BaseSchema):
     name_like: fields.FieldNameLike
     description_like: fields.FieldDescriptionLike
     include_public: Annotated[bool, Field(default=True)]
-    randomize: Annotated[bool, Field(default= False)]
+    randomize: Annotated[bool, Field(default=False)]
 
 
 class BaseUpdateSchema(BaseSchema):
@@ -343,7 +343,7 @@ class DocumentBaseSchema(BasePrimarySchema):
 class DocumentCreateSchema(DocumentBaseSchema):
     kind_schema = KindSchema.create
 
-    content: fields.FieldContent
+    content: fields.FieldContentCreate
     # uuid_collection: fields.FieldUUIDS
     # uuid_user: fields.FieldUUIDS
 

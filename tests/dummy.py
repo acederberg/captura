@@ -8,6 +8,7 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
+    List,
     NotRequired,
     Self,
     Set,
@@ -20,6 +21,7 @@ import httpx
 from pydantic import SecretStr
 from sqlalchemy import Select, desc, false, func, literal_column, select, true, update
 from sqlalchemy.orm import Session, aliased
+import yaml
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -38,9 +40,12 @@ from app.fields import KindObject, Level, Plural, Singular
 from app.models import (
     AnyModelType,
     Assignment,
+    AssocCollectionDocument,
+    AssocUserDocument,
     Base,
     Collection,
     Document,
+    Edit,
     Event,
     Grant,
     KindObject,
@@ -60,7 +65,6 @@ from client.requests import Requests
 from client.requests.base import ContextData
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.mk import Mk
-from tests.test_models import ModelTestMeta
 
 logger = util.get_logger(__name__)
 
@@ -127,7 +131,7 @@ class BaseDummyProvider:
             .where(*conds)
             .order_by(func.random())
             .limit(n)
-            .distinct(Model.uuid)
+            # .distinct(Model.uuid)
         )
         if callback:
             q = callback(q)
@@ -543,7 +547,119 @@ class BaseDummyProvider:
         self.collections = tuple(user.collections)
 
 
+# =========================================================================== #
+# YAML Provider
+
+
+# NOTE: This loads the YAML assets when this module is invoked. It might be
+#       helpful to implement some sort of laziness as the IO slows things down.
+class DummyYAMLProviderInfoMeta(type):
+    dummies_info: ClassVar[Dict[str, "DummyProviderYAMLInfo"]] = dict()
+    dummies_file: str
+
+    def __new__(cls, name, bases, namespace):
+        if name == "DummyProviderYAMLInfo":
+            return super().__new__(cls, name, bases, namespace)
+
+        if (M := namespace.get("M")) is None:
+            raise ValueError("`M` must be defined.")
+        elif not issubclass(M, Base):
+            raise ValueError(f"`{name}.M={M}` must be a subclass of `{Base}`.")
+
+        # Dummies. Cannot declare dummies directly.
+        if namespace.get("dummies") is not None:
+            raise ValueError("Cannot specify dummies explicitly.")
+
+        if (dummies_file := namespace.get("dummies_file")) is None:
+            kind = KindObject._value2member_map_[M.__tablename__]
+            dummies_file = util.Path.test_assets(f"{kind.name}.yaml")
+            namespace["dummies_file"] = dummies_file
+
+        T = super().__new__(cls, name, bases, namespace)
+        cls.dummies_info[T.M.__tablename__] = T  # type: ignore
+        return T
+
+    @property
+    def dummies(self) -> List[Dict[str, Any]]:
+        logger.debug("Loading dummy data from `%s`.", self.dummies_file)
+
+        with open(self.dummies_file, "r") as file:
+            dummies = yaml.safe_load(file)
+
+        _msg = f"`{self.__name__}.dummies_file={self.dummies_file}`"
+        if not isinstance(dummies, list):
+            raise ValueError(f"{_msg} must deserialize to a list.")
+        elif len(
+            bad := tuple(
+                index
+                for index, item in enumerate(dummies)
+                if not isinstance(item, dict)
+            )
+        ):
+            raise ValueError(f"{_msg} has bad entries in positions `{bad}`.")
+
+        return dummies
+
+
+class DummyProviderYAMLInfo(metaclass=DummyYAMLProviderInfoMeta):
+    # NOTE: This will matter less when the dummy data project is copmlete.
+    M: ClassVar[Type[Base]]
+    dummies_file: ClassVar[str]
+    dummies: ClassVar[List[Dict[str, Any]]]
+
+    @classmethod
+    def preload(cls, item):
+        if hasattr(item, "content"):
+            item.content = bytes(item.content, "utf-8")
+        return item
+
+    @classmethod
+    def merge(cls, session: Session):
+        loaded = (cls.preload(cls.M(**item)) for item in cls.dummies)
+        for item in loaded:
+            session.merge(item)
+        session.commit()
+
+
 class DummyProviderYAML(BaseDummyProvider):
+    dummy_yaml_info = [
+        type(
+            "DummyProviderYAMLUser",
+            (DummyProviderYAMLInfo,),
+            dict(M=User),
+        ),
+        type(
+            "DummyProviderYAMLCollection",
+            (DummyProviderYAMLInfo,),
+            dict(M=Collection),
+        ),
+        type(
+            "DummyProviderYAMLDocument",
+            (DummyProviderYAMLInfo,),
+            dict(M=Document),
+        ),
+        type(
+            "DummyProviderYAMLEdit",
+            (DummyProviderYAMLInfo,),
+            dict(M=Edit),
+        ),
+        type(
+            "DummyProviderYAMLGrant",
+            (DummyProviderYAMLInfo,),
+            dict(M=AssocUserDocument),
+        ),
+        type(
+            "DummyProviderYAMLAssignment",
+            (DummyProviderYAMLInfo,),
+            dict(M=AssocCollectionDocument),
+        ),
+        type(
+            "DummyProviderYAMLEdit",
+            (DummyProviderYAMLInfo,),
+            dict(M=Event),
+        ),
+    ]
+
     def __init__(self, auth: Auth, session: Session, user: User):
         self.auth = auth
         self.session = session
@@ -555,14 +671,19 @@ class DummyProviderYAML(BaseDummyProvider):
         backwards = list(Base.metadata.sorted_tables)
         backwards.reverse()
         for table in Base.metadata.sorted_tables:
-            cls_model = ModelTestMeta.__children__.get(table.name)
+            cls_model = DummyProviderYAMLInfo.dummies_info[table.name]
             if cls_model is None:
                 continue
             cls_model.merge(session)
 
 
+# =========================================================================== #
+# Default Provider
+
+
 class DummyProvider(BaseDummyProvider):
     dummy_user_uuids: ClassVar[list[str] | None] = None
+    dummy_user_uuids_dispose: ClassVar[list[str] | None] = None
 
     def __init__(self, auth: Auth, session: Session, use_existing: bool | User = False):
         self.auth = auth
@@ -591,6 +712,8 @@ class DummyProvider(BaseDummyProvider):
     def mk_assignments(self):
         # NOTE: Iter over collections first so that every document has a chance
         #       belong to each collection.
+        # TODO: Make it such that this is not restricted to a user only having
+        #       its collections made exclusively of its own documents.
         self.session.add_all(
             assignments := tuple(
                 Assignment(
@@ -619,12 +742,13 @@ class DummyProvider(BaseDummyProvider):
         )
 
         # NOTE: Add grants for documents of other users.
-        q_id_user_max = select(func.max(User.id))
-        id_user_max = self.session.scalar(q_id_user_max)
-        if id_user_max is None:
-            raise AssertionError("Expect a nonzero number of users.")
+        # q_id_user_max = select(func.max(User.id))
+        # id_user_max = self.session.scalar(q_id_user_max)
+        # if id_user_max is None:
+        #     raise AssertionError("Expect a nonzero number of users.")
 
-        id_users_shared = set(k for k in range(1, id_user_max) if not bool(k % 3))
+        id_users = self.session.scalars(select(User.id))
+        id_users_shared = set(k for k in id_users if not bool(k % 3))
         if self.user.id in id_users_shared:
             id_users_shared.remove(self.user.id)
 
@@ -669,36 +793,6 @@ class DummyProvider(BaseDummyProvider):
             for id_user in id_users_shared
             if randint(0, 2)
         )
-        # def uniq(gg):
-        #     return set((grant.id_user, grant.id_document) for grant in gg)
-        #
-        #
-        # print("=============================================================")
-        #
-        # print()
-        # uniq_other = uniq(grants_other)
-        # print(f"pairs other {len(grants_other)}")
-        # print("unique pairs other: ", len(uniq_other))
-        #
-        # print()
-        # uniq_self = uniq(grants_self)
-        # print(f"pairs self {len(grants_self)}")
-        # print("unique pairs self: ", len(uniq_self))
-        #
-        # print()
-        # uniq_created = uniq(grants)
-        # print(f"pairs created {len(grants)}")
-        # print("unique pairs created: ", len(uniq_created))
-        #
-        # print()
-        # print(f"{uniq_other & uniq_self = }")
-        # print(f"{uniq_other & uniq_created = }")
-        # print(f"{uniq_created & uniq_self = }")
-        #
-        # print()
-        # print(len(uniq_other) + len(uniq_created) + len(uniq_self))
-        # print(len(uniq_other | uniq_created | uniq_self))
-        # print("=============================================================")
 
         return grants + grants_self + grants_other
 

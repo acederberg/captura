@@ -136,6 +136,12 @@ class BaseEndpointTest(abc.ABC):
     def dummy(self, sessionmaker, auth: Auth) -> Generator[DummyProvider, None, None]:
         with sessionmaker() as session:
             dummy = DummyProvider(auth, session, use_existing=True)
+
+            if "Delete" in self.__class__.__name__:
+                uuids_dispose = DummyProvider.dummy_user_uuids_dispose
+                assert uuids_dispose is not None
+                uuids_dispose.append(dummy.user.uuid)
+
             dummy.user.deleted = False
             session.add(dummy.user)
             session.commit()
@@ -149,7 +155,7 @@ class BaseEndpointTest(abc.ABC):
         app: FastAPI | None,
         dummy: DummyProvider,
         client_config: PytestClientConfig,
-        async_client: httpx.AsyncClient,
+        # async_client: httpx.AsyncClient,
     ) -> AsyncGenerator[Requests, Any]:
         async with httpx.AsyncClient(app=app) as client:
             yield dummy.requests(client_config, client)
@@ -163,12 +169,12 @@ class BaseEndpointTest(abc.ABC):
     ) -> AssertionError | None:
         # DO RECURSE
         if isinstance(response, tuple) or isinstance(response, list):
-            err: AssertionError | None
+            _err: AssertionError | None
             return next(
                 (
-                    err
+                    _err
                     for rr in response
-                    if (err := self.check_status(requests, rr)) is not None
+                    if (_err := self.check_status(requests, rr)) is not None
                 ),
                 None,
             )
@@ -209,17 +215,23 @@ class BaseEndpointTest(abc.ABC):
     # Errors
 
     @abc.abstractmethod
-    async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
+    async def test_unauthorized_401(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test unauthorized access."
         ...
 
     @abc.abstractmethod
-    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
+    async def test_not_found_404(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test not found response."
         ...
 
     @abc.abstractmethod
-    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
+    async def test_deleted_410(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         "Test deleted object"
         ...
 
@@ -243,17 +255,23 @@ class BaseEndpointTest(abc.ABC):
 class BaseEndpointTestPrimaryCreateMixins:
     @pytest.mark.skip
     @pytest.mark.asyncio
-    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
+    async def test_not_found_404(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         ...
 
     @pytest.mark.skip
     @pytest.mark.asyncio
-    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
+    async def test_deleted_410(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         ...
 
     @pytest.mark.skip
     @pytest.mark.asyncio
-    async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
+    async def test_forbidden_403(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         ...
 
 

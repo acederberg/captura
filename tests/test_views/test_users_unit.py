@@ -41,6 +41,7 @@ class CommonUserTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test unauthorized access."
 
@@ -59,6 +60,7 @@ class CommonUserTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test only user can access."
         fn = self.fn(requests)
@@ -79,6 +81,7 @@ class CommonUserTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test no such user."
         session = dummy.session
@@ -105,6 +108,7 @@ class CommonUserTests(BaseEndpointTest):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         session = dummy.session
         user_other = next(user for user in dummy.get_users(2) if user != dummy.user)
@@ -141,6 +145,11 @@ class CommonUserTests(BaseEndpointTest):
                 raise err
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUserRead(CommonUserTests):
     method = H.GET
     adapter = TypeAdapter(AsOutput[UserExtraSchema])
@@ -153,6 +162,7 @@ class TestUserRead(CommonUserTests):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         "Test can read own user and public users."
 
@@ -186,6 +196,11 @@ class TestUserRead(CommonUserTests):
         assert data.data.uuid == user_other.uuid
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUserUpdate(CommonUserTests):
     method = H.PATCH
 
@@ -200,9 +215,7 @@ class TestUserUpdate(CommonUserTests):
 
     @pytest.mark.asyncio
     async def test_success_200(
-        self,
-        dummy: DummyProvider,
-        requests: Requests,
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         user, fn = dummy.user, self.fn(requests, False)
         user_name_new = secrets.token_urlsafe(8)
@@ -225,6 +238,11 @@ class TestUserUpdate(CommonUserTests):
         assert data.data.name == user_name_new
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUserDelete(CommonUserTests):
     method = H.DELETE
 
@@ -236,6 +254,7 @@ class TestUserDelete(CommonUserTests):
         self,
         dummy: DummyProvider,
         requests: Requests,
+        count: int,
     ):
         assert False, "Should finish other deletion tests first."
         session, user, fn = dummy.session, dummy.user, self.fn(requests)
@@ -268,7 +287,9 @@ class CommonUserSearchTests(CommonUserTests):
     kind: ClassVar[KindObject]
 
     @pytest.mark.asyncio
-    async def test_success_200_limit(self, dummy, requests):
+    async def test_success_200_limit(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         fn = self.fn(requests)
         res = await fn(dummy.user.uuid, limit=1)
         if err := self.check_status(requests, res):
@@ -280,7 +301,7 @@ class CommonUserSearchTests(CommonUserTests):
 
     @pytest.mark.asyncio
     async def test_success_200_randomize(
-        self, dummy: DummyProvider, requests: Requests
+        self, dummy: DummyProvider, requests: Requests, count: int
     ):
         N = 25
         fn = self.fn(requests)
@@ -301,7 +322,9 @@ class CommonUserSearchTests(CommonUserTests):
         assert data1.data != data2.data
 
     @pytest.mark.asyncio
-    async def test_success_200_uuids(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200_uuids(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         fn = self.fn(requests)
 
         # NOTE: Read w/o uuids
@@ -337,13 +360,9 @@ class CommonUserSearchTests(CommonUserTests):
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "dummy, requests, field",
-        [(None, None, field_name) for field_name in ("name_like", "description_like")],
-        indirect=["dummy", "requests"],
-    )
+    @pytest.mark.parametrize("field", ("name_like", "description_like"))
     async def test_success_200_like(
-        self, dummy: DummyProvider, requests: Requests, field: str
+        self, dummy: DummyProvider, requests: Requests, count: int, field: str
     ):
         fn = self.fn(requests)
         names = {fkit.word() for _ in range(25)}
@@ -383,7 +402,7 @@ class CommonUserSearchTests(CommonUserTests):
             raise AssertionError("All filtered data is empty.")
 
     # @pytest.mark.asyncio
-    # async def test_success_200_description_like(self, dummy: DummyProvider, requests: Requests):
+    # async def test_success_200_description_like(self, dummy: DummyProvider, requests: Requests, count: int):
     #     assert False
     #     # fn = self.fn(requests)
     #     # res = await fn(dummy.user.uuid)
@@ -393,6 +412,11 @@ class CommonUserSearchTests(CommonUserTests):
     #     # self.adapter.validate_json(res.content)
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUsersSearch(CommonUserSearchTests):
     method = H.GET
     kind = KindObject.user
@@ -412,6 +436,11 @@ class TestUsersSearch(CommonUserSearchTests):
     #     assert False
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUserDocumentsSearch(CommonUserSearchTests):
     method = H.GET
     kind = KindObject.document
@@ -435,6 +464,11 @@ class TestUserDocumentsSearch(CommonUserSearchTests):
     #     assert False
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestUserCollectionsSearch(CommonUserSearchTests):
     method = H.GET
     kind = KindObject.collection

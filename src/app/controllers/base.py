@@ -655,6 +655,7 @@ class Data(BaseModel, Generic[T_Data]):
             session.commit()
         except Exception as err:
             print_tb(err.__traceback__)
+            util.CONSOLE_APP.print("[red]" + str(err))
             session.rollback()
             raise HTTPException(500, "Database commit failure.")
 

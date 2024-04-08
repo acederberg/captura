@@ -24,7 +24,7 @@ Instead do
 
 # =========================================================================== #
 import enum
-from typing import Annotated
+from typing import Annotated, Any, Dict
 
 from pydantic import BaseModel, Field, SecretStr, computed_field
 from sqlalchemy.engine import URL, Engine, create_engine
@@ -75,6 +75,10 @@ class MySqlHostConfig(BaseHashable):
 
 class MySqlConfig(BaseHashable):
     host: MySqlHostConfig
+    engine_kwargs: Annotated[
+        Dict[str, Any],
+        Field(default_factory=lambda: dict()),
+    ]
 
 
 class Auth0ApiConfig(BaseHashable):
@@ -141,7 +145,7 @@ class Config(BaseHashable, BaseYamlSettings):
     auth0: Auth0Config
     app: AppConfig
 
-    def engine(self, **kwargs) -> Engine:
+    def engine(self, **engine_kwargs_extra) -> Engine:
         url = URL.create(
             **self.mysql.host.model_dump(
                 exclude={"drivername", "drivername_async", "password"}
@@ -149,7 +153,9 @@ class Config(BaseHashable, BaseYamlSettings):
             password=self.mysql.host.password.get_secret_value(),
             drivername=self.mysql.host.drivername,
         )
-        return create_engine(url, **kwargs)
+        engine_kwargs = self.mysql.engine_kwargs.copy()
+        engine_kwargs.update(engine_kwargs_extra)
+        return create_engine(url, **engine_kwargs)
 
     def async_engine(self, **kwargs) -> AsyncEngine:
         url = URL.create(

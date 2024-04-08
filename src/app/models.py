@@ -7,7 +7,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Collection,
     Dict,
     Generator,
     List,
@@ -269,8 +268,9 @@ class PrimaryTableMixins:
     :class:`Event`.
     """
 
-    # uuid: Mapped[MappedColumnUUID]
     public: Mapped[bool] = mapped_column(default=True)
+    # NOTE: Now on ``Base``.
+    # uuid: Mapped[MappedColumnUUID]
     # deleted: Mapped[bool] = mapped_column(default=False)
 
     @classmethod
@@ -300,7 +300,16 @@ class PrimaryTableMixins:
             items.append(cls.deleted == false())
         if uuids is not None:
             items.append(cls.uuid.in_(uuids))
-        return and_(*items) if len(items) else None
+
+        # NOTE: ``true`` is added here because of the following warning:
+        #
+        #       .. code:: txt
+        #
+        #          SADeprecationWarning: Invoking and_() without arguments is
+        #          deprecated, and will be disallowed in a future release. For
+        #          an empty and_() construct, use 'and_(true(), *args)' or
+        #          'and_(True, *args)'.
+        return and_(true(), *items)  # if len(items) else None
 
     @classmethod
     def q_conds_public(
@@ -429,15 +438,25 @@ class Event(Base):
     # id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
-        ForeignKey("events.uuid"),
+        ForeignKey("events.uuid", ondelete="CASCADE"),
         nullable=True,
     )
-    children: Mapped[List["Event"]] = relationship("Event", foreign_keys=uuid_parent)
+    children: Mapped[List["Event"]] = relationship(
+        "Event",
+        foreign_keys=uuid_parent,
+        cascade="delete, all",
+    )
 
-    uuid_undo: Mapped[str | None] = mapped_column(ForeignKey("events.uuid"))
-    undo: Mapped["Event"] = relationship("Event", foreign_keys=uuid_undo)
+    uuid_undo: Mapped[str | None] = mapped_column(
+        ForeignKey("events.uuid"),
+    )
+    undo: Mapped["Event"] = relationship(
+        "Event",
+        foreign_keys=uuid_undo,
+        cascade="delete, all",
+    )
 
-    uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid"))
+    uuid_user: Mapped[str] = mapped_column(ForeignKey("users.uuid", ondelete="CASCADE"))
     user: Mapped["User"] = relationship()
 
     uuid_obj: Mapped[MappedColumnUUID | None]
@@ -755,8 +774,14 @@ class AssocUserDocument(Base):
         cascade="all, delete",
     )
 
-    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), key="a")
-    id_document: Mapped[int] = mapped_column(ForeignKey("documents.id"), key="b")
+    id_user: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        key="a",
+    )
+    id_document: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        key="b",
+    )
     level: Mapped[Level] = mapped_column(Enum(Level))
 
     # Metadata
@@ -877,27 +902,23 @@ class User(SearchableTableMixins, Base):
     # NOTE: This should correspond to `user`. Is all of the collection objects
     #       labeled by their names.
     collections: Mapped[List["Collection"]] = relationship(
-        # collection_class=attribute_keyed_dict("uuid"),
         cascade="all, delete",
         back_populates="user",
-        primaryjoin="and_(User.id==Collection.id_user, Collection.deleted == false())",
+        primaryjoin="User.id==Collection.id_user",
     )
 
     edits: Mapped[List["Edit"]] = relationship(
-        # cascade="all, delete",
         back_populates="user",
         primaryjoin="User.id==Edit.id_user",
     )
 
     documents: Mapped[List["Document"]] = relationship(
-        # collection_class=attribute_keyed_dict("uuid"),
         secondary=AssocUserDocument.__table__,
         back_populates="users",
-        primaryjoin="and_(User.id==AssocUserDocument.id_user, Document.deleted == false())",
-        secondaryjoin="AssocUserDocument.id_document==Document.id",
+        # primaryjoin="User.id==AssocUserDocument.id_user",
+        # secondaryjoin="AssocUserDocument.id_document==Document.id",
+        # cascade="all, delete",
     )
-
-    # DOES NOT INCLUDE WHERE user is subject
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
     # ----------------------------------------------------------------------- #
@@ -1224,11 +1245,10 @@ class Collection(SearchableTableMixins, Base):
     # NOTE: Deletion is included here since this used to read collection
     #       documents.
     documents: Mapped[List["Document"]] = relationship(
-        # collection_class=attribute_keyed_dict("name"),
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
-        primaryjoin="and_(Collection.id==AssocCollectionDocument.id_collection, AssocCollectionDocument.deleted == false())",
-        secondaryjoin="and_(Document.deleted == false(), Document.id==AssocCollectionDocument.id_document)",
+        primaryjoin="Collection.id==AssocCollectionDocument.id_collection",
+        secondaryjoin="Document.id==AssocCollectionDocument.id_document",
     )
 
     @property
@@ -1316,14 +1336,13 @@ class Document(SearchableTableMixins, Base):
         primaryjoin="Document.id==Edit.id_document",
     )
     users: Mapped[List[User]] = relationship(
-        # collection_class=attribute_keyed_dict("name"),
         secondary=AssocUserDocument.__table__,
         back_populates="documents",
-        secondaryjoin="User.id==AssocUserDocument.id_user",
-        primaryjoin="AssocUserDocument.id_document==Document.id",
+        passive_deletes=True,
+        # secondaryjoin="User.id==AssocUserDocument.id_user",
+        # primaryjoin="AssocUserDocument.id_document==Document.id",
     )
     collections: Mapped[List[Collection]] = relationship(
-        # collection_class=attribute_keyed_dict("name"),
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
     )
@@ -1649,13 +1668,16 @@ ResolvableModel = AnyModelType | KindObject
 
 
 def resolve_model(
-    resolvable: ResolvableModel, exclude_secondary: bool = False
+    resolvable: ResolvableModel | str, exclude_secondary: bool = False
 ) -> AnyModelType:
     match resolvable:
         case KindObject() as kind:
             Model = Tables[Plural[kind.name].value].value
         case type(__tablename__=str()) as Model:
             ...
+        case str() as v:
+            kind = KindObject(v)
+            return resolve_model(kind)
         case bad:
             raise ValueError(f"Cannot resolve `{bad}` to model.")
 

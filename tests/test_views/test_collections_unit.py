@@ -26,7 +26,9 @@ class CommonCollectionsTests(BaseEndpointTest):
     adapter_w_events = TypeAdapter(OutputWithEvents[CollectionSchema])
 
     @pytest.mark.asyncio
-    async def test_deleted_410(self, dummy: DummyProvider, requests: Requests):
+    async def test_deleted_410(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         # NOTE: Tried using `pytest.mark.skip` but marks all as bad.
         if self.method == HTTPMethod.POST:
             msg = "This test should not run for tests with `method=POST`."
@@ -51,7 +53,9 @@ class CommonCollectionsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_not_found_404(self, dummy: DummyProvider, requests: Requests):
+    async def test_not_found_404(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         if self.method == HTTPMethod.POST:
             msg = "This test should not run for tests with `method=POST`."
             raise AttributeError(msg)
@@ -71,7 +75,9 @@ class CommonCollectionsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_unauthorized_401(self, dummy: DummyProvider, requests: Requests):
+    async def test_unauthorized_401(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         (collection,) = dummy.get_user_collections(1)
         fn = self.fn(requests)
 
@@ -85,7 +91,9 @@ class CommonCollectionsTests(BaseEndpointTest):
             raise err
 
     @pytest.mark.asyncio
-    async def test_forbidden_403(self, dummy: DummyProvider, requests: Requests):
+    async def test_forbidden_403(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         if self.method == HTTPMethod.POST:
             msg = "This test should not run for tests with `method=POST`."
             raise AttributeError(msg)
@@ -140,7 +148,7 @@ class CommonCollectionsTests(BaseEndpointTest):
 
     # NOTE: NOT NECESSARY! id_user cannot be null any more.
     # @pytest.mark.asyncio
-    # async def test_teapot_418_homeless(self, dummy: DummyProvider, requests: Requests):
+    # async def test_teapot_418_homeless(self, dummy: DummyProvider, requests: Requests, count: int):
     #
     #     (collection,), session = dummy.get_collections(1), dummy.session
     #     collection_id_user = collection.id_user
@@ -150,6 +158,11 @@ class CommonCollectionsTests(BaseEndpointTest):
     #     session.commit()
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestCollectionsRead(CommonCollectionsTests):
     method = H.GET
 
@@ -157,7 +170,9 @@ class TestCollectionsRead(CommonCollectionsTests):
         return requests.collections.read
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         (collection,), session = dummy.get_user_collections(1), dummy.session
         fn = self.fn(requests)
 
@@ -208,6 +223,11 @@ def add_uuid_placeholder(
     return fn_
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestCollectionsCreate(
     BaseEndpointTestPrimaryCreateMixins,
     CommonCollectionsTests,
@@ -229,7 +249,9 @@ class TestCollectionsCreate(
         return fn_fn
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         # fn = self.fn(requests)
         # ^^^^^^^^^^^^^^^^^^^^^^ typehints suck
 
@@ -270,6 +292,11 @@ class TestCollectionsCreate(
 # test_forbidden_403 = pytest.mark.skip(TestCollectionsCreate.test_forbidden_403)
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestCollectionsUpdate(CommonCollectionsTests):
     method = H.PATCH
 
@@ -281,7 +308,9 @@ class TestCollectionsUpdate(CommonCollectionsTests):
         return fn_
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         user, session = dummy.user, dummy.session
         (collection,) = dummy.get_user_collections(1, exclude_deleted=True)
         collection.public = True
@@ -352,6 +381,11 @@ class TestCollectionsUpdate(CommonCollectionsTests):
         assert data.data.uuid_user == user_other.uuid
 
 
+@pytest.mark.parametrize(
+    "dummy, requests, count",
+    [(None, None, count) for count in range(5)],
+    indirect=["dummy", "requests"],
+)
 class TestCollectionsDelete(CommonCollectionsTests):
     method = H.DELETE
 
@@ -359,7 +393,9 @@ class TestCollectionsDelete(CommonCollectionsTests):
         return requests.collections.delete
 
     @pytest.mark.asyncio
-    async def test_success_200(self, dummy: DummyProvider, requests: Requests):
+    async def test_success_200(
+        self, dummy: DummyProvider, requests: Requests, count: int
+    ):
         assert False, "Should test assignments first."
 
         (collection,), session = dummy.get_user_collections(1), dummy.session
