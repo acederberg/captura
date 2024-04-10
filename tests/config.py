@@ -11,6 +11,12 @@ from client import Config as ClientConfig
 from client.config import ProfileConfig
 
 
+class PytestDummyConfig(BaseModel):
+    minimum_count: Annotated[int, Field(default=125)]
+    minimum_user_id: Annotated[int, Field(default=50)]
+    autodispose: Annotated[bool, Field(default=False)]
+
+
 class PytestSubConfig(BaseModel):
     """Configuration specific to pytest.
 
@@ -18,8 +24,9 @@ class PytestSubConfig(BaseModel):
         the tables do not exist, they will be created.
     """
 
-    emit_sql: bool = False
-    recreate_tables: bool = True
+    dummies: Annotated[PytestDummyConfig, Field(default=dict(), validate_default=True)]
+    emit_sql: Annotated[bool, Field(default=False)]
+    recreate_tables: Annotated[bool, Field(default=True)]
 
 
 class PytestConfig(Config):

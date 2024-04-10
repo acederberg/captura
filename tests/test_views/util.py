@@ -32,7 +32,7 @@ from app.models import Document, Grant, User
 from app.schemas import EventSchema
 from client.handlers import CONSOLE
 from client.requests import Requests
-from tests.dummy import DummyProvider
+from tests.dummy import DummyHandler, DummyProvider
 
 from ..conftest import PytestClientConfig
 
@@ -133,14 +133,15 @@ class BaseEndpointTest(abc.ABC):
     adapter_w_events: ClassVar[TypeAdapter]
 
     @pytest.fixture(scope="class")
-    def dummy(self, sessionmaker, auth: Auth) -> Generator[DummyProvider, None, None]:
-        with sessionmaker() as session:
-            dummy = DummyProvider(auth, session, use_existing=True)
-
-            if "Delete" in self.__class__.__name__:
-                uuids_dispose = DummyProvider.dummy_user_uuids_dispose
-                assert uuids_dispose is not None
-                uuids_dispose.append(dummy.user.uuid)
+    def dummy(
+        self, dummy_handler: DummyHandler
+    ) -> Generator[DummyProvider, None, None]:
+        with dummy_handler.sessionmaker() as session:
+            dummy = DummyProvider(
+                dummy_handler.auth,
+                session,
+                use_existing=dummy_handler.user_uuids,
+            )
 
             dummy.user.deleted = False
             session.add(dummy.user)

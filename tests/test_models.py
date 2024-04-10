@@ -85,8 +85,8 @@ class TestRelationships:
     @pytest.mark.parametrize(
         "dummy_new, count", [(None, k) for k in range(3)], indirect=["dummy_new"]
     )
-    def test_collection_deletion(self, dummy_new: DummyProvider, count: int):
-        dummy = dummy_new
+    def test_collection_deletion(self, dummy_disposable: DummyProvider, count: int):
+        dummy = dummy_disposable
         collections, session = dummy.get_user_collections(15), dummy.session
         msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
 
@@ -121,10 +121,12 @@ class TestRelationships:
                 Document.uuid.in_(uuid_document)
             )
             n_documents_remaining = session.scalar(q_documents_remaining)
+            assert n_documents_remaining is not None
+            print(uuid_document)
 
             if n_documents_remaining != n_assignment:
                 raise AssertionError(
-                    f"`{n_documents_remaining}` of `{n_assignment}` "
+                    f"`{n_assignment - n_documents_remaining}` of `{n_assignment}` "
                     "`documents` were deleted. No `documents` should have "
                     "been deleted."
                 )
@@ -137,8 +139,8 @@ class TestRelationships:
         [(None, k) for k in range(3)],
         indirect=["dummy_new"],
     )
-    def test_document_deletion(self, dummy_new: DummyProvider, count: int):
-        dummy = dummy_new
+    def test_document_deletion(self, dummy_disposable: DummyProvider, count: int):
+        dummy = dummy_disposable
         documents, session = dummy.get_user_documents(Level.view, n=15), dummy.session
         uuid_column = literal_column("uuid")
         msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
@@ -265,6 +267,8 @@ class TestRelationships:
             n_docs_remaining = session.scalar(q_docs_remaining)
             assert n_docs_remaining == 0
 
+            dummy.dispose()
+
     def test_user_deletion_collections(
         self,
         session: Session,
@@ -290,9 +294,10 @@ class TestRelationships:
             q_cols_remaining = select(func.count(Collection.uuid)).where(
                 Collection.uuid.in_(uuid_collections)
             )
-            print(uuid_collections)
             n_cols_remaining = session.scalar(q_cols_remaining)
             assert not n_cols_remaining
+
+            dummy.dispose()
 
         if n_no_collections == 2:
             msg = "All users had empty `collections`."
@@ -325,6 +330,8 @@ class TestRelationships:
             )
             n_edits_remaining = session.scalar(q_edits_remaining)
             assert n_edits_remaining == n_edits
+
+            dummy.dispose()
 
         if n_no_edits == 2:
             raise AssertionError("All dummies had empty `edits`.")
@@ -467,7 +474,6 @@ class TestUser:
             # NOTE: Verify that count and uuids work correctly
             kwargs.update(kind_select=KindSelect.count)
             docs_count = session.scalar(q := fn(**kwargs))
-            util.sql(session, q)
             assert docs_count == len(uuid_document)
 
             kwargs.update(kind_select=KindSelect.uuids)

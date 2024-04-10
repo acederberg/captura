@@ -1,5 +1,5 @@
 # =========================================================================== #
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Dict, Iterable, List, Self, Set
 
 import httpx
 import pytest
@@ -20,7 +20,7 @@ from app.views import AppView
 from client.config import Config as ClientConfig
 from tests.config import PytestClientConfig, PytestConfig
 
-from .dummy import DummyProvider, DummyProviderYAML
+from .dummy import DummyHandler, DummyProvider, DummyProviderYAML
 
 logger = util.get_logger(__name__)
 
@@ -94,6 +94,20 @@ def session(sessionmaker):
     logger.debug("Session closed.")
 
 
+@pytest.fixture(scope="session")
+def dummy_handler(sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth):
+    with sessionmaker() as session:
+        user_uuids = list(session.scalars(select(User.uuid)))
+
+    handler = DummyHandler(sessionmaker, config, user_uuids, auth=auth)
+
+    if config.tests.dummies.autodispose:
+        handler.dispose()
+
+    handler.restore()
+    return handler
+
+
 # --------------------------------------------------------------------------- #
 # Loading fixtures
 
@@ -126,45 +140,16 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
 
     yield
 
-    uuids_dispose = DummyProvider.dummy_user_uuids_dispose
-    if uuids_dispose is None:
-        logger.warning("No users to dispose.")
-        return
-
-    n = len(uuids_dispose)
-    logger.info("Disposing `%s` dummy users.", n)
-    with _sessionmaker(engine)() as session:
-        q = select(User).where(User.uuid.in_(uuids_dispose))
-        users = session.scalars(q)
-        tuple(map(session.delete, users))
-        session.commit()
-
 
 @pytest.fixture(scope="session", autouse=True)
-def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
+def load_tables(
+    setup_cleanup, config: PytestConfig, auth: Auth, sessionmaker: _sessionmaker
+):
     with sessionmaker() as session:
         logger.info("Loading tables with dummy data from `YAML`.")
         DummyProviderYAML.merge(session)
 
-        logger.debug("Getting current user count.")
-        uuids_existing = list(session.scalars(select(User.id, User.uuid)))
-        n_users = len(uuids_existing)
-        assert n_users is not None
-
-        logger.info("Loading tables with generated dummy data.")
-        DummyProvider.dummy_user_uuids = list()
-        DummyProvider.dummy_user_uuids_dispose = list()
-        if (n_generate := 50 - n_users) > 0:
-            while n_generate > 0:
-                DummyProvider(auth, session)
-                n_generate -= 1
-
-        # NOTE: This line is important to gaurentee that test assets have a
-        #       reasonable amount of data (to avoid ``AssertionError``s raised
-        #       via ``dummy.py``).
-        DummyProvider.dummy_user_uuids = list(
-            session.scalars(select(User.uuid).where(User.id > 25))
-        )
+        logger.info("Generating dummy data.")
 
 
 # --------------------------------------------------------------------------- #
@@ -194,15 +179,25 @@ def auth(config: Config) -> Auth:
 
 
 @pytest.fixture
-def dummy(auth: Auth, session: Session) -> DummyProvider:
+def dummy(dummy_handler: DummyHandler):
     logger.info("Providing random dummy.")
-    return DummyProvider(auth, session, use_existing=True)
+    with dummy_handler.sessionmaker() as session:
+        yield DummyProvider(
+            dummy_handler.auth, session, use_existing=dummy_handler.user_uuids
+        )
 
 
 @pytest.fixture
-def dummy_new(auth: Auth, session: Session) -> DummyProvider:
+def dummy_new(dummy_handler: DummyHandler):
     logger.info("Providing new dummy.")
-    return DummyProvider(auth, session, use_existing=False)
+    with dummy_handler.sessionmaker() as session:
+        yield DummyProvider(dummy_handler.auth, session, use_existing=None)
+
+
+@pytest.fixture
+def dummy_disposable(dummy_new: DummyProvider):
+    yield dummy_new
+    dummy_new.dispose()
 
 
 @pytest.fixture(scope="function")

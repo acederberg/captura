@@ -807,15 +807,20 @@ class AssocUserDocument(Base):
         "AssocUserDocument",
         foreign_keys=uuid_parent,
         cascade="all, delete",
-        passive_deletes=True,
     )
 
     id_user: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
         key="a",
     )
     id_document: Mapped[int] = mapped_column(
-        ForeignKey("documents.id", ondelete="CASCADE"),
+        ForeignKey(
+            "documents.id",
+            ondelete="CASCADE",
+        ),
         key="b",
     )
     level: Mapped[Level] = mapped_column(Enum(Level))
@@ -941,9 +946,11 @@ class User(SearchableTableMixins, Base):
         cascade="all, delete",
         back_populates="user",
         primaryjoin="User.id==Collection.id_user",
+        passive_deletes=True,
     )
 
     edits: Mapped[List["Edit"]] = relationship(
+        cascade="all, delete",
         back_populates="user",
         primaryjoin="User.id==Edit.id_user",
     )
@@ -951,8 +958,8 @@ class User(SearchableTableMixins, Base):
     documents: Mapped[List["Document"]] = relationship(
         secondary=AssocUserDocument.__table__,
         back_populates="users",
-        cascade="all, delete-orphan",
-        single_parent=True,
+        cascade="all, delete",
+        # single_parent=True,
     )
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
@@ -1286,7 +1293,10 @@ class User(SearchableTableMixins, Base):
 class Collection(SearchableTableMixins, Base):
     __tablename__ = "collections"
 
-    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    id_user: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
     description: Mapped[str] = mapped_column(
@@ -1299,10 +1309,12 @@ class Collection(SearchableTableMixins, Base):
         back_populates="collections",
     )
 
+    # NOTE: For all purposes, this is the parent side of the relationship. Do
+    #       not cascade deletion of collections to documents.
     documents: Mapped[List["Document"]] = relationship(
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
-        passive_deletes=True,
+        # cascade="all, delete",
     )
 
     @property
@@ -1386,6 +1398,7 @@ class Document(SearchableTableMixins, Base):
 
     edits: Mapped[List["Edit"]] = relationship(
         cascade="all, delete",
+        passive_deletes=True,
         back_populates="document",
         primaryjoin="Document.id==Edit.id_document",
     )
@@ -1394,10 +1407,12 @@ class Document(SearchableTableMixins, Base):
         back_populates="documents",
         passive_deletes=True,
     )
+
+    # NOTE: Child side of the relationship.
     collections: Mapped[List[Collection]] = relationship(
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
-        # cascade="all, delete",  # NOTE: Necessary on the parent side.
+        passive_deletes=True,
     )
 
     # ----------------------------------------------------------------------- #
@@ -1640,8 +1655,16 @@ class Edit(PrimaryTableMixins, Base):
     __tablename__ = "edits"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # NOTE: Deletion only cascades for document deletion because edits for
+    #       documents should not disappear when a user is deleted.
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
-    id_document: Mapped[int] = mapped_column(ForeignKey("documents.id"))
+    id_document: Mapped[int] = mapped_column(
+        ForeignKey(
+            "documents.id",
+            ondelete="CASCADE",
+        )
+    )
     content: Mapped[int] = mapped_column(mysql.BLOB(fields.LENGTH_CONTENT))
     message: Mapped[str] = mapped_column(String(fields.LENGTH_MESSAGE), nullable=True)
 

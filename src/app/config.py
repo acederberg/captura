@@ -24,9 +24,12 @@ Instead do
 
 # =========================================================================== #
 import enum
-from typing import Annotated, Any, Dict
+from re import U
+from typing import Annotated, Any, ClassVar, Dict, Set, Tuple, Unpack
+import typing
 
-from pydantic import BaseModel, Field, SecretStr, computed_field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, computed_field
+from pydantic.fields import FieldInfo
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
@@ -41,8 +44,36 @@ class BaseHashable(BaseModel):
     This enables caching of the configuration dependency.
     """
 
+    hashable_fields_exclude: ClassVar[Set[str]]
+
+    def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
+        """Compute fields to exclude from hashing.
+
+        Only dictionary fields are excluded from hashing, so changes in any
+        such fields will no be considered by ``fastapi.Depends``.
+        """
+        super().__init_subclass__(**kwargs)
+        cls.model_fields
+        cls.hashable_fields_exclude = {
+            key
+            for key, value in cls.model_fields.items()
+            if cls.inspect_model_field(value)
+        }
+
+    @classmethod
+    def inspect_model_field(cls, value: FieldInfo) -> bool:
+        # NOTE: Do not hash dicts.
+        return typing.get_origin(value.annotation) != dict
+
     def __hash__(self):
-        return hash((type(self),) + tuple(self.__dict__.values()))
+        return hash(
+            (type(self),)
+            + tuple(
+                value
+                for key, value in self.__dict__.items()
+                if self.inspect_model_field(self.model_fields[key])
+            )
+        )
 
 
 class MySqlHostConfig(BaseHashable):

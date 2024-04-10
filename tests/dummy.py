@@ -1,5 +1,6 @@
 # =========================================================================== #
 import secrets
+from sqlalchemy.orm import sessionmaker as _sessionmaker
 from http import HTTPMethod
 from random import choice, randint
 from typing import (
@@ -8,6 +9,7 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
+    Iterable,
     List,
     NotRequired,
     Self,
@@ -63,7 +65,7 @@ from client.flags import Output
 from client.handlers import ConsoleHandler
 from client.requests import Requests
 from client.requests.base import ContextData
-from tests.config import PytestClientConfig, PyTestClientProfileConfig
+from tests.config import PytestClientConfig, PyTestClientProfileConfig, PytestConfig
 from tests.mk import Mk
 
 logger = util.get_logger(__name__)
@@ -546,6 +548,16 @@ class BaseDummyProvider:
         self.documents = tuple(session.scalars(user.q_select_documents()))
         self.collections = tuple(user.collections)
 
+    def dispose(self):
+        logger.debug("Disposing of dummy data for user `%s`.", self.user.uuid)
+        session = self.session
+        session.reset()
+
+        user = session.scalar(select(User).where(User.uuid == self.user.uuid))
+        if user is not None:
+            session.delete(user)
+            session.commit()
+
 
 # =========================================================================== #
 # YAML Provider
@@ -679,25 +691,19 @@ class DummyProviderYAML(BaseDummyProvider):
 
 
 class DummyProvider(BaseDummyProvider):
-    dummy_user_uuids: ClassVar[list[str] | None] = None
-    dummy_user_uuids_dispose: ClassVar[list[str] | None] = None
-
-    def __init__(self, auth: Auth, session: Session, use_existing: bool | User = False):
+    def __init__(
+        self,
+        auth: Auth,
+        session: Session,
+        *,
+        use_existing: List[str] | User | None = None,
+    ):
         self.auth = auth
         self.session = session
-
-        if self.dummy_user_uuids is None:
-            clsname = self.__class__.__name__
-            raise AttributeError(
-                f"Attribute `dummy_user_uuids` must be set before `{clsname}` "
-                "is instantiated. This should be done in the `load_tables` "
-                "fixture"
-            )
-
         match use_existing:
-            case True if len(self.dummy_user_uuids):
+            case list() as dummy_user_uuids:
                 logger.info("Using random existing dummy.")
-                user = User.if_exists(session, choice(self.dummy_user_uuids))
+                user = User.if_exists(session, choice(dummy_user_uuids))
                 self.find(user)
             case User() as user:
                 logger.info("Using existing dummy with uuid `%s`.", user.uuid)
@@ -832,8 +838,6 @@ class DummyProvider(BaseDummyProvider):
         session.add_all(self.events)
         session.commit()
 
-        self.dummy_user_uuids.append(user.uuid)
-
         # NOTE: Create some uniquely owned documents (important for tests of
         #       deltion cascading configuration). It is important to note
         #       that these documents are only gaurenteed to be unique when the
@@ -843,3 +847,72 @@ class DummyProvider(BaseDummyProvider):
         session.commit()
 
         return user
+
+
+# --------------------------------------------------------------------------- #
+
+
+class DummyHandler:
+    config: PytestConfig
+    sessionmaker: _sessionmaker[Session]
+    auth: Auth
+    user_uuids: List[str]
+
+    # def __enter__(self, user: User | None = None):
+    #     with self.sessionmaker() as session:
+    #         print("entering session.")
+    #         return DummyProvider(
+    #             self.auth,
+    #             session,
+    #             use_existing=user or self.user_uuids,
+    #         )
+    #         print("closing session")
+    #
+    # def __exit__(self, *excargs):
+    #     return False
+
+    def __init__(
+        self,
+        sessionmaker: _sessionmaker,
+        config: PytestConfig,
+        user_uuids: List[str],
+        *,
+        auth: Auth | None = None,
+    ):
+        self.config = config
+        self.sessionmaker = sessionmaker
+        self.auth = auth or Auth.forPyTest(config)
+        self.user_uuids = user_uuids
+
+    def restore(self) -> Self:
+        with self.sessionmaker() as session:
+            logger.debug("Getting current user count.")
+            uuids_existing = list(session.scalars(select(User.id, User.uuid)))
+            n_users = len(uuids_existing)
+            assert n_users is not None
+
+            n_generate = self.config.tests.dummies.minimum_count - n_users
+
+            logger.debug("Generating `%s` dummies.", n_generate)
+            print(n_generate, n_users)
+            while (n_generate := n_generate - 1) > 0:
+                DummyProvider(self.auth, session)
+                n_generate -= 1
+
+        return self
+
+    def dispose(self, _uuids: list[str] | None = None) -> Self:
+        logger.info("Disposing of `%s` dummies.", len(_uuids) if _uuids else "all")
+        with self.sessionmaker() as session:
+            uuids = _uuids or self.user_uuids
+            q = select(User).where(User.uuid.in_(uuids))
+            _ = tuple(
+                map(
+                    lambda user: DummyProvider(
+                        self.auth, session, use_existing=user
+                    ).dispose(),
+                    session.scalars(q),
+                )
+            )
+
+        return self
