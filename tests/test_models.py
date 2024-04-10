@@ -1,6 +1,11 @@
 # =========================================================================== #
+import secrets
+
+from sqlalchemy.orm import Session
+from app.auth import Auth
+from app.fields import Format, Level, PendingFrom
 import pytest
-from typing import List
+from typing import Any, Dict, List, Set, Tuple
 
 from sqlalchemy import func, literal_column, select
 
@@ -9,12 +14,18 @@ from sqlalchemy import func, literal_column, select
 from app import __version__, util
 from app.models import (
     Assignment,
+    Collection,
+    Document,
     Edit,
     Event,
     Grant,
     KindEvent,
     KindObject,
+    KindSelect,
+    Resolvable,
+    resolve_model,
 )
+from tests.check import Check
 from tests.dummy import DummyProvider
 
 logger = util.get_logger(__name__)
@@ -71,9 +82,64 @@ class TestRelationships:
 
     """
 
-    @pytest
-    def test_document_deletion(self, dummy: DummyProvider):
-        documents, session = dummy.get_documents(15), dummy.session
+    @pytest.mark.parametrize(
+        "dummy_new, count", [(None, k) for k in range(3)], indirect=["dummy_new"]
+    )
+    def test_collection_deletion(self, dummy_new: DummyProvider, count: int):
+        dummy = dummy_new
+        collections, session = dummy.get_user_collections(15), dummy.session
+        msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
+
+        n_empty_assignments = 0
+        for collection in collections:
+            q_assignment = collection.q_select_assignment(exclude_deleted=False)
+            assignments = session.scalars(q_assignment)
+            uuid_assignment, uuid_document = zip(
+                *((item.uuid, item.uuid_document) for item in assignments)
+            )
+
+            if not (n_assignment := len(uuid_assignment)):
+                n_empty_assignments += 1
+
+            # --------------------------------------------------------------- #
+            dummy.session.delete(collection)
+            session.commit()
+
+            # NOTE: Assignments should have been deleted.
+            q_assignment_remaining = select(func.count(Assignment.uuid)).where(
+                Assignment.uuid.in_(uuid_assignment)
+            )
+            n_assignment_remaining = session.scalar(q_assignment_remaining)
+
+            if n_assignment_remaining:
+                raise AssertionError(
+                    msg_fmt.format(n_assignment_remaining, n_assignment, "assignments")
+                )
+
+            # NOTE: No documents should have been deleted.
+            q_documents_remaining = select(func.count(Document.uuid)).where(
+                Document.uuid.in_(uuid_document)
+            )
+            n_documents_remaining = session.scalar(q_documents_remaining)
+
+            if n_documents_remaining != n_assignment:
+                raise AssertionError(
+                    f"`{n_documents_remaining}` of `{n_assignment}` "
+                    "`documents` were deleted. No `documents` should have "
+                    "been deleted."
+                )
+
+        if n_empty_assignments:
+            raise AssertionError("All collections have empty assignments.")
+
+    @pytest.mark.parametrize(
+        "dummy_new, count",
+        [(None, k) for k in range(3)],
+        indirect=["dummy_new"],
+    )
+    def test_document_deletion(self, dummy_new: DummyProvider, count: int):
+        dummy = dummy_new
+        documents, session = dummy.get_user_documents(Level.view, n=15), dummy.session
         uuid_column = literal_column("uuid")
         msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
         msg_fmt += " and queries."
@@ -90,17 +156,25 @@ class TestRelationships:
 
             if not (uuid_grant := set(session.scalars(q_grant_uuids))):
                 n_empty_grants += 1
+                continue
 
-            q_assignment_uuids = document.q_select_assignment(
+            q_assignment = document.q_select_assignment(
                 exclude_deleted=False,
             )
-            q_assignment_uuids = select(uuid_column).select_from(
-                q_assignment_uuids.subquery()
-            )
-
-            uuid_assignment = set(session.scalars(q_assignment_uuids))
-            if not uuid_assignment:
+            assignments = tuple(session.scalars(q_assignment))
+            if not assignments:
                 n_empty_assignments += 1
+                continue
+
+            uuid_assignment, uuid_collection = (
+                set(uuids)
+                for uuids in zip(
+                    *((item.uuid, item.uuid_collection) for item in assignments)
+                )
+            )
+            q_cols_remaining = select(func.count(Collection.uuid)).where(
+                Collection.uuid.in_(uuid_collection)
+            )
 
             # NOTE: Because there are not dummies.
             q_edit_uuids = select(Edit.uuid).where(Edit.id_document == document.id)
@@ -130,3 +204,359 @@ class TestRelationships:
             )
             if p := session.scalar(q_edit_remaining):
                 msg = msg_fmt.format(p, len(uuid_edit), "edits")
+                raise AssertionError(msg)
+
+            # NOTE: Verify that documents were not deleted.
+            q_cols_remaining = select(func.count(Collection.uuid)).where(
+                Collection.uuid.in_(uuid_collection)
+            )
+            n_cols_remaining = session.scalar(q_cols_remaining)
+            if n_cols_remaining != (n_cols := len(uuid_collection)):
+                raise AssertionError(
+                    f"`{n_cols_remaining}` of `{n_cols}` collections were "
+                    "deleted. No collections should have been deleted."
+                )
+
+        if n_empty_grants == len(documents):
+            raise AssertionError("All documents have empty grants.")
+
+        if n_empty_assignments == len(documents):
+            raise AssertionError("All documents have empty assignments.")
+
+    def test_user_deletion_documents(
+        self, auth: Auth, session: Session, count: int = 1
+    ):
+        n_empty_grants = 0
+        for dummy in (DummyProvider(auth, session) for _ in range(5)):
+            user = dummy.user
+            q_grants = user.q_select_grants(exclude_deleted=False)
+            grants = dummy.session.scalars(q_grants)
+
+            uuid_grant, uuid_document = zip(
+                *((item.uuid, item.uuid_document) for item in grants)
+            )
+
+            if n_empty_grants:
+                n_empty_grants += 1
+
+            q_uniq = user.q_select_documents(
+                uuid_document,
+                exclude_deleted=False,
+                n_owners=1,
+                n_owners_levelsets=True,
+            )
+            uuids_docs_uniq = set(item.uuid for item in session.scalars(q_uniq))
+            assert uuids_docs_uniq.issubset(uuid_document)
+
+            session.delete(user)
+            session.commit()
+
+            # NOTE: Verify that grants have been deleted.
+            q_grant_remaining = select(func.count(Grant.uuid)).where(
+                Grant.uuid.in_(uuid_grant)
+            )
+            n_grant_remaining = session.scalar(q_grant_remaining)
+            assert not n_grant_remaining
+
+            # NOTE: Verify that only orphan documents have been deleted.
+            q_docs_remaining = select(func.count(Document.uuid)).where(
+                Document.uuid.in_(uuids_docs_uniq)
+            )
+            n_docs_remaining = session.scalar(q_docs_remaining)
+            assert n_docs_remaining == 0
+
+    def test_user_deletion_collections(
+        self,
+        session: Session,
+        auth: Auth,
+        count: int = 1,
+    ):
+        n_no_collections = 0
+        for dummy in (DummyProvider(auth, session) for _ in range(0, 3)):
+            user = dummy.user
+            uuid_collections = set(
+                session.scalars(
+                    select(Collection.uuid).where(Collection.id_user == user.id)
+                )
+            )
+            if not len(uuid_collections):
+                n_no_collections += 1
+                continue
+
+            session.delete(user)
+            session.commit()
+            session.expire_all()
+
+            q_cols_remaining = select(func.count(Collection.uuid)).where(
+                Collection.uuid.in_(uuid_collections)
+            )
+            print(uuid_collections)
+            n_cols_remaining = session.scalar(q_cols_remaining)
+            assert not n_cols_remaining
+
+        if n_no_collections == 2:
+            msg = "All users had empty `collections`."
+            raise AssertionError(msg)
+
+    # NOTE: Should fail since dummies do not generate edits.
+    @pytest.mark.xfail
+    def test_user_deletion_edits(
+        self,
+        auth: Auth,
+        session: Session,
+        count: int = 1,
+    ):
+        n_no_edits = 0
+        for dummy in (DummyProvider(auth, session) for _ in range(10)):
+            user = dummy.user
+
+            uuid_edits = set(
+                session.scalars(select(Edit.uuid).where(Edit.id_user == user.id))
+            )
+            if not (n_edits := len(uuid_edits)):
+                n_no_edits += 1
+                continue
+
+            session.delete(user)
+            session.commit()
+
+            q_edits_remaining = select(func.count(Edit.uuid)).where(
+                Edit.uuid.in_(uuid_edits)
+            )
+            n_edits_remaining = session.scalar(q_edits_remaining)
+            assert n_edits_remaining == n_edits
+
+        if n_no_edits == 2:
+            raise AssertionError("All dummies had empty `edits`.")
+
+        # NOTE: Not necessary. But definitely nice to have.
+        # def test_dummy_dispose(self, dummy_new: DummyProvider, count: int = 1):
+        #     """Verify that `DummyProvider.dispose` cleans up a dummy as
+        #     desired."""
+        #
+        #     dummy, user, session = dummy_new, dummy_new.user, dummy_new.session
+        #     # uuid_user = user.uuid
+        #
+        #     # NOTE: Get documents. Only orphaned documents should be deleted.
+        #     q_uuid_doc = user.q_select_documents(exclude_deleted=False)
+        #     uuid_doc = set(item.uuid for item in session.scalars(q_uuid_doc))
+        #
+        #     q_uuid_document_uniq = user.q_select_documents(
+        #         exclude_deleted=False,
+        #         n_owners=1,
+        #         n_owners_levelsets=True,
+        #         kind_select=KindSelect.uuids,
+        #     )
+        #     uuid_doc_uniq = set(item.uuid for item in session.scalars(q_uuid_document_uniq))
+        #     assert uuid_doc_uniq.issubset(uuid_doc)
+        #
+        #     # NOTE: Get collections and edits. Collections should be deleted,
+        #     #       edits should not be deleted unless they belong to one of the
+        #     #       above documents.
+        #     q_uuid_edit = select(Edit.uuid).where(Edit.id_user == user.id)
+        #     uuid_edit = set(session.scalars(q_uuid_edit))
+        #
+        #     q_uuid_edit_uniq = q_uuid_edit.join(Document).where(
+        #         Document.uuid.in_(uuid_doc_uniq)
+        #     )
+        #     uuid_edit_uniq = set(session.scalars(q_uuid_edit_uniq))
+        #
+        #     q_uuid_collection = select(Collection.uuid).where(Collection.id_user == user.id)
+        #     uuid_collection = set(session.scalars(q_uuid_collection))
+        #
+        #     session.delete(user)
+        session.commit()
+
+
+class TestUser:
+    def test_q_select_documents(self, dummy_new: DummyProvider):
+        dummy = dummy_new
+        user, session = dummy.user, dummy.session
+        fn = user.q_select_documents
+
+        docs: Tuple[Document, ...]
+        grants: Tuple[Grant, ...]
+        kwargs: Dict[str, Any]
+
+        def get_grants(docs: Resolvable[Document]) -> Tuple[Grant, ...]:
+            uuid_document = Document.resolve_uuid(session, docs)
+            q = select(Grant).join(Document)
+            q = q.where(Document.uuid.in_(uuid_document), Grant.id_user == user.id)
+            return tuple(session.scalars(q))
+
+        def uuids(docs) -> Set[str]:
+            return Document.resolve_uuid(session, docs)
+
+        check = Check(session)
+
+        # ------------------------------------------------------------------- #
+        with pytest.raises(ValueError) as err:
+            fn(exclude_pending=True, pending=True)
+
+        msg = "`pending` and `exclude_pending` cannot both be `True`."
+        assert str(err.value) == msg
+
+        kwargs = dict(exclude_pending=False, pending=True)
+        docs = tuple(session.scalars(fn(**kwargs).limit(10)))
+        assert len(docs)
+
+        assert len(grants := get_grants(uuid_document := uuids(docs))) == len(docs)
+
+        check.all_(grants, pending=True, deleted=False)
+        docs_by_uuid = tuple(session.scalars(fn(uuid_document)))
+        assert not len(docs_by_uuid)  # NOTE: `pending=False` by default.
+
+        # ------------------------------------------------------------------- #
+
+        for pending_from in list(PendingFrom):
+            kwargs = dict(pending_from=pending_from, pending=False)
+            docs = tuple(session.scalars(fn(**kwargs).limit(10)))
+            assert (n := len(docs))
+            assert len(grants := get_grants(docs)) == len(docs)
+
+            # NOTE: Getting these documents using their uuids should not
+            uuid_document = Document.resolve_uuid(session, docs)
+            docs_by_uuid = tuple(session.scalars(Document.q_uuid(uuid_document)))
+            assert len(docs_by_uuid) == n
+
+            (
+                check.all_(
+                    grants,
+                    pending=False,
+                    pending_from=pending_from,
+                    deleted=False,
+                )
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+                .uuids(
+                    KindObject.document,
+                    docs,
+                    docs_by_uuid,
+                )
+            )
+
+        # ------------------------------------------------------------------- #
+
+        for level in list(Level):
+            kwargs = dict(level=level)
+            docs = tuple(session.scalars(fn(**kwargs)))
+            uuid_document = uuids(docs)
+            assert len(grants := get_grants(docs)) == len(docs)
+
+            (
+                check.all_(
+                    grants,
+                    level=lambda grant: grant.level.value < level.value,
+                    deleted=False,
+                )
+                .uuids(
+                    KindObject.document,
+                    docs,
+                    tuple(session.scalars(fn(uuid_document))),
+                )
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+            )
+
+            # NOTE: Verify that count and uuids work correctly
+            kwargs.update(kind_select=KindSelect.count)
+            docs_count = session.scalar(q := fn(**kwargs))
+            util.sql(session, q)
+            assert docs_count == len(uuid_document)
+
+            kwargs.update(kind_select=KindSelect.uuids)
+            uuid_document_again = set(session.scalars(fn(**kwargs)))
+            assert uuid_document == uuid_document_again
+
+            # NOTE: The same as above but with level levelsets.
+            kwargs = dict(level=level, level_levelsets=True)
+            docs = tuple(session.scalars(fn(**kwargs)))
+            uuid_document = uuids(docs)
+            assert len(docs) == len(grants := get_grants(docs))
+
+            (
+                check.all_(grants, level=level, deleted=False)
+                .uuids(
+                    KindObject.document,
+                    docs,
+                    tuple(session.scalars(fn(uuid_document))),
+                )
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+            )
+
+            # NOTE: Verify that count and uuids work correctly
+            kwargs.update(kind_select=KindSelect.count)
+            docs_count = session.scalar(q := fn(**kwargs))
+            util.sql(session, q)
+            assert docs_count == len(uuid_document)
+
+            kwargs.update(kind_select=KindSelect.uuids)
+            uuid_document_again = set(session.scalars(fn(**kwargs)))
+            assert uuid_document == uuid_document_again
+
+        # ------------------------------------------------------------------- #
+
+        uuid_document = set()
+        for n_owners in range(1, 15):
+            # Add uniquely owned doc
+            doc = Document(
+                content="test_models.TestUser.test_q_select_documents".encode(),
+                name=f"test-q-select-models-{secrets.token_urlsafe(8)}",
+                description="test",
+                format=Format.md,
+                deleted=False,
+            )
+            session.add(doc)
+            session.commit()
+            session.expire(doc)
+
+            grant = Grant(
+                level=Level.own,
+                pending_from=PendingFrom.created,
+                pending=False,
+                deleted=False,
+                id_user=dummy.user.id,
+                id_document=doc.id,
+            )
+
+            session.add(grant)
+            session.commit()
+            session.expire_all()
+
+            uuid_document.add(doc.uuid)
+            kwargs = dict(n_owners=1, document_uuids=uuid_document)
+            docs = tuple(session.scalars(q := fn(**kwargs)))
+
+            q = user.q_select_documents_exclusive(uuid_document)
+            docs_exclusive = tuple(session.scalars(q))
+
+            assert len(grants := get_grants(docs)) == len(docs) == n_owners
+            (
+                check.all_(grants, deleted=False)
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+                .uuids(KindObject.document, docs, uuid_document)
+                .uuids(KindObject.document, docs, docs_exclusive)
+            )
+
+            # NOTE: Verify that count and uuids are not allowed in this mode.
+            with pytest.raises(ValueError) as err:
+                kwargs.update(kind_select=KindSelect.count)
+                fn(**kwargs)
+
+            with pytest.raises(ValueError) as err:
+                kwargs.update(kind_select=KindSelect.uuids)
+                fn(**kwargs)

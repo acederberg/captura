@@ -668,13 +668,10 @@ class DummyProviderYAML(BaseDummyProvider):
     @classmethod
     def merge(cls, session: Session) -> None:
         logger.info("Merging YAML data into database.")
-        backwards = list(Base.metadata.sorted_tables)
-        backwards.reverse()
+        # backwards = list(Base.metadata.sorted_tables)
+        # backwards.reverse()
         for table in Base.metadata.sorted_tables:
-            cls_model = DummyProviderYAMLInfo.dummies_info[table.name]
-            if cls_model is None:
-                continue
-            cls_model.merge(session)
+            DummyProviderYAMLInfo.dummies_info[table.name].merge(session)
 
 
 # =========================================================================== #
@@ -836,4 +833,13 @@ class DummyProvider(BaseDummyProvider):
         session.commit()
 
         self.dummy_user_uuids.append(user.uuid)
+
+        # NOTE: Create some uniquely owned documents (important for tests of
+        #       deltion cascading configuration). It is important to note
+        #       that these documents are only gaurenteed to be unique when the
+        #       dummy is the most recently generated.
+        documents_uniq = tuple(Mk.document() for _ in range(10))
+        session.add_all(documents_uniq)
+        session.commit()
+
         return user

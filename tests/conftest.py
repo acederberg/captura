@@ -154,7 +154,7 @@ def load_tables(setup_cleanup, auth: Auth, sessionmaker: _sessionmaker):
         logger.info("Loading tables with generated dummy data.")
         DummyProvider.dummy_user_uuids = list()
         DummyProvider.dummy_user_uuids_dispose = list()
-        if (n_generate := 100 - n_users) > 0:
+        if (n_generate := 50 - n_users) > 0:
             while n_generate > 0:
                 DummyProvider(auth, session)
                 n_generate -= 1
@@ -195,8 +195,14 @@ def auth(config: Config) -> Auth:
 
 @pytest.fixture
 def dummy(auth: Auth, session: Session) -> DummyProvider:
-    logger.warning("Providing random dummy.")
+    logger.info("Providing random dummy.")
     return DummyProvider(auth, session, use_existing=True)
+
+
+@pytest.fixture
+def dummy_new(auth: Auth, session: Session) -> DummyProvider:
+    logger.info("Providing new dummy.")
+    return DummyProvider(auth, session, use_existing=False)
 
 
 @pytest.fixture(scope="function")

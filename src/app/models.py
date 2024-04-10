@@ -17,6 +17,7 @@ from typing import (
     Type,
     TypeAlias,
     TypeVar,
+    TypedDict,
     overload,
 )
 
@@ -25,6 +26,7 @@ from sqlalchemy import (
     BooleanClauseList,
     Column,
     ColumnElement,
+    ColumnExpressionArgument,
     CompoundSelect,
     Enum,
     ForeignKey,
@@ -110,6 +112,12 @@ uuid = (
     mapped_column(String(16), default=lambda: secrets.token_urlsafe(8), index=True),
 )
 MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
+
+
+class KindSelect(str, enum.Enum):
+    count = "count"
+    uuids = "uuids"
+
 
 # =========================================================================== #
 # Models and MixinsIndex column sqlalchemy
@@ -228,6 +236,24 @@ class Base(DeclarativeBase):
                 return data
             case _ as bad:
                 raise ValueError(f"Invalid identifier `{bad}`.")
+
+    @classmethod
+    def resolve_selectable(
+        cls, kind: KindSelect | None = None
+    ) -> (
+        Type[Self]
+        | InstrumentedAttribute[MappedColumnUUID]
+        | ColumnExpressionArgument[int]
+    ):
+        match kind:
+            case KindSelect.count:
+                return func.count(cls.uuid)
+            case KindSelect.uuids:
+                return cls.uuid
+            case None:
+                return cls
+
+        raise ValueError(f"Cannot resolve selectable `{kind}`.")
 
     # ----------------------------------------------------------------------- #
     # Rest
@@ -676,12 +702,18 @@ class AssocCollectionDocument(Base):
     #       period that will later be implemented) deleted is included.
     # deleted: Mapped[MappedColumnDeleted]
     id_document: Mapped[int] = mapped_column(
-        ForeignKey("documents.id"),
+        ForeignKey(
+            "documents.id",
+            ondelete="CASCADE",
+        ),
         primary_key=True,
     )
 
     id_collection: Mapped[int] = mapped_column(
-        ForeignKey("collections.id"),
+        ForeignKey(
+            "collections.id",
+            ondelete="CASCADE",
+        ),
         primary_key=True,
     )
 
@@ -765,13 +797,17 @@ class AssocUserDocument(Base):
     # https://stackoverflow.com/questions/28843254/deleting-from-self-referential-inherited-objects-does-not-cascade-in-sqlalchemy
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
-        ForeignKey("_assocs_users_documents.uuid", ondelete="CASCADE"),
+        ForeignKey(
+            "_assocs_users_documents.uuid",
+            ondelete="CASCADE",
+        ),
         nullable=True,
     )
     children: Mapped[List["AssocUserDocument"]] = relationship(
         "AssocUserDocument",
         foreign_keys=uuid_parent,
         cascade="all, delete",
+        passive_deletes=True,
     )
 
     id_user: Mapped[int] = mapped_column(
@@ -915,9 +951,8 @@ class User(SearchableTableMixins, Base):
     documents: Mapped[List["Document"]] = relationship(
         secondary=AssocUserDocument.__table__,
         back_populates="users",
-        # primaryjoin="User.id==AssocUserDocument.id_user",
-        # secondaryjoin="AssocUserDocument.id_document==Document.id",
-        # cascade="all, delete",
+        cascade="all, delete-orphan",
+        single_parent=True,
     )
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
@@ -951,50 +986,57 @@ class User(SearchableTableMixins, Base):
         self,
         document_uuids: None | Set[str] = None,
         level: ResolvableLevel | None = None,
+        level_levelsets: bool = False,
         exclude_deleted: bool = True,
         pending: bool | None = None,
         pending_from: PendingFrom | None = None,
         exclude_pending: bool = True,
+        n_owners: int | None = None,
     ) -> ColumnElement[bool]:
-        cond = AssocUserDocument.id_user == self.id
+        cond = list()
+        if n_owners is None:
+            cond.append(AssocUserDocument.id_user == self.id)
+
         if exclude_deleted:
-            cond = and_(
-                Document.deleted == false(),
-                AssocUserDocument.deleted == false(),
-                cond,
-            )
+            cond.append(Grant.deleted == false())
+            cond.append(Document.deleted == false())
 
         if document_uuids is not None:
             q_ids = select(Document.id)
             q_ids = q_ids.where(Document.uuid.in_(document_uuids))
-            cond = and_(cond, AssocUserDocument.id_document.in_(q_ids))
+            cond.append(AssocUserDocument.id_document.in_(q_ids))
 
         if level is not None:
             level = Level.resolve(level)
-            cond = and_(cond, Grant.level >= level.value)
+            cond.append(
+                (Grant.level >= level.value)
+                if not level_levelsets
+                else (Grant.level == level)
+            )
 
         match (pending, exclude_pending):
             case (True, True):
                 msg = "`pending` and `exclude_pending` cannot both be `True`."
                 raise ValueError(msg)
             case (bool() as pending, False):
-                cond = and_(cond, Grant.pending == (true() if pending else false()))
+                cond.append(Grant.pending == (true() if pending else false()))
             case (None | False, True):
-                cond = and_(cond, Grant.pending == false())
+                cond.append(Grant.pending == false())
             case (None, False):
                 pass
             case bad:
                 raise ValueError(f"Cannot handle case `{bad}`.")
 
         if pending_from is not None:
-            cond = and_(cond, Grant.pending_from == pending_from)
+            cond.append(Grant.pending_from == pending_from)
 
-        return cond
+        return and_(true(), *cond)
 
     def q_select_grants(
         self,
         document_uuids: None | Set[str] = None,
         level: ResolvableLevel | None = None,
+        level_levelsets: bool = False,
         exclude_deleted: bool = True,
         pending: bool | None = None,
         exclude_pending: bool = True,
@@ -1016,6 +1058,7 @@ class User(SearchableTableMixins, Base):
         conds = self.q_conds_grants(
             document_uuids,
             level,
+            level_levelsets=level_levelsets,
             exclude_deleted=exclude_deleted,
             pending=pending,
             exclude_pending=exclude_pending,
@@ -1028,52 +1071,67 @@ class User(SearchableTableMixins, Base):
         self,
         document_uuids: Set[str] | None = None,
         level: ResolvableLevel | None = None,
+        *,
+        level_levelsets: bool = False,
         exclude_deleted: bool = True,
         exclude_pending: bool = True,
         pending: bool = False,
         pending_from: PendingFrom | None = None,
-    ) -> Select:
+        n_owners: int | None = None,
+        n_owners_levelsets: bool = True,
+        kind_select: KindSelect | None = None,
+    ) -> "Select[Tuple[Document, ...]] | Select[Tuple[int]] | Select[Tuple[str, ...]]":
         """Dual to :meth:`q_select_user_uuids`."""
 
-        return (
-            select(Document)
-            .join(AssocUserDocument)
+        selected: Any = Document.resolve_selectable(kind_select)
+        q = (
+            select(selected)
+            .join(Grant)
             .where(
                 self.q_conds_grants(
                     document_uuids,
-                    level,
-                    exclude_deleted,
+                    level=level,
+                    level_levelsets=level_levelsets,
+                    exclude_deleted=exclude_deleted,
                     exclude_pending=exclude_pending,
                     pending=pending,
                     pending_from=pending_from,
+                    n_owners=n_owners,
                 ),
             )
         )
 
-    def q_select_documents_assignable(self, document_uuids: Set[str] | None = None):
-        """Get documents that can be assigned to user collections"""
+        if n_owners is not None:
+            if kind_select is not None:
+                msg = "`kind_select` must be `None` when `n_owners` is "
+                msg += "specified. Got `{}`"
+                raise ValueError(msg.format(kind_select))
 
-        return union(
-            self.q_select_documents(document_uuids),
-            Document.q_select_public(document_uuids),
-        )
+            aq = aliased(selected, q.subquery())
+            q = select(aq).join(Grant).where(Grant.id_user == self.id)
 
-    def q_select_documents_exclusive(self, document_uuids: Set[str] | None = None):
-        level = Level.own
-        q = (
-            select(Document.id, func.count(Document.id).label("owner_count"))
-            .select_from(self.q_select_documents(document_uuids, level))
-            .group_by(Document.id)
-        )
-        q = (
-            select(Document.id)
-            .select_from(q)
-            .where(
-                literal_column("owner_count") == 1,
+            cond_count = func.count(Grant.id_user)
+            cond_having: ColumnElement[bool] = (
+                (cond_count < n_owners)
+                if not n_owners_levelsets
+                else (cond_count == n_owners)
             )
-        )
-        q = select(Document).where(Document.id.in_(q))
+
+            q = q.group_by(Document.id).having(cond_having)
+
         return q
+
+    def q_select_documents_exclusive(
+        self,
+        document_uuids: Set[str] | None = None,
+    ):
+        return self.q_select_documents(
+            level=Level.view,
+            document_uuids=document_uuids,
+            n_owners=1,
+            n_owners_levelsets=True,
+            exclude_deleted=True,
+        )
 
     @classmethod
     def q_select_for_user(
@@ -1236,19 +1294,15 @@ class Collection(SearchableTableMixins, Base):
         nullable=True,
     )
 
-    # NOTE: This corresponds to `User.collections`.
     user: Mapped[User] = relationship(
         primaryjoin="User.id==Collection.id_user",
         back_populates="collections",
     )
 
-    # NOTE: Deletion is included here since this used to read collection
-    #       documents.
     documents: Mapped[List["Document"]] = relationship(
         secondary=AssocCollectionDocument.__table__,
         back_populates="collections",
-        primaryjoin="Collection.id==AssocCollectionDocument.id_collection",
-        secondaryjoin="Document.id==AssocCollectionDocument.id_document",
+        passive_deletes=True,
     )
 
     @property
@@ -1339,12 +1393,11 @@ class Document(SearchableTableMixins, Base):
         secondary=AssocUserDocument.__table__,
         back_populates="documents",
         passive_deletes=True,
-        # secondaryjoin="User.id==AssocUserDocument.id_user",
-        # primaryjoin="AssocUserDocument.id_document==Document.id",
     )
     collections: Mapped[List[Collection]] = relationship(
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
+        # cascade="all, delete",  # NOTE: Necessary on the parent side.
     )
 
     # ----------------------------------------------------------------------- #
