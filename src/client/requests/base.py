@@ -22,6 +22,7 @@ from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
 from pydantic import BaseModel, SecretStr, computed_field
 from rich.console import Console
+import yaml
 
 # --------------------------------------------------------------------------- #
 from app.fields import Singular
@@ -143,6 +144,7 @@ class ContextData(BaseModel):
     def for_typer(
         cls,
         context: typer.Context,
+        config: flags.FlagConfig = None,
         profile: flags.FlagProfile = None,
         host: flags.FlagHost = None,
         output: flags.FlagOutput = Output.json,
@@ -152,7 +154,13 @@ class ContextData(BaseModel):
         auth_exclude: flags.FlagNoAuthorization = False,
         token: flags.FlagTokenOptional = None,
     ):
-        config = mwargs(Config)
+        if config is None:
+            config = mwargs(Config)
+        else:
+            with open(config, "r") as file:
+                config = Config.model_validate(
+                    yaml.safe_load(file),
+                )
         if host is not None:
             config.use.host = host
         if profile is not None:

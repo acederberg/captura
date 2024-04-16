@@ -243,7 +243,7 @@ class DocumentView(BaseView):
         cls,
         uuid_document: args.PathUUIDDocument,
         delete: DependsDelete,
-    ) -> AsOutput[DocumentSchema]:
+    ) -> OutputWithEvents[DocumentSchema]:
         """Delete a **document** *(and all associated content, such as edits,
         assignments, and collections)*.
 
@@ -257,8 +257,9 @@ class DocumentView(BaseView):
         """
 
         data = delete.a_document(uuid_document)
+        data.commit(delete.session)
         return mwargs(
-            OutputWithEvents[EventSchema],
+            OutputWithEvents[DocumentSchema],
             data=DocumentSchema.model_validate(data.data.documents[0]),
             events=[EventSchema.model_validate(data.event)],
         )

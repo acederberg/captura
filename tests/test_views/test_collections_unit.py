@@ -34,7 +34,7 @@ class CommonCollectionsTests(BaseEndpointTest):
             msg = "This test should not run for tests with `method=POST`."
             raise AttributeError(msg)
 
-        (collection,), session = dummy.get_user_collections(1), dummy.session
+        (collection,), session = dummy.get_collections(1), dummy.session
         collection.deleted = True
         session.add(collection)
         session.commit()
@@ -78,7 +78,7 @@ class CommonCollectionsTests(BaseEndpointTest):
     async def test_unauthorized_401(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
         fn = self.fn(requests)
 
         assert requests.context.auth_exclude is False
@@ -173,7 +173,7 @@ class TestCollectionsRead(CommonCollectionsTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (collection,), session = dummy.get_user_collections(1), dummy.session
+        (collection,), session = dummy.get_collections(1), dummy.session
         fn = self.fn(requests)
 
         # Test reading a public collection not ownend
@@ -312,7 +312,7 @@ class TestCollectionsUpdate(CommonCollectionsTests):
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
         user, session = dummy.user, dummy.session
-        (collection,) = dummy.get_user_collections(1, exclude_deleted=True)
+        (collection,) = dummy.get_collections(1)
         collection.public = True
         session.add(collection)
         session.commit()
@@ -398,7 +398,7 @@ class TestCollectionsDelete(CommonCollectionsTests):
     ):
         assert False, "Should test assignments first."
 
-        (collection,), session = dummy.get_user_collections(1), dummy.session
+        (collection,), session = dummy.get_collections(1), dummy.session
         assert not collection.deleted
         assert collection.id_user == dummy.user.id
         fn = self.fn(requests)

@@ -126,6 +126,7 @@ class KindSelect(str, enum.Enum):
 class Base(DeclarativeBase):
     uuid: Mapped[MappedColumnUUID]
     deleted: Mapped[MappedColumnDeleted]
+    __kind__: ClassVar[KindObject]
 
     # NOTE: Only `classmethod`s should need session due to `object_session`.
 
@@ -456,6 +457,7 @@ class Event(Base):
     detail_document_editted: ClassVar[str] = "Document editted."
 
     __tablename__ = "events"
+    __kind__ = KindObject.event
 
     timestamp: Mapped[int] = mapped_column(
         default=(_now := lambda: datetime.timestamp(datetime.now())),
@@ -697,6 +699,7 @@ class Event(Base):
 
 class AssocCollectionDocument(Base):
     __tablename__ = "_assocs_collections_documents"
+    __kind__ = KindObject.assignment
 
     # NOTE: Since this object supports soft deletion (for the deletion grace
     #       period that will later be implemented) deleted is included.
@@ -793,6 +796,7 @@ class AssocUserDocument(Base):
     """
 
     __tablename__ = "_assocs_users_documents"
+    __kind__ = KindObject.grant
 
     # https://stackoverflow.com/questions/28843254/deleting-from-self-referential-inherited-objects-does-not-cascade-in-sqlalchemy
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
@@ -909,6 +913,7 @@ class AssocUserDocument(Base):
 
 class User(SearchableTableMixins, Base):
     __tablename__ = "users"
+    __kind__ = KindObject.user
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
@@ -919,6 +924,10 @@ class User(SearchableTableMixins, Base):
     url_image: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
     url: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
     admin: Mapped[bool] = mapped_column(default=False)
+
+    info: Mapped[Dict[str, Any]] = mapped_column(
+        mysql.JSON, default=None, nullable=True
+    )
 
     # NOTE: This will be used to implement use by invitation for users. More or
     #       less, for a user to register they will need to first be given their
@@ -1292,6 +1301,7 @@ class User(SearchableTableMixins, Base):
 
 class Collection(SearchableTableMixins, Base):
     __tablename__ = "collections"
+    __kind__ = KindObject.collection
 
     id_user: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -1389,6 +1399,7 @@ class Collection(SearchableTableMixins, Base):
 
 class Document(SearchableTableMixins, Base):
     __tablename__ = "documents"
+    __kind__ = KindObject.document
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
@@ -1653,6 +1664,7 @@ class Document(SearchableTableMixins, Base):
 
 class Edit(PrimaryTableMixins, Base):
     __tablename__ = "edits"
+    __kind__ = KindObject.edit
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
@@ -1795,7 +1807,7 @@ ResolvableTargetGrant: TypeAlias = (
 
 
 # Resolved result.
-ResolvedRaw = Tuple[T_Resolvable] | Resolvable
+ResolvedRaw = Tuple[T_Resolvable, ...]  # | Resolvable[T_Resolvable]
 ResolvedRawUser = ResolvedRaw[User]
 ResolvedRawCollection = ResolvedRaw[Collection]
 ResolvedRawDocument = ResolvedRaw[Document]

@@ -509,7 +509,7 @@ class TestAccessCollection(BaseTestAccess):
 
         # NOTE: Set in -> Tuple out
         for n in range(1, 21):
-            collections = dummy.get_user_collections(n)
+            collections = dummy.get_collections(n)
             uuid_collection = Collection.resolve_uuid(session, collections)
             N = len(collections)
 
@@ -525,7 +525,7 @@ class TestAccessCollection(BaseTestAccess):
             assert data_res.data.collections == res
 
         # NOTE: Singleton in, singleton out.
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
         res = access.collection(collection.uuid)
         assert isinstance(res, Collection)
         assert res.uuid == collection.uuid
@@ -541,7 +541,7 @@ class TestAccessCollection(BaseTestAccess):
         indirect=["dummy"],
     )
     def test_private(self, dummy: DummyProvider, count):
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
         (collection_other,) = dummy.get_collections(1, other=True)
         assert collection_other.id_user != dummy.user.id
 
@@ -586,7 +586,7 @@ class TestAccessCollection(BaseTestAccess):
     def test_deleted(self, dummy: DummyProvider, count):
         get_primary_kwargs = GetPrimaryKwargs(deleted=True, public=True)
         (collection_other,) = dummy.get_collections(1, get_primary_kwargs, other=True)
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
         collection_other.deleted, collection.deleted = True, True
 
         session = dummy.session
@@ -649,7 +649,7 @@ class TestAccessCollection(BaseTestAccess):
     )
     def test_modify(self, dummy: DummyProvider, count):
         kwargs = GetPrimaryKwargs(deleted=False)
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
         (collection_other,) = dummy.get_collections(1, kwargs)
 
         for meth in httpcommon:
@@ -1146,7 +1146,7 @@ class TestAccessAssignment(BaseTestAccess):
         assert res_data.data.collections == res[1]
 
         # NOTE: For assignment collection.
-        (collection,) = dummy.get_user_collections(n=1)
+        (collection,) = dummy.get_collections(n=1)
         documents = dummy.get_documents(15, kwargs)
         uuid_document = Document.resolve_uuid(dummy.session, documents)
 
@@ -1184,7 +1184,7 @@ class TestAccessAssignment(BaseTestAccess):
 
     def test_deleted(self, dummy: DummyProvider):
         (document,) = dummy.get_user_documents(Level.view, deleted=True)
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
 
         (document_other,) = dummy.get_documents(1, other=True)
         (collection_other,) = dummy.get_collections(1, other=True)

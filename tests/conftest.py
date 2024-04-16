@@ -77,7 +77,7 @@ def context(
 @pytest.fixture(scope="session")
 def engine(config: PytestConfig) -> Engine:
     logger.debug("Creating engine from application configuration.")
-    return config.engine(echo=config.tests.emit_sql)
+    return config.engine()
 
 
 @pytest.fixture(scope="session")
@@ -96,14 +96,11 @@ def session(sessionmaker):
 
 @pytest.fixture(scope="session")
 def dummy_handler(sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth):
-    with sessionmaker() as session:
-        user_uuids = list(session.scalars(select(User.uuid)))
-
+    user_uuids = list()
     handler = DummyHandler(sessionmaker, config, user_uuids, auth=auth)
 
-    if config.tests.dummies.autodispose:
-        handler.dispose()
-
+    logger.info("Cleaning an restoring database.")
+    handler.dispose()
     handler.restore()
     return handler
 
@@ -179,34 +176,73 @@ def auth(config: Config) -> Auth:
 
 
 @pytest.fixture
-def dummy(dummy_handler: DummyHandler):
+def dummy(request, dummy_handler: DummyHandler):
     logger.info("Providing random dummy.")
     with dummy_handler.sessionmaker() as session:
-        yield DummyProvider(
-            dummy_handler.auth, session, use_existing=dummy_handler.user_uuids
+        dummy = DummyProvider(
+            dummy_handler.config,
+            session,
+            use_existing=dummy_handler.user_uuids,
+            auth=dummy_handler.auth,
         )
+        dummy.info_mark_used(request.node.name)
+        session.add(dummy.user)
+        session.commit()
+        session.expire(dummy.user)
+
+        yield dummy
 
 
 @pytest.fixture
-def dummy_new(dummy_handler: DummyHandler):
+def dummy_new(request, dummy_handler: DummyHandler):
     logger.info("Providing new dummy.")
     with dummy_handler.sessionmaker() as session:
-        yield DummyProvider(dummy_handler.auth, session, use_existing=None)
+        dummy = DummyProvider(
+            dummy_handler.config,
+            session,
+            auth=dummy_handler.auth,
+            use_existing=None,
+        )
+        dummy.info_mark_used(request.node.name)
+        session.add(dummy.user)
+        session.commit()
+        session.expire(dummy.user)
+
+        yield dummy
 
 
 @pytest.fixture
-def dummy_disposable(dummy_new: DummyProvider):
-    yield dummy_new
-    dummy_new.dispose()
+def dummy_disposable(request, dummy_handler: DummyHandler):
+    logger.info("Providing disposable dummy.")
+    with dummy_handler.sessionmaker() as session:
+        dummy = DummyProvider(
+            dummy_handler.config,
+            session,
+            auth=dummy_handler.auth,
+            use_existing=None,
+        )
+        dummy.info_mark_used(request.node.name).info_mark_tainted()
+        session.add(dummy.user)
+        session.commit()
+        session.expire(dummy.user)
+
+        yield dummy
 
 
 @pytest.fixture(scope="function")
-def yaml_dummy(auth: Auth, session: Session) -> DummyProviderYAML:
+def yaml_dummy(request, dummy_handler: DummyHandler):
     logger.debug("Providing dummy for user uuid `000-000-000`.")
-    user = session.get(User, 2)
-    assert user is not None
-    dd = DummyProviderYAML(auth, session, user)
-    dd.merge(session)
-    dd.refresh()
+    with dummy_handler.sessionmaker() as session:
+        user = session.get(User, 2)
+        assert user is not None
 
-    return dd
+        dd = DummyProviderYAML(
+            dummy_handler.config,
+            session,
+            auth=dummy_handler.auth,
+            user=user,
+        )
+        dd.merge(session)
+        dd.session.refresh(dd.user)
+
+        yield dd

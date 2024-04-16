@@ -260,6 +260,11 @@ FlagAfter = Annotated[Optional[datetime], typer.Option("--after")]
 # --------------------------------------------------------------------------- #
 # Configuration Flags.
 
+FlagConfig: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option("--config", help="Configuration to use everywhere."),
+]
+
 FlagHost: TypeAlias = Annotated[
     Optional[str],
     typer.Option(

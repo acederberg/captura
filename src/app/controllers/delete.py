@@ -4,7 +4,7 @@ from typing import Any, Dict, Set, Tuple, Type, overload
 
 from fastapi import HTTPException
 from pydantic import BaseModel
-from sqlalchemy import Delete as sqaDelete
+from sqlalchemy import Delete as sqaDelete, select
 from sqlalchemy import Select, Update, delete, false, true, update
 from sqlalchemy.orm import Session
 
@@ -681,7 +681,21 @@ class Delete(WithAccess):
         q_collections = document.q_select_collections(
             exclude_deleted=not self.force,
         )
-        if collections := tuple(session.execute(q_collections).scalars()):
+        if collections := tuple(session.scalars(q_collections)):
+            # NOTE: No deletion, etc. filtering as this is accoplished via
+            #       ``q_select_collections``.
+            uuid_collections = Collection.resolve_uuid(self.session, collections)
+            q_assignments = (
+                select(Assignment)
+                .join(Collection)
+                .where(
+                    Assignment.id_document == document.id,
+                    Collection.uuid.in_(uuid_collections),
+                )
+            )
+            assignments = {
+                aa.uuid_collection: aa for aa in session.scalars(q_assignments)
+            }
             data_assignment = mwargs(
                 Data[ResolvedAssignmentDocument],
                 token_user=self.token_user,
@@ -689,7 +703,7 @@ class Delete(WithAccess):
                     ResolvedAssignmentDocument,
                     document=document,
                     collections=collections,
-                    assignments=None,
+                    assignments=assignments,
                 ),
             )
             self.assignment_document(data_assignment)

@@ -1,5 +1,5 @@
 # =========================================================================== #
-from typing import Annotated, Dict
+from typing import Annotated, Any, Dict
 
 from pydantic import BaseModel, Field, SecretStr, computed_field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
@@ -50,3 +50,13 @@ class Config(BaseYamlSettings):
             return None
 
         return pp.token
+
+    def model_dump_config(self) -> Dict[str, Any]:
+        data = self.model_dump(
+            mode="json",
+            exclude={"profile", "host", "token"},
+        )
+        for profile_name, profile in data["profiles"].items():
+            profile["token"] = self.profiles[profile_name].token.get_secret_value()
+
+        return data

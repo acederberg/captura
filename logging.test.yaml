@@ -18,6 +18,11 @@ handlers:
   stdout_dev:
     class: rich.logging.RichHandler
     level: DEBUG
+  stdout:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: human
+    stream: ext://sys.stdout
   stderr:
     class: logging.StreamHandler
     level: WARNING

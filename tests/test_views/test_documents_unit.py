@@ -67,7 +67,11 @@ class CommonDocumentTests(BaseEndpointTest):
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
         fn = self.fn(requests)
-        (document,) = dummy.get_documents(1, GetPrimaryKwargs(deleted=True))
+        (document,) = dummy.get_documents(
+            1,
+            GetPrimaryKwargs(deleted=True),
+            level=Level.view,
+        )
         httperr = mwargs(
             ErrDetail[ErrObjMinSchema],
             detail=ErrObjMinSchema(
@@ -86,7 +90,7 @@ class CommonDocumentTests(BaseEndpointTest):
     ):
         """Should always raise 403 when no grant on private document."""
 
-        (document,) = dummy.get_user_documents(Level.view, n=1)
+        (document,) = dummy.get_documents(1, level=Level.view)
         grant = dummy.get_document_grant(document)
         session = dummy.session
         document.public = False
@@ -113,11 +117,12 @@ class CommonDocumentTests(BaseEndpointTest):
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
         "Test cannot use when ownership is pending."
-        kwargs = dict(pending=True, exclude_pending=False)
-        (document,) = dummy.get_user_documents(Level.own, **kwargs)
+        (document,) = dummy.get_documents(
+            1, level=Level.own, pending=True, exclude_pending=False
+        )
         assert not document.deleted, "Document should not be deleted."
 
-        grant = dummy.get_document_grant(document, **kwargs)
+        grant = dummy.get_document_grant(document)
         assert not grant.deleted, "Grant should not be deleted."
         assert grant.pending, "Grant should be pending."
 
@@ -157,7 +162,7 @@ class CommonDocumentTests(BaseEndpointTest):
         requests: Requests,
     ):
         "Test cannot access when not an owner."
-        (document,) = dummy.get_user_documents(Level.view)
+        (document,) = dummy.get_documents(1, level=Level.view)
         assert not document.deleted, "Document should not be deleted."
 
         grant = dummy.get_document_grant(document)
@@ -202,10 +207,9 @@ class TestDocumentsRead(CommonDocumentTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (document,) = dummy.get_user_documents(Level.view)
+        (document,) = dummy.get_documents(1, level=Level.view)
         (document_other,) = dummy.get_documents(
-            1,
-            GetPrimaryKwargs(deleted=False, public=True),
+            1, GetPrimaryKwargs(public=True), other=True
         )
 
         # NOTE: Can access own documents.
@@ -321,7 +325,7 @@ class TestDocumentsUpdate(CommonDocumentTests):
     ):
         """Cannot update content through this endpoint."""
 
-        (document,) = dummy.get_user_documents(Level.own, n=1)
+        (document,) = dummy.get_documents(1, level=Level.own)
         client = requests.client
 
         res = await client.patch(
@@ -343,8 +347,8 @@ class TestDocumentsUpdate(CommonDocumentTests):
     ):
         """Modifiers can update content and metadata."""
 
-        (document,) = dummy.get_user_documents(Level.own, n=1)
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        (document,) = dummy.get_documents(1, level=Level.own)
+        grant = dummy.get_document_grant(document)
 
         session = dummy.session
         grant.deleted, grant.level = (False, Level.modify)

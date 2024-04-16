@@ -14,6 +14,7 @@ from client.config import ProfileConfig
 class PytestDummyConfig(BaseModel):
     minimum_count: Annotated[int, Field(default=125)]
     minimum_user_id: Annotated[int, Field(default=50)]
+    maximum_use_count: Annotated[int, Field(default=3)]
     autodispose: Annotated[bool, Field(default=False)]
 
 
@@ -25,7 +26,6 @@ class PytestSubConfig(BaseModel):
     """
 
     dummies: Annotated[PytestDummyConfig, Field(default=dict(), validate_default=True)]
-    emit_sql: Annotated[bool, Field(default=False)]
     recreate_tables: Annotated[bool, Field(default=True)]
 
 

@@ -79,8 +79,8 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
         assert requests.context.auth_exclude is False, "Auth should not be excluded."
         session, fn = dummy.session, self.fn(requests)
 
-        (collection,) = dummy.get_user_collections()
-        (document,) = dummy.get_collections(1)
+        (collection,) = dummy.get_collections(1)
+        (document,) = dummy.get_documents(1)
 
         requests.context.auth_exclude = True
         res = await fn(collection.uuid, uuid_document=[document.uuid])
@@ -97,7 +97,7 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
         session = dummy.session
         user = dummy.user
         user_other = next(uwu for uwu in dummy.get_users(2) if uwu.uuid != user.uuid)
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1, GetPrimaryKwargs(deleted=False))
         uuid_document = [secrets.token_urlsafe(9)]
 
         collection.id_user = user_other.id
@@ -164,7 +164,7 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
         session = dummy.session
-        collections = dummy.get_user_collections(5)
+        collections = dummy.get_collections(5)
         fn = self.fn(requests)
         collection, data = await self.get_nonempty(requests, collections)
 
@@ -231,7 +231,7 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
     async def test_success_200_filter_by_uuids(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        collections = dummy.get_user_collections(8, exclude_deleted=False)
+        collections = dummy.get_collections(8, GetPrimaryKwargs(deleted=False))
 
         for collection in collections:
             collection.deleted = False
@@ -290,7 +290,7 @@ class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (collection,), session = dummy.get_user_collections(1), dummy.session
+        (collection,), session = dummy.get_collections(1), dummy.session
         documents = tuple(session.scalars(collection.q_select_documents()))
         uuid_document_list = list(dd.uuid for dd in documents)
         assert (n_documents := len(uuid_document_list)) > 0
@@ -382,7 +382,7 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
         session = dummy.session
-        (collection,) = dummy.get_user_collections(1)
+        (collection,) = dummy.get_collections(1)
         documents = dummy.get_documents(9, GetPrimaryKwargs(deleted=False))
         uuid_document_list = list(dd.uuid for dd in documents)
         id_document_list = [dd.id for dd in documents]

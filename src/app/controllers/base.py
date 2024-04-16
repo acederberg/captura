@@ -21,6 +21,7 @@ from typing import (
     Set,
     Tuple,
     Type,
+    TypeAlias,
     TypeVar,
 )
 
@@ -227,6 +228,33 @@ class KindData(str, enum.Enum):
     grant_user = "grant_user"
 
 
+ResolvableKindData: TypeAlias = KindData | KindObject | Tuple[KindObject, KindObject]
+
+
+def resolve_kind_data(v: ResolvableKindData) -> KindData:
+    match v:
+        case KindData():
+            return v
+        case KindObject.user | KindObject.collection | KindObject.edit | KindObject.document as kind:
+            return KindData(kind.name)
+        case KindObject() as bad:
+            msg = f"Cannot resolve scalar `KindObject` `{bad.name}`."
+            raise ValueError(msg)
+        case (KindObject.user, KindObject.document):
+            return KindData.grant_user
+        case (KindObject.document, KindObject.user):
+            return KindData.grant_document
+        case (KindObject.user, KindObject.document):
+            return KindData.grant_user
+        case (KindObject.document, KindObject.user):
+            return KindData.grant_document
+        case (a, b):
+            msg = f"Cannot resolve vector `KindObject` `({a.name}, {b.name})`."
+            raise ValueError(msg)
+        case _:
+            raise ValueError(f"Cannot resolve `{v}`.")
+
+
 class BaseResolved(BaseModel):
     kind: ClassVar[KindData]
     registry: ClassVar[Dict[KindData, "Type[BaseResolved]"]] = dict()
@@ -258,8 +286,9 @@ class BaseResolved(BaseModel):
         ...
 
     @classmethod
-    def get(cls, kind: KindData) -> "Type[BaseResolved]":
-        return BaseResolved.registry[kind]
+    def get(cls, resolvable_kind: ResolvableKindData) -> "Type[BaseResolved]":
+        kind_data = resolve_kind_data(resolvable_kind)
+        return BaseResolved.registry[kind_data]
 
     @classmethod
     def empty(cls, **kwargs_init) -> Self:

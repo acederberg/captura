@@ -60,6 +60,7 @@ _Mk: Dict[str, Callable[[], Any]] = dict(
     public=mk_bool,
     pending=mk_bool,
     api_origin=lambda: "tests/dummy.py",
+    info=lambda: dict(dummy=dict(used_by=list(), tainted=False), tags=[]),
 )
 
 
