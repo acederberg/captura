@@ -20,6 +20,8 @@ from .models import (
 )
 from .views import AppView
 
+app = AppView.view_router
+
 __all__ = (
     # Application
     "Auth",

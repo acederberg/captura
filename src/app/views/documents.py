@@ -256,7 +256,7 @@ class DocumentView(BaseView):
         then eventually pruned.
         """
 
-        data = delete.a_document(uuid_document)
+        data = delete.a_document(uuid_document, exclude_deleted=not delete.force)
         data.commit(delete.session)
         return mwargs(
             OutputWithEvents[DocumentSchema],

@@ -2,8 +2,6 @@
 import functools
 import secrets
 from typing import ClassVar
-from app.models import Document
-from client.requests.base import params
 
 import pytest
 from pydantic import TypeAdapter
@@ -19,8 +17,10 @@ from app.err import (
     ErrObjMinSchema,
 )
 from app.fields import Format, KindObject, Level, LevelHTTP, PendingFrom
+from app.models import Document
 from app.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, mwargs
 from client.requests import Requests
+from client.requests.base import params
 from tests.dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
@@ -411,4 +411,8 @@ class TestDocumentsDelete(CommonDocumentTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        assert False, "Should finish assignments tests for this."
+
+        document = dummy.get_documents(1, level=Level.own)
+        fn, fn_read = self.fn(requests), requests.documents.read
+        fn_read_grants = requests.grants.documents.read
+        fn_read_assigns = requests.assignments.documents.read

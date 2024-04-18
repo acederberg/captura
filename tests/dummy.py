@@ -1,9 +1,7 @@
 # =========================================================================== #
-from http.cookiejar import LWPCookieJar
 import secrets
-from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import sessionmaker as _sessionmaker
 from http import HTTPMethod
+from http.cookiejar import LWPCookieJar
 from random import choice, randint
 from typing import (
     Annotated,
@@ -22,6 +20,7 @@ from typing import (
 )
 
 import httpx
+import yaml
 from pydantic import SecretStr, condate
 from sqlalchemy import (
     Select,
@@ -37,8 +36,9 @@ from sqlalchemy import (
     true,
     update,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Session, aliased
-import yaml
+from sqlalchemy.orm import sessionmaker as _sessionmaker
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -100,6 +100,7 @@ class GetPrimaryKwargs(TypedDict):
     deleted: NotRequired[bool | None]
     uuids: NotRequired[Set[str] | None]
     retry: NotRequired[bool]
+    retry_count_max: NotRequired[int]
     allow_empty: NotRequired[bool]
 
 
@@ -182,6 +183,7 @@ class BaseDummyProvider:
         self,
         documents: Tuple[Document, ...],
         exclude_grants_self: bool = False,
+        exclude_grants_create: bool = False,
     ):
         # NOTE: Adding grants to the database can be a real pain in the ass
         #       because the primary key of the grants table is infact the
@@ -192,18 +194,21 @@ class BaseDummyProvider:
         # TLDR: Do not use ``session.merge``, just use ``DELETE`` or use
         #       options to avoid causing duplicate ``(id_user, id_document)``
         #       keys.
-        logger.debug("Making grants...")
-        grants = tuple(
-            Grant(
-                level=Level.own,
-                id_user=self.user.id,
-                id_document=document.id,
-                deleted=False,
-                pending=False,
-                pending_from=PendingFrom.created,
+        logger.debug("Making grants for documents created by self.")
+        if not exclude_grants_create:
+            grants_created = tuple(
+                Grant(
+                    level=Level.own,
+                    id_user=self.user.id,
+                    id_document=document.id,
+                    deleted=False,
+                    pending=False,
+                    pending_from=PendingFrom.created,
+                )
+                for document in documents
             )
-            for document in documents
-        )
+        else:
+            grants_created = tuple()
 
         # NOTE: Add grants for documents of other users.
         id_users = self.session.scalars(select(User.id))
@@ -213,6 +218,7 @@ class BaseDummyProvider:
 
         # NOTE: Grants giving access to documents that exist already.
         if not exclude_grants_self:
+            logger.debug("Making grants for `%s` on documents created by others.")
             q_grants_share = select(Grant).where(Grant.id_user.in_(id_users_shared))
             grants_share_id_documents: Dict[int, Grant] = {
                 grant_init.id_document: grant_init
@@ -235,7 +241,17 @@ class BaseDummyProvider:
         else:
             grants_self = tuple()
 
-        # NOTE: Grants to others on documents created.
+        # NOTE: Grants to others on documents created. ``grants_source`` is
+        #       included since there is the option to not make ``created`` grants
+        #       for the provided documents.
+        logger.debug("Making grants for others on documents created `%s`.")
+
+        if not grants_created:
+            grants_source = tuple(map(self.get_document_grant, documents))
+            assert len(grants_source) == len(documents)
+        else:
+            grants_source = grants_created
+
         grants_other = tuple(
             Grant(
                 uuid=secrets.token_urlsafe(8),
@@ -247,12 +263,12 @@ class BaseDummyProvider:
                 pending=bool(randint(0, 2)),
                 pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
             )
-            for grant in grants
+            for grant in grants_source
             for id_user in id_users_shared
             if randint(0, 2)
         )
 
-        return grants + grants_self + grants_other
+        return grants_created + grants_self + grants_other
 
     def mk_collections(self) -> Tuple[Collection, ...]:
         logger.debug("Making collections...")
@@ -274,16 +290,20 @@ class BaseDummyProvider:
         data: Dict[str, Set[str]] = dict()
         session = self.session
         session.add(self.user)
+        session.commit()
+        session.refresh(self.user)
+
+        data.update(user={self.user.uuid})
 
         if documents is None:
             session.add_all(documents := self.mk_documents())
             session.commit()
-            data.update(documents=set(dd.uuid for dd in documents))
+            data.update(documents=uuids(documents))
 
         if collections is None:
             session.add_all(collections := self.mk_collections())
             session.commit()
-            data.update(collections=set(dd.uuid for dd in collections))
+            data.update(collections=uuids(collections))
 
         # NOTE: Session.merge only works for assignments and not grants because
         #       assignments uses the association primary keys to form a its
@@ -298,7 +318,7 @@ class BaseDummyProvider:
                 )
             )
             session.commit()
-            data.update(assignments=set(aa.uuid for aa in assignments))
+            data.update(assignments=uuids(assignments))
 
         if create_grants is not None:
             assert documents is not None, "Documents required."
@@ -311,7 +331,7 @@ class BaseDummyProvider:
                 )
             )
             session.commit()
-            data.update(assignments=set(gg.uuid for gg in grants))
+            data.update(grants=uuids(grants))
 
         # NOTE: Create some uniquely owned documents (important for tests of
         #       deltion cascading configuration). It is important to note
@@ -322,6 +342,10 @@ class BaseDummyProvider:
             session.add_all(documents_uniq)
             session.commit()
 
+            data["documents"] |= uuids(documents_uniq)
+
+        return data
+
     # ----------------------------------------------------------------------- #
     # Getters
 
@@ -331,7 +355,6 @@ class BaseDummyProvider:
         uuids: Set[str] | None = None,
     ) -> None:
         Model = resolve_model(model)
-        # self.user.info["tags"].append(f"randomized-{Model.__tablename__}")
 
         q = update(Model).where(func.random() < 0.5)
         if uuids is not None:
@@ -341,6 +364,25 @@ class BaseDummyProvider:
             for deleted in (0, 1)
             for public in (0, 1)
         )
+        self.session.commit()
+
+    def randomize_grants(self):
+        logger.debug("Randomizing grants for `%s`.", self.user.uuid)
+        q_uuids = select(Grant.uuid).where(
+            Grant.id_user == self.user.id, Grant.pending_from != PendingFrom.created
+        )
+        uuids = self.session.scalars(q_uuids)
+
+        for pending in (0, 1):
+            for pending_from in (PendingFrom.grantee, PendingFrom.granter):
+                q = (
+                    update(Grant)
+                    .values(pending=pending, pending_from=pending_from)
+                    .where(Grant.uuid.in_(uuids), func.random() < 0.5)
+                )
+                self.session.execute(q)
+
+        self.session.commit()
 
     def get_primary(
         self,
@@ -353,6 +395,7 @@ class BaseDummyProvider:
         callback: Callable[[Any], Any] | None = None,
         retry_callback: Callable[[], None] | None = None,
         retry_count: int = 0,
+        retry_count_max: int = 1,
         retry: bool = True,
         allow_empty: bool = False,
     ) -> Tuple[T_ResolvedPrimary, ...]:
@@ -380,7 +423,7 @@ class BaseDummyProvider:
                 "Found empty results for kind `%s`.",
                 Model.__tablename__,
             )
-            if retry and retry_count < 3:
+            if retry and retry_count < retry_count_max:
                 self.randomize_primary(Model)
 
                 if retry_callback is not None:
@@ -445,11 +488,12 @@ class BaseDummyProvider:
 
     def get_documents_retry_callback(self):
         logger.debug("Calling `get_collections_retry_callback`.")
+        self.randomize_grants()
         self.mk(
             create_documents_unique=False,
             create_grants=dict(exclude_grants_self=True),
         )
-        self.session.commit()  # NOTE: It might look stupid but it works.
+        self.session.commit()  # NOTE: It might look stupid to do this but it works.
 
     def get_documents(
         self,
@@ -640,7 +684,7 @@ class BaseDummyProvider:
         *,
         other: bool = False,
         **kwargs,
-    ):
+    ) -> Tuple[T_ResolvedPrimary, ...]:
         """This exists because :meth:`get_primary` will not include all of the nice
         callbacks and keywords.
 
@@ -658,7 +702,7 @@ class BaseDummyProvider:
             case bad:
                 raise ValueError(f"Cannot construct data of kind `{bad.name}`.")
 
-        return meth(n, get_primary_kwargs, other=other, **kwargs)
+        return meth(n, get_primary_kwargs, other=other, **kwargs)  # type: ignore
 
     def get_data_primary(
         self,
@@ -785,36 +829,6 @@ class BaseDummyProvider:
             console_handler=ConsoleHandler(output=Output.yaml),  # type: ignore
         )
         return Requests(context, client)
-
-    def other(
-        self,
-        kind: KindObject,
-        *,
-        callback: Annotated[
-            Callable[[Select], Select] | None,
-            "This should be used to add filters like `where` statements.",
-        ] = None,
-    ):
-        match kind:
-            case KindObject.event:
-                q = select(Event).where(Event.uuid_user != self.user.uuid)
-            case KindObject.document | KindObject.grant | KindObject.assignment:
-                raise ValueError("`other` only supports `KindObject.event`.")
-            case _:
-                raise ValueError(f"Invalid value `{kind}` for `kind`.")
-
-        if callback is not None:
-            q = callback(q)
-
-        q = q.limit(1)
-        res = self.session.scalar(q)
-        if res is None:
-            msg = f"`DummyProvider.other` could not find a suitable `{kind.name}`."
-            raise ValueError(msg)
-        return res
-
-    # ----------------------------------------------------------------------- #
-    # Chainables and their helpers.
 
     def dispose(self):
         logger.debug("Disposing of dummy data for user `%s`.", self.user.uuid)

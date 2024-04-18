@@ -156,15 +156,23 @@ class CollectionView(BaseView):
         cls,
         delete: DependsDelete,
         uuid_collection: args.PathUUIDCollection,
-    ) -> AsOutput[EventSchema]:
+    ) -> OutputWithEvents[CollectionSchema]:
         """Remove a `collection`.
 
         This will not remove the `documents` in a `collection` but will remove
         their respective `assignments`."""
 
-        data: Data[ResolvedCollection] = delete.a_collection(uuid_collection)
+        data: Data[ResolvedCollection] = delete.access.d_collection(
+            uuid_collection, exclude_deleted=not delete.force
+        )
+        delete.collection(data)
+        serial = CollectionSchema.model_validate(data.data.collections[0])
+
+        data.commit(delete.session)
         return mwargs(
-            AsOutput[EventSchema], data=EventSchema.model_validate(data.event)
+            OutputWithEvents[CollectionSchema],
+            data=serial,
+            events=[EventSchema.model_validate(data.event)],
         )
 
     @classmethod

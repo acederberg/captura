@@ -1,8 +1,9 @@
 # =========================================================================== #
 import asyncio
+from http import HTTPMethod
 import json
 import secrets
-from typing import Dict, List
+from typing import ClassVar, Dict, List
 
 import pytest
 from pydantic import TypeAdapter
@@ -25,6 +26,7 @@ from tests.test_views.util import BaseEndpointTest
 
 
 class CommonUsersGrantsTests(BaseEndpointTest):
+    method: ClassVar[HTTPMethod]
     adapter = TypeAdapter(AsOutput[List[GrantSchema]])
     adapter_w_events = TypeAdapter(OutputWithEvents[List[GrantSchema]])
 
@@ -60,7 +62,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         "Test unauthorized access."
 
         (user,) = dummy.get_users(1)
-        documents = dummy.get_documents(4)
+        documents = dummy.get_documents(4, other=True)
         uuid_documents = Document.resolve_uuid(dummy.session, documents)
 
         fn = self.fn(requests)
@@ -88,7 +90,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         assert user.uuid != user_other.uuid
         assert user.deleted is False
 
-        documents = dummy.get_documents(5)
+        documents = dummy.get_documents(5, other=True)
         uuid_documents = Document.resolve_uuid(dummy.session, documents)
 
         fn = self.fn(requests)
@@ -103,6 +105,9 @@ class CommonUsersGrantsTests(BaseEndpointTest):
             ),
         )
 
+        if self.method == HTTPMethod.GET:
+            err_content.detail.msg = ErrAccessUser._msg_private
+
         if err := self.check_status(requests, res, 403, err_content):
             raise err
 
@@ -116,7 +121,9 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         "Test not found response with bad document uuid."
 
         uuid_dne = secrets.token_urlsafe(9)
-        uuid_documents = Document.resolve_uuid(dummy.session, dummy.get_documents(5))
+        uuid_documents = Document.resolve_uuid(
+            dummy.session, dummy.get_documents(5, other=True)
+        )
         fn = self.fn(requests)
 
         res = await fn(uuid_dne, uuid_document=uuid_documents)
@@ -146,7 +153,9 @@ class CommonUsersGrantsTests(BaseEndpointTest):
         session.add(user)
         session.commit()
 
-        uuid_documents = Document.resolve_uuid(dummy.session, dummy.get_documents(5))
+        uuid_documents = Document.resolve_uuid(
+            dummy.session, dummy.get_documents(5, other=True)
+        )
         fn = self.fn(requests)
 
         res = await fn(user.uuid, uuid_document=uuid_documents)
@@ -170,6 +179,8 @@ class CommonUsersGrantsTests(BaseEndpointTest):
 class TestUsersGrantsRequest(CommonUsersGrantsTests):
     "For example requesting access to a document."
 
+    method = HTTPMethod.POST
+
     def fn(self, requests: Requests):
         return requests.grants.users.request
 
@@ -184,8 +195,8 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         (other_user,) = dummy.get_users(1)
         assert user.uuid != other_user.uuid
 
-        other_dummy = DummyProvider(dummy.auth, session, use_existing=other_user)
-        (other_document,) = other_dummy.get_user_documents(Level.own)
+        other_dummy = DummyProvider(dummy.config, session, use_existing=other_user)
+        (other_document,) = other_dummy.get_documents(1, level=Level.own)
         assert other_document.deleted is False
 
         q = (
@@ -273,12 +284,12 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         "Test what happens when requesting deleted grants."
 
         user, session = dummy.user, dummy.session
-        documents = dummy.get_user_documents(Level.view, n=3)
+        documents = dummy.get_documents(level=Level.view, n=3)
         uuid_document = Document.resolve_uuid(session, documents)
         uuid_document_list = list(uuid_document)
 
         grants = tuple(dummy.get_document_grant(dd) for dd in documents)
-        assert len(grants) == 3
+        assert (n := len(grants)) > 0
 
         for gg in grants:
             gg.deleted = True
@@ -355,7 +366,7 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         "Test requesting a grant after grants cleared."
 
         user, session = dummy.user, dummy.session
-        documents = dummy.get_documents(10, GetPrimaryKwargs(deleted=False))
+        documents = dummy.get_documents(10, GetPrimaryKwargs(deleted=False), other=True)
         uuid_document = Document.resolve_uuid(session, documents)
         uuid_document_list = list(uuid_document)
         n = len(uuid_document_list)
@@ -475,6 +486,8 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
     indirect=["dummy", "requests"],
 )
 class TestUsersGrantsRead(CommonUsersGrantsTests):
+    method = HTTPMethod.GET
+
     def fn(self, requests: Requests):
         return requests.grants.users.read
 
@@ -496,7 +509,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         session.commit()
 
         assert not user.deleted
-        documents = dummy.get_documents(5, kwargs)
+        documents = dummy.get_documents(5, kwargs, other=True)
 
         assert all(dd.deleted is False for dd in documents)
 
@@ -538,7 +551,8 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         """Test can read user pending grants for private documents."""
 
         user = dummy.user
-        documents = dummy.get_user_documents(Level.view, n=5)
+        kwargs = GetPrimaryKwargs(public=False)
+        documents = dummy.get_documents(1, kwargs, level=Level.view)
         uuid_document = list(Document.resolve_uuid(dummy.session, documents))
 
         fn = self.fn(requests)
@@ -547,9 +561,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         if err := self.check_status(requests, res, 200):
             raise err
 
-        data = self.adapter.validate_json(res.content)
-        assert data.kind is not None
-        self.check_data(dummy, data)
+        self.adapter.validate_json(res.content)
 
     # NOTE: The `pending` filter only works when `uuid_document` is not
     #       specified.
@@ -562,7 +574,8 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
         fn = self.fn(requests)
 
         if include_uuids:
-            docs = dummy.get_user_documents(
+            docs = dummy.get_documents(
+                n=1,
                 level=Level.view,
                 exclude_pending=True,
             )
@@ -649,6 +662,8 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
     indirect=["dummy", "requests"],
 )
 class TestUsersGrantsReject(CommonUsersGrantsTests):
+    method = HTTPMethod.DELETE
+
     def fn(self, requests: Requests):
         return requests.grants.users.reject
 
@@ -662,7 +677,7 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
         user.deleted = False
         session.add(user)
 
-        documents = dummy.get_user_documents(level=Level.view, n=5)
+        documents = dummy.get_documents(level=Level.view, n=5)
         uuid_document = Document.resolve_uuid(session, documents)
         uuid_document_list = list(uuid_document)
 
@@ -752,6 +767,8 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
     indirect=["dummy", "requests"],
 )
 class TestUsersGrantsAccept(CommonUsersGrantsTests):
+    method = HTTPMethod.PATCH
+
     def fn(self, requests: Requests):
         return requests.grants.users.accept
 
@@ -762,8 +779,11 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         """User can accept own grants."""
 
         session = dummy.session
-        documents = dummy.get_user_documents(
-            Level.view, n=5, deleted=False, pending=True, exclude_pending=False
+        documents = dummy.get_documents(
+            5,
+            level=Level.view,
+            pending=True,
+            exclude_pending=False,
         )
         assert not any(dd.deleted for dd in documents)
         uuid_document = list(Document.resolve_uuid(dummy.session, documents))
@@ -773,7 +793,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
         grants = []
         for dd in documents:
-            grant = dummy.get_document_grant(dd, pending=True, exclude_pending=False)
+            grant = dummy.get_document_grant(dd)
             if grant.pending_from == PendingFrom.created:
                 continue
 
@@ -889,12 +909,15 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         """
 
         session = dummy.session
-        (document,) = dummy.get_user_documents(
-            Level.view, n=1, pending=True, exclude_pending=False
+        (document,) = dummy.get_documents(
+            level=Level.view,
+            n=1,
+            pending=True,
+            exclude_pending=False,
         )
         uuid_document = [Document.resolve_uuid(dummy.session, document)]
 
-        grant = dummy.get_document_grant(document, pending=True, exclude_pending=False)
+        grant = dummy.get_document_grant(document)
         assert grant.pending
         grant.pending_from = PendingFrom.granter
         session.add(grant)

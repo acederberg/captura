@@ -170,7 +170,6 @@ class DocumentAssignmentView(BaseView):
             q = q.order_by(func.random())
         if limit:
             q = q.limit(limit)
-        # util.sql(access.session, q)
 
         collections = tuple(access.session.scalars(q))
         data = access.d_assignment_document(
@@ -278,11 +277,16 @@ class CollectionAssignmentView(BaseView):
         limit: int | None = None,
         randomize: bool = False,
     ) -> AsOutput[List[AssignmentSchema]]:
-
         collection = access.collection(uuid_collection)
-        q = select(Document).join(Assignment).where(Document.deleted == false(),
-                                   Assignment.deleted==false(),
-                                   Assignment.id_collection == collection.id)
+        q = (
+            select(Document)
+            .join(Assignment)
+            .where(
+                Document.deleted == false(),
+                Assignment.deleted == false(),
+                Assignment.id_collection == collection.id,
+            )
+        )
         if uuid_document is not None:
             q = q.where(Document.uuid.in_(uuid_document))
         if randomize:
@@ -290,7 +294,6 @@ class CollectionAssignmentView(BaseView):
         if limit:
             q = q.limit(limit)
 
-        util.sql(access.session, q)
         documents = tuple(access.session.scalars(q))
         data = access.d_assignment_collection(
             collection,

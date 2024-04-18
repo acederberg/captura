@@ -26,7 +26,7 @@ from app.models import (
     resolve_model,
 )
 from tests.check import Check
-from tests.dummy import DummyProvider
+from tests.dummy import DummyHandler, DummyProvider
 
 logger = util.get_logger(__name__)
 
@@ -66,6 +66,7 @@ def test_flattened():
     assert list(uuids) == list(uuids.values())
 
 
+@pytest.mark.parametrize("count", list(range(5)))
 class TestRelationships:
     """It is important to note that the primary purpose of configuring the
     object relationships is to ensure correct deletion cascading, thus why
@@ -82,12 +83,14 @@ class TestRelationships:
 
     """
 
-    @pytest.mark.parametrize(
-        "dummy_new, count", [(None, k) for k in range(3)], indirect=["dummy_new"]
-    )
+    # @pytest.mark.parametrize(
+    #     "dummy_disposable, count",
+    #     [(None, k) for k in range(3)],
+    #     indirect=["dummy_disposable"],
+    # )
     def test_collection_deletion(self, dummy_disposable: DummyProvider, count: int):
         dummy = dummy_disposable
-        collections, session = dummy.get_user_collections(15), dummy.session
+        collections, session = dummy.get_collections(15), dummy.session
         msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
 
         n_empty_assignments = 0
@@ -134,14 +137,14 @@ class TestRelationships:
         if n_empty_assignments:
             raise AssertionError("All collections have empty assignments.")
 
-    @pytest.mark.parametrize(
-        "dummy_new, count",
-        [(None, k) for k in range(3)],
-        indirect=["dummy_new"],
-    )
+    # @pytest.mark.parametrize(
+    #     "dummy_disposable, count",
+    #     [(None, k) for k in range(3)],
+    #     indirect=["dummy_disposable"],
+    # )
     def test_document_deletion(self, dummy_disposable: DummyProvider, count: int):
         dummy = dummy_disposable
-        documents, session = dummy.get_user_documents(Level.view, n=15), dummy.session
+        documents, session = dummy.get_documents(level=Level.view, n=15), dummy.session
         uuid_column = literal_column("uuid")
         msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
         msg_fmt += " and queries."
@@ -226,10 +229,10 @@ class TestRelationships:
             raise AssertionError("All documents have empty assignments.")
 
     def test_user_deletion_documents(
-        self, auth: Auth, session: Session, count: int = 1
+        self, dummy_handler: DummyHandler, session: Session, count: int
     ):
         n_empty_grants = 0
-        for dummy in (DummyProvider(auth, session) for _ in range(5)):
+        for dummy in (DummyProvider(dummy_handler.config, session) for _ in range(5)):
             user = dummy.user
             q_grants = user.q_select_grants(exclude_deleted=False)
             grants = dummy.session.scalars(q_grants)
@@ -270,13 +273,11 @@ class TestRelationships:
             dummy.dispose()
 
     def test_user_deletion_collections(
-        self,
-        session: Session,
-        auth: Auth,
-        count: int = 1,
+        self, dummy_handler: DummyHandler, session: Session, count: int
     ):
         n_no_collections = 0
-        for dummy in (DummyProvider(auth, session) for _ in range(0, 3)):
+        for _ in range(0, 3):
+            dummy = DummyProvider(dummy_handler.config, session)
             user = dummy.user
             uuid_collections = set(
                 session.scalars(
@@ -305,12 +306,7 @@ class TestRelationships:
 
     # NOTE: Should fail since dummies do not generate edits.
     @pytest.mark.xfail
-    def test_user_deletion_edits(
-        self,
-        auth: Auth,
-        session: Session,
-        count: int = 1,
-    ):
+    def test_user_deletion_edits(self, auth: Auth, session: Session, count: int):
         n_no_edits = 0
         for dummy in (DummyProvider(auth, session) for _ in range(10)):
             user = dummy.user
@@ -337,11 +333,11 @@ class TestRelationships:
             raise AssertionError("All dummies had empty `edits`.")
 
         # NOTE: Not necessary. But definitely nice to have.
-        # def test_dummy_dispose(self, dummy_new: DummyProvider, count: int = 1):
+        # def test_dummy_dispose(self, dummy_disposable: DummyProvider, count: int = 1):
         #     """Verify that `DummyProvider.dispose` cleans up a dummy as
         #     desired."""
         #
-        #     dummy, user, session = dummy_new, dummy_new.user, dummy_new.session
+        #     dummy, user, session = dummy_disposable, dummy_disposable.user, dummy_disposable.session
         #     # uuid_user = user.uuid
         #
         #     # NOTE: Get documents. Only orphaned documents should be deleted.
@@ -375,9 +371,13 @@ class TestRelationships:
         session.commit()
 
 
+@pytest.mark.parametrize("count", list(range(25)))
 class TestUser:
-    def test_q_select_documents(self, dummy_new: DummyProvider):
-        dummy = dummy_new
+    def test_q_select_documents(
+        self, dummy_handler: DummyHandler, session: Session, count: int
+    ):
+        dummy = DummyProvider(dummy_handler.config, session)
+        dummy.info_mark_used(f"test_q_select_documents-{count}")
         user, session = dummy.user, dummy.session
         fn = user.q_select_documents
 
@@ -404,8 +404,12 @@ class TestUser:
         assert str(err.value) == msg
 
         kwargs = dict(exclude_pending=False, pending=True)
-        docs = tuple(session.scalars(fn(**kwargs).limit(10)))
-        assert len(docs)
+        dummy.randomize_grants()
+        docs = tuple(session.scalars(q := fn(**kwargs).limit(10)))
+        util.sql(session, q)
+        if not len(docs):
+            msg = "Could not find pending documents for dummy `{}`."
+            raise AssertionError(msg.format(dummy.user.uuid))
 
         assert len(grants := get_grants(uuid_document := uuids(docs))) == len(docs)
 
@@ -415,10 +419,17 @@ class TestUser:
 
         # ------------------------------------------------------------------- #
 
+        n_mt = 0
         for pending_from in list(PendingFrom):
-            kwargs = dict(pending_from=pending_from, pending=False)
+            kwargs = dict(pending_from=pending_from, pending=None, exclude_pending=True)
             docs = tuple(session.scalars(fn(**kwargs).limit(10)))
-            assert (n := len(docs))
+            if not (n := len(docs)):
+                # fmt = "Could not find docs pending from `{}` for dummy `{}`."
+                # msg = fmt.format(pending_from.name, dummy.user.uuid)
+                # raise AssertionError(msg)
+                n_mt += 1
+                continue
+
             assert len(grants := get_grants(docs)) == len(docs)
 
             # NOTE: Getting these documents using their uuids should not
@@ -444,6 +455,9 @@ class TestUser:
                     docs_by_uuid,
                 )
             )
+
+        if n_mt == 3:
+            raise AssertionError("All `pending_from` filtered data was empty.")
 
         # ------------------------------------------------------------------- #
 

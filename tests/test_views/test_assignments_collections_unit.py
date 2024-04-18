@@ -13,7 +13,7 @@ from sqlalchemy import delete, false, select, update
 from app import util
 from app.controllers.access import H
 from app.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
-from app.fields import KindObject
+from app.fields import KindObject, Level
 from app.models import Assignment, Collection, Document
 from app.schemas import (
     AsOutput,
@@ -80,7 +80,7 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
         session, fn = dummy.session, self.fn(requests)
 
         (collection,) = dummy.get_collections(1)
-        (document,) = dummy.get_documents(1)
+        (document,) = dummy.get_documents(1, level=Level.view)
 
         requests.context.auth_exclude = True
         res = await fn(collection.uuid, uuid_document=[document.uuid])
@@ -383,7 +383,7 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
     ):
         session = dummy.session
         (collection,) = dummy.get_collections(1)
-        documents = dummy.get_documents(9, GetPrimaryKwargs(deleted=False))
+        documents = dummy.get_documents(9, GetPrimaryKwargs(deleted=False), other=True)
         uuid_document_list = list(dd.uuid for dd in documents)
         id_document_list = [dd.id for dd in documents]
         assert (n_documents := len(uuid_document_list)) > 1

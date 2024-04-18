@@ -44,15 +44,15 @@ def config() -> PytestConfig:
 @pytest.fixture(scope="session")
 def client_config() -> PytestClientConfig:
     logger.debug("Loading client configuration.")
-    raw: Dict[str, Any] = dict(
-        hosts=dict(
-            docker=dict(host="http://localhost:8080", remote=True),
-            app=dict(host="http://localhost:8080", remote=False),
-        ),
-        profiles=dict(me=dict(token=None, uuid_user="000-000-000")),
-        use=dict(host="docker", profile="me"),
-    )
-    return PytestClientConfig(**raw)
+    # raw: Dict[str, Any] = dict(
+    #     hosts=dict(
+    #         docker=dict(host="http://localhost:8080", remote=True),
+    #         app=dict(host="http://localhost:8080", remote=False),
+    #     ),
+    #     profiles=dict(me=dict(token=None, uuid_user="000-000-000")),
+    #     use=dict(host="app", profile="me"),
+    # )
+    return PytestClientConfig.model_validate({})
 
 
 class PytestContext(BaseModel):
@@ -156,15 +156,16 @@ def load_tables(
 @pytest_asyncio.fixture(scope="session")
 async def app(client_config: ClientConfig) -> FastAPI | None:
     if (host := client_config.host) is None or not host.remote:
+        logger.info("Using httpx client with app instance.")
         return AppView.view_router  # type: ignore
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
 
 
-@pytest_asyncio.fixture(scope="session")
-async def async_client(app: FastAPI | None) -> AsyncGenerator[httpx.AsyncClient, Any]:
-    async with httpx.AsyncClient(app=app) as client:
-        yield client
+# @pytest_asyncio.fixture(scope="session")
+# async def async_client(app: FastAPI | None) -> AsyncGenerator[httpx.AsyncClient, Any]:
+#     async with httpx.AsyncClient(app=app) as client:
+#         yield client
 
 
 @pytest.fixture(scope="session")

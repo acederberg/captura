@@ -1,11 +1,13 @@
 # =========================================================================== #
+import atexit
 import importlib
 import json
-from typing import Annotated
+from contextlib import asynccontextmanager
+from typing import Annotated, Any, Dict, Optional
 
 import typer
-import uvicorn
 import uvicorn.config
+from fastapi import FastAPI
 from rich.console import Console
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
@@ -21,13 +23,29 @@ from . import util
 # except ImportError:
 #     docker = None
 
-logger = util.get_logger(__name__)
-
 
 CONSOLE = Console()
 FlagRun = Annotated[bool, typer.Option("--run", "--exit")]
 FlagDummies = Annotated[bool, typer.Option("--dummies")]
 FlagRecreateTables = Annotated[bool, typer.Option("--recreate-tables")]
+FlagForCoverage = Annotated[
+    bool,
+    typer.Option(
+        "--for-coverage",
+        help=(
+            "To run with coverage collection use this flag in the "
+            "coverage subcommand, for instance "
+            "`coverage run --include ./src/app app run --for-coverage`."
+        ),
+    ),
+]
+FlagReload = Annotated[
+    Optional[bool],
+    typer.Option(
+        "--reload/--no-reload",
+        help="Overwrite the reload strategy from ``config.app.is_dev``",
+    ),
+]
 
 
 CONFIG = Config()  # type: ignore
@@ -51,7 +69,12 @@ class Cli:
             )
         )
 
-    def run(self):
+    def run(
+        self,
+        *,
+        # for_coverage: FlagForCoverage = False,
+        reload: FlagReload = None,
+    ):
         """This function can be run by invoking this module (e.g. python -m
         app) or by using the command installed by ``pyproject.toml``, ``app``.
 
@@ -83,14 +106,32 @@ class Cli:
             curl "http://$CONTAINER_IP:8080"
 
         """
+        reload = reload if reload is not None else self.config.app.is_dev
 
-        uvicorn.run(
-            "app.views:AppView.view_router",
+        # if not for_coverage:
+        self._run(app="app:app", reload=reload)
+        return
+        # else:
+        #     util.CONSOLE_APP.print(
+        #         "[green]Use `gunicorn -c ./tests/gunicorn_coverage.py -k "
+        #         "uvicorn.workers.UvicornWorker` app:app."
+        #     )
+
+    def _run(self, app, reload: bool):
+        import uvicorn
+
+        kwargs: Dict[str, Any] = dict(
             port=self.config.app.port,
             host=self.config.app.host,
-            reload=self.config.app.is_dev,
-            reload_dirs=util.PATH_APP if self.config.app.is_dev else None,
         )
+        # NOTE: Only specify ``reload_dirs`` in reload mode because warnings.
+        if reload:
+            kwargs.update(
+                reload=reload,
+                reload_dirs=util.PATH_APP,
+            )
+
+        uvicorn.run(app, **kwargs)
 
 
 def main() -> None:
@@ -108,8 +149,14 @@ def main() -> None:
 #
 #         https://github.com/encode/uvicorn/issues/491
 #
+#       I know that loading the config like this is an antipattern. However
+#       it does not matter since this module SHOULD ONLY EVER BE INVOKED BY
+#       THE COMMAND LINE! This modules logger must be declared only after the
+#       configuration as it will not be equiped with the correct handlers
+#       otherwise.
 LOGGING_CONFIG = util.setup_logging(CONFIG.app.logging_configuration_path)
 uvicorn.config.LOGGING_CONFIG.update(LOGGING_CONFIG)
+logger = util.get_logger(__name__)
 
 
 if __name__ == "__main__":

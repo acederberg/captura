@@ -1,9 +1,15 @@
-from typing import Set
-import httpx
+# =========================================================================== #
 import asyncio
-from app import util
+from typing import Set
+
+import httpx
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import BaseDDLElement, delete, false, func, select, update
+from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
+from app import util
 from app.auth import Token
 from app.controllers.base import (
     Data,
@@ -14,17 +20,53 @@ from app.controllers.base import (
 from app.fields import KindObject, Level, PendingFrom
 from app.models import Collection, Document, Event, Grant, User, resolve_model, uuids
 from app.schemas import AsOutput, DocumentSchema, OutputWithEvents
-from tests.config import PyTestClientProfileConfig, PytestClientConfig
+from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.conftest import client_config
-
 from tests.dummy import DummyHandler, DummyProvider, GetPrimaryKwargs
 
 
 @pytest.mark.parametrize(
-    "dummy, count", [(None, k) for k in range(5)], indirect=["dummy"]
-)
+    "count", [(None, k) for k in range(5)]
+)  # , indirect=["dummy"])
 class TestDummyProvider:
     """Because if this is not tested then tests are unstable."""
+
+    def test_mk(self, dummy_handler: DummyHandler, session: Session, count: int):
+        """Just check the dummy provided by the fixture. :meth:`mk` is called
+        within the constructor and the dummy should be fresh."""
+
+        dummy = DummyProvider(dummy_handler.config, session)
+        session, uuid = dummy.session, dummy.user.uuid
+
+        # NOTE: Verify that collections exist.
+        q = select(func.count(Collection.uuid)).where(
+            Collection.id_user == dummy.user.id
+        )
+        assert (n := session.scalar(q)) is not None and n > 0
+
+        # NOTE: Various document checks. (1) check that dummy has its own
+        #       `created` documents, (2) check that dummy has grants to other
+        #       items. (3)
+
+        q = select(func.count(Grant.uuid)).where(
+            Grant.id_user == dummy.user.id,
+            Grant.pending_from == PendingFrom.created,
+        )
+        assert (n := session.scalar(q)) is not None and n > 0
+
+        q = select(func.count(Grant.pending_from.distinct()))
+        q = q.where(
+            Grant.id_user == dummy.user.id,
+            Grant.pending_from != PendingFrom.created,
+        )
+        assert (n := session.scalar(q)) is not None and n > 0
+
+        q = select(func.count(Grant.level.distinct()))
+        q = q.where(Grant.id_user == dummy.user.id)
+        assert session.scalar(q) == 3
+
+        q = select(func.count(Grant.pending.distinct()))
+        assert session.scalar(q) == 2
 
     def test_randomize_primary(self, dummy: DummyProvider, count: int):
         # NOTE: Should be undeleted and public.
@@ -210,7 +252,11 @@ class TestDummyProvider:
 
     @pytest.mark.asyncio
     async def test_get_events(
-        self, client_config: PyTestClientProfileConfig, dummy: DummyProvider, count: int
+        self,
+        client_config: PyTestClientProfileConfig,
+        dummy: DummyProvider,
+        count: int,
+        app,
     ):
         documents = dummy.get_documents(other=False, level=Level.own, n=3)
         uuid_documents = uuids(documents)
@@ -229,7 +275,7 @@ class TestDummyProvider:
             uuid_events_item = set(item.uuid for item in data.events)
             uuid_events |= uuid_events_item
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(app=app) as client:
             requests = dummy.requests(client_config, client)
             uuid_events = set()
 
@@ -252,7 +298,7 @@ class TestDummyProvider:
 
         # NOTE: Get own events. **1**
         events = dummy.get_events(10, other=False)
-        assert len(events), "Events not found :(."
+        assert len(events), "Events not found."
         assert all(ee.uuid_user == dummy.user.uuid for ee in events)
         uuid_events = set(ee.uuid for ee in events)
 
@@ -273,13 +319,20 @@ class TestDummyProvider:
 
     @pytest.mark.asyncio
     async def test_requests(
-        self, client_config: PytestClientConfig, dummy: DummyProvider, count: int
+        self,
+        client_config: PytestClientConfig,
+        dummy: DummyProvider,
+        count: int,
+        app: FastAPI | None,
     ):
-        async with httpx.AsyncClient() as client:
-            requests = dummy.requests(client_config, client)
-            res = await requests.users.read("000-000-000")
 
-            assert res.status_code == 200, "`/users/{uuid}` should work."
+        async with httpx.AsyncClient(app=app) as client:
+            requests = dummy.requests(client_config, client)
+            res = await requests.users.read(dummy.user.uuid)
+
+            assert (
+                res.status_code == 200
+            ), f"`/users/{{uuid}}` should work. `{res.json()}`."
 
             profile = requests.context.config.profile
             assert profile is not None

@@ -62,10 +62,13 @@ dev = [
   "autoflake",
   "jedi-language-server",
   "docker",
+  "yamllint",
 ]
 test = [
 	"pytest",
+  "pytest-cov",
   "pytest-asyncio",
+  "pytest-html",
   "faker",
 ]
 
@@ -120,7 +123,12 @@ ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
 
 
-# https://docs.pydantic.dev/latest/integrations/mypy/#configuring-the-plugin
+# NOTE: See the following reference for this plugin:
+#
+#       .. code::text
+#
+#          https://docs.pydantic.dev/latest/integrations/mypy/#configuring-the-plugin
+#
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = false
@@ -148,6 +156,27 @@ push            = false
 "captura" = ["py.typed"]
 
 
+# NOTE: Look at this later: https://docs.pytest.org/en/6.2.x/usage.html#dropping-to-pdb-python-debugger-on-failures
 [tool.pytest.ini_options]
 testpaths = "tests"
 addopts = "--ignore tests/junk"
+
+# NOTE: Reference https://coverage.readthedocs.io/en/latest/config.html#sample-file
+[tool.coverage.run]
+branch = true
+include = ["./src/app/**/*.py", "./tests/**/*.py"]
+omit = []
+
+[tool.coverage.report]
+fail_under = 75
+format = "html"
+include = ["./src/app/**/*.py", "./tests/**/*.py"]
+omit = []
+skip_covered = true
+skip_empty = true
+sort = "-cover" # NOTE: Sort from least to greatest coverage.
+
+# NOTE: Can be used to overwrite settings from `tool.coverage.report`.
+[tool.coverage.html]
+directory = "./src/app/static/cov"
+title = "Captura PyTest Coverage Report"

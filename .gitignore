@@ -16,3 +16,6 @@ configs
 .venv-local
 batch
 logs
+.coverage
+cov
+test-results.html

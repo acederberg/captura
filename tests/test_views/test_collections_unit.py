@@ -1,19 +1,29 @@
 # =========================================================================== #
+import asyncio
 import functools
 import secrets
 from http import HTTPMethod
-from typing import Any, Awaitable, Callable, ClassVar, Concatenate, Dict
+from typing import Any, Awaitable, Callable, ClassVar, Concatenate, Dict, List
 
 import httpx
 import pytest
 from pydantic import TypeAdapter
+from sqlalchemy import false, func, select, true
 
 # --------------------------------------------------------------------------- #
 from app.controllers.access import H
 from app.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
 from app.fields import KindObject
-from app.models import Collection
-from app.schemas import AsOutput, CollectionSchema, OutputWithEvents, mwargs
+from app.models import Assignment, Collection, Document, uuids
+from app.schemas import (
+    AsOutput,
+    AssignmentExtraSchema,
+    AssignmentSchema,
+    CollectionSchema,
+    EventSchema,
+    OutputWithEvents,
+    mwargs,
+)
 from client.requests import Requests
 from client.requests.base import P_Wrapped
 from tests.dummy import DummyProvider
@@ -389,6 +399,8 @@ class TestCollectionsUpdate(CommonCollectionsTests):
 class TestCollectionsDelete(CommonCollectionsTests):
     method = H.DELETE
 
+    adapter_assignments = TypeAdapter(AsOutput[List[AssignmentSchema]])
+
     def fn(self, requests: Requests):
         return requests.collections.delete
 
@@ -396,25 +408,125 @@ class TestCollectionsDelete(CommonCollectionsTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        assert False, "Should test assignments first."
-
         (collection,), session = dummy.get_collections(1), dummy.session
         assert not collection.deleted
         assert collection.id_user == dummy.user.id
-        fn = self.fn(requests)
+        fn, fn_read = self.fn(requests), requests.collections.read
+        fn_read_assignments = requests.assignments.collections.read
+
+        # NOTE: Read existing assignments, count existing assignments.
+        q_assignments = (
+            select(Assignment)
+            .join(Collection)
+            .join(Document)
+            .where(
+                Collection.id == collection.id,
+                Document.deleted == false(),
+                Collection.deleted == false(),
+            )
+        )
+        uuid_assignments = uuids(tuple(session.scalars(q_assignments)))
+        assert (n_assignments := len(uuid_assignments)) > 0
+
+        res = await fn_read_assignments(collection.uuid)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data_read = self.adapter_assignments.validate_json(res.content)
+        # requests.context.console_handler.print_yaml(
+        #     data=data_read.model_dump(mode="json")
+        # )
+        assert data_read.kind == KindObject.assignment
+        assert len(data_read.data) == n_assignments
 
         # NOTE: Do delete.
         res = await fn(collection.uuid)
         if err := self.check_status(requests, res):
             raise err
 
-        session.expire(collection)
-        data = self.adapter.validate_json(res.content)
-        assert data.data.kind == KindObject.collection
-        assert data.data.uuid == collection.uuid
-        assert data.data.deleted and collection.deleted
+        session.refresh(collection)
 
-        # NOTE: Not indempotent, should get 410
-        res = await fn(collection.uuid)
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind == KindObject.collection
+        assert data.data.uuid == collection.uuid
+        assert len(data.events) == 1
+
+        # NOTE: Events checking will be implemented on its own and then added
+        #       subsequently.
+        # requests.context.console_handler.print_yaml(
+        #     data=[
+        #         item.model_dump(mode="json")
+        #         for item in TypeAdapter(List[EventSchema]).validate_python(
+        #             data.events[0].children
+        #         )
+        #     ]
+        # )
+        # assert len(event_assignments_bulk := data.events[0].children) == 1
+        #
+        # requests.context.console_handler.print_json(
+        #     data=[
+        #         item.model_dump(mode="json")
+        #         for item in TypeAdapter(List[EventSchema]).validate_python(
+        #             event_assignments_bulk[0].children
+        #         )
+        #     ]
+        # )
+        # assert len(event_assignments := event_assignments_bulk[0].children) == 1
+        # assert len(event_assignments[0].children) == n_assignments
+        #
+        # NOTE: All assignments should be soft deleted.
+        session.reset()
+        q = select(Assignment).where(Assignment.uuid.in_(uuid_assignments))
+        assignments = tuple(session.scalars(q))
+
+        if n_bad := len(
+            bad := tuple(
+                session.refresh(assignment) or assignment.uuid
+                for assignment in assignments
+                if not assignment.deleted
+            )
+        ):
+            raise AssertionError(
+                "No assignments should remain outside of deleted state. Found "
+                f"`{n_bad}/{n_assignments}` not deleted. Bad uuids: `{bad}`."
+            )
+
+        # NOTE: Not indempotent, should get 410. Should not be able to read.
+        res, res_read, res_read_assignments = await asyncio.gather(
+            fn(collection.uuid),
+            fn_read(collection.uuid),
+            fn_read_assignments(collection.uuid),
+        )
+
         if err := self.check_status(requests, res, 410):
+            raise err
+        elif err := self.check_status(requests, res_read, 410):
+            raise err
+        elif err := self.check_status(requests, res_read_assignments, 410):
+            raise err
+
+        # NOTE: Force delete.
+        res = await fn(collection.uuid, force=True)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind == KindObject.collection
+        assert data.data.uuid == collection.uuid
+        assert len(data.events) == 1
+        # assert len(event_assignments_bulk := data.events[0].children) == 1
+        # assert len(event_assignments_bulk[0].children) == n_assignments
+
+        # NOTE: Collection no longer exists.
+        res, res_read, res_read_assignments = await asyncio.gather(
+            fn(collection.uuid),
+            fn_read(collection.uuid),
+            fn_read_assignments(collection.uuid),
+        )
+
+        if err := self.check_status(requests, res, 404):
+            raise err
+        elif err := self.check_status(requests, res_read, 404):
+            raise err
+        elif err := self.check_status(requests, res_read_assignments, 404):
             raise err

@@ -37,6 +37,7 @@ from app.models import (
     KindObject,
     Level,
     User,
+    uuids,
 )
 from app.schemas import mwargs
 
@@ -576,9 +577,18 @@ class Delete(WithAccess):
         # commit: bool = False,
     ) -> Data[ResolvedAssignmentCollection]:
         q = collection.q_select_documents(exclude_deleted=not self.force)
-        documents = set(self.session.execute(q).scalars())
-        # q_assignments = collection.q_select_assignment()
-        # assignments = set(self.)
+        documents = tuple(self.session.execute(q).scalars())
+        q_assignments = (
+            select(Assignment)
+            .join(Document)
+            .where(
+                Document.uuid.in_(uuids(documents)),
+                Assignment.id_collection == collection.id,
+            )
+        )
+        assignments = {
+            aa.uuid_document: aa for aa in self.session.scalars(q_assignments)
+        }
 
         # Delete assigns and get events before deletion.
         data_assignments = mwargs(
@@ -588,7 +598,7 @@ class Delete(WithAccess):
                 ResolvedAssignmentCollection,
                 collection=collection,
                 documents=documents,
-                assignments=None,
+                assignments=assignments,
             ),
         )
         if len(documents):

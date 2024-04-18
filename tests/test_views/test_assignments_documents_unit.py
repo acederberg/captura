@@ -37,7 +37,7 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
     async def test_deleted_410(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (document,) = dummy.get_documents(1, GetPrimaryKwargs(deleted=True))
+        (document,) = dummy.get_documents(1, GetPrimaryKwargs(deleted=True), other=True)
 
         fn = self.fn(requests)
         res = await fn(
@@ -81,7 +81,7 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
         assert requests.context.auth_exclude is False, "Auth should not be excluded."
         session, fn = dummy.session, self.fn(requests)
 
-        (document,) = dummy.get_user_documents(Level.own, deleted=None)
+        (document,) = dummy.get_documents(1, level=Level.own)
         document.deleted = False
         session.add(document)
         session.commit()
@@ -101,8 +101,8 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
         session, level = dummy.session, Level.view
-        (document,) = dummy.get_user_documents(level, n=1)
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        (document,) = dummy.get_documents(level=level, n=1)
+        grant = dummy.get_document_grant(document)
 
         # NOTE: Only collection owners should be able to add to and remove
         #       from a collection. Reading however requires that the document
@@ -175,7 +175,7 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
         session = dummy.session
         fn = self.fn(requests)
 
-        (document,) = dummy.get_user_documents(Level.view, deleted=False, n=1)
+        (document,) = dummy.get_documents(level=Level.view, n=1)
         document.public = True
         session.add(document)
 
@@ -261,7 +261,7 @@ class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
         session, fn = dummy.session, self.fn(requests)
         fn_read = requests.assignments.documents.read
 
-        (document,) = dummy.get_user_documents(Level.own, n=1)
+        (document,) = dummy.get_documents(level=Level.own, n=1)
 
         q = select(Collection).join(Assignment)
         q = q.where(Assignment.id_document == document.id).limit(10)
@@ -359,7 +359,7 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
         session, fn = dummy.session, self.fn(requests)
         fn_read = requests.assignments.documents.read
 
-        (document,) = dummy.get_user_documents(Level.own)
+        (document,) = dummy.get_documents(n=1, level=Level.own)
 
         q = select(Collection).join(Assignment)
         q = q.where(Assignment.id_document != document.id).limit(10)

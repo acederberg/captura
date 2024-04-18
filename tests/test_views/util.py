@@ -138,7 +138,7 @@ class BaseEndpointTest(abc.ABC):
     ) -> Generator[DummyProvider, None, None]:
         with dummy_handler.sessionmaker() as session:
             dummy = DummyProvider(
-                dummy_handler.auth,
+                dummy_handler.config,
                 session,
                 use_existing=dummy_handler.user_uuids,
             )
