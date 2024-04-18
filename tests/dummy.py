@@ -219,12 +219,31 @@ class BaseDummyProvider:
         # NOTE: Grants giving access to documents that exist already.
         if not exclude_grants_self:
             logger.debug("Making grants for `%s` on documents created by others.")
-            q_grants_share = select(Grant).where(Grant.id_user.in_(id_users_shared))
-            grants_share_id_documents: Dict[int, Grant] = {
-                grant_init.id_document: grant_init
-                for grant_init in self.session.scalars(q_grants_share)
-                if grant_init.id_user != self.user.id
-            }
+            # q_grants_share = select(Grant).where(Grant.id_user.in_(id_users_shared))
+            # grants_share_id_documents: Dict[int, Grant] = {
+            #     grant_init.id_document: grant_init
+            #     for grant_init in self.session.scalars(q_grants_share)
+            #     if grant_init.id_user != self.user.id
+            # }
+            q_ids_has_grants = (
+                select(Document.id)
+                .join(Grant)
+                .group_by(Grant.id_document)
+                .having(func.count(Grant.id_user) > 0)
+                .where(Grant.id_user == self.user.id)
+                .order_by(func.random())
+            )
+            q_grants_share = (
+                select(Grant)
+                .join(Document)
+                .where(
+                    Document.id.not_in(q_ids_has_grants),
+                    Grant.pending_from == PendingFrom.created,
+                )
+                .limit(150)
+            )
+            grants_share = tuple(self.session.scalars(q_grants_share))
+
             grants_self = tuple(
                 Grant(
                     uuid=secrets.token_urlsafe(8),
@@ -233,10 +252,10 @@ class BaseDummyProvider:
                     id_document=grant_init.id_document,
                     uuid_parent=grant_init.uuid,
                     deleted=bool(randint(0, 1)),
-                    pending=bool(randint(0, 2)),
+                    pending=bool(randint(0, 1)),
                     pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
                 )
-                for grant_init in grants_share_id_documents.values()
+                for grant_init in grants_share
             )
         else:
             grants_self = tuple()
@@ -260,12 +279,12 @@ class BaseDummyProvider:
                 id_document=grant.id_document,
                 uuid_parent=grant.uuid,
                 deleted=bool(randint(0, 1)),
-                pending=bool(randint(0, 2)),
+                pending=bool(randint(0, 1)),
                 pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
             )
             for grant in grants_source
             for id_user in id_users_shared
-            if randint(0, 2)
+            if randint(0, 1)
         )
 
         return grants_created + grants_self + grants_other
@@ -442,10 +461,12 @@ class BaseDummyProvider:
                 return models
             else:
                 # self.tainted = True
+
                 raise AssertionError(
                     f"Could not find test data for `{self.user.uuid}` table "
                     f"`{Model.__tablename__}` after `{retry_count}` "
-                    "randomizations."
+                    "randomizations. Offending query:\n"
+                    f"{util.sql_render(self.session, q)}"
                 )
 
         if deleted is not None:
@@ -489,10 +510,10 @@ class BaseDummyProvider:
     def get_documents_retry_callback(self):
         logger.debug("Calling `get_collections_retry_callback`.")
         self.randomize_grants()
-        self.mk(
-            create_documents_unique=False,
-            create_grants=dict(exclude_grants_self=True),
-        )
+        # self.mk(
+        #     create_documents_unique=False,
+        #     create_grants=dict(exclude_grants_self=True),
+        # )
         self.session.commit()  # NOTE: It might look stupid to do this but it works.
 
     def get_documents(
@@ -984,10 +1005,30 @@ class DummyProvider(BaseDummyProvider):
         self.session = session
         match use_existing:
             case list() as dummy_user_uuids:
-                logger.info("Using random existing dummy.")
-                uuid = choice(dummy_user_uuids)
-                user = User.if_exists(session, uuid)
-
+                logger.info("Searching for existing dummy.")
+                q_user = (
+                    select(User)
+                    .where(
+                        # NOTE: Not too used already, not tainted.
+                        func.JSON_LENGTH(User.info, "$.dummy.used_by")
+                        < self.config.tests.dummies.maximum_use_count,
+                        func.JSON_VALUE(User.info, "$.dummy.tainted") == false(),
+                        User.uuid.in_(dummy_user_uuids),
+                        func.JSON_OVERLAPS(
+                            '["YAML"]', func.JSON_VALUE(User.info, "$.tags")
+                        )
+                        != 1,
+                        User.deleted == false(),
+                    )
+                    .order_by(func.random())
+                    .limit(1)
+                )
+                user = session.scalar(q_user)
+                if user is None:
+                    logger.info("No suitable dummy found. Building a new dummy.")
+                    self.user = self.mk_user()
+                    self.mk()
+                    return
                 self.user = user
             case User() as user:
                 logger.info("Using existing dummy with uuid `%s`.", user.uuid)
@@ -1035,6 +1076,29 @@ class DummyProvider(BaseDummyProvider):
         b = func.JSON_VALUE(User.info, "$.dummy.tainted") > 0
         q = select(or_(a, b)).where(User.uuid == self.user.uuid)
         return session.scalar(q)
+
+    # def check_health(self):
+    #
+    #     session, user = self.session, self.user
+    #     n_collections = session.scalar(
+    #         select(Collection).where(Collection.id_user == user.id)
+    #     )
+    #     if n_collections is None:
+    #         self.mk_collections()
+    #
+    #     n_documents_create = session.scalar(
+    #         select(Document)
+    #         .join(Grant)
+    #         .where(
+    #             Grant.pending_from == PendingFrom.created,
+    #             Grant.id_user == user.id,
+    #         )
+    #     )
+    #     n_documents_shared = session.scalar(
+    #         select(Document)
+    #         .join(Grant)
+    #         .where(Grant.pending_from != PendingFrom.created, Grant.id_user == user.id)
+    #     )
 
 
 # --------------------------------------------------------------------------- #
@@ -1090,6 +1154,9 @@ class DummyHandler:
             for user in session.scalars(q_bad):
                 dd = DummyProvider(self.config, session, use_existing=user)
                 dd.dispose()
+
+            session.execute(delete(User).where(User.deleted == true()))
+            session.commit()
 
     def restore(self) -> Self:
         with self.sessionmaker() as session:

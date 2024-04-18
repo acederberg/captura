@@ -4,6 +4,9 @@
   description: The joke is that it is mispelled.
   url_image: null
   url: null
+  info:
+    tags:
+      - YAML
 
 # Because of tests not an admin
 - uuid: 000-000-000
@@ -13,6 +16,9 @@
   description: maintainer of this project
   url: github.com/acederberg
   url_image: https://avatars.githubusercontent.com/u/77076023?v=4
+  info:
+    tags:
+      - YAML
 
 - uuid: 777-777-777
   id: 3
@@ -20,6 +26,9 @@
   description: Member of the \"People's Front of Judea\".
   url: https://en.wikipedia.org/wiki/Monty_Python's_Life_of_Brian
   url_image: null
+  info:
+    tags:
+      - YAML
 
 - uuid: -0123456789 
   id: 4
@@ -27,4 +36,7 @@
   description: Whatever
   url: null
   url_image: null
+  info:
+    tags:
+      - YAML
 

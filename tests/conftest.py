@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text, true
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
@@ -70,6 +70,24 @@ def context(
     return PytestContext(config=config, config_client=client_config)
 
 
+# --------------------------------------------------------------------------- #
+# Application fixtures.
+
+
+@pytest_asyncio.fixture(scope="session")
+async def app(client_config: ClientConfig) -> FastAPI | None:
+    if (host := client_config.host) is None or not host.remote:
+        logger.info("Using httpx client with app instance.")
+        return AppView.view_router  # type: ignore
+    else:
+        logger.warning("Using remote host for testing. Not recommended in CI!")
+
+
+@pytest.fixture(scope="session")
+def auth(config: Config) -> Auth:
+    return Auth.forPyTest(config)
+
+
 # =========================================================================== #
 # Database fixtures
 
@@ -94,86 +112,16 @@ def session(sessionmaker):
     logger.debug("Session closed.")
 
 
+# TODO: Try out module scoping.
 @pytest.fixture(scope="session")
 def dummy_handler(sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth):
-    user_uuids = list()
+    user_uuids: List[str] = list()
     handler = DummyHandler(sessionmaker, config, user_uuids, auth=auth)
 
     logger.info("Cleaning an restoring database.")
     handler.dispose()
     handler.restore()
     return handler
-
-
-# --------------------------------------------------------------------------- #
-# Loading fixtures
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_logging(config: PytestConfig) -> None:
-    util.setup_logging(config.app.logging_configuration_path)
-    return
-
-
-@pytest.fixture(scope="session")
-def setup_cleanup(engine: Engine, config: PytestConfig):
-    logger.info("Setting up.")
-    logger.debug("Verifying tables.")
-    metadata = Base.metadata
-    exists: bool
-    with engine.begin() as connection:
-        result = list(connection.execute(text("SHOW TABLES;")).scalars())
-        exists = len(result) > 0
-
-    if config.tests.recreate_tables and not exists:
-        logger.debug("Recreating tables.")
-        metadata.drop_all(engine)
-        metadata.create_all(engine)
-    elif not exists:
-        logger.debug("Creating tables.")
-        metadata.create_all(engine)
-    else:
-        logger.debug("Doing nothing to tables.")
-
-    yield
-
-
-@pytest.fixture(scope="session", autouse=True)
-def load_tables(
-    setup_cleanup, config: PytestConfig, auth: Auth, sessionmaker: _sessionmaker
-):
-    with sessionmaker() as session:
-        logger.info("Loading tables with dummy data from `YAML`.")
-        DummyProviderYAML.merge(session)
-
-        logger.info("Generating dummy data.")
-
-
-# --------------------------------------------------------------------------- #
-# Application fixtures.
-
-
-@pytest_asyncio.fixture(scope="session")
-async def app(client_config: ClientConfig) -> FastAPI | None:
-    if (host := client_config.host) is None or not host.remote:
-        logger.info("Using httpx client with app instance.")
-        return AppView.view_router  # type: ignore
-    else:
-        logger.warning("Using remote host for testing. Not recommended in CI!")
-
-
-# @pytest_asyncio.fixture(scope="session")
-# async def async_client(app: FastAPI | None) -> AsyncGenerator[httpx.AsyncClient, Any]:
-#     async with httpx.AsyncClient(app=app) as client:
-#         yield client
-
-
-@pytest.fixture(scope="session")
-def auth(config: Config) -> Auth:
-    return Auth.forPyTest(config)
-
-
-# =========================================================================== #
 
 
 @pytest.fixture
@@ -247,3 +195,47 @@ def yaml_dummy(request, dummy_handler: DummyHandler):
         dd.session.refresh(dd.user)
 
         yield dd
+
+
+# --------------------------------------------------------------------------- #
+# Loading fixtures
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_logging(config: PytestConfig) -> None:
+    util.setup_logging(config.app.logging_configuration_path)
+    return
+
+
+@pytest.fixture(scope="session")
+def setup_cleanup(engine: Engine, config: PytestConfig):
+    logger.info("Setting up.")
+    logger.debug("Verifying tables.")
+    metadata = Base.metadata
+    exists: bool
+    with engine.begin() as connection:
+        result = list(connection.execute(text("SHOW TABLES;")).scalars())
+        exists = len(result) > 0
+
+    if config.tests.recreate_tables and not exists:
+        logger.debug("Recreating tables.")
+        metadata.drop_all(engine)
+        metadata.create_all(engine)
+    elif not exists:
+        logger.debug("Creating tables.")
+        metadata.create_all(engine)
+    else:
+        logger.debug("Doing nothing to tables.")
+
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def load_tables(
+    setup_cleanup, config: PytestConfig, auth: Auth, sessionmaker: _sessionmaker
+):
+    with sessionmaker() as session:
+        logger.info("Loading tables with dummy data from `YAML`.")
+        DummyProviderYAML.merge(session)
+
+        logger.info("Generating dummy data.")

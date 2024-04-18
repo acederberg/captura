@@ -16,8 +16,8 @@ from typing import (
     Tuple,
     Type,
     TypeAlias,
-    TypeVar,
     TypedDict,
+    TypeVar,
     overload,
 )
 
@@ -174,15 +174,13 @@ class Base(DeclarativeBase):
 
     @overload
     @classmethod
-    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self:
-        ...
+    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self: ...
 
     @overload
     @classmethod
     def resolve(
         cls, session: Session, that: ResolvableSelfMultiple
-    ) -> Tuple[Self, ...]:
-        ...
+    ) -> Tuple[Self, ...]: ...
 
     @classmethod
     def resolve(cls, session: Session, that: ResolvableSelf) -> Self | Tuple[Self, ...]:
@@ -209,8 +207,7 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfMultiple,
-    ) -> Set[str]:
-        ...
+    ) -> Set[str]: ...
 
     @overload
     @classmethod
@@ -218,8 +215,7 @@ class Base(DeclarativeBase):
         cls,
         session: Session,
         that: ResolvableSelfSingular,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @classmethod
     def resolve_uuid(
@@ -441,8 +437,7 @@ class SearchableTableMixins(PrimaryTableMixins):
         uuids: Set[str] | None = None,
         *,
         exclude_deleted: bool = True,
-    ) -> Select:
-        ...
+    ) -> Select: ...
 
 
 # =========================================================================== #
@@ -1280,8 +1275,7 @@ class User(SearchableTableMixins, Base):
                     level_grant_required=Level.own,
                 )
 
-    def check_sole_owner_document(self, document: "Document") -> Self:
-        ...
+    def check_sole_owner_document(self, document: "Document") -> Self: ...
 
     def check_can_access_event(
         self,
@@ -1670,7 +1664,13 @@ class Edit(PrimaryTableMixins, Base):
 
     # NOTE: Deletion only cascades for document deletion because edits for
     #       documents should not disappear when a user is deleted.
-    id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
+    id_user: Mapped[int] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
+    )
     id_document: Mapped[int] = mapped_column(
         ForeignKey(
             "documents.id",

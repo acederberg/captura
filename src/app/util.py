@@ -9,6 +9,7 @@ from typing import Any, Type
 import yaml
 from rich.console import Console
 from rich.syntax import Syntax
+from sqlalchemy.orm import Session
 
 ENV_PREFIX = "CAPTURA_"
 VERBOSE = environ.get(f"{ENV_PREFIX}VERBOSE")
@@ -110,11 +111,16 @@ def get_logger(name: str) -> logging.Logger:
 CONSOLE_APP = Console()
 
 
-def sql(session, *qs) -> None:
+def sql_render(session: Session, *qs) -> str:
     cmps = (
         f"{q.compile(session.bind, compile_kwargs=dict(literal_binds=True))};"
         for q in qs
     )
     cmp = "\n\n".join(cmps)
-    highlighted = Syntax(cmp, "mysql", theme="fruity", word_wrap=True)
-    CONSOLE_APP.print(highlighted)
+    return cmp
+
+
+def sql(session: Session, *qs) -> None:
+    cmp = sql_render(session, *qs)
+    sql_syntax = Syntax(cmp, "mysql", theme="fruity", word_wrap=True)
+    CONSOLE_APP.print(sql_syntax)

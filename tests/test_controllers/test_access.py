@@ -4,26 +4,15 @@ import secrets
 from http import HTTPMethod  # type: ignore[attr-defined]
 from typing import Any, ClassVar, Dict, Generator, NamedTuple, Set, Tuple, Type
 
-from pydantic import TypeAdapter
-
 import pytest
 from fastapi import HTTPException
+from pydantic import TypeAdapter
 from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
 
 # --------------------------------------------------------------------------- #
 from app import util
 from app.auth import Auth, Token
-from app.err import (
-    ErrAccessCollection,
-    ErrAccessDocumentCannotRejectOwner,
-    ErrAccessDocumentGrantBase,
-    ErrAccessDocumentGrantInsufficient,
-    ErrAccessDocumentPending,
-    ErrAccessEvent,
-    ErrAccessUser,
-    ErrObjMinSchema,
-)
 from app.controllers.access import Access, WithAccess, with_access
 from app.controllers.base import (
     Data,
@@ -37,6 +26,17 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
+from app.err import (
+    ErrAccessCollection,
+    ErrAccessDocumentCannotRejectOwner,
+    ErrAccessDocumentGrantBase,
+    ErrAccessDocumentGrantInsufficient,
+    ErrAccessDocumentPending,
+    ErrAccessEvent,
+    ErrAccessUser,
+    ErrObjMinSchema,
+)
+from app.fields import LevelHTTP
 from app.models import (
     Assignment,
     Collection,
@@ -51,8 +51,7 @@ from app.models import (
     UUIDSplit,
     uuids,
 )
-from app.fields import LevelHTTP
-from tests.dummy import DummyProvider, DummyProviderYAML, GetPrimaryKwargs
+from tests.dummy import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
 # Base
@@ -142,26 +141,17 @@ class BaseTestAccess(metaclass=AccessTestMeta):
         return
 
     @pytest.fixture(scope="class")
-    def dummy(self, sessionmaker, auth: Auth) -> Generator[DummyProvider, None, None]:
-        with sessionmaker() as session:
-            dummy = DummyProvider(auth, session, use_existing=True)
-            user = dummy.user
-            user.deleted = False
-            session.add(user)
-            session.commit()
-            session.expire_all()
-            assert not user.deleted, "User should not be deleted."
+    def dummy(
+        self, dummy_handler: DummyHandler
+    ) -> Generator[DummyProvider, None, None]:
+        with dummy_handler.sessionmaker() as session:
+            dummy = DummyProvider(
+                dummy_handler.config,
+                session,
+                use_existing=dummy_handler.user_uuids,
+            )
 
             yield dummy
-
-    # def create_access(
-    #     self,
-    #     session,
-    #     method: HTTPMethod = HTTPMethod.GET,
-    #     uuid: str = "000-000-000",
-    # ) -> Access:
-    #     token = Token(uuid=uuid, permissions=[])
-    #     return Access(session, token, method)
 
     def test_d_fn(self) -> None:
         # Check fn
@@ -369,7 +359,7 @@ class TestAccessUser(BaseTestAccess):
     )
     def test_deleted(self, dummy: DummyProviderYAML, count):
         kwargs = GetPrimaryKwargs(deleted=True, public=True)
-        user_other = dummy.get_user_other(kwargs)
+        (user_other,) = dummy.get_users(1, kwargs)
         access = dummy.access()
 
         if err := expect_exc(
@@ -392,7 +382,9 @@ class TestAccessUser(BaseTestAccess):
         # User should not be able to access another user for any method besides
         # httpx.GET
 
-        user_other = dummy.get_user_other(GetPrimaryKwargs(deleted=False, public=False))
+        (user_other,) = dummy.get_users(
+            1, GetPrimaryKwargs(deleted=False, public=False), other=True
+        )
         for meth in httpcommon:
             access = dummy.access(method=meth)
             assert access.token.uuid == dummy.user.uuid
@@ -430,7 +422,7 @@ class TestAccessUser(BaseTestAccess):
 
         # NOTE: Changing the level to ``HTTPMethod.GET`` will make it such that
         #       calling for another public user does not fail.
-        user_other = dummy.get_user_other(GetPrimaryKwargs(deleted=False, public=True))
+        (user_other,) = dummy.get_users(1, GetPrimaryKwargs(deleted=False, public=True))
         access = dummy.access(method=HTTPMethod.GET)
         assert access.token_user.uuid == dummy.user.uuid
 
@@ -444,7 +436,9 @@ class TestAccessUser(BaseTestAccess):
     )
     def test_private(self, dummy: DummyProvider, count):
         user = dummy.user
-        user_other = dummy.get_user_other(GetPrimaryKwargs(deleted=False, public=False))
+        (user_other,) = dummy.get_users(
+            1, GetPrimaryKwargs(deleted=False, public=False)
+        )
 
         for method in httpcommon:
             # NOTE: User can access self when private.
@@ -562,9 +556,11 @@ class TestAccessCollection(BaseTestAccess):
                 lambda: access.collection(collection_other.uuid),
                 403,
                 detail=ErrAccessCollection(
-                    msg=ErrAccessCollection._msg_private
-                    if meth == HTTPMethod.GET
-                    else ErrAccessCollection._msg_modify,
+                    msg=(
+                        ErrAccessCollection._msg_private
+                        if meth == HTTPMethod.GET
+                        else ErrAccessCollection._msg_modify
+                    ),
                     uuid_user_token=dummy.user.uuid,
                     uuid_collection=collection_other.uuid,
                 ),
@@ -648,9 +644,8 @@ class TestAccessCollection(BaseTestAccess):
         indirect=["dummy"],
     )
     def test_modify(self, dummy: DummyProvider, count):
-        kwargs = GetPrimaryKwargs(deleted=False)
         (collection,) = dummy.get_collections(1)
-        (collection_other,) = dummy.get_collections(1, kwargs)
+        (collection_other,) = dummy.get_collections(1, other=True)
 
         for meth in httpcommon:
             access = dummy.access(method=meth)
@@ -704,7 +699,7 @@ class TestAccessDocument(BaseTestAccess):
         access = dummy.access(method=HTTPMethod.DELETE)
 
         for n in range(1, 25):
-            documents = dummy.get_user_documents(Level.own, n=n)
+            documents = dummy.get_documents(level=Level.own, n=n)
             uuid_documents = Document.resolve_uuid(access.session, documents)
 
             documents_res = access.document(uuid_documents)
@@ -717,7 +712,7 @@ class TestAccessDocument(BaseTestAccess):
             assert len(data_res.data.documents) == N
             assert data_res.kind == self.kind_data
 
-        (document,) = dummy.get_user_documents(Level.own, n=1)
+        (document,) = dummy.get_documents(level=Level.own, n=1)
         document_res = access.document(document.uuid)
         assert isinstance(document_res, Document)
         assert document_res.uuid == document.uuid
@@ -741,8 +736,8 @@ class TestAccessDocument(BaseTestAccess):
             GetPrimaryKwargs(deleted=False, public=False),
             other=True,
         )
-        (document,) = dummy.get_user_documents(Level.own, n=1)
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        (document,) = dummy.get_documents(level=Level.own, n=1)
+        grant = dummy.get_document_grant(document)
         document.deleted = False
         grant.deleted = False
 
@@ -805,7 +800,7 @@ class TestAccessDocument(BaseTestAccess):
         # ------------------------------------------------------------------- #
         # Setup
 
-        (document,) = dummy.get_user_documents(Level.view, n=1)
+        (document,) = dummy.get_documents(level=Level.view, n=1)
         user = dummy.user
         grant = dummy.get_document_grant(document)
         grant.deleted = False
@@ -968,12 +963,6 @@ class TestAccessDocument(BaseTestAccess):
         ):
             raise err
 
-        make_transient(grant)
-        grant.level = init_level
-        grant.deleted = False
-        session.add(grant)
-        session.commit()
-
     @pytest.mark.parametrize(
         "dummy, count",
         [(None, k) for k in range(5)],
@@ -983,11 +972,11 @@ class TestAccessDocument(BaseTestAccess):
         """Verify that a level of modify or less is required."""
 
         session, user = dummy.session, dummy.user
-        (document,) = dummy.get_user_documents(Level.view, n=1)
+        (document,) = dummy.get_documents(level=Level.view, n=1)
         document.public = False
         session.add(document)
 
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        grant = dummy.get_document_grant(document)
         grant.pending = False
         grant.deleted = False
         grant.level = Level.view
@@ -1018,8 +1007,8 @@ class TestAccessDocument(BaseTestAccess):
     )
     def test_deleted(self, dummy: DummyProvider, count):
         session, user = dummy.session, dummy.user
-        (document,) = dummy.get_user_documents(Level.view)
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        (document,) = dummy.get_documents(1, level=Level.view)
+        grant = dummy.get_document_grant(document)
 
         for method in httpcommon:
             access = dummy.access(method=method)
@@ -1121,9 +1110,8 @@ class TestAccessAssignment(BaseTestAccess):
             assert all(isinstance(item, TT) for item in tt)
 
         # NOTE: For assignment document.
-        kwargs = GetPrimaryKwargs(deleted=False, public=True)
-        (document,) = dummy.get_user_documents(Level.own, n=1, deleted=False)
-        collections = dummy.get_collections(15, kwargs)
+        (document,) = dummy.get_documents(1, level=Level.own)
+        collections = dummy.get_collections(15)
         uuid_collection = Collection.resolve_uuid(dummy.session, collections)
 
         res = access.assignment_document(
@@ -1147,7 +1135,7 @@ class TestAccessAssignment(BaseTestAccess):
 
         # NOTE: For assignment collection.
         (collection,) = dummy.get_collections(n=1)
-        documents = dummy.get_documents(15, kwargs)
+        documents = dummy.get_documents(15, other=None)
         uuid_document = Document.resolve_uuid(dummy.session, documents)
 
         res = access.assignment_collection(
@@ -1183,7 +1171,7 @@ class TestAccessAssignment(BaseTestAccess):
         ...
 
     def test_deleted(self, dummy: DummyProvider):
-        (document,) = dummy.get_user_documents(Level.view, deleted=True)
+        (document,) = dummy.get_documents(1, level=Level.view)
         (collection,) = dummy.get_collections(1)
 
         (document_other,) = dummy.get_documents(1, other=True)
@@ -1277,14 +1265,13 @@ class TestAccessGrant(BaseTestAccess):
     def test_self_access_only(self, dummy: DummyProvider, count):
         """For ``/grants/users/{uuid_user}`` only."""
 
-        kwargs = GetPrimaryKwargs(deleted=False, public=True)
-        user = dummy.user
-
-        (user_other,) = dummy.get_users(1, kwargs, other=True)
-        assert not user_other.deleted
-        assert (
-            not user.deleted
-        ), f"User `{user.uuid}` should not be deleted. `{user.deleted = }`."
+        (user_other,) = dummy.get_users(1, other=True)
+        (document,) = dummy.get_documents(
+            1,
+            other=False,
+            level=Level.own,
+            pending_from=PendingFrom.grantee,
+        )
 
         # NOTE: Invariance with method
         for method in httpcommon:
@@ -1293,17 +1280,17 @@ class TestAccessGrant(BaseTestAccess):
 
             access = dummy.access(method=method)
             if err := expect_exc(
-                lambda: access.grant_user(user_other.uuid, {"aaa-aaa-aaa"}),
+                lambda: access.grant_user(user_other.uuid, {document.uuid}),
                 403,
                 detail=ErrAccessUser(
                     msg=ErrAccessUser._msg_only_self,
                     uuid_user=user_other.uuid,
-                    uuid_user_token=dummy.token.uuid,
+                    uuid_user_token=dummy.user.uuid,
                 ),
             ):
                 raise err
 
-            access.grant_user(dummy.user.uuid, {"aaa-aaa-aaa"})
+            access.grant_user(dummy.user.uuid, {document.uuid})
 
     @pytest.mark.parametrize(
         "dummy, count",
@@ -1321,8 +1308,8 @@ class TestAccessGrant(BaseTestAccess):
             1, GetPrimaryKwargs(deleted=False, public=True), other=True
         )
         assert not document_other.deleted
-        (document,) = dummy.get_user_documents(Level.view, n=1, deleted=False)
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        (document,) = dummy.get_documents(level=Level.view, n=1)
+        grant = dummy.get_document_grant(document)
         grant.deleted = False
 
         session = dummy.session
@@ -1398,7 +1385,7 @@ class TestAccessGrant(BaseTestAccess):
     )
     def test_overloads(self, dummy: DummyProvider, count):
         access = dummy.access()
-        (document,) = dummy.get_user_documents(Level.own, n=1)
+        (document,) = dummy.get_documents(level=Level.own, n=1)
 
         res = access.grant_user(dummy.user, {document.uuid})
         assert len(res) == 2
@@ -1493,9 +1480,10 @@ class TestAccessGrant(BaseTestAccess):
     )
     def test_deleted(self, dummy: DummyProvider, count):
         user = dummy.user
-        (document_other,) = dummy.get_documents(1, other=True)
-        (document,) = dummy.get_user_documents(Level.own, deleted=True, n=1)
-        grant = dummy.get_document_grant(document, exclude_deleted=False)
+        kwargs = GetPrimaryKwargs(deleted=True, public=None)
+        # (document_other,) = dummy.get_documents(1, kwargs, other=True)
+        (document,) = dummy.get_documents(1, kwargs, level=Level.own)
+        grant = dummy.get_document_grant(document)
 
         user.deleted = True
         grant.deleted = False
@@ -1543,7 +1531,7 @@ class TestAccessGrant(BaseTestAccess):
                 raise err
 
             # NOTE: Adding `exclude_deleted` should result in no erros raised.
-            access.grant_user(dummy.user, dummy.documents, exclude_deleted=False)
+            access.grant_user(dummy.user, (document,), exclude_deleted=False)
 
     @pytest.mark.parametrize(
         "dummy, count",
@@ -1553,7 +1541,7 @@ class TestAccessGrant(BaseTestAccess):
     def test_pending(self, dummy: DummyProvider, count):
         session = dummy.session
         user = dummy.user
-        (document,) = dummy.get_user_documents(Level.own, n=1)
+        (document,) = dummy.get_documents(level=Level.own, n=1)
         grant = dummy.get_document_grant(document)
 
         user.deleted = False
@@ -1620,12 +1608,7 @@ class TestAccessGrant(BaseTestAccess):
         indirect=["dummy"],
     )
     def test_dne(self, dummy: DummyProvider, count):
-        dummy.visability(
-            {KindObject.user, KindObject.document, KindObject.grant},
-            deleted=False,
-            public=True,
-        )
-        (document,) = dummy.get_user_documents(Level.own, n=1)
+        (document,) = dummy.get_documents(level=Level.own, n=1)
         grant = dummy.get_document_grant(document)
         assert grant.level == Level.own
 
@@ -1707,7 +1690,6 @@ class TestAccessEvent(BaseTestAccess):
     @pytest.mark.skip
     def test_deleted(self, dummy: DummyProvider):
         event = dummy.events[0]
-        dummy.visability(self.kinds, deleted=True, public=True).refresh()
 
         for method in httpcommon:
             access = Access(dummy.session, dummy.token, method)
@@ -1741,7 +1723,6 @@ class TestAccessEvent(BaseTestAccess):
 
     @pytest.mark.skip
     def test_overloads(self, dummy: DummyProvider):
-        dummy.visability(self.kinds, deleted=False, public=True).refresh()
         access = Access(dummy.session, dummy.token, HTTPMethod.GET)
 
         # NOTE: Putting in a uuid should return an event

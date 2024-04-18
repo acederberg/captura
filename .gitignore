@@ -19,3 +19,4 @@ logs
 .coverage
 cov
 test-results.html
+.jsonl
