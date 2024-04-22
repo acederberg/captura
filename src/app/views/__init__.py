@@ -7,15 +7,17 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Mount
 
 # --------------------------------------------------------------------------- #
 from app import __version__, util
 from app.controllers.access import H
-from app.depends import DependsAccess
+from app.depends import DependsAccess, DependsConfig
+from app.views.frontend import BrowserAuthView
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
-from .auth import AuthView
+from .auth import PytestAuthView
 from .base import BaseView, OpenApiTagMetadata, OpenApiTags
 from .collections import CollectionView
 from .documents import DocumentView
@@ -83,6 +85,8 @@ class AppView(BaseView):
         routes=[Mount("/static", view_static)],
     )  # type: ignore
 
+    view_router.add_middleware(SessionMiddleware, secret_key="secret-string")
+
     view_routes = {
         "get_index": {
             "url": "/",
@@ -98,7 +102,7 @@ class AppView(BaseView):
         },
     }
     view_children = {
-        "": EventSearchView,
+        # "": EventSearchView,
         "/grants/documents": DocumentGrantView,
         "/grants/users": UserGrantView,
         "/assignments/documents": DocumentAssignmentView,
@@ -106,13 +110,14 @@ class AppView(BaseView):
         "/users": UserView,
         "/collections": CollectionView,
         "/documents": DocumentView,
-        "/auth": AuthView,
+        "/auth": PytestAuthView,
         "/events": EventView,
+        "": BrowserAuthView,
     }
 
     @classmethod
-    def get_index(cls, access: DependsAccess) -> str:
-        return "It works!"
+    def get_index(cls, config: DependsConfig) -> str:
+        return f"<a href='{config.app.host_url}/login'>Login</a>"
 
     @classmethod
     def get_routes(

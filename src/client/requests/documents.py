@@ -35,8 +35,7 @@ class DocumentRequests(BaseRequests):
         *,
         name: flags.FlagName,
         description: flags.FlagDescription,
-        format: flags.FlagFormat,
-        content: flags.FlagContent,
+        content: flags.FlagContentOptional = None,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
@@ -45,7 +44,6 @@ class DocumentRequests(BaseRequests):
             json=dict(
                 name=name,
                 description=description,
-                format=format,
                 content=content,
             ),
             headers=context.headers,
@@ -59,9 +57,7 @@ class DocumentRequests(BaseRequests):
         *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
-        format: flags.FlagFormatOptional = None,
         content: flags.FlagContentOptional = None,
-        message: flags.FlagMessageOptional = None,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
@@ -70,9 +66,6 @@ class DocumentRequests(BaseRequests):
             json=params(
                 name=name,
                 description=description,
-                format=format,
-                content=content,
-                message=message,
             ),
             headers=context.headers,
         )

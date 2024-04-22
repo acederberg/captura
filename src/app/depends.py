@@ -11,6 +11,7 @@ be wrapped in ``Depends``.
 from functools import cache
 from typing import Annotated, Dict, TypeAlias
 
+from authlib.integrations import starlette_client
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -170,11 +171,16 @@ def token_optional(
     return None
 
 
+def oauth(config: DependsConfig) -> starlette_client.OAuth:
+    return config.oauth()
+
+
 DependsTokenOptional: TypeAlias = Annotated[
     None | Dict[str, str],
     Depends(token_optional),
 ]
 DependsToken: TypeAlias = Annotated[Dict[str, str], Depends(token)]
+DependOAuth: TypeAlias = Annotated[starlette_client.OAuth, Depends(oauth)]
 
 
 def uuid(token: DependsToken, uuid: str | None = None) -> str:

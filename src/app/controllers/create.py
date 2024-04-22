@@ -19,7 +19,6 @@ from app.controllers.base import (
     ResolvedAssignmentDocument,
     ResolvedCollection,
     ResolvedDocument,
-    ResolvedEdit,
     ResolvedEvent,
     ResolvedGrantDocument,
     ResolvedGrantUser,
@@ -32,7 +31,6 @@ from app.models import (
     Assignment,
     Collection,
     Document,
-    Edit,
     Event,
     Grant,
     KindEvent,
@@ -46,7 +44,6 @@ from app.schemas import (
     CollectionUpdateSchema,
     DocumentCreateSchema,
     DocumentUpdateSchema,
-    EditCreateSchema,
     GrantCreateSchema,
     UserCreateSchema,
     UserUpdateSchema,
@@ -115,7 +112,6 @@ T_Create = TypeVar(
     DocumentCreateSchema,
     UserCreateSchema,
     GrantCreateSchema,
-    EditCreateSchema,
 )
 
 
@@ -590,16 +586,6 @@ class Create(WithDelete, Generic[T_Create]):
 
     # e_document = with_empty_data(document)
 
-    def edit(
-        self,
-        data: Data[ResolvedEdit],
-    ) -> Data[ResolvedEdit]:
-        msg = "Creating new edits directly is not allowed. Use `PATCH "
-        msg += "/documents/<uuid_document>` to create a new edit."
-        raise HTTPException(400, msg=msg)
-
-    # e_edit = with_empty_data(edit)
-
 
 # --------------------------------------------------------------------------- #
 # Update.
@@ -819,13 +805,6 @@ class Update(WithDelete, Generic[T_Update]):
 
     # ------------------------------------------------------------------------ #
 
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
-        raise HTTPException(400, detail="Edits cannot be updated.")
-
-    a_edit = with_access(Access.d_edit)(edit)
-
-    # ------------------------------------------------------------------------ #
-
     def document(self, data: Data[ResolvedDocument]) -> Data[ResolvedDocument]:
         session = self.session
         token_user = data.token_user or self.token_user
@@ -841,36 +820,11 @@ class Update(WithDelete, Generic[T_Update]):
             session.refresh(data.event)
             return data
 
-        # Replace head.
-        edit = Edit(
-            uuid=secrets.token_urlsafe(8),
-            detail=param.message,
-            content=document.content,
-            id_document=document.id,
-            id_user=token_user.uuid,
-        )
         document.content = param.content
 
-        event_edit = Event(
-            **self.event_common,
-            kind_obj=edit.uuid,
-            uuid_obj=KindObject.edit,
-            detail="Previous document content saved as an edit.",
-        )
-        data.event = Event(
-            **self.event_common,
-            kind_obj=KindObject.document,
-            uuid_obj=document.uuid,
-            children=[data.event, event_edit],
-            detail="Document updated.",
-        )
-
         session.add(data.event)
-        session.add(edit)
         session.commit()
         session.refresh(data.event)
-        session.refresh(edit)
-
         return data
 
     a_document = with_access(Access.d_document)(document)

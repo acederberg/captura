@@ -48,7 +48,6 @@ from app.models import (
     Base,
     Collection,
     Document,
-    Edit,
     Event,
     Grant,
     KindObject,
@@ -296,7 +295,7 @@ class BaseResolved(BaseModel):
         raise ValueError("Not implemented!")
 
 
-T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document, Edit)
+T_ResolvedPrimary = TypeVar("T_ResolvedPrimary", User, Collection, Document)
 
 
 class BaseResolvedPrimary(BaseResolved):
@@ -458,10 +457,9 @@ class ResolvedDocument(BaseResolvedPrimary):
     token_user_grants: Dict[str, Grant]
 
 
-class ResolvedEdit(BaseResolvedPrimary):
+class Resolved(BaseResolvedPrimary):
     kind = KindData.edit
 
-    edits: Tuple[Edit, ...]
     uuid_edits: UuidSetFromModel
 
     token_user_grants: Dict[str, Grant]
@@ -580,7 +578,6 @@ T_Data = TypeVar(
     "T_Data",
     Annotated[ResolvedCollection, Tag("collection")],
     Annotated[ResolvedDocument, Tag("document")],
-    Annotated[ResolvedEdit, Tag("edit")],
     Annotated[ResolvedUser, Tag("user")],
     Annotated[ResolvedAssignmentCollection, Tag("assignment_collection")],
     Annotated[ResolvedAssignmentDocument, Tag("assignment_document")],
@@ -594,7 +591,6 @@ kind_type_map = dict(
     user=User,
     collection=Collection,
     document=Document,
-    edit=Edit,
     grant_user=(User, Document),
     grant_document=(Document, User),
     assignment_collection=(Collection, Document),

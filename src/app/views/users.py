@@ -12,7 +12,7 @@ from app import __version__, util
 from app.controllers.base import Data, ResolvedUser
 from app.depends import DependsAccess, DependsDelete, DependsRead, DependsUpdate
 from app.err import ErrAccessUser, ErrDetail
-from app.models import Collection, Document, Edit, Event, KindEvent, KindObject, User
+from app.models import Collection, Document, Event, KindEvent, KindObject, User
 from app.schemas import (
     AsOutput,
     CollectionMetadataSchema,
@@ -341,10 +341,6 @@ class UserSearchView(BaseView):
             url="/{uuid_user}/documents",
             name="Search User Documents",
         ),
-        # get_search_edits=dict(
-        #     url="/{uuid_user}/edits",
-        #     name="Search User Edits",
-        # ),
         get_search_collections=dict(
             url="/{uuid_user}/collections",
             name="Search User Collections",
@@ -401,20 +397,6 @@ class UserSearchView(BaseView):
             AsOutput[List[CollectionMetadataSchema]],
             data=TypeAdapter(List[CollectionMetadataSchema]).validate_python(res),
         )
-
-    # @classmethod
-    # def get_search_edits(
-    #     cls,
-    #     uuid_user: args.PathUUIDUser,
-    #     read: DependsRead,
-    #     param: EditSearchSchema = Depends(),
-    # ) -> AsOutput[List[EditMetadataSchema]]:
-    #     user: User = read.access.user(uuid_user)
-    #     res: Tuple[Edit, ...] = read.search_user(user, param)
-    #     return mwargs(
-    #         AsOutput[List[EditMetadataSchema]],
-    #         data=TypeAdapter(List[EditMetadataSchema]).validate_python(res),
-    #     )
 
 
 class UserView(BaseView):

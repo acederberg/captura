@@ -15,11 +15,10 @@ from app.auth import Token
 from app.controllers.access import Access
 from app.controllers.base import BaseController
 from app.fields import Singular
-from app.models import Collection, Document, Edit, Tables, User
+from app.models import Collection, Document, Tables, User
 from app.schemas import (
     CollectionSearchSchema,
     DocumentSearchSchema,
-    # EditSearchSchema,
     UserSearchSchema,
 )
 
@@ -79,35 +78,17 @@ class Read(BaseController):
     ) -> List[Collection]:
         ...
 
-    # @overload
-    # def search_user(
-    #     self,
-    #     user: User,
-    #     param: EditSearchSchema,
-    # ) -> Tuple[Edit, ...]:
-    #     ...
-
     def search_user(
         self,
         user: User,
-        param: (
-            UserSearchSchema
-            | DocumentSearchSchema
-            | CollectionSearchSchema
-            # | EditSearchSchema
-        ),
-    ) -> (
-        List[User]
-        | List[Document]
-        | List[Collection]
-        # | Tuple[Edit, ...]
-    ):
+        param: (UserSearchSchema | DocumentSearchSchema | CollectionSearchSchema),
+    ) -> List[User] | List[Document] | List[Collection]:
         if param.kind_mapped is None:
             raise HTTPException(500)
 
         singular = Singular(param.kind_mapped.name)
 
-        T_kind: Type[User] | Type[Document] | Type[Collection]  # | Type[Edit]
+        T_kind: Type[User] | Type[Document] | Type[Collection]
         T_kind = Tables[singular.name].value  # type: ignore[reportGeneralTypeErrors]
 
         q = T_kind.q_search(

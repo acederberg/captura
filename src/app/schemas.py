@@ -176,8 +176,7 @@ class BasePrimarySchema(BaseSchema):
     public: bool = True
 
 
-class BaseSecondarySchema(BaseSchema):
-    ...
+class BaseSecondarySchema(BaseSchema): ...
 
 
 class BasePrimaryTableExtraSchema(BaseSchema):
@@ -337,15 +336,12 @@ class DocumentBaseSchema(BasePrimarySchema):
 
     name: fields.FieldName
     description: fields.FieldDescription
-    format: fields.FieldFormat
 
 
 class DocumentCreateSchema(DocumentBaseSchema):
     kind_schema = KindSchema.create
 
-    content: fields.FieldContentCreate
-    # uuid_collection: fields.FieldUUIDS
-    # uuid_user: fields.FieldUUIDS
+    content: fields.FieldContent
 
 
 class DocumentUpdateSchema(BaseUpdateSchema):
@@ -354,27 +350,25 @@ class DocumentUpdateSchema(BaseUpdateSchema):
 
     name: Optional[fields.FieldName] = None
     description: Optional[fields.FieldDescription] = None
-    format: Optional[fields.FieldFormat] = None
     content: Optional[fields.FieldContent] = None
-    message: Optional[fields.FieldMessage] = None
 
-    @field_validator("content", mode="before")
-    def check_message_only_when_content(
-        cls,
-        v: Any,
-        info: FieldValidationInfo,
-    ) -> Any:
-        if v is None:
-            return v
-
-        match info.data:
-            case object(content=str(), message=str() | None):
-                pass
-            case object(content=None, message=str()):
-                msg = "`message` may only be specified when `content` is."
-                raise ValueError(msg)
-
-        return v
+    # @field_validator("content", mode="before")
+    # def check_message_only_when_content(
+    #     cls,
+    #     v: Any,
+    #     info: FieldValidationInfo,
+    # ) -> Any:
+    #     if v is None:
+    #         return v
+    #
+    #     match info.data:
+    #         case object(content=str(), message=str() | None):
+    #             pass
+    #         case object(content=None, message=str()):
+    #             msg = "`message` may only be specified when `content` is."
+    #             raise ValueError(msg)
+    #
+    #     return v
 
 
 class DocumentMetadataSchema(DocumentBaseSchema):
@@ -408,14 +402,14 @@ class TimespanLimitParams(BaseModel):
     @property
     def before_timestamp(self) -> int | None:
         if self.before is None:
-            return
+            return None
         return int(datetime.timestamp(self.before))
 
     @computed_field
     @property
     def after_timestamp(self) -> int | None:
         if self.after is None:
-            return
+            return None
         return int(datetime.timestamp(self.after))
 
     @model_validator(mode="after")
@@ -466,9 +460,9 @@ class GrantSchema(GrantBaseSchema):
 
     # Metadata
     uuid_parent: Optional[fields.FieldUUID] = None
-    uuid_user_granter: Optional[
-        fields.FieldUUID
-    ] = None  # should it reeally be optional
+    uuid_user_granter: Optional[fields.FieldUUID] = (
+        None  # should it reeally be optional
+    )
 
 
 class GrantExtraSchema(GrantSchema):
@@ -481,43 +475,6 @@ class GrantExtraSchema(GrantSchema):
     pending_from: fields.FieldPendingFrom
 
     children: Annotated["List[GrantExtraSchema]", Field()]
-
-
-# =========================================================================== #
-# Edits Schema
-
-
-class EditBaseSchema(BaseSchema):
-    kind_mapped = fields.KindObject.edit
-
-    content: fields.FieldContent
-    message: fields.FieldMessage
-
-
-# NOTE: NO UPDATE SCHEMA! UPDATING IS NOT ALLOWED.
-class EditCreateSchema(EditBaseSchema):
-    kind_schema = KindSchema.create
-
-
-class EditMetadataSchema(EditBaseSchema):
-    kind_schema = KindSchema.metadata
-
-
-class EditSchema(EditMetadataSchema):
-    kind_schema = KindSchema.default
-
-    uuid_document: fields.FieldUUID
-
-
-class EditExtraSchema(BasePrimaryTableExtraSchema, EditSchema):
-    kind_schema = KindSchema.extra
-
-    id_document: fields.FieldID
-
-
-class EditSearchSchema(BaseSearchSchema):
-    kind_mapped = fields.KindObject.edit
-    kind_schema = KindSchema.search
 
 
 # =========================================================================== #
@@ -650,13 +607,6 @@ T_Output = TypeVar(
     List[CollectionSchema],
     List[CollectionMetadataSchema],
     List[CollectionExtraSchema],
-    # Edit
-    EditSchema,
-    EditMetadataSchema,
-    EditExtraSchema,
-    List[EditSchema],
-    List[EditMetadataSchema],
-    List[EditExtraSchema],
     # Grant
     GrantSchema,
     GrantExtraSchema,

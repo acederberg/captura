@@ -16,7 +16,7 @@ from app.err import (
     ErrDetail,
     ErrObjMinSchema,
 )
-from app.fields import Format, KindObject, Level, LevelHTTP, PendingFrom
+from app.fields import KindObject, Level, LevelHTTP, PendingFrom
 from app.models import Document
 from app.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, mwargs
 from client.requests import Requests
@@ -254,8 +254,7 @@ class TestDocumentsCreate(
                 return req(
                     name="TestDocumentsCreate",
                     description="TestDocumentsCreate",
-                    format=Format.md,
-                    content="TestDocumentsCreate.fn",
+                    content='{"tags"=["TestDocumentsCreate.fn"]}',
                 )
 
             return wrapper
@@ -270,7 +269,6 @@ class TestDocumentsCreate(
         res = await fn(  # type: ignore
             name=f"TestDocumentsCreate.test_success_200-{uu}",  # type: ignore
             description="TestDocumentsCreate.test_success_200",  # type: ignore
-            format=Format.md,  # type: ignore
             content="TestDocumentsCreate.test_success_200",  # type: ignore
         )
         if err := self.check_status(requests, res):

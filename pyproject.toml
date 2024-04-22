@@ -30,6 +30,7 @@ classifiers = [
     'Topic :: Internet',
 ]
 dependencies = [
+  "authlib",
   "uvicorn",
   "cryptography",
   "fastapi",
@@ -44,6 +45,7 @@ dependencies = [
   "pyjwt[crypto]",
 	"httpx",
   "websockets",
+  "itsdangerous",
 ]
 
 requires-python = ">=3.7" # because https://github.com/pydantic/pydantic/blob/main/pyproject.toml
@@ -161,11 +163,13 @@ push            = false
 testpaths = "tests"
 addopts = "--ignore tests/junk"
 
+
 # NOTE: Reference https://coverage.readthedocs.io/en/latest/config.html#sample-file
 [tool.coverage.run]
 branch = true
 include = ["./src/app/**/*.py", "./tests/**/*.py"]
 omit = []
+
 
 [tool.coverage.report]
 fail_under = 75
@@ -175,6 +179,7 @@ omit = []
 skip_covered = true
 skip_empty = true
 sort = "-cover" # NOTE: Sort from least to greatest coverage.
+
 
 # NOTE: Can be used to overwrite settings from `tool.coverage.report`.
 [tool.coverage.html]

@@ -67,13 +67,6 @@ QueryUUIDUserOptional: TypeAlias = Annotated[
 
 # --------------------------------------------------------------------------- #
 
-QueryUUIDEditOptional: TypeAlias = Annotated[
-    Optional[Set[str]],
-    Query(min_length=1, description="Optional edit uuids to filter by."),
-]
-
-# --------------------------------------------------------------------------- #
-
 QueryForce: TypeAlias = Annotated[
     bool, Query(description="When true, objects cannot be restored.")
 ]

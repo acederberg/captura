@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 
 # --------------------------------------------------------------------------- #
 from app.auth import Token
@@ -6,7 +6,15 @@ from app.depends import DependsAuth, DependsConfig
 from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 
 
-class AuthView(BaseView):
+def exclude_for_auth0(config: DependsConfig):
+    if config.auth0.use:
+        raise HTTPException(
+            409,
+            detail="Not available in auth0 mode.",
+        )
+
+
+class PytestAuthView(BaseView):
     """This is where routes to handle login and getting tokens will be."""
 
     view_routes = dict(
@@ -14,7 +22,6 @@ class AuthView(BaseView):
             url="/token",
             name="Mint Test Token",
         ),
-        get_login="/login",
         get_token=dict(
             url="/token",
             name="Verify Token",
@@ -23,6 +30,7 @@ class AuthView(BaseView):
     view_router_args = dict(
         tags=[OpenApiTags.auth0],
         responses=OpenApiResponseCommon,
+        dependencies=[Depends(exclude_for_auth0)],
     )
 
     @classmethod
@@ -30,23 +38,13 @@ class AuthView(BaseView):
         """Use this to create a new token.
 
         This endpoint only works when authentication is in pytest mode, and
-        will not use auth0 mode. NEVER run this application in production while
-        using tokens in endpoint mode, it will allow undesired access to user
-        information (because anybody could imitate any user by minting a token
-        with that particular users UUID).
+        will not use auth0 mode.
         """
 
         return data.try_encode(auth)
 
     @classmethod
     def get_token(cls, auth: DependsAuth, data: str) -> Token:
-        return Token.try_decode(auth, data, header=False)
+        """Use this to validate JWT payload. Decodes and returns."""
 
-    @classmethod
-    def get_login(cls, config: DependsConfig):
-        if not config.auth0.use:
-            raise HTTPException(
-                409,
-                detail="Login is not available in pytest mode.",
-            )
-        raise HTTPException(400, detail="Not implemented.")
+        return Token.try_decode(auth, data, header=False)

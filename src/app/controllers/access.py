@@ -32,7 +32,6 @@ from app.controllers.base import (
     ResolvedAssignmentDocument,
     ResolvedCollection,
     ResolvedDocument,
-    ResolvedEdit,
     ResolvedEvent,
     ResolvedGrantDocument,
     ResolvedGrantUser,
@@ -51,7 +50,6 @@ from app.models import (
     Base,
     Collection,
     Document,
-    Edit,
     Event,
     Grant,
     KindObject,
@@ -716,102 +714,6 @@ class Access(BaseController):
             validate=validate,
             allow_public=allow_public,
             # pending_from=pending_from,
-        )
-
-    # ----------------------------------------------------------------------- #
-    # NOTE: Incorrect error messages about overloads will be given if the
-    #       overloads are not ordered by their return types (**in the same
-    #       order of the return types of the implementation functions
-    #       signature).
-
-    @overload
-    def edit(
-        self,
-        resolve_edit: ResolvableSingular[Edit],
-        *,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        exclude_deleted: bool = True,
-        return_data: Literal[False] = False,
-    ) -> Edit:
-        ...
-
-    @overload
-    def edit(  # type: ignore[overload-overlap]
-        self,
-        resolve_edit: ResolvableMultiple[Edit],
-        *,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        exclude_deleted: bool = True,
-        return_data: Literal[False] = False,
-    ) -> Tuple[Edit, ...]:
-        ...
-
-    @overload
-    def edit(
-        self,
-        resolve_edit: Resolvable[Edit],
-        *,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        exclude_deleted: bool = True,
-        return_data: Literal[True] = True,
-    ) -> Data[ResolvedEdit]:
-        ...
-
-    def edit(
-        self,
-        resolve_edit: Resolvable[Edit],
-        *,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        exclude_deleted: bool = True,
-        return_data: bool = False,
-    ) -> Edit | Tuple[Edit, ...] | Data[ResolvedEdit]:
-        # NOTE: I do not know if this was mmoved to acccess.
-        user_token = self.token_user_or(resolve_user_token)
-        documents: Tuple[Document, ...]
-        match (res := Edit.resolve(self.session, resolve_edit)):
-            case Edit():
-                documents = (res.document,)
-            case tuple():
-                documents = tuple(edit.document for edit in res)
-            case _:
-                raise ValueError()
-
-        grants: Dict[str, Grant]
-        _ = self.document(
-            documents,
-            exclude_deleted=exclude_deleted,
-            resolve_user_token=resolve_user_token,
-            return_data=False,
-            grants=(grants := dict()),
-        )
-        if return_data:
-            return mwargs(
-                Data[ResolvedEdit],
-                data=ResolvedEdit.model_validate(
-                    dict(
-                        edits=res,
-                        kind="edit",
-                        grants=grants,
-                    ),
-                ),
-                token_user=user_token,
-                event=None,
-            )
-
-        return res
-
-    def d_edit(
-        self,
-        resolve_edit: Resolvable[Edit],
-        *,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        exclude_deleted: bool = True,
-    ) -> Data[ResolvedEdit]:
-        return self.edit(
-            resolve_edit,
-            exclude_deleted=exclude_deleted,
-            resolve_user_token=resolve_user_token,
-            return_data=True,
         )
 
     # ----------------------------------------------------------------------- #
@@ -1633,10 +1535,6 @@ class WithAccess(BaseController, abc.ABC):
         self,
         data: Data[ResolvedDocument],
     ) -> Data[ResolvedDocument]:
-        ...
-
-    @abc.abstractmethod
-    def edit(self, data: Data[ResolvedEdit]) -> Data[ResolvedEdit]:
         ...
 
     @abc.abstractmethod

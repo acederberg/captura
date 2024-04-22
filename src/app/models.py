@@ -70,7 +70,6 @@ from app.fields import (
     ChildrenCollection,
     ChildrenDocument,
     ChildrenUser,
-    Format,
     KindEvent,
     KindObject,
     KindRecurse,
@@ -693,7 +692,7 @@ class Event(Base):
 
 
 class AssocCollectionDocument(Base):
-    __tablename__ = "_assocs_collections_documents"
+    __tablename__ = "assignments"
     __kind__ = KindObject.assignment
 
     # NOTE: Since this object supports soft deletion (for the deletion grace
@@ -783,21 +782,21 @@ class AssocUserDocument(Base):
         .. code:: STDERR
 
             sqlalchemy.exc.AmbiguousForeignKeysError: Can't determine join
-            between 'users' and '_assocs_users_documents'; tables have more
+            between 'users' and 'grants'; tables have more
             than one foreign key constraint relationship between them. Please
             specify the 'onclause' of this join explicitly.
 
         Further this lacks the ability to trace back the granting history.
     """
 
-    __tablename__ = "_assocs_users_documents"
+    __tablename__ = "grants"
     __kind__ = KindObject.grant
 
     # https://stackoverflow.com/questions/28843254/deleting-from-self-referential-inherited-objects-does-not-cascade-in-sqlalchemy
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
         ForeignKey(
-            "_assocs_users_documents.uuid",
+            "grants.uuid",
             ondelete="CASCADE",
         ),
         nullable=True,
@@ -920,7 +919,7 @@ class User(SearchableTableMixins, Base):
     url: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
     admin: Mapped[bool] = mapped_column(default=False)
 
-    info: Mapped[Dict[str, Any]] = mapped_column(
+    content: Mapped[Dict[str, Any]] = mapped_column(
         mysql.JSON, default=None, nullable=True
     )
 
@@ -951,12 +950,6 @@ class User(SearchableTableMixins, Base):
         back_populates="user",
         primaryjoin="User.id==Collection.id_user",
         passive_deletes=True,
-    )
-
-    edits: Mapped[List["Edit"]] = relationship(
-        cascade="all, delete",
-        back_populates="user",
-        primaryjoin="User.id==Edit.id_user",
     )
 
     documents: Mapped[List["Document"]] = relationship(
@@ -1307,6 +1300,9 @@ class Collection(SearchableTableMixins, Base):
         String(fields.LENGTH_DESCRIPTION),
         nullable=True,
     )
+    content: Mapped[Dict[str, Any]] = mapped_column(
+        mysql.JSON, default=None, nullable=True
+    )
 
     user: Mapped[User] = relationship(
         primaryjoin="User.id==Collection.id_user",
@@ -1397,16 +1393,14 @@ class Document(SearchableTableMixins, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
-    description: Mapped[str] = mapped_column(String(fields.LENGTH_DESCRIPTION))
-    content: Mapped[str] = mapped_column(mysql.BLOB(fields.LENGTH_CONTENT))
-    format: Mapped[Format] = mapped_column(Enum(Format))
-
-    edits: Mapped[List["Edit"]] = relationship(
-        cascade="all, delete",
-        passive_deletes=True,
-        back_populates="document",
-        primaryjoin="Document.id==Edit.id_document",
+    description: Mapped[str] = mapped_column(
+        String(fields.LENGTH_DESCRIPTION),
+        nullable=True,
     )
+    content: Mapped[Dict[str, Any]] = mapped_column(
+        mysql.JSON, default=None, nullable=True
+    )
+
     users: Mapped[List[User]] = relationship(
         secondary=AssocUserDocument.__table__,
         back_populates="documents",
@@ -1573,33 +1567,6 @@ class Document(SearchableTableMixins, Base):
         )
         return q
 
-    def q_select_edits(
-        self,
-        exclude_deleted: bool = True,
-        before: int | None = None,
-        after: int | None = None,
-        limit: int | None = None,
-    ) -> Select:
-        conds = []
-        if before is not None:
-            conds.append(Event.timestamp <= before)
-        if after is not None:
-            conds.append(Event.timestamp >= after)
-
-        q_uuids = select(Event.uuid_obj).where(
-            Event.kind_obj == KindObject.edit,
-            Event.kind == KindEvent.update,
-            Event.detail == Event.detail_document_editted,
-            *conds,
-        )
-        q = select(Edit).where(Edit.uuid.in_(q_uuids))
-        if exclude_deleted:
-            q = q.where(Edit.deleted == false())
-        if limit is not None:
-            q = q.limit(limit)
-
-        return q
-
     @classmethod
     def q_select_documents(
         cls,
@@ -1656,78 +1623,6 @@ class Document(SearchableTableMixins, Base):
         )
 
 
-class Edit(PrimaryTableMixins, Base):
-    __tablename__ = "edits"
-    __kind__ = KindObject.edit
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-
-    # NOTE: Deletion only cascades for document deletion because edits for
-    #       documents should not disappear when a user is deleted.
-    id_user: Mapped[int] = mapped_column(
-        ForeignKey(
-            "users.id",
-            ondelete="CASCADE",
-        ),
-        nullable=True,
-    )
-    id_document: Mapped[int] = mapped_column(
-        ForeignKey(
-            "documents.id",
-            ondelete="CASCADE",
-        )
-    )
-    content: Mapped[int] = mapped_column(mysql.BLOB(fields.LENGTH_CONTENT))
-    message: Mapped[str] = mapped_column(String(fields.LENGTH_MESSAGE), nullable=True)
-
-    user: Mapped[User] = relationship(
-        primaryjoin="User.id==Edit.id_user",
-        back_populates="edits",
-    )
-
-    document: Mapped[Document] = relationship(
-        primaryjoin="Document.id==Edit.id_document",
-        back_populates="edits",
-    )
-
-    @property
-    def uuid_user(self) -> str:
-        session = self.get_session()
-        q = select(User.uuid).where(User.id == self.id_user)
-        res = session.execute(q).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
-
-    @property
-    def uuid_document(self) -> str:
-        session = self.get_session()
-        q = select(Document.uuid).where(Document.id == self.id_user)
-        res = session.execute(q).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
-
-    @classmethod
-    def q_select_for_user(
-        cls,
-        user: User,
-        uuids: Set[str] | None,
-        exclude_deleted: bool = True,
-    ) -> Select:
-        q_docs = user.q_select_documents(
-            uuids,
-            level=Level.view,
-            exclude_deleted=exclude_deleted,
-        )
-        q_doc_uuids = select(literal_column("uuid")).select_from(q_docs)
-        q_edits = select(Edit).where(Edit.document.uuid.in_(q_doc_uuids))
-        if exclude_deleted:
-            q_edits = q_edits.where(Edit.deleted == false())
-
-        return q_edits
-
-
 # --------------------------------------------------------------------------- #
 # After the matter constants and types.
 
@@ -1739,16 +1634,12 @@ class Tables(enum.Enum):
     users = User
     collections = Collection
     documents = Document
-    edits = Edit
-
-    _assocs_user_documents = AssocUserDocument
-    _assocs_collections_documents = AssocCollectionDocument
 
 
 Assignment = AssocCollectionDocument
 Grant = AssocUserDocument
 AnyModelBesidesEvent = (
-    AssocUserDocument | AssocCollectionDocument | User | Collection | Document | Edit
+    AssocUserDocument | AssocCollectionDocument | User | Collection | Document
 )
 AnyModel = Event | AnyModelBesidesEvent
 AnyModelType = Type[AnyModel]
@@ -1784,7 +1675,6 @@ T_Resolvable = TypeVar(
     User,
     Collection,
     Document,
-    Edit,
     Event,
 )
 
@@ -1811,7 +1701,6 @@ ResolvedRaw = Tuple[T_Resolvable, ...]  # | Resolvable[T_Resolvable]
 ResolvedRawUser = ResolvedRaw[User]
 ResolvedRawCollection = ResolvedRaw[Collection]
 ResolvedRawDocument = ResolvedRaw[Document]
-ResolvedRawEdit = ResolvedRaw[Edit]
 
 ResolvedRawAssignmentDocument = Tuple[Document, Tuple[Collection, ...]]
 ResolvedRawAssignmentCollection = Tuple[Collection, Tuple[Document, ...]]
@@ -1825,7 +1714,6 @@ ResolvedRawAny = (
     ResolvedRawCollection
     | ResolvedRawUser
     | ResolvedRawDocument
-    | ResolvedRawEdit
     | ResolvedRawAssignment
     | ResolvedRawGrant
 )
@@ -1850,7 +1738,6 @@ __all__ = (
     "AssocCollectionDocument",
     "AssocUserDocument",
     "Document",
-    "Edit",
     "Tables",
     "KindEvent",
     "KindObject",

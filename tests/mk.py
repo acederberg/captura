@@ -10,18 +10,11 @@ from sqlalchemy import Column, inspect
 
 # --------------------------------------------------------------------------- #
 from app import __version__
-from app.fields import (
-    LENGTH_CONTENT,
-    LENGTH_DESCRIPTION,
-    LENGTH_MESSAGE,
-    LENGTH_NAME,
-    LENGTH_URL,
-)
+from app.fields import LENGTH_DESCRIPTION, LENGTH_NAME, LENGTH_URL
 from app.models import (
     Collection,
     Document,
     Event,
-    Format,
     Grant,
     KindEvent,
     KindObject,
@@ -34,7 +27,7 @@ fkit = Faker()
 fkit.add_provider(internet)
 _item_kind_event: List[KindEvent] = list(KindEvent)
 _item_kind_obj: List[KindObject] = list(KindObject)
-_item_format: List[Format] = list(Format)
+# _item_format: List[Format] = list(Format)
 _item_pending_from: List[PendingFrom] = list(PendingFrom)
 _item_level: List[Level] = list(Level)
 _now = int(datetime.timestamp(datetime.utcnow()))
@@ -52,15 +45,15 @@ _Mk: Dict[str, Callable[[], Any]] = dict(
     pending_from=lambda: choice(_item_pending_from),
     kind_obj=lambda: choice(_item_kind_obj),
     kind_event=lambda: choice(_item_kind_event),
-    format=lambda: choice(_item_format),
-    content=lambda: bytes(fkit.text(LENGTH_CONTENT), "utf-8"),
-    message=lambda: fkit.text(LENGTH_MESSAGE),
+    # format=lambda: choice(_item_format),
+    # content=lambda: bytes(fkit.text(LENGTH_CONTENT), "utf-8"),
+    # message=lambda: fkit.text(LENGTH_MESSAGE),
     admin=(mk_bool := lambda: bool(randint(0, 1))),
     deleted=mk_bool,
     public=mk_bool,
     pending=mk_bool,
     api_origin=lambda: "tests/dummy.py",
-    info=lambda: dict(
+    content=lambda: dict(
         dummy=dict(
             utc_timestamp=datetime.utcnow().isoformat(),
             used_by=list(),
@@ -68,6 +61,12 @@ _Mk: Dict[str, Callable[[], Any]] = dict(
         ),
         tags=[],
     ),
+    # content=lambda: dict(
+    #     dummy=dict(
+    #         utc_timestamp=datetime.utcnow().isoformat(),
+    #     ),
+    #     tags=[],
+    # ),
 )
 
 
@@ -98,8 +97,7 @@ T_ResolvableContra = TypeVar(
 
 
 class MkDummyProvider(Protocol, Generic[T_ResolvableContra]):
-    def __call__(self, **kwargs) -> T_ResolvableContra:
-        ...
+    def __call__(self, **kwargs) -> T_ResolvableContra: ...
 
 
 def create_mk_dummy(

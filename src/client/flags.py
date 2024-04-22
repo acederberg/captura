@@ -1,8 +1,10 @@
 # =========================================================================== #
 import enum
+import functools
+import json
 import pathlib
 from datetime import datetime
-from typing import Annotated, List, Optional, TypeAlias
+from typing import Annotated, Any, Dict, List, Optional, TypeAlias
 
 import typer
 
@@ -12,7 +14,6 @@ from app.models import (
     ChildrenCollection,
     ChildrenDocument,
     ChildrenUser,
-    Format,
     KindEvent,
     KindObject,
     KindRecurse,
@@ -163,12 +164,10 @@ FlagPublicOptional = Annotated[Optional[bool], typer.Option("--public/--private"
 FlagForce = Annotated[bool, typer.Option("--force/--no-force")]
 FlagKindRecurse: TypeAlias = Annotated[KindRecurse, typer.Option("--recurse-strategy")]
 
-FlagFormatOptional: TypeAlias = Annotated[Optional[Format], typer.Option("--format")]
-FlagContentOptional: TypeAlias = Annotated[Optional[str], typer.Option("--content")]
-FlagMessageOptional: TypeAlias = Annotated[Optional[str], typer.Option("--message")]
-FlagFormat: TypeAlias = Annotated[Format, typer.Option("--format")]
-FlagContent: TypeAlias = Annotated[str, typer.Option("--content")]
-FlagMessage: TypeAlias = Annotated[str, typer.Option("--message")]
+# FlagContentOptional: TypeAlias = Annotated[Optional[str], typer.Option("--content")]
+# FlagMessageOptional: TypeAlias = Annotated[Optional[str], typer.Option("--message")]
+# FlagContent: TypeAlias = Annotated[str, typer.Option("--content")]
+# FlagMessage: TypeAlias = Annotated[str, typer.Option("--message")]
 
 # --------------------------------------------------------------------------- #
 # Search flags
@@ -335,5 +334,35 @@ FlagNoAuthorization: TypeAlias = Annotated[
     typer.Option(
         "--auth-exclude/--auth-include",
         help="Include or exclude the authorization header.",
+    ),
+]
+
+
+def check_content(v: str, allow_none: bool = False):
+    if allow_none and v is None:
+        return v
+
+    decoded = json.loads(v)
+    if allow_none and decoded is None:
+        return v
+
+    assert isinstance(decoded, dict)
+    return decoded
+
+
+FlagContent: TypeAlias = Annotated[
+    str,
+    typer.Option(
+        "--content",
+        help="Content.",
+        callback=check_content,
+    ),
+]
+FlagContentOptional: TypeAlias = Annotated[
+    Optional[str],
+    typer.Option(
+        "--content",
+        help="Content.",
+        callback=lambda v: check_content(v, allow_none=True),
     ),
 ]

@@ -24,14 +24,17 @@ Instead do
 
 # =========================================================================== #
 import enum
-from re import U
-from typing import Annotated, Any, ClassVar, Dict, Set, Tuple, Unpack
+import secrets
 import typing
+from typing import Annotated, Any, ClassVar, Dict, Literal, Set, Tuple, Unpack
 
+from authlib.integrations import starlette_client
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, computed_field
 from pydantic.fields import FieldInfo
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from starlette.config import Config as StarletteConfig
+from typing_extensions import Doc
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
@@ -119,6 +122,9 @@ class Auth0ApiConfig(BaseHashable):
 class Auth0AppConfig(BaseHashable):
     client_id: str
     client_secret: SecretStr
+    secret_key: Annotated[
+        SecretStr, Field(default_factory=lambda: secrets.token_urlsafe(32))
+    ]
 
 
 class Auth0Config(BaseHashable):
@@ -151,18 +157,42 @@ class AppConfigDev(BaseHashable):
 
 
 class AppConfig(BaseHashable):
-    port: Annotated[int, Field(default=8080)]
-    host: Annotated[str, Field(default="0.0.0.0")]
-    environment: Annotated[Environment, Field(default=Environment.production)]
-    dev: Annotated[
-        AppConfigDev, Field(default_factory=lambda: AppConfigDev.model_validate({}))
+    uvicorn_port: Annotated[int, Field(default=8080)]
+    uvicorn_host: Annotated[str, Field(default="0.0.0.0")]
+
+    host_dns_name: Annotated[
+        str,
+        Field(default="captura.local"),
+        Doc("Must not include scheme. See `host_scheme`."),
     ]
-    logging_configuration_path: Annotated[str, Field(default=util.PATH_LOG_CONFIG)]
+    host_scheme: Annotated[
+        Literal["http://", "https://"],
+        Field(default="https://"),
+    ]
+    host_port: Annotated[int, Field(default=8080)]
+
+    environment: Annotated[
+        Environment,
+        Field(default=Environment.production),
+    ]
+    dev: Annotated[
+        AppConfigDev,
+        Field(default_factory=lambda: AppConfigDev.model_validate({})),
+    ]
+    logging_configuration_path: Annotated[
+        str,
+        Field(default=util.PATH_LOG_CONFIG),
+    ]
 
     @computed_field
     @property
     def is_dev(self) -> bool:
         return self.environment == Environment.development
+
+    @computed_field
+    @property
+    def host_url(self) -> str:
+        return f"{self.host_scheme}{self.host_dns_name}:{self.host_port}"
 
 
 class Config(BaseHashable, BaseYamlSettings):
@@ -196,3 +226,25 @@ class Config(BaseHashable, BaseYamlSettings):
             drivername=self.mysql.host.drivername_async,
         )
         return create_async_engine(url, **kwargs)
+
+    def oauth(self) -> starlette_client.OAuth:
+        auth0 = self.auth0
+        oauth = starlette_client.OAuth()
+
+        # NOTE: Docs for library suck, cannot find all the class for which
+        #       ``kwargs`` of register are for. The token recieved at this
+        #       point has ``alg=ASM256`` in the header.
+        oauth.register(
+            "auth0",
+            audience=auth0.api.audience,
+            client_id=auth0.app.client_id,
+            client_secret=auth0.app.client_secret.get_secret_value(),
+            client_kwargs=dict(
+                scope="openid profile email",
+            ),
+            access_token_params=dict(
+                audience=auth0.api.audience,
+            ),
+            server_metadata_url=f"https://{auth0.issuer}/.well-known/openid-configuration",
+        )
+        return oauth

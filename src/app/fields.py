@@ -2,18 +2,15 @@
 import enum
 import secrets
 from datetime import datetime
-from typing import Annotated, Any, Callable, Set, Type, TypeAlias
+from typing import Annotated, Any, Callable, Dict, Set, Type, TypeAlias
 
 from fastapi import Query
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, Json
 
 LENGTH_NAME: int = 96
 LENGTH_TITLE: int = 128
 LENGTH_DESCRIPTION: int = 256
 LENGTH_URL: int = 256
-LENGTH_MESSAGE: int = 1024
-LENGTH_CONTENT: int = 2**15
-LENGTH_FORMAT: int = 8
 
 
 class Level(enum.Enum):
@@ -50,14 +47,6 @@ class LevelHTTP(enum.Enum):
     GET = Level.view
 
 
-class Format(str, enum.Enum):
-    md = "md"
-    rst = "rst"
-    tEx = "tEx"
-    txt = "txt"
-    docs = "docs"
-
-
 class KindEvent(str, enum.Enum):
     create = "create"
     upsert = "upsert"
@@ -88,8 +77,8 @@ class KindObject(str, enum.Enum):
     collection = "collections"
     edit = "edits"
     event = "events"
-    assignment = "_assocs_collections_documents"
-    grant = "_assocs_users_documents"
+    assignment = "assignments"
+    grant = "grants"
 
 
 class Plural(str, enum.Enum):
@@ -207,35 +196,6 @@ EXAMPLE_CONTENT = (
     "sunt in culpa qui officia deserunt mollit anim id est laborum."
 )
 
-FieldContent = Annotated[
-    str,
-    Field(
-        max_length=LENGTH_CONTENT,
-        description="Document content.",
-        examples=[EXAMPLE_CONTENT],
-    ),
-]
-FieldContentCreate = Annotated[
-    bytes,
-    Field(
-        max_length=LENGTH_CONTENT,
-        description="Document content.",
-        examples=[EXAMPLE_CONTENT.encode()],
-    ),
-]
-FieldFormat = Annotated[
-    Format,
-    Field(default=Format.md, description="Document format."),
-]
-FieldMessage = Annotated[
-    str,
-    Field(
-        min_length=0,
-        max_length=LENGTH_MESSAGE,
-        description="Edit message.",
-        examples=["The following changes were made to the document: ..."],
-    ),
-]
 FieldUUIDS = Annotated[
     Set[str] | None,
     Field(
@@ -341,6 +301,10 @@ FieldKindObject = Annotated[
 
 
 FieldPending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
+FieldContent: TypeAlias = Annotated[
+    Dict[str, Any],
+    Field(description="Document content."),
+]
 
 
 __all__ = (
@@ -349,7 +313,6 @@ __all__ = (
     "ChildrenDocument",
     "ChildrenGrant",
     "ChildrenUser",
-    "Format",
     "KindEvent",
     "KindObject",
     "KindRecurse",

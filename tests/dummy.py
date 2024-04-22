@@ -65,7 +65,6 @@ from app.models import (
     Base,
     Collection,
     Document,
-    Edit,
     Event,
     Grant,
     KindObject,
@@ -925,7 +924,11 @@ class DummyProviderYAMLInfo(metaclass=DummyYAMLProviderInfoMeta):
     @classmethod
     def preload(cls, item):
         if hasattr(item, "content"):
-            item.content = bytes(item.content, "utf-8")
+            if item.content is not None and not isinstance(item.content, dict):
+                raise ValueError(
+                    "Content should be a `dict`, not a `type(item.content)`. "
+                    f"`{item = }`."
+                )
         return item
 
     @classmethod
@@ -953,11 +956,11 @@ class DummyProviderYAML(BaseDummyProvider):
             (DummyProviderYAMLInfo,),
             dict(M=Document),
         ),
-        type(
-            "DummyProviderYAMLEdit",
-            (DummyProviderYAMLInfo,),
-            dict(M=Edit),
-        ),
+        # type(
+        #     "DummyProviderYAMLEdit",
+        #     (DummyProviderYAMLInfo,),
+        #     dict(M=Edit),
+        # ),
         type(
             "DummyProviderYAMLGrant",
             (DummyProviderYAMLInfo,),
@@ -969,7 +972,7 @@ class DummyProviderYAML(BaseDummyProvider):
             dict(M=AssocCollectionDocument),
         ),
         type(
-            "DummyProviderYAMLEdit",
+            "DummyProviderYAMLEvent",
             (DummyProviderYAMLInfo,),
             dict(M=Event),
         ),
@@ -1010,12 +1013,12 @@ class DummyProvider(BaseDummyProvider):
                     select(User)
                     .where(
                         # NOTE: Not too used already, not tainted.
-                        func.JSON_LENGTH(User.info, "$.dummy.used_by")
+                        func.JSON_LENGTH(User.content, "$.dummy.used_by")
                         < self.config.tests.dummies.maximum_use_count,
-                        func.JSON_VALUE(User.info, "$.dummy.tainted") == false(),
+                        func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
                         User.uuid.in_(dummy_user_uuids),
                         func.JSON_OVERLAPS(
-                            '["YAML"]', func.JSON_VALUE(User.info, "$.tags")
+                            '["YAML"]', func.JSON_VALUE(User.content, "$.tags")
                         )
                         != 1,
                         User.deleted == false(),
@@ -1051,7 +1054,9 @@ class DummyProvider(BaseDummyProvider):
         #
         session.execute(
             update(User)
-            .values(info=func.JSON_ARRAY_APPEND(User.info, "$.dummy.used_by", test_fn))
+            .values(
+                content=func.JSON_ARRAY_APPEND(User.content, "$.dummy.used_by", test_fn)
+            )
             .where(User.uuid == self.user.uuid)
         )
         return self
@@ -1061,7 +1066,7 @@ class DummyProvider(BaseDummyProvider):
         session = self.session
         session.execute(
             update(User)
-            .values(info=func.JSON_REPLACE(User.info, "$.dummy.tainted", tainted))
+            .values(content=func.JSON_REPLACE(User.content, "$.dummy.tainted", tainted))
             .where(User.uuid == self.user.uuid)
         )
         return self
@@ -1072,8 +1077,8 @@ class DummyProvider(BaseDummyProvider):
             maximum_use_count = self.config.tests.dummies.maximum_use_count
 
         # NOTE: Naming easter egg.
-        a = func.JSON_LENGTH(User.info, "$.dummy.used_by") >= maximum_use_count
-        b = func.JSON_VALUE(User.info, "$.dummy.tainted") > 0
+        a = func.JSON_LENGTH(User.content, "$.dummy.used_by") >= maximum_use_count
+        b = func.JSON_VALUE(User.content, "$.dummy.tainted") > 0
         q = select(or_(a, b)).where(User.uuid == self.user.uuid)
         return session.scalar(q)
 
@@ -1137,8 +1142,8 @@ class DummyHandler:
 
         return select(User).where(
             or_(
-                func.JSON_LENGTH(User.info, "$.dummy.used_by") >= maximum_use_count,
-                func.JSON_VALUE(User.info, "$.dummy.tainted"),
+                func.JSON_LENGTH(User.content, "$.dummy.used_by") >= maximum_use_count,
+                func.JSON_VALUE(User.content, "$.dummy.tainted"),
             ),
             *conds,
         )

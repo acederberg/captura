@@ -121,8 +121,8 @@ class Cli:
         import uvicorn
 
         kwargs: Dict[str, Any] = dict(
-            port=self.config.app.port,
-            host=self.config.app.host,
+            port=self.config.app.uvicorn_port,
+            host=self.config.app.uvicorn_host,
         )
         # NOTE: Only specify ``reload_dirs`` in reload mode because warnings.
         if reload:

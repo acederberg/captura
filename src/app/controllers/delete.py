@@ -19,7 +19,6 @@ from app.controllers.base import (
     ResolvedAssignmentDocument,
     ResolvedCollection,
     ResolvedDocument,
-    ResolvedEdit,
     ResolvedEvent,
     ResolvedGrantDocument,
     ResolvedGrantUser,
@@ -30,7 +29,6 @@ from app.models import (
     Assignment,
     Collection,
     Document,
-    Edit,
     Event,
     Grant,
     KindEvent,
@@ -719,21 +717,6 @@ class Delete(WithAccess):
             self.assignment_document(data_assignment)
             data.add(data_assignment)
 
-        edits = document.edits
-        if edits:
-            data_edit = mwargs(
-                Data[ResolvedEdit],
-                token_user=self.token_user,
-                data=mwargs(
-                    ResolvedEdit,
-                    edits=edits,
-                    token_user_grants=data.data.token_user_grants,
-                    grants=data.data.token_user_grants,
-                ),
-            )
-            self.edit(data_edit)
-            data.add(data_edit)
-
     def document(
         self,
         data: Data[ResolvedDocument],
@@ -755,86 +738,6 @@ class Delete(WithAccess):
         return data
 
     a_document = with_access(Access.d_document)(document)
-
-    # ----------------------------------------------------------------------- #
-
-    def _edit(
-        self,
-        data: Data[ResolvedEdit],
-        edit: Edit,  # *, commit: bool = False
-    ) -> None:
-        session = self.session
-
-        def rm() -> None:
-            # NOTE: Hard deletion handled in `data.commit()`
-            if not self.force:
-                edit.deleted = True
-                session.add(edit)
-
-            event = Event(
-                **self.event_common,
-                kind_obj=KindObject.edit,
-                uuid_obj=edit.uuid,
-            )
-            if data.event is not None:
-                data.event.children.append(event)
-            else:
-                data.event = event
-
-            # data.commit(session, commit)
-
-        user_token = data.token_user or self.token_user
-        user_token_grant = data.data.token_user_grants[user_token.uuid]
-
-        user_edit = edit.user
-        if user_edit == user_token:
-            return rm()
-
-        q_user_edit_grant = user_edit.q_select_grants({edit.document.uuid})
-        user_edit_grant = self.session.execute(q_user_edit_grant).scalar()
-
-        # Depends on current grant of user_edit_grant so that, for instance,
-        # a malicious editor can be rejected from the group and their edits may
-        # be undone.
-        detail = dict(
-            uuid_user_token=user_token.uuid,
-            uuid_user_edit=user_edit.uuid,
-        )
-        match (user_token_grant.level, user_edit_grant):
-            case (Level.own, None):
-                return rm()
-            case (Level.own, Grant(level=user_edit_level)):
-                if user_edit_level == Level.own:
-                    detail.update(msg="Cannot delete edit of other owner.")
-                    raise HTTPException(403, detail=detail)
-                return rm()
-            case (user_token_level, None | Grant()):
-                detail.update(
-                    msg="Cannot delete edit of other user when not an owner",
-                    level=user_token_level.name,
-                )
-                raise HTTPException(403, detail=dict())
-            case _:
-                raise ValueError()
-
-    def edit(
-        self,
-        data: Data[ResolvedEdit],  # commit: bool = False
-    ) -> Data[ResolvedEdit]:
-        edits = data.data.edits
-
-        # NOTE: Only owners can delete the edits of other contributors.
-        data.event = Event(
-            kind_obj=KindObject.bulk,
-            uuid_obj=None,
-            **self.event_common,
-        )
-        tuple(self._edit(data, edit) for edit in edits)
-        # data.commit(self.session, commit)
-
-        return data
-
-    a_edit = with_access(Access.d_edit)(edit)
 
 
 class WithDelete(WithAccess):

@@ -1,22 +1,19 @@
 # =========================================================================== #
 import secrets
-
-from sqlalchemy.orm import Session
-from app.auth import Auth
-from app.fields import Format, Level, PendingFrom
-import pytest
 from typing import Any, Dict, List, Set, Tuple
 
+import pytest
 from sqlalchemy import func, literal_column, select
-
+from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from app import __version__, util
+from app.auth import Auth
+from app.fields import Level, PendingFrom
 from app.models import (
     Assignment,
     Collection,
     Document,
-    Edit,
     Event,
     Grant,
     KindEvent,
@@ -182,8 +179,8 @@ class TestRelationships:
             )
 
             # NOTE: Because there are not dummies.
-            q_edit_uuids = select(Edit.uuid).where(Edit.id_document == document.id)
-            uuid_edit = set(session.scalars(q_edit_uuids))
+            # q_edit_uuids = select(Edit.uuid).where(Edit.id_document == document.id)
+            # uuid_edit = set(session.scalars(q_edit_uuids))
 
             # --------------------------------------------------------------- #
             dummy.session.delete(document)
@@ -204,11 +201,11 @@ class TestRelationships:
                 msg = msg_fmt.format(m, len(uuid_grant), "assignments")
                 raise AssertionError(msg)
 
-            q_edit_remaining = select(func.count(Edit.uuid)).where(
-                Edit.uuid.in_(uuid_edit)
-            )
-            if p := session.scalar(q_edit_remaining):
-                msg = msg_fmt.format(p, len(uuid_edit), "edits")
+                # q_edit_remaining = select(func.count(Edit.uuid)).where(
+                # Edit.uuid.in_(uuid_edit)
+                # )
+                # if p := session.scalar(q_edit_remaining):
+                #     msg = msg_fmt.format(p, len(uuid_edit), "edits")
                 raise AssertionError(msg)
 
             # NOTE: Verify that documents were not deleted.
@@ -304,34 +301,34 @@ class TestRelationships:
             msg = "All users had empty `collections`."
             raise AssertionError(msg)
 
-    # NOTE: Should fail since dummies do not generate edits.
-    @pytest.mark.xfail
-    def test_user_deletion_edits(self, auth: Auth, session: Session, count: int):
-        n_no_edits = 0
-        for dummy in (DummyProvider(auth, session) for _ in range(10)):
-            user = dummy.user
-
-            uuid_edits = set(
-                session.scalars(select(Edit.uuid).where(Edit.id_user == user.id))
-            )
-            if not (n_edits := len(uuid_edits)):
-                n_no_edits += 1
-                continue
-
-            session.delete(user)
-            session.commit()
-
-            q_edits_remaining = select(func.count(Edit.uuid)).where(
-                Edit.uuid.in_(uuid_edits)
-            )
-            n_edits_remaining = session.scalar(q_edits_remaining)
-            assert n_edits_remaining == n_edits
-
-            dummy.dispose()
-
-        if n_no_edits == 2:
-            raise AssertionError("All dummies had empty `edits`.")
-
+        # NOTE: Should fail since dummies do not generate edits.
+        # @pytest.mark.xfail
+        # def test_user_deletion_edits(self, auth: Auth, session: Session, count: int):
+        #     n_no_edits = 0
+        #     for dummy in (DummyProvider(auth, session) for _ in range(10)):
+        #         user = dummy.user
+        #
+        #         uuid_edits = set(
+        #             session.scalars(select(Edit.uuid).where(Edit.id_user == user.id))
+        #         )
+        #         if not (n_edits := len(uuid_edits)):
+        #             n_no_edits += 1
+        #             continue
+        #
+        #         session.delete(user)
+        #         session.commit()
+        #
+        #         q_edits_remaining = select(func.count(Edit.uuid)).where(
+        #             Edit.uuid.in_(uuid_edits)
+        #         )
+        #         n_edits_remaining = session.scalar(q_edits_remaining)
+        #         assert n_edits_remaining == n_edits
+        #
+        #         dummy.dispose()
+        #
+        #     if n_no_edits == 2:
+        #         raise AssertionError("All dummies had empty `edits`.")
+        #
         # NOTE: Not necessary. But definitely nice to have.
         # def test_dummy_dispose(self, dummy_disposable: DummyProvider, count: int = 1):
         #     """Verify that `DummyProvider.dispose` cleans up a dummy as
@@ -368,7 +365,7 @@ class TestRelationships:
         #     uuid_collection = set(session.scalars(q_uuid_collection))
         #
         #     session.delete(user)
-        session.commit()
+        # session.commit()
 
 
 @pytest.mark.parametrize("count", list(range(25)))
@@ -530,10 +527,12 @@ class TestUser:
         for n_owners in range(1, 15):
             # Add uniquely owned doc
             doc = Document(
-                content="test_models.TestUser.test_q_select_documents".encode(),
+                content=dict(
+                    tags=["test_models.TestUser.test_q_select_documents"],
+                    tainted=True,
+                ),
                 name=f"test-q-select-models-{secrets.token_urlsafe(8)}",
                 description="test",
-                format=Format.md,
                 deleted=False,
             )
             session.add(doc)

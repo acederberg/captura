@@ -21,7 +21,6 @@ from app.schemas import (
     DocumentMetadataSchema,
     DocumentSchema,
     DocumentUpdateSchema,
-    EditSchema,
     EventSchema,
     OutputWithEvents,
     TimespanLimitParams,
@@ -41,81 +40,11 @@ OpenApiResponseDocument = {
 }
 
 
-class DocumentSearchView(BaseView):
-    view_routes = dict(
-        get_recent_documents=dict(
-            url="/recent",
-            name="Read Recently Editted Document",
-        ),
-        get_recent_document_edits=dict(
-            url="/{uuid_document}/edits",
-            name="Read Recents Edits for a Document",
-        ),
-    )
-    view_router_args = dict(
-        tags=[OpenApiTags.documents],
-        responses=OpenApiResponseDocument,
-    )
-
-    # NOTE: Return the most recently editted
-    @classmethod
-    def get_recent_documents(
-        cls,
-        read: DependsRead,
-        param: Annotated[TimespanLimitParams, Depends()],
-        uuid_documents: args.QueryUUIDDocumentOptional = None,
-    ) -> AsOutput[List[DocumentMetadataSchema]]:
-        """Recently editted documents."""
-        q_documents = Document.q_select_documents(
-            read.token_user,
-            uuid_documents=uuid_documents,
-            limit=param.limit,
-            before=param.before_timestamp,
-            after=param.after_timestamp,
-        )
-        # read.token_user.documents
-        res = read.session.execute(q_documents)
-        documents = tuple(res.scalars())
-        return mwargs(
-            AsOutput[List[DocumentMetadataSchema]],
-            data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(documents),
-        )
-
-    @classmethod
-    def get_recent_document_edits(
-        cls,
-        uuid_document: args.PathUUIDDocument,
-        read: DependsRead,
-        param: Annotated[TimespanLimitParams, Depends()],
-    ) -> AsOutput[EditSchema]:
-        """Recent edits to a particular document."""
-
-        data: Data[ResolvedDocument] = read.access.d_document(uuid_document)
-        (document,) = data.data.documents
-
-        q = document.q_select_edits(
-            before=param.before_timestamp,
-            after=param.after_timestamp,
-            limit=param.limit,
-        )
-        res = read.session.execute(q)
-        edits = tuple(res.scalars())
-        return mwargs(
-            AsOutput[EditSchema],
-            data=TypeAdapter(List[EditSchema]).validate_python(edits),
-        )
-
-
 class DocumentView(BaseView):
     view_routes = dict(
         get_document=dict(
             url="/{uuid_document}",
             name="Get Document JSON",
-            responses=OpenApiResponseDocument,
-        ),
-        get_document_rendered=dict(
-            url="/{uuid_document}/rendered",
-            name="Get Rendered Document",
             responses=OpenApiResponseDocument,
         ),
         post_document=dict(
@@ -133,7 +62,6 @@ class DocumentView(BaseView):
             responses=OpenApiResponseDocument,
         ),
     )
-    view_children = {"": DocumentSearchView}
     view_router_args = dict(
         tags=[OpenApiTags.documents],
         responses=OpenApiResponseCommon,
@@ -157,15 +85,6 @@ class DocumentView(BaseView):
         return mwargs(
             AsOutput[DocumentSchema], data=DocumentSchema.model_validate(document)
         )
-
-    @classmethod
-    def get_document_rendered(
-        cls,
-        access: DependsAccess,
-        uuid_document: args.PathUUIDDocument,
-    ) -> FileResponse:
-        """Read document content rendered."""
-        raise HTTPException(400, detail="Not implemented yet.")
 
     # TODO: When integration tests are written, all CUD endpoints should
     #       test that the private CUD fields are approprietly set.
@@ -209,23 +128,8 @@ class DocumentView(BaseView):
         uuid_document: args.PathUUIDDocument,
         update: DependsUpdate,
         update_data: Annotated[DocumentUpdateSchema, Body()],
-        # rollback: bool = False,
-        # uuid_rollback: args.QueryUUIDEditOptional = None,
     ) -> OutputWithEvents[DocumentSchema]:
-        """Update document. Updating **content** will result in the current
-        document content being moved to an edit.
-
-        To undo updates of the `content` field use **rollback** to revert to
-        the most recent edit, or use `uuid_rollback` to specify the exact edit
-        uuid to rollback to.
-
-        When changing the public status of a document, bear in mind that it
-        will remove the document from any collection where the owner does not
-        have a grant on the document.
-
-        To read the edits for a document use
-        `GET /documents/{uuid_document}/edits`.
-        """
+        """Update document metadata."""
 
         update.update_data = update_data
         data = update.access.d_document(uuid_document, allow_public=False)
