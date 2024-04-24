@@ -1,10 +1,9 @@
 # =========================================================================== #
+import json
 import secrets
 from http import HTTPMethod
-from http.cookiejar import LWPCookieJar
 from random import choice, randint
 from typing import (
-    Annotated,
     Any,
     Callable,
     ClassVar,
@@ -12,6 +11,7 @@ from typing import (
     Iterable,
     List,
     NotRequired,
+    Optional,
     Self,
     Set,
     Tuple,
@@ -21,10 +21,17 @@ from typing import (
 
 import httpx
 import yaml
-from pydantic import SecretStr, condate
+from pydantic import BaseModel, ConfigDict
+from rich.align import Align
+from rich.color import Color
+from rich.columns import Columns
+from rich.console import ConsoleOptions, Group, RenderResult
+from rich.json import JSON
+from rich.layout import Layout
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.table import Table
 from sqlalchemy import (
-    Select,
-    and_,
     delete,
     desc,
     false,
@@ -32,16 +39,16 @@ from sqlalchemy import (
     literal_column,
     or_,
     select,
-    text,
     true,
     update,
 )
-from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import sessionmaker as _sessionmaker
+from sqlalchemy.sql.operators import op
 
 # --------------------------------------------------------------------------- #
-from app import util
+from app import fields, util
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (
@@ -78,7 +85,7 @@ from app.models import (
     resolve_model,
     uuids,
 )
-from app.schemas import mwargs
+from app.schemas import BaseSchema, UserExtraSchema, UserSchema, mwargs
 from client import ConsoleHandler, ContextData, Requests
 from client.config import UseConfig
 from client.flags import Output
@@ -86,8 +93,9 @@ from client.handlers import ConsoleHandler
 from client.requests import Requests
 from client.requests.base import ContextData
 from tests.config import PytestClientConfig, PyTestClientProfileConfig, PytestConfig
-from tests.mk import Mk
+from tests.mk import Mk, combos
 
+util.setup_logging(util.Path.base("logging.test.yaml"))
 logger = util.get_logger(__name__)
 
 # =========================================================================== #
@@ -151,9 +159,10 @@ class BaseDummyProvider:
     def mk_documents(self) -> Tuple[Document, ...]:
         # NOTE: Grants cereated in :func:`mk_grants`.
         logger.debug("Making documents.")
-        documents = tuple(Mk.document() for _ in range(randint(5, 15)))
 
-        return documents
+        dummies = self.config.tests.dummies
+        a, b = dummies.minimum_count_documents, dummies.maximum_count_documents
+        return tuple(Mk.document() for _ in range(randint(a, b)))
 
     def mk_assignments(
         self,
@@ -184,6 +193,9 @@ class BaseDummyProvider:
         exclude_grants_self: bool = False,
         exclude_grants_create: bool = False,
     ):
+
+        dummies = self.config.tests.dummies
+
         # NOTE: Adding grants to the database can be a real pain in the ass
         #       because the primary key of the grants table is infact the
         #       ``uuid`` column and not the associated tables since the table
@@ -193,8 +205,8 @@ class BaseDummyProvider:
         # TLDR: Do not use ``session.merge``, just use ``DELETE`` or use
         #       options to avoid causing duplicate ``(id_user, id_document)``
         #       keys.
-        logger.debug("Making grants for documents created by self.")
         if not exclude_grants_create:
+            logger.debug("Making grants for documents created by self.")
             grants_created = tuple(
                 Grant(
                     level=Level.own,
@@ -210,27 +222,16 @@ class BaseDummyProvider:
             grants_created = tuple()
 
         # NOTE: Add grants for documents of other users.
-        id_users = self.session.scalars(select(User.id))
-        id_users_shared = set(k for k in id_users if not bool(k % 3))
-        if self.user.id in id_users_shared:
-            id_users_shared.remove(self.user.id)
-
         # NOTE: Grants giving access to documents that exist already.
         if not exclude_grants_self:
             logger.debug("Making grants for `%s` on documents created by others.")
-            # q_grants_share = select(Grant).where(Grant.id_user.in_(id_users_shared))
-            # grants_share_id_documents: Dict[int, Grant] = {
-            #     grant_init.id_document: grant_init
-            #     for grant_init in self.session.scalars(q_grants_share)
-            #     if grant_init.id_user != self.user.id
-            # }
+            a, b = dummies.maximum_count_grants_self, dummies.maximum_count_grants_self
             q_ids_has_grants = (
                 select(Document.id)
                 .join(Grant)
                 .group_by(Grant.id_document)
                 .having(func.count(Grant.id_user) > 0)
                 .where(Grant.id_user == self.user.id)
-                .order_by(func.random())
             )
             q_grants_share = (
                 select(Grant)
@@ -239,23 +240,29 @@ class BaseDummyProvider:
                     Document.id.not_in(q_ids_has_grants),
                     Grant.pending_from == PendingFrom.created,
                 )
-                .limit(150)
+                .limit(b)
+                .order_by(func.random())
             )
             grants_share = tuple(self.session.scalars(q_grants_share))
+
+            if (n := len(grants_share)) < a:
+                logger.warning(
+                    "Only `%s` documents for user `%s`.",
+                    n,
+                    self.user.uuid,
+                )
 
             grants_self = tuple(
                 Grant(
                     uuid=secrets.token_urlsafe(8),
-                    level=choice(list(Level)),
                     id_user=self.user.id,
-                    id_document=grant_init.id_document,
-                    uuid_parent=grant_init.uuid,
-                    deleted=bool(randint(0, 1)),
-                    pending=bool(randint(0, 1)),
-                    pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
+                    id_document=grant.id_document,
+                    uuid_parent=grant.uuid,
+                    **kwargs,
                 )
-                for grant_init in grants_share
+                for (grant, kwargs) in zip(grants_share, combos())
             )
+
         else:
             grants_self = tuple()
 
@@ -263,6 +270,18 @@ class BaseDummyProvider:
         #       included since there is the option to not make ``created`` grants
         #       for the provided documents.
         logger.debug("Making grants for others on documents created `%s`.")
+
+        q_ids_users = (
+            select(User.id)
+            .where(User.id != self.user.id)
+            .limit(
+                randint(
+                    dummies.minimum_count_grants_other,
+                    dummies.maximum_count_grants_other,
+                )
+            )
+        )
+        id_users_other = set(self.session.scalars(q_ids_users))
 
         if not grants_created:
             grants_source = tuple(map(self.get_document_grant, documents))
@@ -279,18 +298,19 @@ class BaseDummyProvider:
                 uuid_parent=grant.uuid,
                 deleted=bool(randint(0, 1)),
                 pending=bool(randint(0, 1)),
-                pending_from=choice([PendingFrom.grantee, PendingFrom.granter]),
+                pending_from=choice((PendingFrom.grantee, PendingFrom.granter)),
             )
             for grant in grants_source
-            for id_user in id_users_shared
-            if randint(0, 1)
+            for id_user in id_users_other
         )
 
         return grants_created + grants_self + grants_other
 
     def mk_collections(self) -> Tuple[Collection, ...]:
         logger.debug("Making collections...")
-        return tuple(Mk.collection(user=self.user) for _ in range(randint(5, 15)))
+        dummies = self.config.tests.dummies
+        a, b = dummies.minimum_count_documents, dummies.maximum_count_documents
+        return tuple(Mk.collection(user=self.user) for _ in range(randint(a, b)))
 
     def mk(
         self,
@@ -1003,6 +1023,7 @@ class DummyProvider(BaseDummyProvider):
         auth: Auth | None = None,
         use_existing: List[str] | User | None = None,
     ):
+
         self.config = config
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session

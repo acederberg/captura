@@ -38,5 +38,3 @@ loggers:
     handlers:
       - stdout_dev
       - file_json
-  test.conftest:
-    level: DEBUG

@@ -20,3 +20,4 @@ logs
 cov
 test-results.html
 .jsonl
+temp.sql

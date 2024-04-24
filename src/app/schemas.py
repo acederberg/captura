@@ -16,6 +16,7 @@ foreign keys it is not necessary to specify multiple values).
 
 # =========================================================================== #
 import enum
+import json
 from datetime import datetime, timedelta
 from typing import (
     Annotated,
@@ -43,6 +44,9 @@ from pydantic import (
     model_validator,
 )
 from pydantic_core.core_schema import FieldValidationInfo
+from rich.align import Align, AlignMethod, VerticalAlignMethod
+from rich.json import JSON
+from rich.panel import Panel
 
 # --------------------------------------------------------------------------- #
 from app import fields
@@ -128,14 +132,32 @@ class BaseSchema(BaseModel):
     kind_mapped: ClassVar[fields.FieldKindObject]
     kind_schema: ClassVar[KindSchema]
     registry: ClassVar[Registry] = registry
+    registry_exclude: ClassVar[bool] = False
 
     def __init_subclass__(cls) -> None:
         if "Base" in cls.__name__:
             return
 
-        check_enum_opt_attr(cls, "kind_mapped", fields.KindObject)
-        check_enum_opt_attr(cls, "kind_schema", KindSchema)
-        registry.add(cls)
+        if not cls.registry_exclude:
+            check_enum_opt_attr(
+                cls,
+                "kind_mapped",
+                fields.KindObject,
+            )
+            check_enum_opt_attr(cls, "kind_schema", KindSchema)
+            registry.add(cls)
+
+    def __rich__(self) -> Panel:
+        return self.render()
+
+    def render(
+        self,
+        align: AlignMethod = "center",
+        vertical: VerticalAlignMethod = "middle",
+        **kwargs,
+    ) -> Panel:
+        jj = JSON(self.model_dump_json(**kwargs))
+        return Panel(Align(jj, align, vertical=vertical))
 
 
 class BaseSearchSchema(BaseSchema):
@@ -216,6 +238,7 @@ class UserSchema(UserBaseSchema):
     kind_schema = KindSchema.default
 
     uuid: fields.FieldUUID
+    content: fields.FieldContent
 
 
 class UserExtraSchema(BasePrimaryTableExtraSchema, UserSchema):
@@ -287,6 +310,7 @@ class CollectionMetadataSchema(CollectionBaseSchema):
 
 class CollectionSchema(CollectionMetadataSchema):
     kind_schema = KindSchema.default
+    content: fields.FieldContent
 
 
 class CollectionExtraSchema(BasePrimaryTableExtraSchema, CollectionSchema):
@@ -381,7 +405,6 @@ class DocumentSchema(DocumentMetadataSchema):
     kind_schema = KindSchema.default
 
     content: fields.FieldContent
-    public: bool = True
 
 
 class DocumentExtraSchema(BasePrimaryTableExtraSchema, DocumentSchema):

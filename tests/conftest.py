@@ -237,5 +237,4 @@ def load_tables(
     with sessionmaker() as session:
         logger.info("Loading tables with dummy data from `YAML`.")
         DummyProviderYAML.merge(session)
-
         logger.info("Generating dummy data.")

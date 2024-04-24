@@ -100,11 +100,16 @@ def setup_logging(config_path: str = PATH_LOG_CONFIG):
         config = yaml.safe_load(file)
 
     logging.config.dictConfig(config)
-    return config
+
+    return config, logging.getLogger
+
+
+DEFAULT_LOGGING_CONFIG_PATH = Path.base("logging.yaml")
+DEFAULT_LOGGING_CONFIG, _get_logger = setup_logging(DEFAULT_LOGGING_CONFIG_PATH)
 
 
 def get_logger(name: str) -> logging.Logger:
-    ll = logging.getLogger(name)
+    ll = _get_logger(name)
     return ll
 
 

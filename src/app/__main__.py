@@ -154,7 +154,7 @@ def main() -> None:
 #       THE COMMAND LINE! This modules logger must be declared only after the
 #       configuration as it will not be equiped with the correct handlers
 #       otherwise.
-LOGGING_CONFIG = util.setup_logging(CONFIG.app.logging_configuration_path)
+LOGGING_CONFIG, _ = util.setup_logging(CONFIG.app.logging_configuration_path)
 uvicorn.config.LOGGING_CONFIG.update(LOGGING_CONFIG)
 logger = util.get_logger(__name__)
 

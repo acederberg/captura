@@ -61,13 +61,23 @@ _Mk: Dict[str, Callable[[], Any]] = dict(
         ),
         tags=[],
     ),
-    # content=lambda: dict(
-    #     dummy=dict(
-    #         utc_timestamp=datetime.utcnow().isoformat(),
-    #     ),
-    #     tags=[],
-    # ),
 )
+
+
+def combos():
+    while True:
+        yield from (
+            dict(
+                level=level,
+                pending_from=pending_from,
+                deleted=deleted,
+                pending=pending,
+            )
+            for level in (Level.view, Level.modify, Level.own)
+            for pending_from in (PendingFrom.grantee, PendingFrom.granter)
+            for deleted in (0, 1)
+            for pending in (0, 1)
+        )
 
 
 def get_mk(column: Column):

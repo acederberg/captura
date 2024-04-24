@@ -51,6 +51,8 @@ loggers:
       - stdout_dev
       - file_json
   # NOTE: DO NOT ADD HANDLERS HERE! HANDLED DATA IS PASSED UP THE TREE!
+  __main__:
+    level: DEBUG
   tests.conftest:
     level: DEBUG
   tests.dummy:
