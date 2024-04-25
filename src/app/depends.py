@@ -183,6 +183,17 @@ DependsToken: TypeAlias = Annotated[Dict[str, str], Depends(token)]
 DependOAuth: TypeAlias = Annotated[starlette_client.OAuth, Depends(oauth)]
 
 
+def token_admin(_token: DependsToken):
+    token = Token.model_validate(_token)
+    if not token.admin:
+        raise HTTPException(403, detail="Admin only.")
+
+    return token
+
+
+DependsTokenAdmin: TypeAlias = Annotated[Token, Depends(token_admin)]
+
+
 def uuid(token: DependsToken, uuid: str | None = None) -> str:
     """Get the user UUID either from the token or get the uuid from query
     parameters.

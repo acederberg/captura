@@ -23,7 +23,7 @@ from app.schemas import (
     mwargs,
 )
 from client.requests import Requests
-from tests.dummy import DummyProvider, GetPrimaryKwargs
+from dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest
 
 

@@ -76,8 +76,9 @@ test = [
 
 
 [project.scripts]
-app = "app.__main__:main"
-client = "client.__main__:main"
+captura = "app.__main__:main"
+legere = "client.__main__:main"
+simulatus = "dummy.__main__:main"
 
 
 [tool.black]

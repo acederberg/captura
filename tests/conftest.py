@@ -18,9 +18,8 @@ from app.config import AppConfig, Config
 from app.models import Base, User
 from app.views import AppView
 from client.config import Config as ClientConfig
+from dummy import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
-
-from .dummy import DummyHandler, DummyProvider, DummyProviderYAML
 
 logger = util.get_logger(__name__)
 

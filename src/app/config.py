@@ -201,6 +201,7 @@ class Config(BaseHashable, BaseYamlSettings):
         yaml_reload=False,
         env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",
+        exclude_extra=False,  # type: ignore
     )
     mysql: MySqlConfig
     auth0: Auth0Config

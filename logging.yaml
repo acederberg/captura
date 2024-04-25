@@ -1,8 +1,8 @@
 
 version: 1
 formatters:
-  human:
-    format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+  # human:
+  #   format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
   json:
     (): app.logger.JSONFormatter
     fmt_keys: 
@@ -19,10 +19,16 @@ handlers:
   stdout_dev:
     class: rich.logging.RichHandler
     level: DEBUG
+  stdout_min:
+    class: logging.StreamHandler
+    # formatter: human 
+    # ^^^^^^^^^^^^^^^^
+    # NOTE: Breaks logging
+    stream: ext://sys.stdout
   stderr:
     class: logging.StreamHandler
-    level: WARNING
-    formatter: human
+    # level: WARNING
+    # formatter: human
     stream: ext://sys.stderr
   file_json:
     class: logging.handlers.RotatingFileHandler
@@ -38,3 +44,7 @@ loggers:
     handlers:
       - stdout_dev
       - file_json
+  sqlalchemy.engine:
+    level: WARNING
+    handlers:
+      - stdout_min

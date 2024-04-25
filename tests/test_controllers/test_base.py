@@ -17,7 +17,7 @@ from app.controllers.base import (
 )
 from app.models import Collection, Document
 from app.schemas import mwargs
-from tests.dummy import DummyProvider
+from dummy import DummyProvider
 
 
 def test_UuidSetFromModel(sessionmaker: sessionmaker):

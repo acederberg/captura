@@ -21,7 +21,7 @@ from app.models import Document
 from app.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, mwargs
 from client.requests import Requests
 from client.requests.base import params
-from tests.dummy import DummyProvider, GetPrimaryKwargs
+from dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
 

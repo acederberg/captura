@@ -32,7 +32,7 @@ from app.models import Document, Grant, User
 from app.schemas import EventSchema
 from client.handlers import CONSOLE
 from client.requests import Requests
-from tests.dummy import DummyHandler, DummyProvider
+from dummy import DummyHandler, DummyProvider
 
 from ..conftest import PytestClientConfig
 

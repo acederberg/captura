@@ -21,7 +21,7 @@ from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from app.models import Document, Grant, User
 from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from client.requests import Requests
-from tests.dummy import DummyProvider, GetPrimaryKwargs
+from dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest
 
 

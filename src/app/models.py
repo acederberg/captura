@@ -956,7 +956,7 @@ class User(SearchableTableMixins, Base):
         secondary=AssocUserDocument.__table__,
         back_populates="users",
         cascade="all, delete",
-        # single_parent=True,
+        single_parent=True,
     )
     events: Mapped[Event] = relationship(back_populates="user", cascade="all, delete")
 
@@ -1411,7 +1411,7 @@ class Document(SearchableTableMixins, Base):
     collections: Mapped[List[Collection]] = relationship(
         secondary=AssocCollectionDocument.__table__,
         back_populates="documents",
-        passive_deletes=True,
+        # passive_deletes=True,
     )
 
     # ----------------------------------------------------------------------- #

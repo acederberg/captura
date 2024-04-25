@@ -18,11 +18,11 @@ from urllib import parse
 
 import httpx
 import typer
+import yaml
 from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
 from pydantic import BaseModel, SecretStr, computed_field
 from rich.console import Console
-import yaml
 
 # --------------------------------------------------------------------------- #
 from app.fields import Singular
@@ -144,7 +144,7 @@ class ContextData(BaseModel):
     def for_typer(
         cls,
         context: typer.Context,
-        config: flags.FlagConfig = None,
+        path_config: flags.FlagConfig = None,
         profile: flags.FlagProfile = None,
         host: flags.FlagHost = None,
         output: flags.FlagOutput = Output.json,
@@ -154,20 +154,23 @@ class ContextData(BaseModel):
         auth_exclude: flags.FlagNoAuthorization = False,
         token: flags.FlagTokenOptional = None,
     ):
-        if config is None:
+        if path_config is None:
             config = mwargs(Config)
         else:
-            with open(config, "r") as file:
+            with open(path_config, "r") as file:
                 config = Config.model_validate(
                     yaml.safe_load(file),
                 )
+        assert config is not None
+
         if host is not None:
             config.use.host = host
         if profile is not None:
             config.use.profile = profile
 
         console_handler = mwargs(ConsoleHandler, output=output, columns=columns)
-        context.obj = ContextData(
+        context.obj = mwargs(
+            ContextData,
             config=config,
             console_handler=console_handler,
             show_request=show_request,
@@ -231,7 +234,7 @@ def methodize(
 # Typer Stuff
 
 
-def typerize_fn(
+def typerize_fn_httx(
     fn: MkRequest[P_Wrapped],
 ) -> MkRequestTyperized[P_Wrapped]:
     @functools.wraps(fn)
@@ -241,7 +244,6 @@ def typerize_fn(
         **kwargs: P_Wrapped.kwargs,
     ) -> httpx.Response:
         context = ContextData.resolve(_context)
-        console: Console = context.console_handler.console
         with httpx.Client() as client:
             request: httpx.Request = fn(_context, *args, **kwargs)
             if context.openapi:
@@ -261,9 +263,27 @@ def typerize_fn(
 
 
 def typerize(
-    cls: Type["BaseTyperizable"], *, exclude_callback: bool = False
+    cls: Type["BaseTyperizable"],
+    *,
+    exclude_callback: bool = False,
+    callback=None,
+    typerize_fn=typerize_fn_httx,
 ) -> typer.Typer:
-    tt = typer.Typer(callback=ContextData.for_typer if not exclude_callback else None)
+
+    callback = ContextData.for_typer if callback is None else callback
+    callback = callback if not exclude_callback else None
+
+    # print("-----------------")
+    # print(cls.__name__)
+    # print("callback", callback)
+    # print("exclude_callback", exclude_callback)
+    tt = typer.Typer()
+    if not exclude_callback:
+        assert callback is not None
+        tt.callback()(callback)
+    # print(tt.registered_callback)
+    # tt.callback()(callback)
+    # print("registered_callback", tt.registered_callback)
 
     for command_name, command_name_fn in cls.typer_commands.items():
         if cls.typer_check_verbage:
@@ -278,7 +298,10 @@ def typerize(
         tt.command(command_name)(command_fn)
 
     for group_name, group_cls in cls.typer_children.items():
-        tt.add_typer(typerize(group_cls, exclude_callback=True), name=group_name)
+        tt.add_typer(
+            typerize(group_cls, callback=callback, exclude_callback=True),
+            name=group_name,
+        )
 
     return tt
 
@@ -291,14 +314,14 @@ class BaseTyperizable:
     typer_decorate: ClassVar[bool] = True
     typer_check_verbage: ClassVar[bool] = True
     typer_commands: ClassVar[Dict[str, str]] = dict()
-    typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()
+    typer_children: ClassVar[Dict[str, Type["BaseTyperizable"]]] = dict()
 
 
 class BaseRequests(BaseTyperizable):
     typer_decorate: ClassVar[bool] = True
     typer_check_verbage: ClassVar[bool] = True
     typer_commands: ClassVar[Dict[str, str]] = dict()
-    typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()
+    typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()  # type: ignore
 
     context: ContextData
     client: httpx.AsyncClient

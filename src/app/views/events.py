@@ -46,6 +46,7 @@ from app.views.base import (
 #
 # Typing voodoo (from hell).
 
+# NOTE: Replace this garbage with ``DependsAdminOnly``.
 T_admin_only_controller = TypeVar(
     "T_admin_only_controller",
     bound=Access | WithAccess,

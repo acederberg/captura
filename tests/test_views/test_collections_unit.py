@@ -26,7 +26,7 @@ from app.schemas import (
 )
 from client.requests import Requests
 from client.requests.base import P_Wrapped
-from tests.dummy import DummyProvider
+from dummy import DummyProvider
 from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
 

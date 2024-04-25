@@ -20,9 +20,9 @@ from app.controllers.base import (
 from app.fields import KindObject, Level, PendingFrom
 from app.models import Collection, Document, Event, Grant, User, resolve_model, uuids
 from app.schemas import AsOutput, DocumentSchema, OutputWithEvents
+from dummy import DummyHandler, DummyProvider, GetPrimaryKwargs
 from tests.config import PytestClientConfig, PyTestClientProfileConfig
 from tests.conftest import client_config
-from tests.dummy import DummyHandler, DummyProvider, GetPrimaryKwargs
 
 
 @pytest.mark.parametrize(
@@ -279,7 +279,10 @@ class TestDummyProvider:
             requests = dummy.requests(client_config, client)
             uuid_events = set()
 
-            reqs = (requests.documents.delete(uuid) for uuid in uuid_documents)
+            reqs = (
+                requests.documents.update(uuid, name="test_get_events")
+                for uuid in uuid_documents
+            )
             tuple(
                 map(
                     lambda res: check_result(res, uuid_events),
@@ -464,6 +467,9 @@ class TestDummyProvider:
 
         kwargs.update(retry=True, allow_empty=False)
         docs = dummy.get_documents(10, kwargs, other=False, level=Level.view)
+
+        dummy.info_mark_tainted()
+        dummy.session.commit()
 
 
 class TestDummyHandler:

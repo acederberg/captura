@@ -51,7 +51,7 @@ from app.models import (
     UUIDSplit,
     uuids,
 )
-from tests.dummy import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
+from dummy import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
 # Base

@@ -23,7 +23,7 @@ from app.models import (
     resolve_model,
 )
 from tests.check import Check
-from tests.dummy import DummyHandler, DummyProvider
+from dummy import DummyHandler, DummyProvider
 
 logger = util.get_logger(__name__)
 

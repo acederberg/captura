@@ -10,7 +10,7 @@ from app.controllers.base import (
     ResolvedEvent,
 )
 from app.models import Assignment, Collection, Document, Event, Grant, KindObject
-from tests.dummy import DummyProvider
+from dummy import DummyProvider
 
 
 class TestDelete:

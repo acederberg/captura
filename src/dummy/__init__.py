@@ -1,5 +1,4 @@
 # =========================================================================== #
-import json
 import secrets
 from http import HTTPMethod
 from random import choice, randint
@@ -8,10 +7,8 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
-    Iterable,
     List,
     NotRequired,
-    Optional,
     Self,
     Set,
     Tuple,
@@ -21,34 +18,13 @@ from typing import (
 
 import httpx
 import yaml
-from pydantic import BaseModel, ConfigDict
-from rich.align import Align
-from rich.color import Color
-from rich.columns import Columns
-from rich.console import ConsoleOptions, Group, RenderResult
-from rich.json import JSON
-from rich.layout import Layout
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.table import Table
-from sqlalchemy import (
-    delete,
-    desc,
-    false,
-    func,
-    literal_column,
-    or_,
-    select,
-    true,
-    update,
-)
+from cryptography.utils import cached_property
+from sqlalchemy import delete, desc, false, func, or_, select, true, update
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import sessionmaker as _sessionmaker
-from sqlalchemy.sql.operators import op
 
 # --------------------------------------------------------------------------- #
-from app import fields, util
+from app import util
 from app.auth import Auth, Token
 from app.controllers.access import Access
 from app.controllers.base import (
@@ -60,12 +36,10 @@ from app.controllers.base import (
     ResolvedDocument,
     ResolvedUser,
     T_ResolvedPrimary,
-    resolve_kind_data,
 )
 from app.controllers.delete import Delete
-from app.fields import KindEvent, KindObject, Level, Plural, Singular
+from app.fields import KindEvent, KindObject, Level
 from app.models import (
-    AnyModelType,
     Assignment,
     AssocCollectionDocument,
     AssocUserDocument,
@@ -80,20 +54,20 @@ from app.models import (
     ResolvableModel,
     ResolvedRawCollection,
     ResolvedRawDocument,
-    Tables,
     User,
     resolve_model,
     uuids,
 )
-from app.schemas import BaseSchema, UserExtraSchema, UserSchema, mwargs
+from app.schemas import mwargs
 from client import ConsoleHandler, ContextData, Requests
-from client.config import UseConfig
+from client.config import Config as ClientConfig
+from client.config import ProfileConfig, UseConfig
 from client.flags import Output
 from client.handlers import ConsoleHandler
 from client.requests import Requests
 from client.requests.base import ContextData
-from tests.config import PytestClientConfig, PyTestClientProfileConfig, PytestConfig
-from tests.mk import Mk, combos
+from dummy.config import ConfigSimulatus, DummyConfig
+from dummy.mk import Mk, combos
 
 util.setup_logging(util.Path.base("logging.test.yaml"))
 logger = util.get_logger(__name__)
@@ -129,20 +103,22 @@ class BaseDummyProvider:
     }
 
     # tainted: bool = False  # NOTE: For fixtures.
-    config: PytestConfig
+    config: ConfigSimulatus
+    dummy: DummyConfig
     session: Session
     user: User
     auth: Auth
 
     def __init__(
         self,
-        config: PytestConfig,
+        config: ConfigSimulatus,
         session: Session,
         *,
         user: User,
         auth: Auth | None = None,
     ):
         self.config = config
+        self.dummy = config.dummy
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
         self.user = user
@@ -160,8 +136,8 @@ class BaseDummyProvider:
         # NOTE: Grants cereated in :func:`mk_grants`.
         logger.debug("Making documents.")
 
-        dummies = self.config.tests.dummies
-        a, b = dummies.minimum_count_documents, dummies.maximum_count_documents
+        assert isinstance(self.dummy, DummyConfig)
+        a, b = self.dummy.minimum_count_documents, self.dummy.maximum_count_documents
         return tuple(Mk.document() for _ in range(randint(a, b)))
 
     def mk_assignments(
@@ -194,7 +170,7 @@ class BaseDummyProvider:
         exclude_grants_create: bool = False,
     ):
 
-        dummies = self.config.tests.dummies
+        dummies = self.dummy
 
         # NOTE: Adding grants to the database can be a real pain in the ass
         #       because the primary key of the grants table is infact the
@@ -308,7 +284,7 @@ class BaseDummyProvider:
 
     def mk_collections(self) -> Tuple[Collection, ...]:
         logger.debug("Making collections...")
-        dummies = self.config.tests.dummies
+        dummies = self.dummy
         a, b = dummies.minimum_count_documents, dummies.maximum_count_documents
         return tuple(Mk.collection(user=self.user) for _ in range(randint(a, b)))
 
@@ -858,10 +834,10 @@ class BaseDummyProvider:
     def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
         token = dict(uuid=self.user.uuid, admin=self.user.admin)
         _pf = dict(token=self.auth.encode(token), uuid_user=self.user.uuid)
-        profile = PyTestClientProfileConfig.model_validate(_pf)
+        profile = ProfileConfig.model_validate(_pf)
 
         context = ContextData(
-            config=PytestClientConfig(
+            config=ClientConfig(
                 use=UseConfig(host="default", profile="default"),
                 hosts=dict(default=client_config.host),
                 profiles=dict(default=profile),
@@ -1004,7 +980,11 @@ class DummyProviderYAML(BaseDummyProvider):
         # backwards = list(Base.metadata.sorted_tables)
         # backwards.reverse()
         for table in Base.metadata.sorted_tables:
-            DummyProviderYAMLInfo.dummies_info[table.name].merge(session)
+            yaml_data = DummyProviderYAMLInfo.dummies_info.get(table.name)
+            if yaml_data is None:
+                continue
+
+            yaml_data.merge(session)
 
 
 # =========================================================================== #
@@ -1012,12 +992,13 @@ class DummyProviderYAML(BaseDummyProvider):
 
 
 class DummyProvider(BaseDummyProvider):
+    # config: ConfigSimulatus
     session: Session
     auth: Auth
 
     def __init__(
         self,
-        config: PytestConfig,
+        config: ConfigSimulatus,
         session: Session,
         *,
         auth: Auth | None = None,
@@ -1025,8 +1006,11 @@ class DummyProvider(BaseDummyProvider):
     ):
 
         self.config = config
+        self.dummy = config.dummy
+
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
+
         match use_existing:
             case list() as dummy_user_uuids:
                 logger.info("Searching for existing dummy.")
@@ -1035,7 +1019,7 @@ class DummyProvider(BaseDummyProvider):
                     .where(
                         # NOTE: Not too used already, not tainted.
                         func.JSON_LENGTH(User.content, "$.dummy.used_by")
-                        < self.config.tests.dummies.maximum_use_count,
+                        < self.dummy.maximum_use_count,
                         func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
                         User.uuid.in_(dummy_user_uuids),
                         func.JSON_OVERLAPS(
@@ -1095,7 +1079,7 @@ class DummyProvider(BaseDummyProvider):
     def info_is_tainted(self, maximum_use_count: int | None = None) -> bool | None:
         session = self.session
         if maximum_use_count is None:
-            maximum_use_count = self.config.tests.dummies.maximum_use_count
+            maximum_use_count = self.dummy.maximum_use_count
 
         # NOTE: Naming easter egg.
         a = func.JSON_LENGTH(User.content, "$.dummy.used_by") >= maximum_use_count
@@ -1131,7 +1115,8 @@ class DummyProvider(BaseDummyProvider):
 
 
 class DummyHandler:
-    config: PytestConfig
+    dummy: DummyConfig
+    config: ConfigSimulatus
     sessionmaker: _sessionmaker[Session]
     auth: Auth
     user_uuids: List[str]
@@ -1139,11 +1124,12 @@ class DummyHandler:
     def __init__(
         self,
         sessionmaker: _sessionmaker,
-        config: PytestConfig,
+        config: ConfigSimulatus,
         user_uuids: List[str],
         *,
         auth: Auth | None = None,
     ):
+        self.dummy = config.dummy
         self.config = config
         self.sessionmaker = sessionmaker
         self.auth = auth or Auth.forPyTest(config)
@@ -1155,7 +1141,7 @@ class DummyHandler:
         maximum_use_count: int | None = None,
     ):
         if maximum_use_count is None:
-            maximum_use_count = self.config.tests.dummies.maximum_use_count
+            maximum_use_count = self.dummy.maximum_use_count
 
         conds = list()
         if uuids is not None:
@@ -1185,16 +1171,20 @@ class DummyHandler:
             session.commit()
 
     def restore(self) -> Self:
+
         with self.sessionmaker() as session:
             logger.debug("Getting current user count.")
             uuids_existing = list(session.scalars(select(User.id, User.uuid)))
             n_users = len(uuids_existing)
             assert n_users is not None
 
-            dummies = self.config.tests.dummies
+            dummies = self.dummy
+            print(f"{dummies.minimum_count = }")
+            print(f"{n_users = }")
             n_generate = dummies.minimum_count - n_users
 
             logger.debug("Generating `%s` dummies.", n_generate)
+            print(f"{n_generate = }")
             while (n_generate := n_generate - 1) > 0:
                 dd = DummyProvider(self.config, session, auth=self.auth)
                 self.user_uuids.append(dd.user.uuid)

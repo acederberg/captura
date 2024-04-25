@@ -28,7 +28,7 @@ from app.fields import (
 from app.models import Grant, User
 from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from client.requests import Requests
-from tests.dummy import DummyProvider, GetPrimaryKwargs
+from dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest
 
 N_CASES: int = 1

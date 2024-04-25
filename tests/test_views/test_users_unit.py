@@ -24,7 +24,7 @@ from app.schemas import (
     mwargs,
 )
 from client.requests import Requests
-from tests.dummy import DummyProvider
+from dummy import DummyProvider
 from tests.mk import fkit
 from tests.test_views.util import BaseEndpointTest
 
