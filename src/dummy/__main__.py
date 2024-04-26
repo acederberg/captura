@@ -39,7 +39,6 @@ CONSOLE = Console()
 
 
 class ContextDataDummy(BaseModel):
-
     quiet: bool = True
     config: ConfigSimulatus
     # console_handler: ConsoleHandler
@@ -58,7 +57,6 @@ class ContextDataDummy(BaseModel):
         quiet: Annotated[bool, typer.Option("--quiet/--loud")] = True,
         path_config: Annotated[Optional[str], typer.Option("--config")] = None,
     ) -> None:
-
         if path_config is None:
             config = mwargs(ConfigSimulatus)
         else:
@@ -82,11 +80,11 @@ class CmdSnapshot(BaseTyperizable):
         history="history",
         delete="delete",
         all="all",
+        amend="amend",
     )
 
     @classmethod
     def delete(cls, _context: typer.Context, uuid_report: str):
-
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
@@ -100,7 +98,6 @@ class CmdSnapshot(BaseTyperizable):
 
     @classmethod
     def view(cls, _context: typer.Context, uuid_report: str):
-
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
@@ -115,6 +112,25 @@ class CmdSnapshot(BaseTyperizable):
         CONSOLE.print(report)
 
     @classmethod
+    def amend(
+        cls,
+        _context: typer.Context,
+        uuid_report: str,
+        note: Annotated[str, typer.Option("--note")],
+    ):
+        context: ContextDataDummy = _context.obj
+        with context.dummy_handler.sessionmaker() as session:
+            try:
+                ReportView.update_report(
+                    ReportController(session),
+                    uuid_report,
+                    note,
+                )
+            except HTTPException as err:
+                print(err)
+                raise typer.Exit(1)
+
+    @classmethod
     def history(
         cls,
         _context: typer.Context,
@@ -123,7 +139,6 @@ class CmdSnapshot(BaseTyperizable):
         after: Optional[int] = None,
         limit: int = 10,
     ):
-
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             reports = ReportView.get_reports(
@@ -151,7 +166,6 @@ class CmdSnapshot(BaseTyperizable):
         note = note or "From `CmdSnapshot.all`."
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
-
             if not context.quiet:
                 CONSOLE.print("[green]Building aggregate and user reports.")
 
@@ -260,7 +274,6 @@ class CmdDummy(BaseTyperizable):
 
     @classmethod
     def restore(cls, _context: typer.Context):
-
         context: ContextDataDummy = _context.obj
 
         CONSOLE.print("[green]Restoring dummies...")
@@ -272,7 +285,6 @@ class CmdDummy(BaseTyperizable):
 
     @classmethod
     def spawn(cls, _context: typer.Context, count: int = 1):
-
         context: ContextDataDummy = _context.obj
         handler = context.dummy_handler
         with handler.sessionmaker() as session:
@@ -281,7 +293,6 @@ class CmdDummy(BaseTyperizable):
 
     @classmethod
     def taint(cls, _context: typer.Context, count: int = 1, uuid: Optional[str] = None):
-
         context: ContextDataDummy = _context.obj
         handler = context.dummy_handler
         with handler.sessionmaker() as session:
@@ -312,7 +323,6 @@ class CmdDummy(BaseTyperizable):
 
     @classmethod
     def initialize(cls, _context: typer.Context):
-
         context: ContextDataDummy = _context.obj
 
         with context.dummy_handler.sessionmaker() as session:

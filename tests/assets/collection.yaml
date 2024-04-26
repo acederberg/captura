@@ -18,12 +18,14 @@
   name: Chicharon.
   description: A collection about New Mexican food.
   uuid: 'eee-eee-eee'
+  deleted: False
 
 - id_user: 2
   id: 5
   name: Adovada and Chicharon.
   description: A collection about New Mexican food.
   uuid: 'foo-ooo-ool'
+  deleted: False
 
 - id_user: 2
   id: 6

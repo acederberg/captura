@@ -302,7 +302,7 @@ FieldKindObject = Annotated[
 
 FieldPending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
 FieldContent: TypeAlias = Annotated[
-    Dict[str, Any],
+    Dict[str, Any] | None,
     Field(description="Document content."),
 ]
 

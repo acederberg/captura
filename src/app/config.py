@@ -48,6 +48,7 @@ class BaseHashable(BaseModel):
     """
 
     hashable_fields_exclude: ClassVar[Set[str]]
+    model_config = ConfigDict(extra="allow")
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
         """Compute fields to exclude from hashing.
@@ -201,7 +202,7 @@ class Config(BaseHashable, BaseYamlSettings):
         yaml_reload=False,
         env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",
-        exclude_extra=False,  # type: ignore
+        extra="allow",
     )
     mysql: MySqlConfig
     auth0: Auth0Config

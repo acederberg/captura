@@ -365,7 +365,7 @@ class DocumentBaseSchema(BasePrimarySchema):
 class DocumentCreateSchema(DocumentBaseSchema):
     kind_schema = KindSchema.create
 
-    content: fields.FieldContent
+    content: fields.FieldContent = None
 
 
 class DocumentUpdateSchema(BaseUpdateSchema):

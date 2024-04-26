@@ -22,8 +22,8 @@ from app.models import (
     Resolvable,
     resolve_model,
 )
-from tests.check import Check
 from dummy import DummyHandler, DummyProvider
+from tests.check import Check
 
 logger = util.get_logger(__name__)
 
@@ -229,7 +229,10 @@ class TestRelationships:
         self, dummy_handler: DummyHandler, session: Session, count: int
     ):
         n_empty_grants = 0
-        for dummy in (DummyProvider(dummy_handler.config, session) for _ in range(5)):
+        for _ in range(5):
+            dummy = DummyProvider(
+                dummy_handler.config, session, use_existing=dummy_handler.user_uuids
+            )
             user = dummy.user
             q_grants = user.q_select_grants(exclude_deleted=False)
             grants = dummy.session.scalars(q_grants)
@@ -274,7 +277,11 @@ class TestRelationships:
     ):
         n_no_collections = 0
         for _ in range(0, 3):
-            dummy = DummyProvider(dummy_handler.config, session)
+            dummy = DummyProvider(
+                dummy_handler.config,
+                session,
+                use_existing=dummy_handler.user_uuids,
+            )
             user = dummy.user
             uuid_collections = set(
                 session.scalars(
@@ -371,10 +378,8 @@ class TestRelationships:
 @pytest.mark.parametrize("count", list(range(25)))
 class TestUser:
     def test_q_select_documents(
-        self, dummy_handler: DummyHandler, session: Session, count: int
+        self, dummy: DummyProvider, session: Session, count: int
     ):
-        dummy = DummyProvider(dummy_handler.config, session)
-        dummy.info_mark_used(f"test_q_select_documents-{count}")
         user, session = dummy.user, dummy.session
         fn = user.q_select_documents
 

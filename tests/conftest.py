@@ -112,14 +112,19 @@ def session(sessionmaker):
 
 
 # TODO: Try out module scoping.
-@pytest.fixture(scope="session")
-def dummy_handler(sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth):
+@pytest.fixture(scope="module")
+def dummy_handler(
+    request, sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth
+):
     user_uuids: List[str] = list()
     handler = DummyHandler(sessionmaker, config, user_uuids, auth=auth)
 
     logger.info("Cleaning an restoring database.")
+    handler.create_report(f"Before disposal (`module={request.node.name}`).")
     handler.dispose()
+    handler.create_report(f"After disposal (`module={request.node.name}`).")
     handler.restore()
+    handler.create_report(f"After restoration (`module={request.node.name}`).")
     return handler
 
 
@@ -167,7 +172,7 @@ def dummy_disposable(request, dummy_handler: DummyHandler):
             dummy_handler.config,
             session,
             auth=dummy_handler.auth,
-            use_existing=None,
+            use_existing=dummy_handler.user_uuids,
         )
         dummy.info_mark_used(request.node.name).info_mark_tainted()
         session.add(dummy.user)

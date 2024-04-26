@@ -31,11 +31,10 @@ from tests.conftest import client_config
 class TestDummyProvider:
     """Because if this is not tested then tests are unstable."""
 
-    def test_mk(self, dummy_handler: DummyHandler, session: Session, count: int):
+    def test_mk(self, dummy: DummyProvider, session: Session, count: int):
         """Just check the dummy provided by the fixture. :meth:`mk` is called
         within the constructor and the dummy should be fresh."""
 
-        dummy = DummyProvider(dummy_handler.config, session)
         session, uuid = dummy.session, dummy.user.uuid
 
         # NOTE: Verify that collections exist.
@@ -480,7 +479,7 @@ class TestDummyHandler:
             session.execute(
                 update(User)
                 .values(
-                    info=func.JSON_ARRAY_APPEND(
+                    content=func.JSON_ARRAY_APPEND(
                         User.content, "$.dummy.used_by", "test_clean"
                     ),
                 )

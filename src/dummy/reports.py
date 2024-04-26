@@ -60,6 +60,14 @@ class KindReport(str, enum.Enum):
 
 class Report(Base):
     __tablename__ = "reports"
+    # __tablediff__ = {
+    #     "count_users",
+    #     "count_collections",
+    #     "count_documents",
+    #     "count_events",
+    #     "count_grants",
+    #     "count_assignments",
+    # }
 
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
@@ -83,9 +91,9 @@ class Report(Base):
 
     uuid_user: Mapped[str] = mapped_column(String(16), nullable=True)
     count_users: Mapped[int | None]
+    count_collections: Mapped[int]
     count_documents: Mapped[int]
     count_events: Mapped[int]
-    count_collections: Mapped[int]
     count_grants: Mapped[int]
     count_assignments: Mapped[int]
 
@@ -94,6 +102,7 @@ class Report(Base):
 
 class ReportGrant(Base):
     __tablename__ = "reports_grants"
+    __tablediff__ = {"count", "count_avg", "count_stddev"}
 
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_report: Mapped[MappedColumnUUID] = mapped_column(
@@ -106,6 +115,7 @@ class ReportGrant(Base):
     pending: Mapped[bool] = mapped_column(default=True)
     pending_from: Mapped[fields.PendingFrom] = mapped_column(Enum(fields.PendingFrom))
     deleted: Mapped[bool]
+
     count: Mapped[int]
     count_avg: Mapped[float | None]
     count_stddev: Mapped[float | None]
@@ -118,14 +128,12 @@ class ReportGrant(Base):
 
 
 class ReportController:
-
     session: Session
 
     def __init__(self, session: Session):
         self.session = session
 
     def create_aggregate(self, note: str) -> Report:
-
         session = self.session
         _grant_agg = Grant.level, Grant.pending_from, Grant.deleted, Grant.pending
         q_reports_grants = (
@@ -213,7 +221,6 @@ class ReportController:
         note: str,
         user: User,
     ) -> Report:
-
         session = self.session
         q_document_uuids = select(Grant.id_document).where(
             Grant.pending_from == fields.PendingFrom.created,
@@ -294,6 +301,29 @@ class ReportController:
         return tuple(self.session.scalars(q))
 
 
+#     def diffs(
+#         self,
+#         reports: Tuple[Report, ...],
+#     ) -> Tuple[ReportDiffSchema, ...]:
+#
+#         if len(reports) < 2:
+#             return tuple()
+#
+#         return tuple(a, b in zip(reports[:-1], reports[0:]))
+#
+#
+# class ReportDiffSchema(BaseSchema):
+#
+#     uuid_report_left: str
+#     uuid_report_right: str
+#
+#     timestamp: int
+#     count: Dict[str, Any]
+#
+#     @classmethod
+#     def create(cls, left: Report | ReportGrant,
+
+
 # =========================================================================== #
 # Schemas
 
@@ -320,7 +350,6 @@ class ReportGrantAggregateSchema(ReportGrantSchema):
 
 
 def pydantic_table(items) -> Table | Panel:
-
     if not items:
         return Panel(Align.center("No results to display."))
 
@@ -344,7 +373,7 @@ class BaseReportSchema(BaseSchema):
     uuid_user: str | None
     uuid: str
     uuid_parent: str | None
-    timestamp: int
+    timestamp: datetime
     count_collections: int
     count_documents: int
     count_events: int
@@ -359,7 +388,6 @@ class ReportRich:
     reports_grants: List
 
     def render_reports_grants(self) -> Panel:
-
         tt: Table | str
         if self.reports_grants:
             tt = Table(title="Dummy Grants Report")
@@ -404,11 +432,11 @@ class ReportRich:
         return layout
 
 
-class ReportUserMinimalSchema(BaseReportSchema): ...
+class ReportUserMinimalSchema(BaseReportSchema):
+    ...
 
 
 class ReportUserSchema(ReportRich, ReportUserMinimalSchema):
-
     user: UserExtraSchema
     reports_grants: List[ReportGrantSchema]
 
@@ -423,12 +451,13 @@ class ReportUserSchema(ReportRich, ReportUserMinimalSchema):
         return layout
 
 
-class ReportAggregateMinimalSchema(BaseReportSchema): ...
+class ReportAggregateMinimalSchema(BaseReportSchema):
+    count_users: int
 
 
 class ReportAggregateSchema(ReportRich, BaseReportSchema):
-
     reports_grants: List[ReportGrantAggregateSchema]
+    content: Dict[str, Any]
 
 
 # =========================================================================== #
@@ -462,7 +491,6 @@ class ReportView(BaseView):
         uuid_user: str | None = None,
         return_report: bool = False,
     ) -> ReportUserSchema | ReportAggregateSchema | None:
-
         if uuid_user is not None:
             user = User.if_exists(report_controller.session, uuid_user)
             report = report_controller.create_user(note, user)
@@ -486,7 +514,6 @@ class ReportView(BaseView):
     def post_report_build_all(
         cls, report_controller: DependsReportController, note: str
     ) -> str:
-
         session = report_controller.session
 
         report = report_controller.create_aggregate(note)
@@ -508,7 +535,6 @@ class ReportView(BaseView):
         uuid_user: str | None = None,
         exclude_children: bool = True,
     ) -> List[ReportUserMinimalSchema] | List[ReportAggregateMinimalSchema]:
-
         reports = report_controller.read(
             param, uuid_user, exclude_children=exclude_children
         )
@@ -531,9 +557,21 @@ class ReportView(BaseView):
     def read_report(
         cls, report_controller: DependsReportController, uuid_report: str
     ) -> ReportUserSchema | ReportAggregateSchema:
-
         session = report_controller.session
         report = Report.if_exists(session, uuid_report)
         user = session.scalar(select(User).where(User.uuid == report.uuid_user))
 
         return cls.serial(user, report)
+
+    @classmethod
+    def update_report(
+        cls,
+        report_controller: DependsReportController,
+        uuid_report: str,
+        note: str,
+    ) -> None:
+        session = report_controller.session
+        report = Report.if_exists(session, uuid_report)
+        report.note = note
+        session.add(report)
+        session.commit()

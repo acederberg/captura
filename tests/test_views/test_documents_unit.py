@@ -254,7 +254,7 @@ class TestDocumentsCreate(
                 return req(
                     name="TestDocumentsCreate",
                     description="TestDocumentsCreate",
-                    content='{"tags"=["TestDocumentsCreate.fn"]}',
+                    content={"from": "TestDocumentsCreate.fn"},
                 )
 
             return wrapper
@@ -269,7 +269,6 @@ class TestDocumentsCreate(
         res = await fn(  # type: ignore
             name=f"TestDocumentsCreate.test_success_200-{uu}",  # type: ignore
             description="TestDocumentsCreate.test_success_200",  # type: ignore
-            content="TestDocumentsCreate.test_success_200",  # type: ignore
         )
         if err := self.check_status(requests, res):
             raise err

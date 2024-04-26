@@ -35,7 +35,6 @@ class PytestConfig(ConfigSimulatus):
         env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",
     )
-
     tests: PytestSubConfig
 
 

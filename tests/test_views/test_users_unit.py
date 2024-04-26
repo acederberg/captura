@@ -16,6 +16,7 @@ from app.fields import ChildrenUser, KindObject
 from app.models import Tables
 from app.schemas import (
     AsOutput,
+    CollectionMetadataSchema,
     CollectionSchema,
     DocumentMetadataSchema,
     OutputWithEvents,
@@ -25,7 +26,7 @@ from app.schemas import (
 )
 from client.requests import Requests
 from dummy import DummyProvider
-from tests.mk import fkit
+from dummy.mk import fkit
 from tests.test_views.util import BaseEndpointTest
 
 
@@ -455,14 +456,6 @@ class TestUserDocumentsSearch(CommonUserSearchTests):
             limit=5,
         )
 
-    # @pytest.mark.asyncio
-    # async def test_success_200(
-    #     self,
-    #     dummy: DummyProvider,
-    #     requests: Requests,
-    # ):
-    #     assert False
-
 
 @pytest.mark.parametrize(
     "dummy, requests, count",
@@ -472,8 +465,8 @@ class TestUserDocumentsSearch(CommonUserSearchTests):
 class TestUserCollectionsSearch(CommonUserSearchTests):
     method = H.GET
     kind = KindObject.collection
-    adapter = TypeAdapter(AsOutput[List[CollectionSchema]])
-    adapter_w_events = TypeAdapter(OutputWithEvents[List[CollectionSchema]])
+    adapter = TypeAdapter(AsOutput[List[CollectionMetadataSchema]])
+    adapter_w_events = TypeAdapter(OutputWithEvents[List[CollectionMetadataSchema]])
 
     def fn(self, requests: Requests):
         requests.users.search
