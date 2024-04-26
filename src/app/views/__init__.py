@@ -1,4 +1,5 @@
 # =========================================================================== #
+import json
 import traceback
 from typing import Annotated, Generator, List, Set
 
@@ -85,8 +86,6 @@ class AppView(BaseView):
         routes=[Mount("/static", view_static)],
     )  # type: ignore
 
-    view_router.add_middleware(SessionMiddleware, secret_key="secret-string")
-
     view_routes = {
         "get_index": {
             "url": "/",
@@ -162,7 +161,6 @@ class AppView(BaseView):
 
 
 # =========================================================================== #
-import json
 
 
 # TODO: The traceback should not show up in prod unless the status `500`.

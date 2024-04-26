@@ -30,7 +30,6 @@ classifiers = [
     'Topic :: Internet',
 ]
 dependencies = [
-  "authlib",
   "uvicorn",
   "cryptography",
   "fastapi",

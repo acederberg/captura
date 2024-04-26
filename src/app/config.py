@@ -228,25 +228,3 @@ class Config(BaseHashable, BaseYamlSettings):
             drivername=self.mysql.host.drivername_async,
         )
         return create_async_engine(url, **kwargs)
-
-    def oauth(self) -> starlette_client.OAuth:
-        auth0 = self.auth0
-        oauth = starlette_client.OAuth()
-
-        # NOTE: Docs for library suck, cannot find all the class for which
-        #       ``kwargs`` of register are for. The token recieved at this
-        #       point has ``alg=ASM256`` in the header.
-        oauth.register(
-            "auth0",
-            audience=auth0.api.audience,
-            client_id=auth0.app.client_id,
-            client_secret=auth0.app.client_secret.get_secret_value(),
-            client_kwargs=dict(
-                scope="openid profile email",
-            ),
-            access_token_params=dict(
-                audience=auth0.api.audience,
-            ),
-            server_metadata_url=f"https://{auth0.issuer}/.well-known/openid-configuration",
-        )
-        return oauth
