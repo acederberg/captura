@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 # --------------------------------------------------------------------------- #
 from app import util
-from app.auth import Auth, Token, try_decode
+from app.auth import Auth, Token, TokenPermissionTier, try_decode
 from app.config import Config
 from app.controllers.access import Access
 from app.controllers.create import Create, Update
@@ -53,7 +53,8 @@ def config() -> Config:
     return Config()  # type: ignore
 
 
-DependsConfig: TypeAlias = Annotated[Config, Depends(config, use_cache=False)]
+_DependsConfig = Depends(config, use_cache=False)
+DependsConfig: TypeAlias = Annotated[Config, _DependsConfig]
 
 
 @cache
@@ -148,6 +149,8 @@ def token(
     """Decode and deserialize the bearer JWT specified in the ``Authorization``
     header.
 
+    Database validation happens later once a database session is available.
+
     :param config: Application configuration.
     :param auth: Auth0 or PyTest authorization handler.
     :param authorization: Authorization header. It should match
@@ -156,7 +159,7 @@ def token(
     decoded, err = try_decode(auth, authorization)
     if err is not None:
         raise err
-    token = Token(**decoded)
+    token = Token.model_validate(decoded)
     return token
 
 
@@ -165,32 +168,25 @@ def token_optional(
     authorization: Annotated[
         str | None, Header(description="Optional auth0 bearer token.")
     ] = None,
-) -> Dict[str, str] | None:
+) -> Token | None:
     if authorization is not None:
         return token(auth, authorization)
     return None
 
 
-def oauth(config: DependsConfig) -> starlette_client.OAuth:
-    return config.oauth()
-
-
-DependsTokenOptional: TypeAlias = Annotated[
-    None | Dict[str, str],
-    Depends(token_optional),
-]
-DependsToken: TypeAlias = Annotated[Dict[str, str], Depends(token)]
-DependOAuth: TypeAlias = Annotated[starlette_client.OAuth, Depends(oauth)]
-
-
-def token_admin(_token: DependsToken):
+def token_admin(_token: "DependsToken"):
     token = Token.model_validate(_token)
-    if not token.admin:
+    if token.tier != TokenPermissionTier.admin:
         raise HTTPException(403, detail="Admin only.")
 
     return token
 
 
+DependsTokenOptional: TypeAlias = Annotated[
+    None | Token,
+    Depends(token_optional),
+]
+DependsToken: TypeAlias = Annotated[Token, Depends(token)]
 DependsTokenAdmin: TypeAlias = Annotated[Token, Depends(token_admin)]
 
 

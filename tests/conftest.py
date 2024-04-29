@@ -1,10 +1,10 @@
 # =========================================================================== #
-from typing import Any, AsyncGenerator, Dict, Iterable, List, Self, Set
+from typing import Annotated, Any, AsyncGenerator, Dict, Iterable, List, Self, Set
 
 import httpx
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text, true
 from sqlalchemy.engine import Engine
@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import util
+from app import depends, util
 from app.auth import Auth
-from app.config import AppConfig, Config
+from app.config import AppConfig
 from app.models import Base, User
+from app.schemas import mwargs
 from app.views import AppView
-from client.config import Config as ClientConfig
 from dummy import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
 
@@ -37,7 +37,14 @@ def config() -> PytestConfig:
             "logging_configuration_path": util.Path.base("logging.test.yaml"),
         }
     )
-    return PytestConfig(app=app)  # type: ignore
+    if (config := mwargs(PytestConfig, app=app)).auth0.use:
+        raise AssertionError(
+            "Refusing to perform tests with `config.auth0.use=True`. "
+            "Please set this setting to `False` to use the test token "
+            "provider (see `app.config` and `app.auth::Auth.forPyTest`)."
+        )
+
+    return config
 
 
 @pytest.fixture(scope="session")
@@ -74,16 +81,30 @@ def context(
 
 
 @pytest_asyncio.fixture(scope="session")
-async def app(client_config: ClientConfig) -> FastAPI | None:
+async def app(
+    client_config: PytestClientConfig, config: PytestConfig
+) -> FastAPI | None:
     if (host := client_config.host) is None or not host.remote:
         logger.info("Using httpx client with app instance.")
-        return AppView.view_router  # type: ignore
+
+        # NOTE: Ensure that the pytest config is used. This step cannot be per-
+        #       formed for remote hosts.
+        app: FastAPI
+        app = AppView.view_router  # type: ignore
+
+        def config_callback():
+            return config
+
+        app.dependency_overrides[depends.config] = config_callback
+        print("========================================")
+        print(config.model_config.get("yaml_files"))
+        return app
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
 
 
 @pytest.fixture(scope="session")
-def auth(config: Config) -> Auth:
+def auth(config: PytestConfig) -> Auth:
     return Auth.forPyTest(config)
 
 
@@ -117,7 +138,12 @@ def dummy_handler(
     request, sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth
 ):
     user_uuids: List[str] = list()
-    handler = DummyHandler(sessionmaker, config, user_uuids, auth=auth)
+    handler = DummyHandler(
+        sessionmaker,
+        config,
+        user_uuids,
+        auth=auth,
+    )
 
     logger.info("Cleaning an restoring database.")
     handler.create_report(f"Before disposal (`module={request.node.name}`).")
@@ -137,6 +163,7 @@ def dummy(request, dummy_handler: DummyHandler):
             session,
             use_existing=dummy_handler.user_uuids,
             auth=dummy_handler.auth,
+            client_config_cls=PytestClientConfig,
         )
         dummy.info_mark_used(request.node.name)
         session.add(dummy.user)
@@ -155,6 +182,7 @@ def dummy_new(request, dummy_handler: DummyHandler):
             session,
             auth=dummy_handler.auth,
             use_existing=None,
+            client_config_cls=PytestClientConfig,
         )
         dummy.info_mark_used(request.node.name)
         session.add(dummy.user)
@@ -173,6 +201,7 @@ def dummy_disposable(request, dummy_handler: DummyHandler):
             session,
             auth=dummy_handler.auth,
             use_existing=dummy_handler.user_uuids,
+            client_config_cls=PytestClientConfig,
         )
         dummy.info_mark_used(request.node.name).info_mark_tainted()
         session.add(dummy.user)
@@ -194,6 +223,7 @@ def yaml_dummy(request, dummy_handler: DummyHandler):
             session,
             auth=dummy_handler.auth,
             user=user,
+            client_config_cls=PytestClientConfig,
         )
         dd.merge(session)
         dd.session.refresh(dd.user)

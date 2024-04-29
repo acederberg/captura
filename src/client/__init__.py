@@ -18,9 +18,10 @@ from client.requests.tokens import TokenRequests
 from client.requests.users import UserRequests
 
 FlagConfigOut = Annotated[
-    str,
+    Optional[str],
     typer.Option(
         "--config-out",
+        "-o",
         help=(
             "Create/overwrite specified configuration file with output that "
             "would go the terminal (minus secret seconsoring)."
@@ -66,7 +67,7 @@ class ConfigCommands(BaseTyperizable):
             typer.Option("--profile", "-p"),
         ] = None,
         config_path: FlagConfig = None,
-        config_path_out: FlagConfigOut = False,
+        config_path_out: FlagConfigOut = None,
     ):
         context = ContextData.resolve(_context)
 
@@ -77,8 +78,17 @@ class ConfigCommands(BaseTyperizable):
             config = context.config
 
         if host is not None:
+            if host not in config.hosts:
+                msg = f"[red]No such host `{host}` in client config."
+                CONSOLE.print(msg.format(host))
+                raise typer.Exit(1)
             config.use.host = host
+
         if profile is not None:
+            if profile not in config.profiles:
+                msg = f"[red]No such profile `{profile}` in client config."
+                CONSOLE.print(msg.format(host))
+                raise typer.Exit(1)
             config.use.profile = profile
 
         if config_path_out is None:
@@ -109,10 +119,18 @@ class ConfigCommands(BaseTyperizable):
             typer.Option("--name", help="Names to filter by."),
         ] = None,
     ) -> None:
+        """To set a ``profile``, see the ``use`` subcommand."""
+
         context = ContextData.resolve(_context)
 
         profiles = context.config.profiles
-        if current and names is not None:
+        data = tuple()
+
+        if current:
+            if names:
+                CONSOLE.print("[red]Names cannot be specified when `--current` is.")
+                raise typer.Exit(1)
+
             profile = context.config.profile
             data = (
                 (
@@ -145,6 +163,7 @@ class ConfigCommands(BaseTyperizable):
             typer.Option("--name", help="Names to filter by."),
         ] = None,
     ) -> None:
+        """To set a ``host``, see the ``use`` subcommand."""
         context = ContextData.resolve(_context)
 
         hosts = context.config.hosts

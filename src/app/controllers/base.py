@@ -94,7 +94,7 @@ class BaseController:
     def token_user(self) -> User:
         if self._token_user is not None:
             return self._token_user
-        token_user = self.token.validate(self.session)
+        token_user = self.token.validate_db(self.session)
 
         self._token_user = token_user
         return token_user
@@ -234,7 +234,12 @@ def resolve_kind_data(v: ResolvableKindData) -> KindData:
     match v:
         case KindData():
             return v
-        case KindObject.user | KindObject.collection | KindObject.edit | KindObject.document as kind:
+        case (
+            KindObject.user
+            | KindObject.collection
+            | KindObject.edit
+            | KindObject.document as kind
+        ):
             return KindData(kind.name)
         case KindObject() as bad:
             msg = f"Cannot resolve scalar `KindObject` `{bad.name}`."
@@ -278,11 +283,9 @@ class BaseResolved(BaseModel):
             )
         cls.registry[cls.kind] = cls
 
-    def register(self, session: Session) -> None:
-        ...
+    def register(self, session: Session) -> None: ...
 
-    def refresh(self, session: Session) -> None:
-        ...
+    def refresh(self, session: Session) -> None: ...
 
     @classmethod
     def get(cls, resolvable_kind: ResolvableKindData) -> "Type[BaseResolved]":

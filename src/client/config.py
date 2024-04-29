@@ -11,7 +11,7 @@ from app import util
 class ProfileConfig(BaseModel):
     # name: Annotated[str, Field()]
     uuid_user: Annotated[str, Field()]
-    token: Annotated[SecretStr, Field()]
+    token: Annotated[SecretStr | None, Field(default=None)]
 
 
 class HostConfig(BaseModel):
@@ -57,6 +57,8 @@ class Config(BaseYamlSettings):
             exclude={"profile", "host", "token"},
         )
         for profile_name, profile in data["profiles"].items():
-            profile["token"] = self.profiles[profile_name].token.get_secret_value()
+            token = self.profiles[profile_name].token
+            token = token.get_secret_value() if token is not None else None
+            profile["token"] = token
 
         return data

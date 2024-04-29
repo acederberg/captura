@@ -103,7 +103,7 @@ class BaseDummyProvider:
         KindObject.event,
     }
 
-    # tainted: bool = False  # NOTE: For fixtures.
+    client_config_cls: Type
     config: ConfigSimulatus
     dummy: DummyConfig
     session: Session
@@ -117,7 +117,9 @@ class BaseDummyProvider:
         *,
         user: User,
         auth: Auth | None = None,
+        client_config_cls: Type | None = None,
     ):
+        self.client_config_cls = client_config_cls or ClientConfig
         self.config = config
         self.dummy = config.dummy
         self.auth = auth if auth is not None else Auth.forPyTest(config)
@@ -837,7 +839,7 @@ class BaseDummyProvider:
         profile = ProfileConfig.model_validate(_pf)
 
         context = ContextData(
-            config=ClientConfig(
+            config=self.client_config_cls(
                 use=UseConfig(host="default", profile="default"),
                 hosts=dict(default=client_config.host),
                 profiles=dict(default=profile),
@@ -1003,12 +1005,14 @@ class DummyProvider(BaseDummyProvider):
         *,
         auth: Auth | None = None,
         use_existing: List[str] | User | None = None,
+        client_config_cls: Type | None = None,
     ):
         self.config = config
         self.dummy = config.dummy
 
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
+        self.client_config_cls = client_config_cls or ClientConfig
 
         match use_existing:
             case list() as dummy_user_uuids:

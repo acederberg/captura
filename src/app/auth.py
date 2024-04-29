@@ -1,10 +1,10 @@
 # =========================================================================== #
 import base64
+import enum
 import json
 import re
-from os import path
-from typing import Annotated, Any, Dict, List, Self, Tuple
-from typing_extensions import Doc
+from os import path, walk
+from typing import Annotated, Any, Dict, Iterable, List, Literal, Self, Set, Tuple
 
 import httpx
 import jwt
@@ -14,9 +14,11 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from pydantic_core.core_schema import FieldValidationInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -61,7 +63,7 @@ class Auth:
 
     config: Config
     issuer: str
-    audience: str
+    audience: str | Tuple[str, ...]
     private_key: PrivateKey
     public_keys: PublicKey
 
@@ -74,7 +76,7 @@ class Auth:
         # `issuer` and `audience` will not notice changes in config. Should not
         #  matter as config should be static.
         self.config = config
-        self.issuer = self.config.auth0.issuer
+        self.issuer = self.config.auth0.issuer_url
         self.audience = self.config.auth0.api.audience
         self.private_key = private_key
         self.public_keys = public_keys
@@ -161,9 +163,17 @@ class Auth:
         if (kid := data_header.get("kid")) is None:  # type: ignore
             raise ValueError("JWT header missing `kid`.")
 
+        # NOTE: Hitting this line during tests with a remote host can be the
+        #       result of the configuration of the remote host and not
+        #       necessarily the tests.
+        if (pk := self.public_keys.get(kid)) is None:
+            detail = f"Malformed Token: JWT header contains unknown key id {kid}."
+            detail += f"{self.config.model_config}."
+            raise HTTPException(401, detail=detail)
+
         return jwt.decode(
             matched.group("token"),
-            self.public_keys[kid],
+            pk,
             algorithms="RS256",  # type: ignore
             audience=self.audience,
             issuer=self.issuer,
@@ -209,14 +219,109 @@ def try_decode(
     return None, HTTPException(401, detail="Invalid Token: " + _msg)
 
 
+TokenPermissions = {
+    "tier:free",
+    "tier:paid",
+    "tier:admin",
+    "read:events",
+    "read:reports",
+}
+
+
+class TokenPermissionTier(enum.Enum):
+    """For now, only `admin` has an effect."""
+
+    disabled = -10
+    free = 0
+    paid = 10
+    admin = 50
+
+
+class TokenPermissionRead(str, enum.Enum):
+    """For reading special objects."""
+
+    events = "events"
+    reports = "reports"  # NOTE: Includes ``reports_grants``.
+
+
+class TokenPermissionKind(enum.Enum):
+    read = TokenPermissionRead
+    tier = TokenPermissionTier
+
+
+TokenPermissionPattern = re.compile("^(tier|read):([a-zA-Z]+)$")
+
+
+def permission_parse(permissions: Iterable[str]) -> Dict[str, Any]:
+    """Parse permissions array."""
+
+    matched = {
+        pp: mm
+        for pp in permissions
+        if (mm := TokenPermissionPattern.match(pp)) is not None
+    }
+
+    if len(bad := list(pp for pp in permissions if pp not in matched)):
+        msg = "Raw JWT contains malformed permissions: `{}`."
+        raise ValueError(msg.format(bad))
+
+    parsed: Dict[str, Any] = dict()
+    for mm in matched.values():
+        key, value = mm.group(1), mm.group(2)
+        parsed_value = parsed.get(key)
+        print(key)
+        match key:
+            case "read":
+                value_read = TokenPermissionRead(value)
+                if parsed_value is None:
+                    parsed["read"] = {value_read}
+                else:
+                    parsed["read"].add(value_read)
+            case "tier":
+                if parsed_value is not None:
+                    msg = "`tier` can only be specified once."
+                    raise ValueError(msg.format())
+                parsed["tier"] = TokenPermissionTier[value]
+            case _:
+                raise ValueError()
+
+    return parsed
+
+
 class Token(BaseModel):
-    """Only used in `POST /auth/tokens` until later."""
+    # NOTE: uuid should not be in the token for the sake of maintainability.
+    #       According to the standard [1], it should such that the ``sub``
+    #       field of the jwt should be unique within the scope of the provider.
+    #       The ``sub`` field is optional so it will necessary to first check
+    #       that it exists.
+    #
+    # [1] https://www.rfc-editor.org/rfc/rfc7519#section-4.1
 
     uuid: Annotated[str, Field()]
-    admin: Annotated[bool, Field(default=False)]
-    permissions: Annotated[List[str], Field(default=list())]
+    tier: Annotated[
+        TokenPermissionTier,
+        Field(default=TokenPermissionTier.free),
+    ]
+    read: Annotated[
+        Set[TokenPermissionRead],
+        Field(default_factory=lambda: set()),
+    ]
 
-    def validate(self, session: Session) -> User:
+    @model_validator(mode="before")
+    @classmethod
+    def unfuck_permissions(cls, data: Any):
+        print(data)
+        if (pp := data.get("permissions")) is None:
+            return data
+
+        if "tier" in data or "read" in data:
+            raise ValueError("`tier` and `read` should not be in raw data.")
+
+        data.update(permission_parse(pp))
+        return data
+
+    # NOTE: Change name, overwrites pydantic v1 ``validate``.
+    def validate_db(self, session: Session) -> User:
         q_user = select(User).where(User.uuid == self.uuid)
         user = session.execute(q_user).scalar()
         if user is None:
@@ -227,14 +332,12 @@ class Token(BaseModel):
                     uuid=self.uuid,
                 ),
             )
-
-        if user.admin != self.admin:
+        if user.admin and not self.tier == TokenPermissionTier.admin:
             raise HTTPException(
                 401,
                 detail=dict(
                     msg="Admin status inconsistent with database.",
                     uuid=self.uuid,
-                    admin_token=self.admin,
                     admin_user=user.admin,
                 ),
             )

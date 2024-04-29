@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 ENV_PREFIX = "CAPTURA_"
 VERBOSE = environ.get(f"{ENV_PREFIX}VERBOSE")
-VERBOSE_HTTPEXCEPTIONS = environ.get(f"{ENV_PREFIX}VERBOSE-HTTPEXCEPTIONS")
+VERBOSE_HTTPEXCEPTIONS = environ.get(f"{ENV_PREFIX}VERBOSE_HTTPEXCEPTIONS")
 LOG_LEVEL = logging.INFO
 
 # =========================================================================== #

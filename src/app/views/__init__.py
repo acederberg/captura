@@ -15,10 +15,9 @@ from starlette.routing import Mount
 from app import __version__, util
 from app.controllers.access import H
 from app.depends import DependsAccess, DependsConfig
-from app.views.frontend import BrowserAuthView
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
-from .auth import PytestAuthView
+from .auth import AuthViewAuth0, AuthViewPytest
 from .base import BaseView, OpenApiTagMetadata, OpenApiTags
 from .collections import CollectionView
 from .documents import DocumentView
@@ -109,9 +108,9 @@ class AppView(BaseView):
         "/users": UserView,
         "/collections": CollectionView,
         "/documents": DocumentView,
-        "/auth": PytestAuthView,
+        "/auth": AuthViewPytest,
         "/events": EventView,
-        "": BrowserAuthView,
+        "": AuthViewAuth0,
     }
 
     @classmethod
@@ -191,7 +190,6 @@ __all__ = (
     "DocumentGrantView",
     "UserGrantView",
     "CollectionView",
-    "AuthView",
     "EventView",
     "DocumentView",
     "UserView",

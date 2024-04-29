@@ -69,251 +69,251 @@ class DemoUserView(BaseView):
         `PATCH /users/demo`.
     """
 
-    view_routes = dict(
-        post_user_demo=dict(
-            url="",
-            name="Request a Demo User",
-        ),
-        get_user_demos=dict(
-            url="",
-            name="Read Demo Requests",
-        ),
-        patch_user_demo=dict(
-            url="/{invitation_uuid}",
-            name="Admin Approve Request/Auth0 Verify",
-        ),
-    )
-
-    view_router_args = dict(
-        tags=[OpenApiTags.users],
-        responses=OpenApiResponseUser,
-    )
-
-    @classmethod
-    def get_user_demos(
-        cls,
-        access: DependsAccess,
-        invitation_email: Annotated[Set[str] | None, Query()] = None,
-        invitation_code: Annotated[Set[str] | None, Query()] = None,
-        invitation_uuid: Annotated[Set[str] | None, Query()] = None,
-    ) -> List[OutputWithEvents[UserExtraSchema]]:
-        """Get requests for demo accounts.
-
-        Optionally filter by **invitation_email**, **invitation_code**, or
-        **invitation_uuid**.
-        """
-
-        if not access.token.admin:
-            raise HTTPException(
-                403,
-                detail="Only admins can view demo users.",
-            )
-
-        session = access.session
-        q_user = User._q_prototype_activation_pending_approval(
-            invitation_uuid=invitation_uuid,
-            invitation_code=invitation_code,
-            invitation_email=invitation_email,
-        )
-        # util.sql(session, q_user)
-        users = tuple(session.execute(q_user).scalars())
-
-        adapter = TypeAdapter(List[EventSchema])
-        return list(
-            mwargs(
-                OutputWithEvents[UserExtraSchema],
-                data=UserExtraSchema.model_validate(user),
-                events=adapter.validate_python(
-                    session.execute(user.q_events()).scalars()
-                ),
-            )
-            for user in users
-        )
-
-    @classmethod
-    def post_user_demo(
-        cls,
-        access: DependsAccess,
-        user_in: UserCreateSchema,
-        invitation_email: Annotated[str, Query()],
-        force: Annotated[bool, Query()] = False,
-    ) -> OutputWithEvents[UserExtraSchema]:
-        """Create a user.
-
-        If the user has no token or has a valid token but is not an admin, the
-        `user` created will await approval from an admin. If the token exists
-        and is an for an `admin`, then the `user` created will only await
-        activation via `PATCH /users/extensions/demo/{invitation_code}`
-        """
-        is_admin = access.token.admin
-        user_uuid = secrets.token_urlsafe(8)
-        q_name = select(User).where(User.name == user_in.name)
-
-        session = access.session
-        events: List[Event] = list()
-        if (user_existing := session.execute(q_name).scalar()) is not None:
-            if force:
-                if not is_admin:
-                    raise HTTPException(
-                        403,
-                        detail=dict(
-                            msg="The force is only for masters.",
-                            uuid=invitation_email,
-                        ),
-                    )
-                events.append(
-                    event_user_existing := Event(
-                        api_version=__version__,
-                        api_origin="POST `/users/demo`",
-                        detail="Invitation force deleted.",
-                        uuid_obj=user_existing.uuid,
-                        kind_obj=KindObject.user,
-                        uuid_user=access.token_user.uuid,
-                        kind=KindEvent.delete,
-                    )
-                )
-                session.delete(user_existing)
-                session.add(event_user_existing)
-                session.commit()
-
-            else:
-                raise HTTPException(
-                    422,
-                    detail=dict(
-                        msg="User with username already exists.",
-                        name=user_in.name,
-                    ),
-                )
-
-        detail = "Demo user "
-        detail += "created by admin." if is_admin else "requested"
-        events.append(
-            event := Event(
-                api_version=__version__,
-                api_origin="POST `/users/demo`",
-                detail=detail,
-                uuid_obj=user_uuid,
-                kind_obj=KindObject.user,
-                uuid_user=access.token_user.uuid,
-                kind=KindEvent.create,
-            )
-        )
-        invitation_code = str(uuid4())
-        user = User(
-            _prototype_activation_invitation_email=invitation_email,
-            _prototype_activation_invitation_code=invitation_code,
-            _prototype_activation_pending_approval=is_admin,
-            uuid=user_uuid,
-            **user_in.model_dump(exclude={"kind"}),
-            deleted=True,
-        )
-
-        session.add(event)
-        session.add(user)
-        session.commit()
-        session.refresh(event)
-        session.refresh(user)
-
-        return mwargs(
-            OutputWithEvents[UserExtraSchema],
-            data=UserExtraSchema.model_validate(user),
-            events=[event],
-        )
-
-    @classmethod
-    def patch_user_demo(
-        cls,
-        access: DependsAccess,
-        invitation_uuid: args.PathUUIDUser,
-        invitation_code: Annotated[str, Query()],
-        invitation_email: Annotated[str, Query()],
-    ) -> OutputWithEvents[UserExtraSchema]:
-        """If user has a valid token and is an admin, approves the user request
-        made with `POST /users/demo` matching **invitation_uuid**,
-        **invitation_code**, and **invitation_email**.
-
-        If not an admin, this should be used by auth0 to activate an account
-        by verifying the afforementioned parameters.
-        """
-
-        # NOTE: There is no access to check in this case. Just the invitation.
-        q_user = select(User).where(
-            User._prototype_activation_invitation_code == invitation_code,
-            User._prototype_activation_invitation_email == invitation_email,
-            User.uuid == invitation_uuid,
-        )
-
-        event_kwargs = dict(
-            api_origin="PATCH `/users/demo/<uuid_user>`.",
-            api_version=__version__,
-            uuid_user=access.token_user.uuid,
-            uuid_obj=invitation_uuid,
-            kind_obj=KindObject.user,
-            kind=KindEvent.update,
-            detail="Demo user activation.",
-        )
-
-        status: int | None = None
-        msg: str | None = None
-        session = access.session
-        match (user := session.execute(q_user).scalar()):
-            case None:
-                msg = "Incorrect combination of `invitation_code` and "
-                msg += "`invitation_email`."
-                raise HTTPException(403, detail=msg)
-            # NOTE: 422 because the request
-            case User(deleted=False, pending_approval=False, uuid=uuid):
-                status = 422
-                msg = "User already activated."
-            # NOTE: 500 because this should never happen.
-            case User(deleted=False, pending_approval=True, uuid=uuid):
-                status = 500
-                msg = "User is already out of deleted state while pending "
-                msg += "approval."
-            # Update user and return response.
-            case User(deleted=True, pending_approval=True, uuid=uuid):
-                if access.token.admin:
-                    user._prototype_activation_pending_approval = False
-                    session.add(user)
-                    session.add(
-                        Event(
-                            message="Admin approved invitation.",
-                            **event_kwargs,
-                        )
-                    )
-                    session.commit()
-                    session.refresh(user)
-                else:
-                    status = 403
-                    msg = "Only admins can approve a demo user."
-            case User(deleted=True, pending_approval=False, uuid=uuid):
-                # NOTE: User answered correctly. This should be possible
-                #       without a token.
-                user.deleted = False
-                session.add(user)
-                session.add(
-                    Event(
-                        message="Account activated.",
-                        **event_kwargs,
-                    )
-                )
-                session.commit()
-                session.refresh(user)
-            case _:
-                raise HTTPException(500)
-
-        if msg is not None:
-            if status is None:
-                raise HTTPException(500)
-            raise HTTPException(status, detail=dict(msg=msg, uuid_user=uuid))
-
-        return mwargs(
-            OutputWithEvents[UserExtraSchema],
-            data=UserExtraSchema.model_validate(user),
-            events=TypeAdapter(List[EventSchema]).validate_python(
-                session.execute(user.q_events()).scalars()
-            ),
-        )
+    # view_routes = dict(
+    #     post_user_demo=dict(
+    #         url="",
+    #         name="Request a Demo User",
+    #     ),
+    #     get_user_demos=dict(
+    #         url="",
+    #         name="Read Demo Requests",
+    #     ),
+    #     patch_user_demo=dict(
+    #         url="/{invitation_uuid}",
+    #         name="Admin Approve Request/Auth0 Verify",
+    #     ),
+    # )
+    #
+    # view_router_args = dict(
+    #     tags=[OpenApiTags.users],
+    #     responses=OpenApiResponseUser,
+    # )
+    #
+    # @classmethod
+    # def get_user_demos(
+    #     cls,
+    #     access: DependsAccess,
+    #     invitation_email: Annotated[Set[str] | None, Query()] = None,
+    #     invitation_code: Annotated[Set[str] | None, Query()] = None,
+    #     invitation_uuid: Annotated[Set[str] | None, Query()] = None,
+    # ) -> List[OutputWithEvents[UserExtraSchema]]:
+    #     """Get requests for demo accounts.
+    #
+    #     Optionally filter by **invitation_email**, **invitation_code**, or
+    #     **invitation_uuid**.
+    #     """
+    #
+    #     if not access.token.admin:
+    #         raise HTTPException(
+    #             403,
+    #             detail="Only admins can view demo users.",
+    #         )
+    #
+    #     session = access.session
+    #     q_user = User._q_prototype_activation_pending_approval(
+    #         invitation_uuid=invitation_uuid,
+    #         invitation_code=invitation_code,
+    #         invitation_email=invitation_email,
+    #     )
+    #     # util.sql(session, q_user)
+    #     users = tuple(session.execute(q_user).scalars())
+    #
+    #     adapter = TypeAdapter(List[EventSchema])
+    #     return list(
+    #         mwargs(
+    #             OutputWithEvents[UserExtraSchema],
+    #             data=UserExtraSchema.model_validate(user),
+    #             events=adapter.validate_python(
+    #                 session.execute(user.q_events()).scalars()
+    #             ),
+    #         )
+    #         for user in users
+    #     )
+    #
+    # @classmethod
+    # def post_user_demo(
+    #     cls,
+    #     access: DependsAccess,
+    #     user_in: UserCreateSchema,
+    #     invitation_email: Annotated[str, Query()],
+    #     force: Annotated[bool, Query()] = False,
+    # ) -> OutputWithEvents[UserExtraSchema]:
+    #     """Create a user.
+    #
+    #     If the user has no token or has a valid token but is not an admin, the
+    #     `user` created will await approval from an admin. If the token exists
+    #     and is an for an `admin`, then the `user` created will only await
+    #     activation via `PATCH /users/extensions/demo/{invitation_code}`
+    #     """
+    #     is_admin = access.token.admin
+    #     user_uuid = secrets.token_urlsafe(8)
+    #     q_name = select(User).where(User.name == user_in.name)
+    #
+    #     session = access.session
+    #     events: List[Event] = list()
+    #     if (user_existing := session.execute(q_name).scalar()) is not None:
+    #         if force:
+    #             if not is_admin:
+    #                 raise HTTPException(
+    #                     403,
+    #                     detail=dict(
+    #                         msg="The force is only for masters.",
+    #                         uuid=invitation_email,
+    #                     ),
+    #                 )
+    #             events.append(
+    #                 event_user_existing := Event(
+    #                     api_version=__version__,
+    #                     api_origin="POST `/users/demo`",
+    #                     detail="Invitation force deleted.",
+    #                     uuid_obj=user_existing.uuid,
+    #                     kind_obj=KindObject.user,
+    #                     uuid_user=access.token_user.uuid,
+    #                     kind=KindEvent.delete,
+    #                 )
+    #             )
+    #             session.delete(user_existing)
+    #             session.add(event_user_existing)
+    #             session.commit()
+    #
+    #         else:
+    #             raise HTTPException(
+    #                 422,
+    #                 detail=dict(
+    #                     msg="User with username already exists.",
+    #                     name=user_in.name,
+    #                 ),
+    #             )
+    #
+    #     detail = "Demo user "
+    #     detail += "created by admin." if is_admin else "requested"
+    #     events.append(
+    #         event := Event(
+    #             api_version=__version__,
+    #             api_origin="POST `/users/demo`",
+    #             detail=detail,
+    #             uuid_obj=user_uuid,
+    #             kind_obj=KindObject.user,
+    #             uuid_user=access.token_user.uuid,
+    #             kind=KindEvent.create,
+    #         )
+    #     )
+    #     invitation_code = str(uuid4())
+    #     user = User(
+    #         _prototype_activation_invitation_email=invitation_email,
+    #         _prototype_activation_invitation_code=invitation_code,
+    #         _prototype_activation_pending_approval=is_admin,
+    #         uuid=user_uuid,
+    #         **user_in.model_dump(exclude={"kind"}),
+    #         deleted=True,
+    #     )
+    #
+    #     session.add(event)
+    #     session.add(user)
+    #     session.commit()
+    #     session.refresh(event)
+    #     session.refresh(user)
+    #
+    #     return mwargs(
+    #         OutputWithEvents[UserExtraSchema],
+    #         data=UserExtraSchema.model_validate(user),
+    #         events=[event],
+    #     )
+    #
+    # @classmethod
+    # def patch_user_demo(
+    #     cls,
+    #     access: DependsAccess,
+    #     invitation_uuid: args.PathUUIDUser,
+    #     invitation_code: Annotated[str, Query()],
+    #     invitation_email: Annotated[str, Query()],
+    # ) -> OutputWithEvents[UserExtraSchema]:
+    #     """If user has a valid token and is an admin, approves the user request
+    #     made with `POST /users/demo` matching **invitation_uuid**,
+    #     **invitation_code**, and **invitation_email**.
+    #
+    #     If not an admin, this should be used by auth0 to activate an account
+    #     by verifying the afforementioned parameters.
+    #     """
+    #
+    #     # NOTE: There is no access to check in this case. Just the invitation.
+    #     q_user = select(User).where(
+    #         User._prototype_activation_invitation_code == invitation_code,
+    #         User._prototype_activation_invitation_email == invitation_email,
+    #         User.uuid == invitation_uuid,
+    #     )
+    #
+    #     event_kwargs = dict(
+    #         api_origin="PATCH `/users/demo/<uuid_user>`.",
+    #         api_version=__version__,
+    #         uuid_user=access.token_user.uuid,
+    #         uuid_obj=invitation_uuid,
+    #         kind_obj=KindObject.user,
+    #         kind=KindEvent.update,
+    #         detail="Demo user activation.",
+    #     )
+    #
+    #     status: int | None = None
+    #     msg: str | None = None
+    #     session = access.session
+    #     match (user := session.execute(q_user).scalar()):
+    #         case None:
+    #             msg = "Incorrect combination of `invitation_code` and "
+    #             msg += "`invitation_email`."
+    #             raise HTTPException(403, detail=msg)
+    #         # NOTE: 422 because the request
+    #         case User(deleted=False, pending_approval=False, uuid=uuid):
+    #             status = 422
+    #             msg = "User already activated."
+    #         # NOTE: 500 because this should never happen.
+    #         case User(deleted=False, pending_approval=True, uuid=uuid):
+    #             status = 500
+    #             msg = "User is already out of deleted state while pending "
+    #             msg += "approval."
+    #         # Update user and return response.
+    #         case User(deleted=True, pending_approval=True, uuid=uuid):
+    #             if access.token.admin:
+    #                 user._prototype_activation_pending_approval = False
+    #                 session.add(user)
+    #                 session.add(
+    #                     Event(
+    #                         message="Admin approved invitation.",
+    #                         **event_kwargs,
+    #                     )
+    #                 )
+    #                 session.commit()
+    #                 session.refresh(user)
+    #             else:
+    #                 status = 403
+    #                 msg = "Only admins can approve a demo user."
+    #         case User(deleted=True, pending_approval=False, uuid=uuid):
+    #             # NOTE: User answered correctly. This should be possible
+    #             #       without a token.
+    #             user.deleted = False
+    #             session.add(user)
+    #             session.add(
+    #                 Event(
+    #                     message="Account activated.",
+    #                     **event_kwargs,
+    #                 )
+    #             )
+    #             session.commit()
+    #             session.refresh(user)
+    #         case _:
+    #             raise HTTPException(500)
+    #
+    #     if msg is not None:
+    #         if status is None:
+    #             raise HTTPException(500)
+    #         raise HTTPException(status, detail=dict(msg=msg, uuid_user=uuid))
+    #
+    #     return mwargs(
+    #         OutputWithEvents[UserExtraSchema],
+    #         data=UserExtraSchema.model_validate(user),
+    #         events=TypeAdapter(List[EventSchema]).validate_python(
+    #             session.execute(user.q_events()).scalars()
+    #         ),
+    #     )
 
 
 def user(access: DependsAccess, uuid_user: args.PathUUIDUser) -> User:

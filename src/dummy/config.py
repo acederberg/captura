@@ -6,10 +6,13 @@ from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
 from app import util
+from app.config import BaseHashable
 from app.config import Config as ConfigCaptura
 
 
-class DummyConfig(BaseModel):
+# NOTE: Inherits from :class:`BaseHashable` because this will be used to
+#       overwrite ``Depends(config)``.
+class DummyConfig(BaseHashable):
 
     # model_config = YamlSettingsConfigDict(yaml_files=util.Path.config("dummy.yaml"))
 

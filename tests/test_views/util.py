@@ -158,6 +158,7 @@ class BaseEndpointTest(abc.ABC):
         client_config: PytestClientConfig,
         # async_client: httpx.AsyncClient,
     ) -> AsyncGenerator[Requests, Any]:
+        print(app if app is None else app.dependency_overrides)
         async with httpx.AsyncClient(app=app) as client:
             yield dummy.requests(client_config, client)
 
@@ -258,22 +259,19 @@ class BaseEndpointTestPrimaryCreateMixins:
     @pytest.mark.asyncio
     async def test_not_found_404(
         self, dummy: DummyProvider, requests: Requests, count: int
-    ):
-        ...
+    ): ...
 
     @pytest.mark.skip
     @pytest.mark.asyncio
     async def test_deleted_410(
         self, dummy: DummyProvider, requests: Requests, count: int
-    ):
-        ...
+    ): ...
 
     @pytest.mark.skip
     @pytest.mark.asyncio
     async def test_forbidden_403(
         self, dummy: DummyProvider, requests: Requests, count: int
-    ):
-        ...
+    ): ...
 
 
 # =========================================================================== #
