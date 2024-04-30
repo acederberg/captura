@@ -213,6 +213,7 @@ class UserBaseSchema(BasePrimarySchema):
     # _mapped_class = User
     kind_mapped = fields.KindObject.user
 
+    email: fields.FieldEmail
     name: fields.FieldName
     description: fields.FieldDescription
     url_image: fields.FieldUrl

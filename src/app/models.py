@@ -913,35 +913,16 @@ class User(SearchableTableMixins, Base):
         primary_key=True,
         autoincrement=True,
     )
-    name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME), unique=True)
+
+    email: Mapped[str] = mapped_column(String(fields.LENGTH_NAME), unique=True)
+    name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
     description: Mapped[str] = mapped_column(String(fields.LENGTH_DESCRIPTION))
     url_image: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
     url: Mapped[str] = mapped_column(String(fields.LENGTH_URL), nullable=True)
     admin: Mapped[bool] = mapped_column(default=False)
-
     content: Mapped[Dict[str, Any]] = mapped_column(
         mysql.JSON, default=None, nullable=True
     )
-
-    # NOTE: This will be used to implement use by invitation for users. More or
-    #       less, for a user to register they will need to first be given their
-    #       activation code.
-    _prototype_activation_invitation_code: Mapped[str] = mapped_column(
-        String(36),
-        unique=True,
-        nullable=True,
-        # default=lambda: str(uuid4()),
-    )
-    _prototype_activation_invitation_email: Mapped[str] = mapped_column(
-        String(128), nullable=True
-    )
-    _prototype_activation_pending_approval: Mapped[bool] = mapped_column(
-        nullable=True,
-    )
-
-    @property
-    def pending_approval(self):
-        return self._prototype_activation_pending_approval
 
     # NOTE: This should correspond to `user`. Is all of the collection objects
     #       labeled by their names.

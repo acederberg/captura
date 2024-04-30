@@ -137,6 +137,19 @@ class Auth0Config(BaseHashable):
         will enable integration testing concerning api security.
     """
 
+    registration_code_salt: Annotated[
+        bytes,
+        Field(
+            description=(
+                "Salt for the registration code. This should be some sort of "
+                "random string. See ``UserView.post_user`` and https://auth0.com/docs/customize/actions/write-your-first-action#add-a-secret"
+                "about adding a secret to auth0 actions."
+            )
+        ),
+    ]
+    registration_delay: Annotated[
+        int, Field(description="Maximum registration code delay.")
+    ]
     issuer: Annotated[
         str,
         Field(

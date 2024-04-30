@@ -298,6 +298,10 @@ FieldKindObject = Annotated[
         ],
     ),
 ]
+FieldEmail = Annotated[
+    str,
+    Field(description="User email.", examples=["example1234@some.io"]),
+]
 
 
 FieldPending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
