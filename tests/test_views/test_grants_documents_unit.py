@@ -3,12 +3,12 @@ import secrets
 from typing import Any, ClassVar, Dict, List
 
 import httpx
-from app.controllers.access import H
 import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import false, select
 
 # --------------------------------------------------------------------------- #
+from app.controllers.access import H
 from app.err import (
     ErrAccessDocumentCannotRejectOwner,
     ErrAccessDocumentGrantBase,
@@ -25,8 +25,16 @@ from app.fields import (
     PendingFrom,
     PendingFromStr,
 )
-from app.models import Grant, User
-from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
+from app.models import Document, Grant, User, uuids
+from app.schemas import (
+    AsOutput,
+    DocumentSchema,
+    GrantSchema,
+    KindNesting,
+    OutputWithEvents,
+    mwargs,
+)
+from client.handlers import CONSOLE
 from client.requests import Requests
 from dummy import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import BaseEndpointTest
@@ -499,106 +507,131 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (document,) = dummy.get_documents(1, level=Level.own, exclude_pending=True)
-        assert not document.deleted
-
-        q_users = document.q_select_users().where(Grant.level < Level.own)
-        q_users = q_users.where(Grant.id_user != dummy.user.id)
-
-        users = tuple(dummy.session.scalars(q_users))
-        uuid_user = list(User.resolve_uuid(dummy.session, users))
-
-        dummy.mk_grants(
-            (document,), exclude_grants_self=True, exclude_grants_create=True
-        )
-        q_grants = document.q_select_grants(uuid_user)  # type: ignore
-        q_grants = q_grants.where(Grant.level < Level.own)
-        q_grants = q_grants.where(Grant.deleted == false())
-        grants = tuple(dummy.session.scalars(q_grants))
-        assert (n_grants_init := len(grants)) > 0
-
-        assert not any(
-            grant.deleted
-            or grant.level == Level.own
-            or grant.pending
-            or grant.uuid_document != document.uuid
-            or grant.uuid_user not in uuid_user
-            for grant in grants
-        )
-
-        # NOTE: Read first.
         fn_read = requests.grants.documents.read
-        res_read = await fn_read(document.uuid, uuid_user=uuid_user)
+
+        # NOTE: Create a document.
+        res_document = await requests.documents.create(
+            name="From TestDocumentsGrantsRevoke.test_success_200",
+            description="Foobar",
+        )
+        if err := self.check_status(requests, res_document):
+            raise err
+
+        document_output = AsOutput[DocumentSchema].model_validate_json(
+            res_document.content
+        )
+        uuid_document = document_output.data.uuid
+
+        # NOTE: Verify that grant was generated.
+        res_document_grants = await fn_read(uuid_document)
+        if err := self.check_status(requests, res_document_grants):
+            raise err
+
+        assert (
+            len(res_document_grants.json()["data"]) == 1
+        ), "There should be exactly one grant."
+
+        # NOTE: Database sessions are included in the dummy which results in some
+        #       issues reading.
+        # (session := dummy.session).expire_all()
+        # document = session.scalar(
+        #     select(Document).where(Document.uuid == document_output.data.uuid)
+        # )
+        # assert document is not None
+
+        # NOTE: Get users to create grants.
+        res_users = await requests.users.search(
+            dummy.user.uuid, randomize=True, limit=10
+        )
+        if err := self.check_status(requests, res_users):
+            raise err
+
+        res_users_json = res_users.json()
+        assert res_users_json.get("kind") == "users"
+        assert res_users_json.get("kind_nesting") == "list"
+
+        assert (users := res_users_json.get("data")) is not None
+        uuid_user = list(
+            uuid
+            for item in users
+            if (uuid := item.get("uuid")) is not None and uuid != dummy.user.uuid
+        )
+        assert (n_users := len(uuid_user))
+        assert all(item is not None for item in uuid_user)
+
+        # NOTE: Create grants.
+        res_invite = await requests.grants.documents.invite(
+            uuid_document, uuid_user=uuid_user
+        )
+        if err := self.check_status(requests, res_invite):
+            raise err
+
+        res_invite_json = res_invite.json()
+        assert (res_invite_data := res_invite_json.get("data")) is not None
+
+        # ------------------------------------------------------------------- #
+        # NOTE: Read grants created
+        res_read = await fn_read(uuid_document, uuid_user=uuid_user, pending=True)
         if err := self.check_status(requests, res_read):
             raise err
 
-        data = self.adapter.validate_json(res_read.content)
-        assert data.kind == KindObject.grant
-        assert len(data.data) == n_grants_init
+        res_read_json = res_read.json()
+        assert (n_grants := len(res_read_json["data"])) == n_users
 
+        res_read = await fn_read(uuid_document, uuid_user=uuid_user, pending=False)
+        if err := self.check_status(requests, res_read):
+            raise err
+        res_read_json = res_read.json()
+        assert (len(res_read_json["data"])) == 0
+
+        # NOTE: Read own grants.
+        res_read = await fn_read(uuid_document, uuid_user=[dummy.user.uuid])
+        if err := self.check_status(requests, res_read):
+            raise err
+
+        assert len(res_read.json()["data"]) == 1
+
+        # ------------------------------------------------------------------- #
         # NOTE: Now delete.
         fn = self.fn(requests)
-        res = await fn(document.uuid, uuid_user=uuid_user)
+        res = await fn(uuid_document, uuid_user=uuid_user, pending=True)
         if err := self.check_status(requests, res, 200):
             raise err
 
         data = self.adapter_w_events.validate_json(res.content)
         assert data.kind == KindObject.grant
         assert len(data.events) == 1
-        assert len(data.data) == n_grants_init
-
-        # NOTE: Verify with db.
-        dummy.session.reset()
-        for grant in data.data:
-            grant_db = dummy.session.get(Grant, grant.uuid)
-            assert grant_db is not None
-            assert grant_db.deleted
-        data_init = data
+        assert len(data.data) == n_grants
 
         # NOTE: Should return empty when filtering by deleted ids.
-        fn_read = requests.grants.documents.read
-        res_read = await fn_read(document.uuid, uuid_user=uuid_user)
-
-        if err := self.check_status(requests, res_read, 200):
+        res_read = await fn_read(uuid_document, uuid_user=uuid_user)
+        if err := self.check_status(requests, res_read):
             raise err
 
         data = self.adapter.validate_json(res_read.content)
         assert data.kind is None
 
         # TODO: Check indepotence.
-        res = await fn(document.uuid, uuid_user=uuid_user)
+        res = await fn(uuid_document, uuid_user=uuid_user)
         if err := self.check_status(requests, res, 200):
             raise err
 
         data = self.adapter_w_events.validate_json(res.content)
         assert data.kind is None
 
-        # NOTE: Make sure that redoing did not delete anything.
-        dummy.session.reset()
-        for grant in data_init.data:
-            grant_db = dummy.session.get(Grant, grant.uuid)
-            assert grant_db is not None
-            assert grant_db.deleted
-
         # NOTE: Test force.
-        res = await fn(document.uuid, uuid_user=uuid_user, force=True)
+        res = await fn(uuid_document, uuid_user=uuid_user, force=True, pending=True)
         if err := self.check_status(requests, res, 200):
             raise err
 
         data = self.adapter_w_events.validate_json(res.content)
         assert data.kind == KindObject.grant
-        assert len(data.data) == n_grants_init
+        assert len(data.data) == n_grants
         assert len(data.events) == 1
-        assert len(data.events[0].children) == n_grants_init
-
-        # NOTE: Verify with database.
-        dummy.session.reset()
-        for grant in data.data:
-            grant_db = dummy.session.get(Grant, grant.uuid)
-            assert grant_db is None
+        assert len(data.events[0].children) == n_grants
 
         # NOTE: Indempotant force.
-        res = await fn(document.uuid, uuid_user=uuid_user, force=True)
+        res = await fn(uuid_document, uuid_user=uuid_user, force=True, pending=True)
         if err := self.check_status(requests, res):
             raise err
 

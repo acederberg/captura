@@ -101,8 +101,9 @@ class DocumentView(BaseView):
         `POST /assignments/documents/{uuid_document}`.
         """
 
+        # TODO: Make this work as a single transaction.
         create.create_data = create_data
-        data = Data(
+        data = Data[ResolvedDocument](
             token_user=create.token_user,
             event=None,
             data=ResolvedDocument.empty(token_user_grants=dict()),
@@ -111,6 +112,11 @@ class DocumentView(BaseView):
         data_create = create.document(data)
         data_create.commit(create.session)
         (document,) = data_create.data.documents
+
+        grant, *_ = data_create.data.token_user_grants.values()
+        grant.id_document = document.id
+        create.session.add(grant)
+        create.session.commit()
 
         return mwargs(
             OutputWithEvents[DocumentSchema],

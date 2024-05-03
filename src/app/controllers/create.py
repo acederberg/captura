@@ -166,49 +166,11 @@ class Create(WithDelete, Generic[T_Create]):
         kind = KindEvent.create if self.method == H.POST else KindEvent.update
         return dict(**super().event_common, kind=kind)
 
-    @overload
-    def assoc(
-        self,
-        data: Data[ResolvedGrantDocument] | Data[ResolvedGrantUser],
-        create_assoc: AssocCallbackGrant,
-        *,
-        force: bool | None = None,
-    ) -> Tuple[
-        Data[ResolvedGrantDocument],
-        AssocData,
-        sqaUpdate[Grant] | sqaDelete[Grant],
-        Type[Grant],
-    ]:
-        ...
-
-    # NOTE: Typehints bad when `CallableAssocCallback` is protocol, idk why
-    @overload
-    def assoc(
-        self,
-        data: Data[ResolvedAssignmentCollection] | Data[ResolvedAssignmentDocument],
-        create_assoc: AssocCallbackAssignment,
-        *,
-        force: bool | None = None,
-    ) -> Tuple[
-        Data[ResolvedAssignmentCollection],
-        AssocData,
-        sqaUpdate[Assignment] | sqaDelete[Assignment],
-        Type[Assignment],
-    ]:
-        ...
-
     def assoc(
         self,
         data: DataResolvedGrant | DataResolvedAssignment,
         create_assoc: AssocCallback,
-        *,
-        force: bool | None = None,
-    ) -> Tuple[
-        DataResolvedGrant | DataResolvedAssignment,
-        AssocData,
-        sqaUpdate[Assignment] | sqaDelete[Assignment] | sqaUpdate[Grant] | sqaDelete,
-        Type[Assignment] | Type[Grant],
-    ]:
+    ) -> Tuple[AssocData, DataResolvedGrant | DataResolvedAssignment]:
         """Symetrically handle forced creation.
 
         When :attr:`force` is ``True``, lingering assignments staged for
@@ -225,85 +187,61 @@ class Create(WithDelete, Generic[T_Create]):
             their source. The requirement that they be active means that doing
             the same `POST` twice should be indempotent.
         """
-        force = force if force is not None else self.force
 
-        # NOTE: No actual deletion here. Deletion occurs in SPM.
-        rm_assoc_data, rm_assocs, rm_q, T_assoc = self.delete.try_force(
-            data, force=force
-        )
-        uuid_target_create: Set[str]
-        uuid_target_create = data.data.uuid_target.copy()  # type: ignore
+        # NOTE: By default, only create for those that hove no assocs.
+        assoc_data, model_assoc = self.delete.split_assocs(data)
+        uuid_target_create = assoc_data.uuid_target_none.copy()
+
+        if self.method != HTTPMethod.POST:
+            raise HTTPException(405)
 
         event_rm: Event | None = None
-        match self.method:
-            case H.POST if not force:
-                print("HERQERQERQRKGNQERKGNQEKRJGTF:QKETR")
-                print(rm_assoc_data)
-                if rm_assoc_data.uuid_assoc_deleted:
-                    raise ErrAssocRequestMustForce.httpexception(
-                        "_msg_force",
-                        400,
-                        kind_target=data.data.kind_target,
-                        kind_source=data.data.kind_source,
-                        kind_assoc=data.data.kind_assoc,
-                        uuid_target=list(rm_assoc_data.uuid_target_deleted),
-                        uuid_source=data.data.uuid_source,
-                        uuid_assoc=list(rm_assoc_data.uuid_assoc_deleted),
-                    )
-                uuid_target_create -= rm_assoc_data.uuid_target_active
-            # NOTE: Delete ALL existing, add deleted to created. DO NOT UPDATE
-            #       `rm_assoc_data`.
+        if not self.force:
+            if assoc_data.uuid_assoc_deleted:
+                raise ErrAssocRequestMustForce.httpexception(
+                    "_msg_force",
+                    400,
+                    kind_target=data.data.kind_target,
+                    kind_source=data.data.kind_source,
+                    kind_assoc=data.data.kind_assoc,
+                    uuid_target=list(assoc_data.uuid_target_deleted),
+                    uuid_source=data.data.uuid_source,
+                    uuid_assoc=list(assoc_data.uuid_assoc_deleted),
+                )
+        else:
             # NOTE: This should not delete grants belonging to the token holder
             #       otherwise integrity errors will show up later, thus the
             #       re-addition of token holder grants.
-            case H.POST | H.PUT:
-                if (
-                    self.token.uuid == data.data.source.uuid  # type: ignore
-                    or self.token.uuid in data.data.uuid_target  # type: ignore
-                ):
-                    msg = (
-                        "This request results in user deleting own grants. "
-                        "This can only be done by directly deleting these "
-                        "grants."
-                    )
-                    raise HTTPException(400, detail=dict(msg=msg))
+            if (
+                self.token.uuid == data.data.source.uuid
+                or self.token.uuid in data.data.uuid_target
+            ):
+                msg = (
+                    "This request results in user deleting own grants. "
+                    "This can only be done by directly deleting these "
+                    "grants."
+                )
+                raise HTTPException(400, detail=dict(msg=msg))
 
-                # This makes force possible when committing. It will be necessary
-                # to delete so that ew entries are added without conflicts.
-                # THIS DELETES ALL ASSOCS!
-                event_rm = self.delete.create_event_assoc(data, rm_assocs)
-                self.session.execute(rm_q)
-            case _:
-                raise HTTPException(405)
+            q_del, uuid_assoc_rm = assoc_data.q_del(model_assoc, True)
 
-        attr_uuid_target = "uuid_" + Singular[data.data._attr_name_target].value
+            q_assocs = model_assoc.q_uuid(uuid_assoc_rm)
+            assocs_rm = tuple(self.session.scalars(q_assocs))
 
-        uuid_target_exists = {
-            getattr(value, attr_uuid_target) for value in data.data.assoc.values()
-        }
+            self.session.execute(q_del)
+            event_rm = self.delete.create_event_assoc(data, assocs_rm)
+            uuid_target_create |= assoc_data.uuid_assoc_deleted
 
-        # NOTE: Must recreate entries getting deleted.
-        if self.force:
-            uuid_target_final = uuid_target_create | uuid_target_exists
-        else:
-            uuid_target_final = uuid_target_create - uuid_target_exists
-
-        targets: Tuple = tuple(
-            target
-            for target in data.data.target  # type: ignore
-            if target.uuid in uuid_target_final
-        )
+        targets = (tt for tt in data.data.target if tt.uuid in uuid_target_create)
         assocs: Dict[str, Grant] | Dict[str, Assignment] = {
             target.uuid: create_assoc(data, target)  # type: ignore
             for target in targets
         }
 
-        # WARNING! OVERWRITES! NECESSARY FOR
+        # WARNING! OVERWRITES!
         data_final = data.model_copy(deep=True)
         setattr(data_final.data, data_final.data._attr_name_target, targets)
         setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
-        # data_final.data.target = targets
-        # data_final.data.assocs = assocs
 
         event_create = self.create_event_assoc(data_final, assocs)
         if event_rm is not None:
@@ -314,12 +252,13 @@ class Create(WithDelete, Generic[T_Create]):
                 children=[event_rm, event_create],
             )
             event.kind = KindEvent.upsert
-            # data_final.event = event
         else:
             event = event_create
 
         data_final.event = event
-        return data_final, rm_assoc_data, rm_q, T_assoc
+        setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
+
+        return data_final, assoc_data
 
     # @overload
     # def create_event_assoc(
@@ -438,12 +377,10 @@ class Create(WithDelete, Generic[T_Create]):
                 #       this case. This means that the invitor (a user who
                 #       already owns the document) will be the one responsible
                 #       for the grants creation.
-                grant_parent = Grant.resolve_from_target(
-                    self.session, data.token_user or self.token_user, {target.uuid}
-                )
-                if not (n := len(grant_parent)):
+                parent_grants = data.data.token_user_grants.values()
+                if not (n := len(parent_grants)):
                     detail = dict(
-                        msg="No such grant.",
+                        msg="No parent grant.",
                         uuid_target=target.uuid,
                         uuid_source=data.data.source.uuid,
                         kind_target=data.data.kind_target,
@@ -453,7 +390,8 @@ class Create(WithDelete, Generic[T_Create]):
                 elif n > 1:
                     raise HTTPException(500, detail="Granter has too many grants.")
 
-                grant_parent_uuid = grant_parent[0].uuid
+                (parent_grant,) = parent_grants
+                grant_parent_uuid = parent_grant.uuid
                 pending_from = PendingFrom.grantee
             case KindObject.user:
                 grant_parent_uuid = None
@@ -653,8 +591,7 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedUser],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]:
-        ...
+    ) -> Tuple[Data[ResolvedUser], UserUpdateSchema]: ...
 
     @overload
     def generic_update(
@@ -662,8 +599,7 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedCollection],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]:
-        ...
+    ) -> Tuple[Data[ResolvedCollection], CollectionUpdateSchema]: ...
 
     @overload
     def generic_update(
@@ -671,8 +607,7 @@ class Update(WithDelete, Generic[T_Update]):
         data: Data[ResolvedDocument],
         exclude: Set[str] = set(),
         commit: bool = True,
-    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]:
-        ...
+    ) -> Tuple[Data[ResolvedDocument], DocumentUpdateSchema]: ...
 
     # NOTE: Document updates are not generic
     def generic_update(

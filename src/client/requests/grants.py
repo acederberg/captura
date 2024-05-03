@@ -63,13 +63,14 @@ class DocumentGrantRequests(BaseRequests):
         *,
         uuid_user: flags.FlagUUIDUsers,
         force: flags.FlagForce = False,
+        pending: flags.FlagPending = False,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
             "DELETE",
             context.url(cls.fmt_url.format(uuid_document)),
             headers=context.headers,
-            params=dict(uuid_user=uuid_user, force=force),
+            params=dict(uuid_user=uuid_user, force=force, pending=pending),
         )
 
     @classmethod

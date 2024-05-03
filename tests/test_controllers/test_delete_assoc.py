@@ -1,421 +1,146 @@
 # =========================================================================== #
-import inspect
 from http import HTTPMethod
-from typing import Callable, Set, Tuple, Type
+from typing import Any, Dict
 
 import pytest
-from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import Update, update
-from sqlalchemy.orm import Session, make_transient
-from sqlalchemy.orm.attributes import Event
+from sqlalchemy import func, select
 
 # --------------------------------------------------------------------------- #
 from app import util
-from app.controllers.base import (
-    Data,
-    DataResolvedAssignment,
-    DataResolvedGrant,
-    ResolvedAssignmentCollection,
-    ResolvedAssignmentDocument,
-    ResolvedGrantDocument,
-    ResolvedGrantUser,
-)
-from app.controllers.create import Create
-from app.controllers.delete import AssocData, Delete
-from app.models import (
-    Assignment,
-    Collection,
-    Document,
-    Grant,
-    KindObject,
-    User,
-)
-from app.fields import Singular
-from app.schemas import EventSchema
-from tests.test_views import util
-
-# TEST_DETAIL = "From `test_delete.py`."
-TEST_API_ORIGIN = "./tests/test_controllers/test_delete.py"
+from app.controllers.base import Data, ResolvedGrantDocument
+from app.fields import Level
+from app.models import Assignment, Collection, Document, User, uuids
+from dummy import DummyProvider, GetPrimaryKwargs
 
 
-@pytest.fixture
-def delete(session: Session) -> Delete:
-    return Delete(
-        session,
-        dict(uuid="000-000-000"),
-        HTTPMethod.POST,
-        api_origin=TEST_API_ORIGIN,
-    )
-
-
-def create_data_from_params(
-    delete: Delete | Create,
-    T_source: Type,
-    uuid_source: str,
-    T_target: Type,
-    uuid_target: Set[str],
-    T_assoc: Type,
-    uuid_assoc: Set[str],
-) -> Data:
-    source = T_source.if_exists(delete.session, uuid_source)
-    targets = T_target.if_many(delete.session, uuid_target)
-    kind_source = KindObject(T_source.__tablename__)
-    kind_target = KindObject(T_target.__tablename__)
-    kind_assignment = KindObject(T_assoc.__tablename__)
-
-    kind = f"{kind_assignment.name}_{kind_source.name}"
-    data_resolved = {
-        kind_source.name: source,
-        Singular(kind_target.name).name: targets,
-        # "kind": (kind := f"{kind_assignment.name}_{kind_source.name}"),
-        # "kind_target": kind_target,
-        # "kind_source": kind_source,
-        # "kind_assignment": kind_assignment,
-    }
-    assocs = {
-        getattr(assoc, f"uuid_{kind_target.name}"): assoc
-        for assoc in T_assoc.if_many(delete.session, uuid_assoc)
-    }
-    assoc_name = Singular(kind_assignment.name).name
-
-    if "grant" in kind:
-        data_resolved.update({f"token_user_{assoc_name}": assocs, assoc_name: assocs})
-    else:
-        data_resolved.update({assoc_name: assocs})
-
-    match kind:
-        case "assignment_document":
-            res = ResolvedAssignmentDocument(**data_resolved)
-        case "assignment_collection":
-            res = ResolvedAssignmentCollection(**data_resolved)
-        case "grant_document":
-            res = ResolvedGrantDocument(**data_resolved)
-        case "grant_user":
-            res = ResolvedGrantUser(**data_resolved)
-        case bad:
-            raise ValueError(bad)
-
-    data = Data(data=res)  # type: ignore[generalType]
-    return data
-
-
-CASES_ASSOCS = [
-    (
-        None,
-        User,
-        "000-000-000",
-        Document,
-        {"aaa-aaa-aaa", "draculaflow"},
-        Grant,
-        {"e-eee-eee-e", "888-888-888"},
-    ),
-    (
-        None,
-        Document,
-        "aaa-aaa-aaa",
-        User,
-        {"000-000-000", "99d-99d-99d"},
-        Grant,
-        {"5-555-555-5", "e-eee-eee-e"},
-    ),
-    (
-        None,
-        Document,
-        "aaa-aaa-aaa",
-        Collection,
-        {"eee-eee-eee", "foo-ooo-ool"},
-        Assignment,
-        {"aaa-aaa-eee", "aaa-foo-ool"},
-    ),
-    (
-        None,
-        Collection,
-        "foo-ooo-ool",
-        Document,
-        {
-            "ex-parrot",
-            "aaa-aaa-aaa",
-            "petshoppe--",
-            "foobar-spam",
-            "draculaflow",
-        },
-        Assignment,
-        {
-            "ex--foo-ool",
-            "aaa-foo-ool",
-            "petshopfool",
-            "barspamfool",
-            "draculafool",
-        },
-    ),
-]
-
-
-class BaseTestAssoc:
-    # ----------------------------------------------------------------------- #
-    # Fixtures
-
-    @pytest.fixture(autouse=True)
-    def before_all(self, session, load_tables):
-        self.restore_state(session)
-
-    def restore_state(self, session):
-        session.execute(update(User).values(deleted=False, public=True))
-        session.execute(update(Document).values(deleted=False, public=True))
-        session.execute(update(Collection).values(deleted=False, public=True))
-        session.execute(update(Grant).values(deleted=False))
-        session.execute(update(Assignment).values(deleted=False))
-        session.commit()
-
-    def check_event(
-        self,
-        delete: Delete | Create,
-        assoc_data: AssocData,
-        data: DataResolvedAssignment | DataResolvedGrant,
-        _event: Event | None = None,
-    ) -> EventSchema:
-        assert data.event is not None
-        expect_common = delete.event_common
-        event = EventSchema.model_validate(data.event if _event is None else _event)
-
-        util.event_compare(event, expect_common)
-        assert event.kind_obj == data.data.kind_source
-        assert event.uuid_obj == data.data.uuid_source
-
-        match delete:
-            case Create(force=force):
-                uuid_target_expected = data.data.uuid_target.copy()
-                if not force:
-                    uuid_target_expected -= assoc_data.uuid_target_active
-                uuid_assoc_expected = None
-            case Delete(force=force):
-                uuid_target_expected = assoc_data.uuid_target_active.copy()
-                uuid_assoc_expected = assoc_data.uuid_assoc_active.copy()
-                if force:
-                    uuid_target_expected |= assoc_data.uuid_target_deleted
-                    uuid_assoc_expected |= assoc_data.uuid_assoc_deleted
-            case bad:
-                raise ValueError(f"Invalid value `{bad}` for `delete`.")
-
-        for item in event.children:
-            util.event_compare(item, expect_common)
-            assert len(item.children) == 1
-            assert item.kind_obj == data.data.kind_target
-            assert item.uuid_obj in uuid_target_expected
-
-            subitem, *_ = item.children
-            util.event_compare(subitem, expect_common)
-            assert len(subitem.children) == 0
-            assert subitem.kind_obj == data.data.kind_assoc
-            if uuid_assoc_expected:
-                assert subitem.uuid_obj in uuid_assoc_expected
-
-        return event
-
-    def check_mthd(
-        self,
-        delete: Delete | Create,
-        data: DataResolvedAssignment | DataResolvedGrant,
-    ) -> Callable[
-        [Data],
-        Tuple[
-            DataResolvedGrant | DataResolvedAssignment,
-            AssocData,
-            Update[Assignment] | sqaDelete[Assignment],
-            Type[Assignment],
-        ],
-    ]:
-        # Get method (name should match data kind).
-        if (mthd := getattr(delete, data.kind, None)) is None:
-            msg = f"Expected attribute `{data.kind}` of `Delete`."
-            raise AssertionError(msg)
-        elif not callable(mthd):
-            msg = f"`Delete.{data.kind}` must be callable."
-            raise AssertionError(msg)
-
-        sig = inspect.signature(mthd)
-        if sig.parameters.get("data") is None:
-            raise AssertionError("Missing parameter `data`.")
-        elif len(sig.parameters) == 2 and "self" not in sig.parameters:
-            msg = "Expected exactly two parameters, `self` and `data` in "
-            msg += f"signature `{sig}` "
-            raise AssertionError(msg)
-        elif (return_t := sig.return_annotation) == Data:
-            msg = f"Expect return annotation to be `Data`, got `{return_t}`."
-            raise AssertionError(msg)
-
-        # Make sure that the corresponding method exists.
-        a_mthd = getattr(delete, f"a_{data.kind.name}")
-        if not callable(a_mthd):
-            msg = f"`Delete.{data.kind.name}`s signature should match signature of "
-            msg += f"`Access.{data.kind.name}`."
-            raise AssertionError(msg)
-
-        return mthd
-
-
-@pytest.mark.parametrize(
-    "delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc",
-    CASES_ASSOCS,
-    indirect=["delete"],
-)
-class TestDeleteAssoc(BaseTestAssoc):
-    # ----------------------------------------------------------------------- #
-    # Tests
-
-    def test_split_assoc(
-        self,
-        delete: Delete,
-        T_source: Type,
-        uuid_source: str,
-        T_target: Type,
-        uuid_target: Set[str],
-        T_assoc: Type,
-        uuid_assoc: Set[str],
-    ) -> None:
-        session = delete.session
-        source = T_source.if_exists(session, uuid_source)
-        targets = T_target.if_many(session, uuid_target)
-        assocs = T_assoc.if_many(session, uuid_assoc)
-
-        assert (n_target := len(targets)) == len(uuid_target)
-        assert (n_assoc := len(assocs)) == len(uuid_assoc)
-
-        # Check return type
-        res = delete.split_assocs(T_assoc, source, uuid_target)
-        assert isinstance(res, AssocData)
-
-        assert res.uuid_target_active == uuid_target
-        assert res.uuid_assoc_active == uuid_assoc
-        assert not (len(res.uuid_target_deleted))
-        assert not (len(res.uuid_assoc_deleted))
-
-        # Delete one grant.
-        assoc1, assoc2, *_ = assocs
-        assoc1.deleted = True
-        session.add(assoc1)
-        session.commit()
-
-        kind_obj = KindObject(T_target.__tablename__)
-        uuid_target_attr = f"uuid_{kind_obj.name}"
-
-        res = delete.split_assocs(T_assoc, source, uuid_target)
-        assert len(res.uuid_target_active) == n_target - 1
-        assert getattr(assoc2, uuid_target_attr) in res.uuid_target_active
-
-        assert len(res.uuid_assoc_active) == n_assoc - 1
-        assert assoc2.uuid in res.uuid_assoc_active
-
-        assert len(res.uuid_target_deleted) == 1
-        assert len(res.uuid_assoc_deleted) == 1
-
-    @pytest.mark.parametrize("force", [True, False])
-    def test_try_force(
-        self,
-        delete: Delete,
-        T_source: Type,
-        uuid_source: str,
-        T_target: Type,
-        uuid_target: Set[str],
-        T_assoc: Type,
-        uuid_assoc: Set[str],
-        force: bool,
-    ) -> None:
-        session = delete.session
-        delete.force = force
-
-        assocs = T_assoc.resolve(session, uuid_assoc)
-        assoc1, *_ = assocs
-        assoc1.deleted = True
-        session.add(assoc1)
-        session.commit()
-
-        # data = Data(data=data_resolved)  # type: ignore[generalType]
-        data = create_data_from_params(
-            delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
+@pytest.mark.parametrize("count", list(range(50)))
+class TestSplitAssocs:
+    def test_split_assocs(self, dummy: DummyProvider, count: int):
+        delete = dummy.delete(
+            api_origin="TestSplitAssocs:test_split_assocs",
+            force=False,
         )
-        res = delete.try_force(data)
+        # NOTE: Start with mixed assoc deletion state. All collections are
+        #       active.
+        data = dummy.get_data_assignment_document(n=250)
+        assert all(not item.deleted for item in data.data.collections)
 
-        assert len(res) == 4
-        assoc_data, assoc_rm, q_del, T_assoc_returned = res
-        assert T_assoc == T_assoc_returned
+        assocs_data, model_assoc = delete.split_assocs(data)
+        assert model_assoc == Assignment
 
-        uuid_assoc_rm: Set[str] = T_assoc.resolve_uuid(session, assoc_rm)
+        assoc: Assignment
+        uuid_target_deleted = set()
+        for uuid_assoc in assocs_data.uuid_assoc_deleted:
+            assert (
+                assoc := data.data.assoc.get(uuid_assoc)
+            ) is not None, "All assocs should be in data."
+            assert assoc.deleted is True
+            assert assoc.id_document == data.data.document.id
+            uuid_target_deleted.add(assoc.uuid_collection)
 
-        assert isinstance(assoc_data, AssocData)
-        assert all(uuid in uuid_assoc for uuid in assoc_data.uuid_assoc_active)
-        assert all(uuid in uuid_target for uuid in assoc_data.uuid_target_active)
-        assert len(assoc_data.uuid_target_deleted) == 1
-        assert len(assoc_data.uuid_assoc_deleted) == 1
+        uuid_target_active = set()
+        for uuid_assoc in assocs_data.uuid_target_active:
+            assert (assoc := data.data.assoc.get(uuid_assoc)) is not None
+            assert assoc.deleted is False
+            uuid_target_active.add(assoc.uuid_collection)
 
-        assert isinstance(assoc_rm, tuple)
-        if force:
-            assert uuid_assoc_rm == uuid_assoc
-            assert isinstance(q_del, sqaDelete)
-            assert len(assoc_rm) == len(uuid_assoc)
-        else:
-            assert uuid_assoc_rm.issubset(uuid_assoc)
-            assert assoc1.uuid not in uuid_assoc_rm
-            assert isinstance(q_del, Update)
-            assert len(assoc_rm) == len(uuid_assoc) - 1
+        for uuid_target in assocs_data.uuid_target_none:
+            assert uuid_target not in data.data.assoc
+            assert uuid_target not in assocs_data.uuid_target_deleted
+            assert uuid_target not in assocs_data.uuid_target_active
 
-    def test_many_many(
-        self,
-        delete: Delete,
-        T_source: Type,
-        uuid_source: str,
-        T_target: Type,
-        uuid_target: Set[str],
-        T_assoc: Type,
-        uuid_assoc: Set[str],
-    ):
-        data = create_data_from_params(
-            delete, T_source, uuid_source, T_target, uuid_target, T_assoc, uuid_assoc
+            q_count = (
+                select(func.count(Assignment.uuid))
+                .join(Collection)
+                .where(
+                    Assignment.id_document == data.data.document.id,
+                    Collection.uuid == uuid_target,
+                )
+            )
+            count_for_uuid = dummy.session.scalar(q_count)
+            assert count_for_uuid is None or not count_for_uuid
+
+        # NOTE: Now use only targets without assocs as specified above.
+        assocs_data_init = assocs_data
+        data = dummy.get_data_assignment_document(
+            dict(
+                get_primary_kwargs=GetPrimaryKwargs(
+                    uuids=assocs_data_init.uuid_target_none
+                ),
+                order_by_document_count=False,
+            ),
+            n=250,
+            document=data.data.document,
         )
-        session = delete.session
-        assocs_init = T_assoc.resolve(session, uuid_assoc)
-        mthd = self.check_mthd(delete, data)
+        assert (
+            not data.data.assoc
+        ), f"None of the provided collections should assocs for document `{data.data.document.uuid}`"
+        assert uuids(data.data.collections) == assocs_data_init.uuid_target_none
 
-        # Run the method without force
-        assert data.event is None
-        assert delete.force is False
-        assoc_data, *_, T_assoc_recieved = delete.try_force(data)
+        assocs_data, model_assoc = delete.split_assocs(data)
+        assert model_assoc == Assignment
+        assert not len(assocs_data.uuid_assoc_active)
+        assert not len(assocs_data.uuid_target_active)
+        assert not len(assocs_data.uuid_target_deleted)
+        assert not len(assocs_data.uuid_target_deleted)
+        assert len(assocs_data.uuid_target_none) == len(data.data.collections)
+        assert not len(assocs_data.uuid_assoc_none)
 
-        _ = mthd(data)
-        data.commit(session)
-        assert data.event is not None
-        assert data.event.uuid is not None, "Event should have been refreshed."
+        # NOTE: only active targets.
+        data = dummy.get_data_assignment_document(
+            dict(
+                get_primary_kwargs=GetPrimaryKwargs(
+                    uuids=assocs_data_init.uuid_target_active,
+                    allow_empty=True,  # NOTE: required otherwise regen.
+                ),
+                order_by_document_count=False,
+            ),
+            n=250,
+            document=data.data.document,
+        )
+        assert uuids(data.data.collections) == assocs_data_init.uuid_target_active
 
-        # print(data.children)
-        # print(data.event.children)
-        #
-        # event1, event2 = data.event.children
-        # assert event1.uuid and event2.uuid
-        #
-        # assert event1.children[0].uuid
-        # assert event2.children[0].uuid
-        assert T_assoc_recieved == T_assoc
-        self.check_event(delete, assoc_data, data, _event=data.event)
+        assocs_data, model_assoc = delete.split_assocs(data)
+        assert model_assoc == Assignment
+        assert (
+            len(data.data.assoc)
+            == len(data.data.target)
+            == len(assocs_data.uuid_target_active)
+        )
+        assert (
+            set(aa.uuid for aa in data.data.assoc.values())
+            == assocs_data.uuid_assoc_active
+        )
+        assert not len(assocs_data.uuid_target_deleted)
+        assert not len(assocs_data.uuid_assoc_deleted)
+        assert not len(assocs_data.uuid_target_none)
+        assert not len(assocs_data.uuid_assoc_none)
 
-        # Check the changes in the database. Assocs should be removed.
-        assocs_found = T_assoc.resolve(session, uuid_assoc)
-        uuid_assocs_found = T_assoc.resolve_uuid(session, assocs_found)
+        # NOTE: Now only inactive target.
+        data = dummy.get_data_assignment_document(
+            dict(
+                get_primary_kwargs=GetPrimaryKwargs(
+                    uuids=assocs_data_init.uuid_target_deleted,
+                    allow_empty=True,
+                ),
+                order_by_document_count=False,
+            ),
+            n=250,
+            document=data.data.document,
+        )
+        assert uuids(data.data.target) == assocs_data_init.uuid_target_deleted
 
-        bad = tuple(uu for uu in uuid_assoc if uu not in uuid_assocs_found)
-        if bad:
-            msg = f"The following assocs could not be found: `{bad}`."
-            raise AssertionError(msg)
-        elif bad := tuple(assoc.uuid for assoc in assocs_found if not assoc.deleted):
-            msg = f"The following assocs are not deleted: `{bad}`."
-            raise AssertionError(msg)
+        assoc_data, model_assoc = delete.split_assocs(data)
+        assert model_assoc == Assignment
+        assert assoc_data.uuid_target_deleted == assocs_data_init.uuid_target_deleted
 
-        # Run the method with force
-        delete.force = True
-        _ = mthd(data)
-        data.commit(session)
-        self.check_event(delete, assoc_data, data, _event=data.event)
-        assocs = T_assoc.resolve(session, uuid_assoc)
-        assert not len(assocs)
+    def test_assoc(self, dummy: DummyProvider, count: int):
+        delete = dummy.delete(
+            api_origin="TestSplitAssocs.test_assoc",
+            force=True,
+            method=HTTPMethod.POST,
+        )
 
-        session.add_all(make_transient(item) or item for item in assocs_init)
-        session.commit()
+        data = dummy.get_data_assignment_document(n=250)
+        assoc_data = delete.assoc(data)
+        data.commit(delete.session)

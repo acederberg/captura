@@ -61,6 +61,7 @@ _Mk: Dict[str, Callable[[], Any]] = dict(
         ),
         tags=[],
     ),
+    email=lambda: secrets.token_urlsafe(4) + "-" + fkit.email(),
 )
 
 

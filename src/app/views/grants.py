@@ -71,6 +71,8 @@ class DocumentGrantView(BaseView):
         delete: DependsDelete,
         uuid_document: args.PathUUIDDocument,
         uuid_user: args.QueryUUIDUser,
+        *,
+        pending: bool = False,
     ) -> OutputWithEvents[List[GrantSchema]]:
         """Revoke access to **document** for the **users** specified by
         `uuid_user`.
@@ -81,7 +83,12 @@ class DocumentGrantView(BaseView):
             uuid_user,
             level=Level.view,
             exclude_deleted=not delete.force,
+            pending=pending,
+            exclude_pending=not pending,
         )
+        print("------------------------------------------------------------")
+        print(data.data.grants)
+        print(delete.force)
 
         events, grants = list(), list()
         if len(data.data.grants):
@@ -92,6 +99,8 @@ class DocumentGrantView(BaseView):
             data.commit(delete.session)
             events.append(EventSchema.model_validate(data.event))
 
+        print(data.event)
+        print(grants)
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
             data=grants,
@@ -168,23 +177,26 @@ class DocumentGrantView(BaseView):
         layered events out of this endpoint.
         """
         # NOTE: Level filters grants.
-        fr_level = Level.resolve(level) if level is not None else None
+        fr_level = Level.resolve(level)
         data: Data[ResolvedGrantDocument] = create.access.d_grant_document(
             uuid_document,
             uuid_user,
             level=fr_level,
         )
         create.create_data = GrantCreateSchema(level=fr_level)
-        create.grant_document(data)
-        data.commit(create.session)
+        data_final = create.grant_document(data)
+        print(data_final.data.grants)
+        create.session.add_all(data_final.data.grants.values())
+        data_final.commit(create.session)
 
-        return mwargs(
+        mm = mwargs(
             OutputWithEvents[List[GrantSchema]],
             data=TypeAdapter(List[GrantSchema]).validate_python(
-                data.data.grants.values()
+                data_final.data.grants.values()
             ),
-            events=[EventSchema.model_validate(data.event)],
+            events=[EventSchema.model_validate(data_final.event)],
         )
+        return mm
 
     @classmethod
     def patch_grants_document(
@@ -394,6 +406,7 @@ class UserGrantView(BaseView):
         )
         create.create_data = GrantCreateSchema(level=Level[level.name])
         data_final = create.grant_user(data)
+        create.session.add_all(data_final.data.grants.values())
         data_final.commit(create.session)
 
         grants = data_final.data.grants

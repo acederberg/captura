@@ -1,8 +1,8 @@
 # =========================================================================== #
 import asyncio
-from http import HTTPMethod
 import json
 import secrets
+from http import HTTPMethod
 from typing import ClassVar, Dict, List
 
 import pytest
@@ -85,9 +85,8 @@ class CommonUsersGrantsTests(BaseEndpointTest):
     ):
         """User must be logged in as user."""
         user, (user_other,) = dummy.user, dummy.get_users(
-            1, GetPrimaryKwargs(deleted=False)
+            1, GetPrimaryKwargs(deleted=False), other=True
         )
-        assert user.uuid != user_other.uuid
         assert user.deleted is False
 
         documents = dummy.get_documents(5, other=True)

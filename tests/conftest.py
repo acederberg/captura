@@ -146,11 +146,17 @@ def dummy_handler(
     )
 
     logger.info("Cleaning an restoring database.")
-    handler.create_report(f"Before disposal (`module={request.node.name}`).")
+    name_module = f"(`module={request.node.name}`) "
+    if generate_reports := config.tests.generate_reports:
+        handler.create_report(f"Before disposal {name_module}.")
+
     handler.dispose()
-    handler.create_report(f"After disposal (`module={request.node.name}`).")
+    if generate_reports:
+        handler.create_report(f"After disposal {name_module}.")
+
     handler.restore()
-    handler.create_report(f"After restoration (`module={request.node.name}`).")
+    if generate_reports:
+        handler.create_report(f"After restoration {name_module}.")
     return handler
 
 

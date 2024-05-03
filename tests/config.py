@@ -27,6 +27,7 @@ class PytestSubConfig(BaseHashable):
     """
 
     recreate_tables: Annotated[bool, Field(default=True)]
+    generate_reports: Annotated[bool, Field(default=False)]
 
 
 class PytestConfig(ConfigSimulatus):

@@ -10,17 +10,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 # --------------------------------------------------------------------------- #
+from app import util
+
 # from app import util
 from app.auth import Token
 from app.controllers.access import Access
 from app.controllers.base import BaseController
 from app.fields import Singular
 from app.models import Collection, Document, Tables, User
-from app.schemas import (
-    CollectionSearchSchema,
-    DocumentSearchSchema,
-    UserSearchSchema,
-)
+from app.schemas import CollectionSearchSchema, DocumentSearchSchema, UserSearchSchema
 
 T_ReadParam = TypeVar(
     "T_ReadParam",
@@ -59,29 +57,26 @@ class Read(BaseController):
         self,
         user: User,
         param: UserSearchSchema,
-    ) -> List[User]:
-        ...
+    ) -> List[User]: ...
 
     @overload
     def search_user(
         self,
         user: User,
         param: DocumentSearchSchema,
-    ) -> List[Document]:
-        ...
+    ) -> List[Document]: ...
 
     @overload
     def search_user(
         self,
         user: User,
         param: CollectionSearchSchema,
-    ) -> List[Collection]:
-        ...
+    ) -> List[Collection]: ...
 
     def search_user(
         self,
         user: User,
-        param: (UserSearchSchema | DocumentSearchSchema | CollectionSearchSchema),
+        param: UserSearchSchema | DocumentSearchSchema | CollectionSearchSchema,
     ) -> List[User] | List[Document] | List[Collection]:
         if param.kind_mapped is None:
             raise HTTPException(500)

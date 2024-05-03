@@ -4,6 +4,7 @@
   description: The joke is that it is mispelled.
   url_image: null
   url: null
+  email: urmom@of.com
   content:
     tags:
       - YAML
@@ -14,6 +15,7 @@
   admin: False
   name: acederberg
   description: maintainer of this project
+  email: adrn.cederberg123@gmail.com
   url: github.com/acederberg
   url_image: https://avatars.githubusercontent.com/u/77076023?v=4
   content:
@@ -24,6 +26,7 @@
   id: 3
   name: Brian Cohen
   description: Member of the \"People's Front of Judea\".
+  email: brian@foo.spam
   url: https://en.wikipedia.org/wiki/Monty_Python's_Life_of_Brian
   url_image: null
   content:
@@ -34,6 +37,7 @@
   id: 4
   name: Sum dood
   description: Whatever
+  email: sumdood@whatever.org
   url: null
   url_image: null
   content:

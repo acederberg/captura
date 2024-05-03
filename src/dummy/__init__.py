@@ -3,6 +3,7 @@ import secrets
 from http import HTTPMethod
 from random import choice, randint
 from typing import (
+    Annotated,
     Any,
     Callable,
     ClassVar,
@@ -22,10 +23,11 @@ from cryptography.utils import cached_property
 from sqlalchemy import delete, desc, false, func, or_, select, true, update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
+from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
 from app import util
-from app.auth import Auth, Token
+from app.auth import Auth, Token, TokenPermissionTier
 from app.controllers.access import Access
 from app.controllers.base import (
     BaseResolved,
@@ -606,6 +608,7 @@ class BaseDummyProvider:
         n: int,
         get_primary_kwargs: GetPrimaryKwargs = GetPrimaryKwargs(),
         other: bool | None = False,
+        order_by_document_count: bool = True,
     ) -> Tuple[Collection, ...]:
         def callback(q):
             match other:
@@ -616,16 +619,17 @@ class BaseDummyProvider:
                 case _:
                     cond_other = true()
 
-            q_ids = (
-                select(Collection.id.label("id_collection"))
-                .join(Assignment)
-                .group_by(Collection.id)
-                .having(func.count(Assignment.id_document) > 0)
-                .where(cond_other)
-                .order_by(desc(func.count(Assignment.id_document)))
-            )
+            if order_by_document_count:
+                q_ids = (
+                    select(Collection.id.label("id_collection"))
+                    .join(Assignment)
+                    .group_by(Collection.id)
+                    .having(func.count(Assignment.id_document) > 0)
+                    .where(cond_other)
+                    .order_by(desc(func.count(Assignment.id_document)))
+                )
+                q = q.where(Collection.id.in_(q_ids))
 
-            q = q.where(Collection.id.in_(q_ids))
             return q
 
         return self.get_primary(
@@ -735,7 +739,7 @@ class BaseDummyProvider:
         model = resolve_model(Model)
         data_primary = self.get(
             model,
-            n if n is not None else randint(1, 15),
+            n if n is not None else randint(5, 15),
             get_primary_kwargs,
             other=other,
             **kwargs,
@@ -751,30 +755,109 @@ class BaseDummyProvider:
             data=ResolvedModel.model_validate(data),
         )
 
+    def get_data_grant_document(
+        self,
+        # get_kwargs_document: Dict[str, Any] = dict(level=Level.own),
+        get_kwargs_users: Dict[str, Any] = dict(),
+        n: int | None = None,
+    ):
+        # NOTE: Document must be owned by :attr:`user`.
+        def callback(raw: Dict[str, Any]) -> None:
+            raw["token_user_grants"] = {
+                self.user.uuid: self.get_document_grant(raw["document"]),
+            }
+
+        return self.get_data_secondary(
+            Document,
+            User,
+            # get_kwargs_target=get_kwargs_document,
+            source=self.get_documents(1, level=Level.own)[0],
+            get_kwargs_target=get_kwargs_users,
+            callback=callback,
+            n=n,
+        )
+
+    def get_data_grant_user(
+        self,
+        get_kwargs_document: Dict[str, Any] = dict(other=None),
+        n: int | None = None,
+    ):
+        # NOTE: For now, ``token_user_grants`` are the same as grants. This
+        #       will change when admin mode is added.
+        def callback(raw: Dict[str, Any]) -> None:
+            raw["token_user_grants"] = raw["grants"]
+
+        return self.get_data_secondary(
+            User,
+            Document,
+            source=self.user,
+            get_kwargs_target=get_kwargs_document,
+            callback=callback,
+            n=n,
+        )
+
+    def get_data_assignment_collection(
+        self,
+        get_kwargs_document: Dict[str, Any] = dict(other=None),
+        collection: Collection | None = None,
+        n: int | None = None,
+    ):
+        if collection is None:
+            (collection,) = self.get_collections(1)
+
+        return self.get_data_secondary(
+            Collection,
+            Document,
+            source=collection,
+            get_kwargs_target=get_kwargs_document,
+            n=n,
+        )
+
+    def get_data_assignment_document(
+        self,
+        get_kwargs_collection: Dict[str, Any] = dict(other=None),
+        document: Document | None = None,
+        n: int | None = None,
+    ):
+        if document is None:
+            (document,) = self.get_documents(1, level=Level.own)
+
+        return self.get_data_secondary(
+            Document,
+            Collection,
+            source=document,
+            get_kwargs_target=get_kwargs_collection,
+            n=n,
+        )
+
     def get_data_secondary(
         self,
         ModelSource: ResolvableModel,
         ModelTarget: ResolvableModel,
         n: int | None = None,
-        get_primary_kwargs_source: GetPrimaryKwargs = GetPrimaryKwargs(),
-        get_primary_kwargs_target: GetPrimaryKwargs = GetPrimaryKwargs(),
         *,
-        other_source: bool = False,
-        other_target: bool = False,
-        callback: Callable[[Dict[str, Any], Tuple[Any, ...]], None] | None = None,
+        get_kwargs_source: Dict[str, Any] = dict(),
+        get_kwargs_target: Dict[str, Any] = dict(),
+        source: Annotated[
+            Any,
+            Doc("Use this to inject a source directly."),
+        ] = None,
+        callback: Callable[[Dict[str, Any]], None] | None = None,
     ):
         model_source = resolve_model(ModelSource)
         model_target = resolve_model(ModelTarget)
         Resolved = BaseResolved.get((model_source.__kind__, model_target.__kind__))
         assert issubclass(Resolved, BaseResolvedSecondary)
 
-        (source,) = self.get(
-            model_source, 1, get_primary_kwargs_source, other=other_source
-        )
+        if source is not None:
+            if not isinstance(source, model_source):
+                msg = f"`{source}` should be an instance of `{model_source}`."
+                raise AssertionError(msg)
+        else:
+            (source,) = self.get(model_source, 1, **get_kwargs_source)
+
         n = randint(5, 15) if n is None else n
-        targets = self.get(
-            model_target, n, get_primary_kwargs_target, other=other_target
-        )
+        targets = self.get(model_target, n, **get_kwargs_target)
 
         # NOTE: Get assocs. Assocs are always labeled by their
         model_assoc = resolve_model(Resolved.kind_assoc)  # type: ignore
@@ -784,35 +867,51 @@ class BaseDummyProvider:
         q = (
             select(model_assoc)
             .join(model_target)
-            .where(getattr(model_assoc, id_source_name) == source.id)
+            .where(
+                getattr(model_assoc, id_source_name) == source.id,
+                model_target.uuid.in_(uuid_target := uuids(targets)),
+            )
         )
         assocs = {
             getattr(assoc, uuid_target_name): assoc for assoc in self.session.scalars(q)
         }
 
+        # NOTE: Callback should add any additional fields. This is why this
+        #       function is not often called directly.
         data = {
             Resolved._attr_name_assoc: assocs,
             Resolved._attr_name_source: source,
-            Resolved._attr_name_targets: targets,
+            Resolved._attr_name_target: targets,
+            f"uuid_{Resolved._attr_name_target}": uuid_target,
         }
+        if callback is not None:
+            callback(data)
 
         return mwargs(
             Data,
             data=Resolved.model_validate(data),
         )
 
-    # NOTE: `User` will always be the the same as
-    def data(self, kind: KindData) -> Data:
-        logger.debug("Constructing dummy `Data` for kind `%s`.", kind.name)
-        ...
+    # # NOTE: `User` will always be the the same as
+    # def data(self, kind: KindData) -> Data:
+    #     logger.debug("Constructing dummy `Data` for kind `%s`.", kind.name)
+    #     ...
 
     @property
     def token(self) -> Token:
-        return Token(uuid=self.user.uuid, admin=self.user.admin, permissions=[])
+        return Token(
+            uuid=self.user.uuid,
+            tier=(
+                TokenPermissionTier.paid
+                if not self.user.admin
+                else TokenPermissionTier.admin
+            ),
+            read=[],
+        )
 
     @property
     def token_encoded(self) -> str:
-        return self.auth.encode(self.token.model_dump())
+        return self.token.encode(self.auth)
 
     def access(self, *, method: HTTPMethod = HTTPMethod.GET) -> Access:
         return Access(self.session, self.token, method)
@@ -834,10 +933,11 @@ class BaseDummyProvider:
         )
 
     def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
-        token = dict(uuid=self.user.uuid, admin=self.user.admin)
-        _pf = dict(token=self.auth.encode(token), uuid_user=self.user.uuid)
-        profile = ProfileConfig.model_validate(_pf)
-
+        # NOTE: Build configuration and context for the requests client. This
+        #       is approximately that which is used by the client.
+        profile = mwargs(
+            ProfileConfig, token=self.token_encoded, uuid_user=self.user.uuid
+        )
         context = ContextData(
             config=self.client_config_cls(
                 use=UseConfig(host="default", profile="default"),

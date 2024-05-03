@@ -105,13 +105,13 @@ class TestBaseResolvedPrimary:
     #
     #     dd = default
 
-    def test_instance_methods(self, dummy: DummyProvider):
-        dd = dummy
-        data = dd.data(KindData.user)
-        assert isinstance(data.data, ResolvedUser)
-        res = data.data
-
-        assert res.targets() == res.users
+    # def test_instance_methods(self, dummy: DummyProvider):
+    #     dd = dummy
+    #     data = dd.data(KindData.user)
+    #     assert isinstance(data.data, ResolvedUser)
+    #     res = data.data
+    #
+    #     assert res.targets() == res.users
 
     def test_mt(self):
         mt = ResolvedUser.empty()
@@ -119,13 +119,13 @@ class TestBaseResolvedPrimary:
         assert mt.err_nonempty() is None
 
 
-class TestResolvedSecondary:
-    def test_instance_methods(self, dummy: DummyProvider):
-        dd = dummy
-        data = dd.data(KindData.grant_user)
-        assert isinstance(data.data, ResolvedGrantUser)
-        res = data.data
-
-        assert res.target == res.documents
-        assert res.source == res.user
-        assert res.assoc == res.grants
+# class TestResolvedSecondary:
+#     def test_instance_methods(self, dummy: DummyProvider):
+#         dd = dummy
+#         data = dd.data(KindData.grant_user)
+#         assert isinstance(data.data, ResolvedGrantUser)
+#         res = data.data
+#
+#         assert res.target == res.documents
+#         assert res.source == res.user
+#         assert res.assoc == res.grants

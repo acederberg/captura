@@ -17,6 +17,7 @@ from typing import (
     Dict,
     Generic,
     List,
+    Literal,
     Self,
     Set,
     Tuple,
@@ -54,6 +55,7 @@ from app.models import (
     Level,
     ResolvableSingular,
     User,
+    resolve_model,
     uuids,
 )
 
@@ -248,15 +250,25 @@ def resolve_kind_data(v: ResolvableKindData) -> KindData:
             return KindData.grant_user
         case (KindObject.document, KindObject.user):
             return KindData.grant_document
-        case (KindObject.user, KindObject.document):
-            return KindData.grant_user
-        case (KindObject.document, KindObject.user):
-            return KindData.grant_document
+        case (KindObject.document, KindObject.collection):
+            return KindData.assignment_document
+        case (KindObject.collection, KindObject.document):
+            return KindData.assignment_collection
         case (a, b):
             msg = f"Cannot resolve vector `KindObject` `({a.name}, {b.name})`."
             raise ValueError(msg)
         case _:
             raise ValueError(f"Cannot resolve `{v}`.")
+
+
+def resolve_kind_assoc(v: KindData) -> Literal[KindObject.assignment, KindObject.grant]:
+    match v:
+        case KindData.grant_user | KindData.grant_document:
+            return KindObject.grant
+        case KindData.assignment_document | KindData.assignment_collection:
+            return KindObject.assignment
+        case bad:
+            raise ValueError(f"Cannot resolve assoc for data kind `{bad}`.")
 
 
 class BaseResolved(BaseModel):
@@ -283,9 +295,11 @@ class BaseResolved(BaseModel):
             )
         cls.registry[cls.kind] = cls
 
-    def register(self, session: Session) -> None: ...
+    def register(self, session: Session) -> None:
+        ...
 
-    def refresh(self, session: Session) -> None: ...
+    def refresh(self, session: Session) -> None:
+        ...
 
     @classmethod
     def get(cls, resolvable_kind: ResolvableKindData) -> "Type[BaseResolved]":
@@ -373,7 +387,6 @@ class BaseResolvedSecondary(BaseResolved):
     kind_assoc: ClassVar[KindObject]
     _attr_name_source: ClassVar[str]
     _attr_name_assoc: ClassVar[str]
-    # delete: bool = False
     _attr_name_target: ClassVar[str]
 
     def __init_subclass__(cls) -> None:
@@ -387,6 +400,10 @@ class BaseResolvedSecondary(BaseResolved):
         cls._attr_name_source = cls.kind_source.name
         cls._attr_name_target = Singular(cls.kind_target.name).name
         cls._attr_name_assoc = Singular(cls.kind_assoc.name).name
+
+    @classmethod
+    def get_model_assoc(cls) -> Type[Grant] | Type[Assignment]:
+        return resolve_model(cls.kind_assoc)
 
     @computed_field
     @property

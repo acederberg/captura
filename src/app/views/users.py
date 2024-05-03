@@ -250,19 +250,26 @@ class UserView(BaseView):
         uuid_user: args.PathUUIDUser,
         delete: DependsDelete,
         restore: bool = False,
-    ) -> OutputWithEvents[UserSchema]:
+    ) -> None:
         """Remove a user and their unshared documents and edits.
 
         Only the user themself or an admin should be able to call this
         endpoint.
         """
 
-        if restore:
-            raise HTTPException(400, detail="Not yet implemented.")
+        data = delete.access.d_user(uuid_user)
+        raise HTTPException(
+            400,
+            detail=(
+                "User deactivation and deletion not yet supported."
+                "(This is still a prototype)."
+            ),
+        )
 
         data = delete.a_user(uuid_user)
-        return mwargs(
-            OutputWithEvents[UserSchema],
-            events=[EventSchema.model_validate(data.event)],
-            data=UserSchema.model_validate(data.data.user[0]),
-        )
+        data.commit(delete.session)
+        # return mwargs(
+        #     OutputWithEvents[UserSchema],
+        #     events=[],
+        #     data=UserSchema.model_validate(data.data.user[0]),
+        # )

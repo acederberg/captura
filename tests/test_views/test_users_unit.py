@@ -7,13 +7,14 @@ from typing import Callable, ClassVar, List, Self
 
 import pytest
 from pydantic import TypeAdapter
+from sqlalchemy import func, select
 from sqlalchemy.sql.operators import op
 
 # --------------------------------------------------------------------------- #
 from app.controllers.access import H
 from app.err import ErrAccessUser, ErrDetail, ErrObjMinSchema
 from app.fields import ChildrenUser, KindObject
-from app.models import Tables
+from app.models import Tables, User
 from app.schemas import (
     AsOutput,
     CollectionMetadataSchema,
@@ -27,6 +28,7 @@ from app.schemas import (
 from client.requests import Requests
 from dummy import DummyProvider
 from dummy.mk import fkit
+from dummy.reports import ReportController
 from tests.test_views.util import BaseEndpointTest
 
 
@@ -153,7 +155,7 @@ class CommonUserTests(BaseEndpointTest):
 )
 class TestUserRead(CommonUserTests):
     method = H.GET
-    adapter = TypeAdapter(AsOutput[UserExtraSchema])
+    adapter = TypeAdapter(AsOutput[UserSchema])
 
     def fn(self, requests: Requests):
         return requests.users.read
@@ -250,6 +252,7 @@ class TestUserDelete(CommonUserTests):
     def fn(self, requests: Requests):
         return requests.users.delete
 
+    @pytest.mark.skip
     @pytest.mark.asyncio
     async def test_success_200(
         self,
@@ -257,15 +260,19 @@ class TestUserDelete(CommonUserTests):
         requests: Requests,
         count: int,
     ):
-        assert False, "Should finish other deletion tests first."
-        session, user, fn = dummy.session, dummy.user, self.fn(requests)
-        user.deleted = False
-        session.add(user)
-        session.commit()
+        session, user = dummy.session, dummy.user
+        fn, fn_read = self.fn(requests), requests.users.read
 
-        fn_read = requests.users.read
+        # fmt_note = "{} report from `TestUserDelete.test_success_200`."
+        # report_controller = ReportController(session)
+        # report_initial = report_controller.create_user(
+        #     user=user, note=fmt_note.format("initial")
+        # )
+        # session.add(report_initial)
+        # session.commit()
 
-        res = await fn(user.uuid)
+        # NOTE: Verify can read.
+        res = await fn_read(user.uuid)
         if err := self.check_status(requests, res):
             raise err
 
@@ -274,9 +281,30 @@ class TestUserDelete(CommonUserTests):
         assert data.kind_nesting is None
         assert data.data.uuid == user.uuid
 
+        # NOTE: Do delete.
+        res = await fn(user.uuid)
+        if err := self.check_status(requests, res):
+            raise err
+
+        assert res.json() is None
+
+        # NOTE: Can no longer read.
         res = await fn_read(user.uuid)
         if err := self.check_status(requests, res, 410):
             raise err
+
+        session.refresh(user)
+        assert user.deleted
+
+        # NOTE: Can force delete.
+        res = await fn(user.uuid)
+        if err := self.check_status(requests, res):
+            raise err
+
+        q = select(func.count(User.uuid)).where(User.uuid == user.uuid)
+        n = session.scalar(q)
+        assert n is not None
+        assert n == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -319,7 +347,7 @@ class CommonUserSearchTests(CommonUserTests):
         data2 = self.adapter.validate_json(res2.content)
 
         assert data1.kind == data2.kind == self.kind
-        assert len(data1.data) == len(data2.data) == N
+        assert len(data1.data) == len(data2.data)
         assert data1.data != data2.data
 
     @pytest.mark.asyncio

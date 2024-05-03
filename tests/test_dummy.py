@@ -10,18 +10,23 @@ from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from app import util
-from app.auth import Token
+from app.auth import Token, TokenPermissionTier
 from app.controllers.base import (
     Data,
+    ResolvedAssignmentCollection,
+    ResolvedAssignmentDocument,
     ResolvedCollection,
     ResolvedDocument,
+    ResolvedGrantDocument,
+    ResolvedGrantUser,
     ResolvedUser,
 )
 from app.fields import KindObject, Level, PendingFrom
 from app.models import Collection, Document, Event, Grant, User, resolve_model, uuids
 from app.schemas import AsOutput, DocumentSchema, OutputWithEvents
+from client.config import ProfileConfig
 from dummy import DummyHandler, DummyProvider, GetPrimaryKwargs
-from tests.config import PytestClientConfig, PyTestClientProfileConfig
+from tests.config import PytestClientConfig
 from tests.conftest import client_config
 
 
@@ -252,7 +257,7 @@ class TestDummyProvider:
     @pytest.mark.asyncio
     async def test_get_events(
         self,
-        client_config: PyTestClientProfileConfig,
+        client_config: ProfileConfig,
         dummy: DummyProvider,
         count: int,
         app,
@@ -327,7 +332,6 @@ class TestDummyProvider:
         count: int,
         app: FastAPI | None,
     ):
-
         async with httpx.AsyncClient(app=app) as client:
             requests = dummy.requests(client_config, client)
             res = await requests.users.read(dummy.user.uuid)
@@ -349,7 +353,7 @@ class TestDummyProvider:
     def test_token(self, dummy: DummyProvider, count: int):
         token = dummy.token
         assert isinstance(token, Token) and token.uuid == dummy.user.uuid
-        assert token.admin == dummy.user.admin
+        assert (token.tier == TokenPermissionTier.admin) == dummy.user.admin
 
         token_from_enc = Token.model_validate(
             dummy.auth.decode(dummy.token_encoded, header=False)
@@ -417,9 +421,97 @@ class TestDummyProvider:
         assert isinstance(data, Data)
         assert isinstance(data.data, ResolvedCollection)
 
-    # def test_data(self, dummy: DummyProvider, count: int):
-    #     assert False
+    def test_get_data_grant_document(self, dummy: DummyProvider, count: int):
+        data = dummy.get_data_grant_document()
+        assert isinstance(data, Data)
+        assert isinstance(data.data, ResolvedGrantDocument)
 
+        # NOTE: Since there is only one document, the token user should only
+        #       have one grant, the grant to this document.
+        assert len(token_user_grants := data.data.token_user_grants) == 1
+        assert (gg := token_user_grants.get(dummy.user.uuid)) is not None
+        assert data.data.document.id == gg.id_document
+
+        # NOTE: There is not necessarily a grant for every user. Grants should
+        #       be indexed using user uuids.
+        grants = data.data.grants
+        id_document = data.data.document.id
+
+        uuid_user = uuids(data.data.users)
+        uuid_user_has_grants = set(grants)
+        assert uuid_user.issuperset(uuid_user_has_grants)
+        assert all(gg.id_document == id_document for gg in grants.values())
+
+    def test_get_data_grant_user(self, dummy: DummyProvider, count: int):
+        data = dummy.get_data_grant_user()
+        assert isinstance(data, Data)
+        assert isinstance(data.data, ResolvedGrantUser)
+        assert data.data.user == dummy.user
+
+        # NOTE: For every document there should be at least one grant, further
+        #       all token user grants should belong to the token user.
+        token_user_grants = data.data.token_user_grants.values()
+
+        assert set(gg.uuid_document for gg in token_user_grants).issubset(
+            uuids(data.data.documents)
+        )
+        assert all(gg.id_user == dummy.user.id for gg in token_user_grants)
+
+        # NOTE: For now, grants and token user grants are always the same as
+        #       the data provided will always have a document owned by
+        #       ``Dummy.user``.
+        assert data.data.token_user_grants == data.data.grants
+
+    def test_get_data_assignment_collection(self, dummy: DummyProvider, count: int):
+        data = dummy.get_data_assignment_collection()
+        assert isinstance(data, Data)
+        assert isinstance(data.data, ResolvedAssignmentCollection)
+
+        # NOTE: There is not necessarily an assignment for every document
+        #       because such assignments.
+        assignments = data.data.assignments.values()
+        assert set(aa.uuid_document for aa in assignments).issubset(
+            uuids(data.data.documents)
+        )
+        assert all(aa.id_collection == data.data.collection.id for aa in assignments)
+
+    def test_get_data_assignment_document(self, dummy: DummyProvider, count: int):
+        data = dummy.get_data_assignment_document()
+        assert isinstance(data, Data)
+        assert isinstance(data.data, ResolvedAssignmentDocument)
+
+        assignments = data.data.assignments.values()
+        assert set(aa.uuid_collection for aa in assignments).issubset(
+            uuids(data.data.collections)
+        )
+        assert all(aa.id_document == data.data.document.id for aa in assignments)
+
+        # NOTE: Test passing of kwargs.
+        data = dummy.get_data_assignment_document(
+            dict(get_primary_kwargs=GetPrimaryKwargs(deleted=True))
+        )
+        assert isinstance(data, Data)
+        assert isinstance(data.data, ResolvedAssignmentDocument)
+        assert all(cc.deleted for cc in data.data.collections)
+
+        data = dummy.get_data_assignment_document(
+            dict(
+                get_primary_kwargs=GetPrimaryKwargs(uuids=set(), allow_empty=True),
+                order_by_document_count=False,
+            )
+        )
+        assert not len(data.data.collections)
+
+        uuid_collection = uuids(dummy.get_collections(10))
+        data = dummy.get_data_assignment_document(
+            dict(get_primary_kwargs=GetPrimaryKwargs(uuids=uuid_collection))
+        )
+        assert uuids(data.data.collections) == uuid_collection
+
+    # TODO: Fix this once `DummyProvider` has a `sessionmaker` and not a
+    #       `session`. The main reason this is failing is due to the fact that
+    #       most database clients follow ACID.
+    @pytest.mark.skip
     def test_get_primary_retry(self, dummy: DummyProvider, count: int):
         """Verify that ``get_primary`` is robust."""
 

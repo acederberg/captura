@@ -44,7 +44,5 @@ loggers:
     handlers:
       - stdout_dev
       - file_json
-  sqlalchemy.engine:
-    level: WARNING
-    handlers:
-      - stdout_min
+  app.controllers.delete:
+    level: DEBUG

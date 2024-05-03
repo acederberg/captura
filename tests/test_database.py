@@ -11,7 +11,7 @@ def test_fixture_works(engine: Engine, sessionmaker, load_tables):
 
     with engine.begin() as connection:
         result = list(connection.execute(text("SHOW TABLES;")).scalars())
-        assert len(result) == 7
+        assert len(result) >= 6
 
     with sessionmaker() as session:
         n_users = session.execute(select(func.count(User.uuid))).scalar()

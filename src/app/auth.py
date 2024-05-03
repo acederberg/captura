@@ -14,7 +14,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from pydantic_core.core_schema import FieldValidationInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -168,7 +168,6 @@ class Auth:
         #       necessarily the tests.
         if (pk := self.public_keys.get(kid)) is None:
             detail = f"Malformed Token: JWT header contains unknown key id {kid}."
-            detail += f"{self.config.model_config}."
             raise HTTPException(401, detail=detail)
 
         return jwt.decode(
@@ -269,7 +268,6 @@ def permission_parse(permissions: Iterable[str]) -> Dict[str, Any]:
     for mm in matched.values():
         key, value = mm.group(1), mm.group(2)
         parsed_value = parsed.get(key)
-        print(key)
         match key:
             case "read":
                 value_read = TokenPermissionRead(value)
@@ -310,7 +308,6 @@ class Token(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def unfuck_permissions(cls, data: Any):
-        print(data)
         if (pp := data.get("permissions")) is None:
             return data
 
@@ -345,15 +342,24 @@ class Token(BaseModel):
         return user
 
     def encode(self, auth: Auth) -> str:
-        return auth.encode(self.model_dump())
+        payload = self.model_dump(exclude={"tier", "read"})
 
+        print(payload)
+        permissions = [f"read:{item.name}" for item in self.read]
+        permissions.append(f"tier:{self.tier.name}")
+        payload.update(permissions=permissions)
+
+        print(payload)
+        return auth.encode(payload)
+
+    # NOTE: This function is stupid. Why did I add it?
     def try_encode(self, auth: Auth) -> str:
         if auth.config.auth0.use:
             raise HTTPException(
                 409,
                 detail="Token minting is not available in auth0 mode.",
             )
-        return auth.encode(self.model_dump())
+        return self.encode(auth)
 
     @classmethod
     def decode(cls, auth: Auth, data: str, *, header: bool = True) -> Self:

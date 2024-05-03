@@ -245,33 +245,7 @@ class UserSchema(UserBaseSchema):
 class UserExtraSchema(BasePrimaryTableExtraSchema, UserSchema):
     kind_schema = KindSchema.extra
 
-    invitation_code: Annotated[
-        str | None,
-        Field(alias="_prototype_activation_invitation_code"),
-    ]
-    invitation_email: Annotated[
-        str | None,
-        Field(alias="_prototype_activation_invitation_email"),
-    ]
-    invitation_pending: Annotated[
-        bool | None,
-        Field(alias="_prototype_activation_pending_approval"),
-    ]
-
-    @model_validator(mode="after")
-    def check_invitation_fields(self) -> Self:
-        match (self.invitation_code, self.invitation_email, self.invitation_pending):
-            case (str(), str(), bool()):
-                return self
-            case (None, None, None):
-                return self
-            case (invitation_code, invitation_pending, invitation_email):
-                msg = "The fields `invitation_code`, `invitation_email`, and "
-                msg += "`invitation_pending` must all be specified or not."
-                msg += "The following combination of values is "
-                msg += f"`{invitation_pending=}`, `{invitation_email=}`, and "
-                msg += f"`{invitation_code}`."
-                raise ValueError(msg)
+    deleted: fields.FieldDeleted
 
 
 class UserSearchSchema(BaseSearchSchema):
