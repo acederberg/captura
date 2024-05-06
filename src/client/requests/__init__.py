@@ -5,6 +5,9 @@ from typing import Annotated, List, Optional
 import httpx
 import typer
 
+# --------------------------------------------------------------------------- #
+from client.handlers import AssertionHandler
+
 from .assignments import AssignmentRequests
 
 # from .assignments import AssignmentRequests
@@ -46,8 +49,13 @@ class Requests(BaseRequests):
     users: UserRequests
     tokens: TokenRequests
 
-    def __init__(self, context: ContextData, client: httpx.AsyncClient):
-        super().__init__(context, client)
+    def __init__(
+        self,
+        context: ContextData,
+        client: httpx.AsyncClient,
+        handler: AssertionHandler | None = None,
+    ):
+        super().__init__(context, client, handler=handler)
         self.assignments = AssignmentRequests.spawn_from(self)
         self.collections = CollectionRequests.spawn_from(self)
         self.documents = DocumentRequests.spawn_from(self)

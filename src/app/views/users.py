@@ -11,6 +11,8 @@ from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
 from app import __version__, util
+from app.auth import TokenPermissionTier
+from app.config import Config
 from app.controllers.base import Data, ResolvedUser
 from app.depends import (
     DependsAccess,
@@ -18,6 +20,8 @@ from app.depends import (
     DependsCreate,
     DependsDelete,
     DependsRead,
+    DependsToken,
+    DependsTokenOptional,
     DependsUpdate,
 )
 from app.err import ErrAccessUser, ErrDetail
@@ -163,6 +167,12 @@ class UserView(BaseView):
             name="Delete User (and Associated Objects)",
             responses=OpenApiResponseUnauthorized,
         ),
+        post_user=dict(
+            url="",
+            name="Create a User",
+            responses=OpenApiResponseUnauthorized,
+            tags=[OpenApiTags.admin],
+        ),
     )
     view_router_args = dict(responses=OpenApiResponseUser, tags=[OpenApiTags.users])
     view_children = {
@@ -173,14 +183,43 @@ class UserView(BaseView):
     @classmethod
     def post_user(
         cls,
+        token: DependsTokenOptional,
         create: DependsCreate,
         config: DependsConfig,
-        code: str,
         create_data: UserCreateSchema,
-        timestamp: int,
-    ) -> AsOutput[UserSchema]:
+        code: str | None = None,
+        timestamp: int | None = None,
+    ) -> OutputWithEvents[UserSchema]:
         """Create a new user and return the user and creation event."""
 
+        if token is None:
+            if code is None or timestamp is None:
+                msg = "Code and timestamp are required (no token)."
+                raise HTTPException(401, msg)
+            cls.check_code(config, code, create_data.email, timestamp)
+        elif token.tier != TokenPermissionTier.admin:
+            msg = "Admins or using code only."
+            raise HTTPException(401, msg)
+
+        q = select(User.uuid).where(User.email == create_data.email)
+        email_exists = create.session.scalar(q) is not None
+        if email_exists:
+            raise HTTPException(400, detail="Account with email already exists.")
+
+        create.create_data = create_data
+        data: Data[ResolvedUser]
+        data = mwargs(Data, token_user=None, data=ResolvedUser.empty())
+        data_final = create.user(data)
+        data_final.commit(create.session)
+
+        return mwargs(
+            OutputWithEvents[UserSchema],
+            data=UserSchema.model_validate(data_final.data.users[0]),
+            events=[data_final.event],
+        )
+
+    @classmethod
+    def check_code(cls, config: Config, code: str, email: str, timestamp: int) -> None:
         now = int(datetime.timestamp(datetime.now()))
         if timestamp > now:
             raise HTTPException(422, detail="Code timestamp is from the future.")
@@ -193,22 +232,11 @@ class UserView(BaseView):
         #       is when the auth0 registration flow is occuring.
         ts = bytes(timestamp)
         code_expect = hashlib.sha256(
-            config.auth0.registration_code_salt + create_data.email.encode() + ts
+            config.auth0.registration_code_salt + email.encode() + ts
         )
 
         if code != code_expect.hexdigest():
             raise HTTPException(403, detail="Invalid code.")
-
-        data: Data[ResolvedUser]
-        data = mwargs(Data, token_user=None, data=ResolvedUser.empty())
-        create.user(data)
-        data.commit(create.session)
-
-        return mwargs(
-            OutputWithEvents[UserSchema],
-            data=UserSchema.model_validate(data.data.users[0]),
-            events=[data.event],
-        )
 
     @classmethod
     def get_user(

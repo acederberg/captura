@@ -30,7 +30,7 @@ from app.err import ErrDetail
 from app.fields import Level
 from app.models import Document, Grant, User
 from app.schemas import EventSchema
-from client.handlers import CONSOLE
+from client.handlers import CONSOLE, AssertionHandler
 from client.requests import Requests
 from dummy import DummyHandler, DummyProvider
 
@@ -169,49 +169,8 @@ class BaseEndpointTest(abc.ABC):
         expect: int | None = None,
         err: ErrDetail | None = None,
     ) -> AssertionError | None:
-        # DO RECURSE
-        if isinstance(response, tuple) or isinstance(response, list):
-            _err: AssertionError | None
-            return next(
-                (
-                    _err
-                    for rr in response
-                    if (_err := self.check_status(requests, rr)) is not None
-                ),
-                None,
-            )
-
-        if expect is None:
-            match response.request.method:
-                case HTTPMethod.POST:
-                    expect = 201
-                case _:
-                    expect = 200
-
-        if expect != response.status_code:
-            pp = requests.context.console_handler.print_request
-            with CONSOLE.capture() as err_msg_capture:
-                pp(response.request, response)
-
-            return AssertionError(err_msg_capture.get())
-
-        if err is None:
-            return
-
-        if (rich_msg := err.compare(response)) is None:
-            return None
-
-        with CONSOLE.capture() as err_msg_capture:
-            CONSOLE.print(rich_msg)
-
-        return AssertionError(err_msg_capture.get())
-
-    # def check_err(
-    #     self,
-    #     requests: Requests,
-    #     response: httpx.Response,
-    #     expected: ErrDetail
-    # ) -> AssertionError | None:
+        # handler = AssertionHandler(requests.context.config)
+        return requests.handler(response, expect_err=err, expect_status=expect)
 
     # ----------------------------------------------------------------------- #
     # Errors

@@ -1,10 +1,11 @@
 # =========================================================================== #
 import json
-from typing import Any, ClassVar, Dict, Generic, Self, TypeVar
+from typing import Any, ClassVar, Dict, Generic, Self, Tuple, TypeVar
 
 import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel
+from rich.table import Table
 
 # --------------------------------------------------------------------------- #
 from app import fields
@@ -116,29 +117,29 @@ class ErrAccessDocumentGrantInsufficient(ErrAccessDocumentGrantBase):
 
 class ErrAccessDocumentPending(ErrAccessDocumentGrantInsufficient):
     _msg_grant_pending: ClassVar[str] = "Grant is pending."
-    _msg_grant_pending_created: ClassVar[
-        str
-    ] = "Grant is pending with `pending_from=created`."
+    _msg_grant_pending_created: ClassVar[str] = (
+        "Grant is pending with `pending_from=created`."
+    )
 
     pending_from: fields.FieldPendingFrom
 
 
 class ErrAccessDocumentCannotRejectOwner(ErrBase):
-    _msg_cannot_reject_owner: ClassVar[
-        str
-    ] = "Owner cannot reject grants of other owners."
+    _msg_cannot_reject_owner: ClassVar[str] = (
+        "Owner cannot reject grants of other owners."
+    )
     uuid_user_revoker: fields.FieldUUID
     uuid_document: fields.FieldUUID
     uuid_user_revokees: fields.FieldUUIDS
 
 
 class ErrUpdateGrantPendingFrom(ErrBase):
-    _msg_granter: ClassVar[
-        str
-    ] = "Cannot accept grants because `pending_from` must be `granter`."
-    _msg_grantee: ClassVar[
-        str
-    ] = "Cannot accept grants because `pending_from` must be `grantee`."
+    _msg_granter: ClassVar[str] = (
+        "Cannot accept grants because `pending_from` must be `granter`."
+    )
+    _msg_grantee: ClassVar[str] = (
+        "Cannot accept grants because `pending_from` must be `grantee`."
+    )
 
     uuid_obj: fields.FieldUUIDS
     kind_obj: fields.FieldKindObject
@@ -176,17 +177,18 @@ class ErrDetail(BaseModel, Generic[T_ErrDetail]):
             return cls(detail=json.loads(res.content))
         return cls(detail=TT.model_validate_json(res.content))
 
-    def compare(self, res: httpx.Response) -> str | None:
+    def compare(self, res: httpx.Response) -> Table | None:
         "Only for pytest!"
 
         # Assumes detail is a single layer deep.
+        diff: Dict[str, Tuple[Any, Any]]
         self_from_res = self.from_response(res)
         if self.detail == self_from_res.detail:
             return
-        elif isinstance(self.detail, str):
-            diff = {"detail": (self.detail, self_from_res.detail)}
+        elif isinstance(detail := self.detail, str):
+            diff = {"detail": (detail, self_from_res.detail)}
         else:
-            detail_self = self.detail.model_dump(mode="json")
+            detail_self = detail.model_dump(mode="json")
             detail_res = self_from_res.detail.model_dump(mode="json")  # type: ignore
             diff = {
                 exp_k: (exp_v, have_v)
@@ -194,18 +196,14 @@ class ErrDetail(BaseModel, Generic[T_ErrDetail]):
                 if (have_v := detail_res.get(exp_k)) is None or have_v != exp_v
             }
 
-        msg = "Error from response is wrong in the following fields: \n"
-        msg += ",\n".join(
-            (
-                f"[bold blue]{key}[/bold blue]: "
-                + f"[bold green]{good}[/bold green] -> "
-                + f"[bold red]{bad}[/bold red]"
-            )
-            for key, (good, bad) in diff.items()
-        )
-        msg += "."
+        table = Table(title="Error Response Discrepancy")
+        table.add_column("field")
+        table.add_column("value expected", style="green")
+        table.add_column("value recieved", style="red")
+        for key, (good, bad) in diff.items():
+            table.add_row(key, good, bad)
 
-        return msg
+        return table
 
 
 AnyErrDetailAccessDocumentGrant = (

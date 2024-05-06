@@ -7,7 +7,7 @@ import yaml
 
 # --------------------------------------------------------------------------- #
 from client.config import Config, HostConfig
-from client.handlers import CONSOLE, ConsoleHandler
+from client.handlers import CONSOLE, ConsoleHandler, HandlerData
 from client.requests import Requests
 from client.requests.assignments import AssignmentRequests
 from client.requests.base import BaseRequests, BaseTyperizable, ContextData, params
@@ -112,8 +112,8 @@ class ConfigCommands(BaseTyperizable):
         cls,
         _context: typer.Context,
         current: Annotated[
-            bool, typer.Option("--current", help="Show the current host.")
-        ],
+            bool, typer.Option("--current/--all", help="Show the current host.")
+        ] = True,
         names: Annotated[
             Optional[List[str]],
             typer.Option("--name", help="Names to filter by."),
@@ -135,7 +135,7 @@ class ConfigCommands(BaseTyperizable):
             data = (
                 (
                     context.config.use.profile,
-                    profile.model_dump(mode="json") if profile is not None else profile,
+                    profile.model_dump(mode="json") if profile else profile,
                 ),
             )
         else:
@@ -143,7 +143,12 @@ class ConfigCommands(BaseTyperizable):
             if names is not None:
                 data = ((pp, qq) for pp, qq in data if pp in names)
 
-        context.console_handler.handle(data=dict(data))
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=dict(data),
+                output_config=context.config.output,
+            )
+        )
 
         return
 
@@ -180,7 +185,12 @@ class ConfigCommands(BaseTyperizable):
             if names is not None:
                 data = ((pp, qq) for pp, qq in data if pp in names)
 
-        context.console_handler.handle(data=dict(data))
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=dict(data),
+                output_config=context.config.output,
+            )
+        )
         return
 
     @classmethod
@@ -194,8 +204,14 @@ class ConfigCommands(BaseTyperizable):
         data = dict(
             profile={config.use.profile: profile},
             host={config.use.host: host},
+            output=config.output.model_dump(mode="json"),
         )
-        context.console_handler.handle(data=data)
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=data,
+                output_config=context.config.output,
+            )
+        )
 
     @classmethod
     def docker_host(
@@ -266,14 +282,23 @@ class ConfigCommands(BaseTyperizable):
 
                     raise typer.Exit()
 
-                console.print("# [green]Updated client config: ")
                 data = config.model_dump(
                     mode="json", exclude={"profile", "host", "token"}
                 )
-                context.console_handler.handle(data=data)
+                context.console_handler.handle(
+                    handler_data=HandlerData(
+                        data=data,
+                        output_config=context.config.output,
+                    )
+                )
                 return
 
-        context.console_handler.handle(data=data)
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=data,
+                output_config=context.config.output,
+            )
+        )
 
     @classmethod
     def docker_mysql(cls, _context: typer.Context):
@@ -293,7 +318,12 @@ class ConfigCommands(BaseTyperizable):
             network_name: network_detail["IPAddress"]
             for network_name, network_detail in networks.items()
         }
-        context.console_handler.handle(data=data)
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=data,
+                output_config=context.config.output,
+            )
+        )
 
 
 __all__ = (

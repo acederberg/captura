@@ -448,7 +448,19 @@ class Create(WithDelete, Generic[T_Create]):
         self,
         data: Data[ResolvedUser],
     ) -> Data[ResolvedUser]:
-        raise HTTPException(400, detail="Not implemented.")
+        user = User(
+            **self.create_data.model_dump(),
+            uuid=(uuid_user := secrets.token_urlsafe(8)),
+        )
+        data_create = data.empty(KindData.user)
+        data_create.data.users = (user,)
+        data_create.event = Event(
+            **self.event_common,
+            kind_obj=KindObject.user,
+            uuid_obj=uuid_user,
+            detail="User created.",
+        )
+        return data_create
 
     # NOTE: Ideally consuming functions would just pass in an empty data and
     #       this would fill it out. Unfortunately mutations make things more

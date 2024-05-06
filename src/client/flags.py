@@ -56,7 +56,6 @@ FlagUUIDs: TypeAlias = Annotated[Optional[List[str]], typer.Option("--uuid")]
 # User
 
 ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument(help="User uuid.")]
-ArgUUIDUser: TypeAlias = Annotated[str, typer.Argument(help="User uuid.")]
 FlagUUIDUserOptional: TypeAlias = Annotated[
     Optional[str],
     typer.Option(
@@ -366,3 +365,9 @@ FlagContentOptional: TypeAlias = Annotated[
         callback=lambda v: check_content(v, allow_none=True),
     ),
 ]
+FlagEmail: TypeAlias = Annotated[
+    Optional[str], typer.Option("--email", help="Email address.")
+]
+
+FlagDecorate = Annotated[Optional[bool], typer.Option("--decorate/--no-decorate")]
+# FlagExclude - Annotated[Optional[List[str]], typer.Option

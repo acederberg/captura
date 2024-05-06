@@ -1,11 +1,43 @@
 # =========================================================================== #
-from typing import Annotated, Any, Dict
+import enum
+from sys import flags
+from typing import Annotated, Any, Dict, Literal, Set
 
 from pydantic import BaseModel, Field, SecretStr, computed_field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
 from app import util
+
+# NOTE: Previously this was part of the console handler. However the same
+#       data is necessary in a number of places and is therefore factored out.
+
+
+class Output(str, enum.Enum):
+    raw = "raw"
+    json = "json"
+    yaml = "yaml"
+    table = "table"
+
+
+class OutputConfig(BaseModel):
+
+    decorate: Annotated[bool, Field(default=True)]
+    # output_exclude: Annotated[Set[str], Field(default_factory=set)]
+    output: Annotated[Output, Field(default=Output.yaml)]
+    output_fallback: Annotated[
+        Literal[Output.yaml, Output.json],
+        Field(
+            default=Output.yaml,
+            description="Because some data cannot be nicely rendered as a table.",
+        ),
+    ]
+    rich_theme: str = "fruity"
+
+    # table_columns: Annotated[FlagColumns, Field(default_factory=list)]
+    # table_column_configs: Annotated[
+    #     Dict[str, Dict[str, Any]], Field(default_factory=dict)
+    # ]
 
 
 class ProfileConfig(BaseModel):
@@ -29,6 +61,7 @@ class Config(BaseYamlSettings):
         yaml_files=util.PATH_CONFIG_CLIENT,
     )
 
+    output: Annotated[OutputConfig, Field()]
     profiles: Annotated[Dict[str, ProfileConfig], Field()]
     hosts: Annotated[Dict[str, HostConfig], Field()]
     use: Annotated[UseConfig, Field()]

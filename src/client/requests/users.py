@@ -1,5 +1,8 @@
 # =========================================================================== #
 
+# =========================================================================== #
+from typing import Optional
+
 import httpx
 import rich
 import typer
@@ -8,90 +11,6 @@ import typer
 from client import flags
 from client.requests.base import BaseRequests, ContextData, methodize, params
 from client.requests.grants import UserGrantRequests
-
-
-class DemoRequests(BaseRequests):
-    typer_commands = dict(
-        read="req_read",
-        create="req_create",
-        activate="req_activate",
-    )
-
-    @classmethod
-    def req_read(
-        cls,
-        _context: typer.Context,
-        *,
-        invitation_uuid: flags.FlagUUIDUserOptional = None,
-        invitation_code: flags.FlagInvitationCodesOptional = None,
-        invitation_email: flags.FlagInvitationEmailsOptional = None,
-    ) -> httpx.Request:
-        context = ContextData.resolve(_context)
-        return httpx.Request(
-            "GET",
-            url=context.url("/users/extensions/demos"),
-            params=params(
-                invitation_code=invitation_code,
-                invitation_uuid=invitation_uuid,
-                invitation_email=invitation_email,
-            ),
-            headers=context.headers,
-        )
-
-    read = methodize(req_read, __func__=req_read.__func__)
-
-    @classmethod
-    def req_create(
-        cls,
-        _context: typer.Context,
-        *,
-        invitation_email: flags.FlagInvitationEmail,
-        name: flags.FlagNameOptional,
-        description: flags.FlagDescriptionOptional,
-        url: flags.FlagUrlOptional = None,
-        url_image: flags.FlagUrlImageOptional = None,
-        public: flags.FlagPublic = True,
-        force: flags.FlagForce = False,
-    ) -> httpx.Request:
-        context = ContextData.resolve(_context)
-        return httpx.Request(
-            "POST",
-            context.url("/users/extensions/demos"),
-            json=dict(
-                name=name,
-                description=description,
-                url=url,
-                url_image=url_image,
-                public=public,
-            ),
-            params=params(invitation_email=invitation_email, force=force),
-            headers=context.headers,
-        )
-
-    create = methodize(req_read, __func__=req_read.__func__)
-
-    @classmethod
-    def req_activate(
-        cls,
-        _context: typer.Context,
-        *,
-        invitation_uuid: flags.ArgUUIDUser,
-        invitation_code: flags.FlagInvitationCode,
-        invitation_email: flags.FlagInvitationEmail,
-    ) -> httpx.Request:
-        context = ContextData.resolve(_context)
-        return httpx.Request(
-            "PATCH",
-            context.url(f"/users/extensions/demos/{invitation_uuid}"),
-            params=dict(
-                invitation_uuid=invitation_uuid,
-                invitation_code=invitation_code,
-                invitation_email=invitation_email,
-            ),
-            headers=context.headers,
-        )
-
-    activate = methodize(req_activate, __func__=req_activate.__func__)
 
 
 class UserRequests(BaseRequests):
@@ -177,22 +96,28 @@ class UserRequests(BaseRequests):
         cls,
         _context: typer.Context,
         *,
-        name: flags.FlagNameOptional = None,
-        description: flags.FlagDescriptionOptional = None,
+        email: flags.FlagEmail,
+        name: flags.FlagName,
+        description: flags.FlagDescription,
         url: flags.FlagUrlOptional = None,
         url_image: flags.FlagUrlImageOptional = None,
         public: flags.FlagPublic = True,
     ) -> httpx.Request:
-        # context = ContextData.resolve(_context)
-        # json_data = dict(
-        #     name=name,
-        #     description=description,
-        #     url=url,
-        #     url_image=url_image,
-        #     public=public,
-        # )
-        rich.print("[red]Not implemented.")
-        raise typer.Exit(1)
+        context = ContextData.resolve(_context)
+
+        return httpx.Request(
+            "POST",
+            context.url("/users"),
+            headers=context.headers,
+            json=dict(
+                email=email,
+                name=name,
+                description=description,
+                url=url,
+                url_image=url_image,
+                public=public,
+            ),
+        )
 
     @classmethod
     def req_delete(
@@ -220,12 +145,8 @@ class UserRequests(BaseRequests):
         create="req_create",
         delete="req_delete",
     )
-    typer_children = {
-        "demos": DemoRequests,
-        "grants": UserGrantRequests,
-    }
+    typer_children = {"grants": UserGrantRequests}
 
-    demos: DemoRequests
     grants: UserGrantRequests
     update = methodize(req_update, __func__=req_update.__func__)  # type: ignore
     create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
@@ -233,7 +154,6 @@ class UserRequests(BaseRequests):
 
     def __init__(self, context: ContextData, client: httpx.AsyncClient):
         super().__init__(context, client)
-        self.demos = DemoRequests.spawn_from(self)
         self.grants = UserGrantRequests.spawn_from(self)
 
 

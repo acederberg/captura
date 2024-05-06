@@ -2,10 +2,12 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
+from app.auth import TokenPermissionTier
 from client import flags
 from client.handlers import CONSOLE
+from client.requests.base import typerize
 
-from .base import BaseRequests, ContextData, params
+from .base import BaseRequests, ContextData, methodize, params
 
 
 class TokenRequests(BaseRequests):
@@ -53,7 +55,11 @@ class TokenRequests(BaseRequests):
             context.console_handler.console.print("[red]Could not determine uuid.")
             raise typer.Exit(1)
 
-        token_payload = dict(uuid=uuid, admin=admin)
+        permissions = list()
+        if admin:
+            permissions.append("tier:admin")
+
+        token_payload = dict(uuid=uuid, permissions=permissions)
         return httpx.Request(
             "POST",
             context.url("/auth/token"),
@@ -61,13 +67,13 @@ class TokenRequests(BaseRequests):
             headers=context.headers,
         )
 
+    read = methodize(req_read, __func__=req_read.__func__)
+    create = methodize(req_create, __func__=req_create.__func__)
+
 
 __all__ = ("TokenRequests",)
 
 
 if __name__ == "__main__":
-    # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
-
     tokens = typerize(TokenRequests)
     tokens()

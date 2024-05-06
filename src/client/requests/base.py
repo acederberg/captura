@@ -1,4 +1,5 @@
 # =========================================================================== #
+import asyncio
 import functools
 from collections.abc import Awaitable
 from typing import (
@@ -9,8 +10,11 @@ from typing import (
     Concatenate,
     Dict,
     Generator,
+    List,
+    Optional,
     ParamSpec,
     Self,
+    Tuple,
     Type,
     TypeVar,
 )
@@ -21,7 +25,7 @@ import typer
 import yaml
 from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
-from pydantic import BaseModel, SecretStr, computed_field
+from pydantic import BaseModel, ConfigDict, SecretStr, computed_field
 from rich.console import Console
 
 # --------------------------------------------------------------------------- #
@@ -30,7 +34,14 @@ from app.schemas import mwargs
 from client import flags
 from client.config import Config
 from client.flags import Output, Verbage
-from client.handlers import CONSOLE, ConsoleHandler
+from client.handlers import (
+    CONSOLE,
+    AssertionHandler,
+    BaseHandlerData,
+    BaseRequestHandler,
+    ConsoleHandler,
+    render_request,
+)
 
 # Helpers for decorators.
 
@@ -89,6 +100,7 @@ def openapi_find(openapi: OpenAPI, req: httpx.Request) -> PathItem:
 
 
 class ContextData(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     config: Config
     console_handler: ConsoleHandler
 
@@ -144,31 +156,37 @@ class ContextData(BaseModel):
     def for_typer(
         cls,
         context: typer.Context,
+        # Config general,
         path_config: flags.FlagConfig = None,
         profile: flags.FlagProfile = None,
         host: flags.FlagHost = None,
-        output: flags.FlagOutput = Output.json,
-        columns: flags.FlagColumns = list(),
+        token: flags.FlagTokenOptional = None,
+        # For output
+        output: flags.FlagOutput | None = None,
+        decorate: flags.FlagDecorate = None,
+        # exclude: flags.FlagExclude = list(),
+        # For rest.
         openapi: flags.FlagOpenApi = False,
         show_request: flags.FlagShowRequest = False,
         auth_exclude: flags.FlagNoAuthorization = False,
-        token: flags.FlagTokenOptional = None,
     ):
         if path_config is None:
             config = mwargs(Config)
         else:
             with open(path_config, "r") as file:
-                config = Config.model_validate(
-                    yaml.safe_load(file),
-                )
+                config = Config.model_validate(yaml.safe_load(file))
         assert config is not None
 
         if host is not None:
             config.use.host = host
         if profile is not None:
             config.use.profile = profile
+        if output is not None:
+            config.output.output = output
+        if decorate is not None:
+            config.output.decorate = decorate
 
-        console_handler = mwargs(ConsoleHandler, output=output, columns=columns)
+        console_handler = ConsoleHandler(config=config)
         context.obj = mwargs(
             ContextData,
             config=config,
@@ -207,6 +225,8 @@ MkRequestInstance = Callable[
 # Test client stuff.
 
 
+# NOTE: This decorator is an abomination. The problem is that we want to
+#       convert a classmethod into an instance method.
 # NOTE: The type hint of fn cannot include `ContextData | typer.Context` bc
 #       typer. ``__func__`` is included because classmethods are processed
 #       after the end of the class definition.
@@ -225,6 +245,9 @@ def methodize(
     ) -> httpx.Response:
         req = fn(self.__class__, self.context, *args, **kwargs)  # type: ignore
         res = await self.client.send(req)
+
+        if self.handler is not None:
+            self.handler(res)
         return res
 
     return wrapper
@@ -252,6 +275,9 @@ def typerize_fn_httx(
                 raise typer.Exit(status)
 
             if context.show_request:
+                context.console_handler.console.print(
+                    render_request(context.config.output, request)
+                )
                 raise typer.Exit(1)
 
             response = client.send(request)
@@ -273,17 +299,10 @@ def typerize(
     callback = ContextData.for_typer if callback is None else callback
     callback = callback if not exclude_callback else None
 
-    # print("-----------------")
-    # print(cls.__name__)
-    # print("callback", callback)
-    # print("exclude_callback", exclude_callback)
     tt = typer.Typer()
     if not exclude_callback:
         assert callback is not None
         tt.callback()(callback)
-    # print(tt.registered_callback)
-    # tt.callback()(callback)
-    # print("registered_callback", tt.registered_callback)
 
     for command_name, command_name_fn in cls.typer_commands.items():
         if cls.typer_check_verbage:
@@ -325,14 +344,22 @@ class BaseRequests(BaseTyperizable):
 
     context: ContextData
     client: httpx.AsyncClient
+    _handler: AssertionHandler | None
 
     def __init__(
         self,
         context: ContextData,
         client: httpx.AsyncClient,
+        *,
+        handler: AssertionHandler | None = None,
     ):
         self.context = context
         self.client = client
+        self.handler = (
+            handler if handler is not None else AssertionHandler(self.context.config)
+        )
+
+    # def
 
     @classmethod
     def spawn_from(cls, v: "BaseRequests") -> Self:
@@ -341,6 +368,13 @@ class BaseRequests(BaseTyperizable):
             context=v.context,
             client=v.client,
         )
+
+    async def gather(self, *items: httpx.Request) -> List[httpx.Response]:
+        responses = await asyncio.gather(*map(self.client.send, items))
+        if self.handler is not None:
+            self.handler(responses)
+
+        return responses
 
 
 def params(**kwargs) -> Dict[str, Any]:
