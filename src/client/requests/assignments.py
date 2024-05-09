@@ -158,6 +158,14 @@ class AssignmentRequests(BaseRequests):
         self.documents = DocumentAssignmentRequests.spawn_from(self)
         self.collections = CollectionAssignmentRequests.spawn_from(self)
 
+    @property
+    def c(self) -> CollectionAssignmentRequests:
+        return self.collections
+
+    @property
+    def d(self) -> DocumentAssignmentRequests:
+        return self.documents
+
 
 __all__ = (
     "CollectionAssignmentRequests",

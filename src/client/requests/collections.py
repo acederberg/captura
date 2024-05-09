@@ -7,7 +7,7 @@ import typer
 # --------------------------------------------------------------------------- #
 from app.models import ChildrenCollection
 from client import flags
-from client.handlers import CONSOLE
+from client.handlers import CONSOLE, AssertionHandler
 from client.requests.assignments import CollectionAssignmentRequests
 from client.requests.base import BaseRequests, ContextData, methodize, params
 
@@ -26,9 +26,25 @@ class CollectionRequests(BaseRequests):
 
     assignments: CollectionAssignmentRequests
 
-    def __init__(self, context: ContextData, client: httpx.AsyncClient):
-        super().__init__(context, client)
+    def __init__(
+        self,
+        context: ContextData,
+        client: httpx.AsyncClient,
+        *,
+        handler: AssertionHandler | None = None,
+        handler_methodize: bool = False,
+    ):
+        super().__init__(
+            context,
+            client,
+            handler=handler,
+            handler_methodize=handler_methodize,
+        )
         self.assignments = CollectionAssignmentRequests.spawn_from(self)
+
+    @property
+    def a(self) -> CollectionAssignmentRequests:
+        return self.assignments
 
     @classmethod
     def req_search(

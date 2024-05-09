@@ -25,7 +25,7 @@ from app.fields import (
     PendingFrom,
     PendingFromStr,
 )
-from app.models import Document, Grant, User, uuids
+from app.models import Assignment, Document, Grant, User, uuids
 from app.schemas import (
     AsOutput,
     DocumentSchema,
@@ -37,7 +37,7 @@ from app.schemas import (
 from client.handlers import CONSOLE
 from client.requests import Requests
 from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import BaseEndpointTest
+from tests.test_views.util import COUNT, BaseEndpointTest
 
 N_CASES: int = 1
 
@@ -264,22 +264,35 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         #       happen but probably worth testing incase deletion is broken).
         #       `exclude_deleted` is `True` in `get_document_grant` since excluded
         #       documents are deleted.
-        gpwargs = GetPrimaryKwargs(deleted=True)
-        (document,) = dummy.get_documents(1, gpwargs, level=Level.view)
-        assert document.deleted, "Document should be deleted."
-
-        grant = dummy.get_document_grant(document)
-        grant.deleted = False
-        grant.pending = False
-
+        document = Document(
+            name="test_not_found_404",
+            description="test_not_found_404",
+            deleted=True,
+        )
         session = dummy.session
+        session.add(document)
+        session.commit()
+        session.refresh(document)
+
+        grant = Grant(
+            id_document=document.id,
+            id_user=dummy.user.id,
+            level=Level.own,
+            pending=False,
+            deleted=False,
+            pending_from=PendingFrom.created,
+        )
         session.add(grant)
         session.commit()
+        session.refresh(grant)
 
         assert grant.deleted is False, "Grant should not be deleted."
         assert grant.pending is False, "Grant should not be pending."
 
-        uuid_user = self.document_user_uuids(dummy, document)
+        # users = dummy.get_users(n=3)
+        # uuid_user = uuids(users)
+        # grants = tuple(Grant(id_document=document.id, id_user=uu.id) for uu in users)
+        # tuple(map(session.merge, grants))
 
         errhttp = mwargs(
             ErrDetail[ErrObjMinSchema],
@@ -290,7 +303,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
             ),
         )
         fn = self.fn(requests)
-        res = await fn(document.uuid, uuid_user=uuid_user)
+        res = await fn(document.uuid, uuid_user=dummy.user.uuid)
         if err := self.check_status(requests, res, 410, errhttp):
             raise err
 
@@ -298,11 +311,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
 # NOTE: Test classes will be per endpoint. They will be parameterized with many
 #       dummies. I found it helpful to look directly at the documentation to
 #       come up with tests. The goal here is to test at a very fine scale.
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
     method = H.GET
 
@@ -381,13 +390,73 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
         "Test the pending query parameter."
 
         fn = self.fn(requests)
-        (document,) = dummy.get_documents(1, level=Level.own)
 
-        res = await fn(document.uuid, pending=True)
-        self.check_success(dummy, requests, res, pending=True)
+        document = Document(
+            name="test_success_200_pending",
+            description="test_success_200_pending",
+            deleted=False,
+        )
+        session = dummy.session
+        session.add(document)
+        session.commit()
+        session.refresh(document)
 
-        res = await fn(document.uuid, pending=False)
-        self.check_success(dummy, requests, res, pending=False)
+        grant = Grant(
+            id_document=document.id,
+            id_user=dummy.user.id,
+            level=Level.own,
+            pending=False,
+            deleted=False,
+            pending_from=PendingFrom.created,
+        )
+        users = dummy.get_users(10, other=True)
+        grants = [
+            Grant(
+                id_document=document.id,
+                id_user=user.id,
+                level=Level.view,
+                pending=index % 2,
+                deleted=False,
+                pending_from=PendingFrom.granter,
+            )
+            for index, user in enumerate(users)
+        ]
+        session.add_all(grants)
+        session.add(grant)
+        session.commit()
+        session.refresh(grant)
+
+        uuid_user = list(uu.uuid for uu in users)
+        n_users_min = len(uuid_user) // 2
+        n_users_max = n_users_min + 1
+
+        res = await fn(document.uuid, uuid_user=uuid_user, pending=True)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter.validate_json(res.content)
+        assert data.kind == KindObject.grant
+        assert all(
+            item.pending
+            and item.uuid_user in uuid_user
+            and item.uuid_document == document.uuid
+            for item in data.data
+        )
+        assert n_users_min <= len(data.data) <= n_users_max
+
+        res = await fn(document.uuid, uuid_user=uuid_user, pending=False)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter.validate_json(res.content)
+        assert data.kind == KindObject.grant
+        assert all(
+            not item.pending
+            and item.uuid_user in uuid_user
+            and item.uuid_document == document.uuid
+            for item in data.data
+        )
+        assert n_users_min <= len(data.data) <= n_users_max
 
     @pytest.mark.asyncio
     async def test_success_200_pending_from(
@@ -492,11 +561,7 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
             raise AssertionError("All empty! Check dummy data.")
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
     method = H.DELETE
 
@@ -642,40 +707,56 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
     async def test_forbidden_403_cannot_reject_other_owner(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        (document,) = dummy.get_documents(
-            1, level=Level.own, pending_from=PendingFrom.created
+        # NOTE: New document with multiple owners.
+        document = Document(
+            name="test_forbidden_403_cannot_reject_other_owner",
+            description="test_forbidden_403_cannot_reject_other_owner",
+            public=True,
+            deleted=False,
         )
-        assert not document.deleted
 
-        grant = dummy.get_document_grant(document)
-        assert not grant.deleted
-        assert grant.pending_from == PendingFrom.created
-
-        # Gaurentee other owner
         session = dummy.session
-        q = (
-            document.q_select_grants()
-            .where(Grant.pending_from != PendingFrom.created)
-            .limit(1)
-        )
-        grant_other = session.scalar(q)
-        assert grant_other is not None
-
-        grant_other.level = Level.own
-        assert not grant_other.deleted, "Grant should not be deleted."
-        assert not grant_other.pending, "Grant should not be pending."
-
-        session.add(grant_other)
+        session.add(document)
         session.commit()
+        session.refresh(dummy.user)
 
+        users = dummy.get_users(other=True, n=5)
+        session.add(
+            grant := Grant(
+                id_user=dummy.user.id,
+                id_document=document.id,
+                level=Level.own,
+                pending=False,
+                deleted=False,
+                pending_from=PendingFrom.created,
+                children=(
+                    grants := list(
+                        Grant(
+                            id_user=user.id,
+                            id_document=document.id,
+                            level=Level.own,
+                            pending=False,
+                            deleted=False,
+                            pending_from=PendingFrom.granter,
+                        )
+                        for user in users
+                    )
+                ),
+            )
+        )
+        session.commit()
+        tuple(map(session.refresh, grants))
+        session.refresh(grant)
+
+        # NOTE: Now try to reject other owner.
         fn = self.fn(requests)
-        res = await fn(document.uuid, uuid_user=[grant_other.uuid_user])
+        res = await fn(document.uuid, uuid_user=[uu.uuid for uu in users])
         httperr = mwargs(
             ErrDetail[ErrAccessDocumentCannotRejectOwner],
             detail=ErrAccessDocumentCannotRejectOwner(
                 msg=ErrAccessDocumentCannotRejectOwner._msg_cannot_reject_owner,
                 uuid_user_revoker=dummy.user.uuid,
-                uuid_user_revokees={grant_other.uuid_user},
+                uuid_user_revokees=uuids(users),
                 uuid_document=document.uuid,
             ),
         )
@@ -684,11 +765,7 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
             raise err
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
     method = H.PATCH
 
@@ -780,48 +857,78 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
     async def test_success_200(
         self, dummy: DummyProvider, requests: Requests, count: int
     ):
-        "Test with grants pending frwith the correct pending_from value"
+        "Test with grants pending with the correct pending_from value"
 
-        # Get owned document
-        (document,) = dummy.get_documents(1, level=Level.own)
-        assert not document.deleted
-
-        grant = dummy.get_document_grant(document)
-        assert not grant.pending
-        assert not grant.deleted
-        assert grant.level == Level.own
-
-        # Grants awaiting owner approval.
-        q_grants_pending = document.q_select_grants(
-            exclude_pending=False,
-            pending=True,
-            pending_from=PendingFrom.granter,
+        # NOTE: Create owned document and find some user uuids.
+        document = Document(
+            name="TestDocumentsGrantsApprove.test_success_200",
+            description="TestDocumentsGrantsApprove.test_success_200",
+            public=True,
+            deleted=False,
         )
-        q_grants_pending = q_grants_pending.limit(5)
-        grants_pending = tuple(dummy.session.scalars(q_grants_pending))
-        assert len(grants_pending)
-        assert all(
-            gg.pending_from == PendingFrom.granter and gg.pending and not gg.deleted
-            for gg in grants_pending
+        session = dummy.session
+        session.add(document)
+        session.commit()
+        session.refresh(document)
+
+        session.add(
+            Grant(
+                id_user=dummy.user.id,
+                id_document=document.id,
+                level=Level.own,
+                pending=False,
+                pending_from=PendingFrom.created,
+            )
         )
+        session.commit()
 
-        uuid_users = list(gg.uuid_user for gg in grants_pending)
-
-        fn_read = requests.grants.documents.read
-        res_pending = await fn_read(document.uuid, uuid_user=uuid_users, pending=True)
-
-        # NOTE: Data is gaurenteed nonempty since users known.
-        data = self.adapter.validate_json(res_pending.content)
-        assert data.kind is KindObject.grant
-        assert data.kind_nesting is KindNesting.array
-
-        uuid_users_recieved = set(item.uuid for item in data.data)
-        assert len(uuid_users_recieved) == len(uuid_users)
-
-        fn = self.fn(requests)
-        res = await fn(document.uuid, uuid_user=uuid_users)
+        # NOTE: Create grants, verify with db.
+        uuid_user = list(uu.uuid for uu in dummy.get_users(other=True, n=10))
+        n_users = len(uuid_user)
+        res = await requests.g.d.invite(document.uuid, uuid_user=uuid_user)
         if err := self.check_status(requests, res):
             raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+
+        assert len(data.data) == n_users
+        assert all(
+            gg.pending_from == PendingFrom.grantee
+            and gg.pending
+            and gg.level == Level.view
+            for gg in data.data
+        )
+        assert sorted(uuid_user) == sorted(gg.uuid_user for gg in data.data)
+
+        # NOTE: Verify with API. Results should not include user grant.
+        fn_read = requests.grants.documents.read
+        res_pending = await fn_read(document.uuid, uuid_user=uuid_user, pending=True)
+        if err := self.check_status(requests, res_pending):
+            raise err
+
+        data = self.adapter.validate_json(res_pending.content)
+        assert data.kind == KindObject.grant
+        assert data.kind_nesting is KindNesting.array
+        assert len(data.data) == (n_users)
+        assert all(gg.pending for gg in data.data)
+
+        res_pending = await fn_read(document.uuid, uuid_user=uuid_user)
+        if err := self.check_status(requests, res_pending):
+            raise err
+
+        data = self.adapter.validate_json(res_pending.content)
+        assert data.kind is None
+
+        # NOTE: Indempotent.
+        fn = self.fn(requests)
+        res = await fn(document.uuid, uuid_user=uuid_user)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter_w_events.validate_json(res.content)
+        assert data.kind is None
+        assert len(data.events) == 1
+        assert not len(data.events[0].children)
 
         # NOTE: Check data returned and database.
         data = self.adapter_w_events.validate_json(res.content)
@@ -830,12 +937,12 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
         dummy.session.reset()
         for item in data.data:
             assert not item.pending
-            assert item.uuid in uuid_users_recieved
+            assert item.uuid in uuid_user
 
-            item_ft = dummy.session.get(Grant, item.uuid)
-            assert item_ft is not None
-            assert not item_ft.pending
-            assert item_ft.uuid_user in uuid_users
+            item_db = dummy.session.get(Grant, item.uuid)
+            assert item_db is not None
+            assert not item_db.pending
+            assert item_db.uuid_user in uuid_user
 
         # TODO: check events
 
@@ -858,20 +965,10 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
         #     requests.context.console_handler.print_request(res.request, res)
         #     raise AssertionError("Expected empty result after all grants approved.")
 
-        # NOTE: Check indempotence. Data should be mt.
-        res = await fn(document.uuid, uuid_user=uuid_users)
-        if err := self.check_status(requests, res):
-            raise err
-
-        data = self.adapter_w_events.validate_json(res.content)
-        assert data.kind is None
-        assert data.events is not None
-
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestDocumentsGrantsInvite(CommonDocumentsGrantsTests):
     method = H.POST

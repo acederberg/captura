@@ -241,7 +241,7 @@ class CmdDummy(BaseTyperizable):
         init="initialize",
         spawn="spawn",
         taint="taint",
-        reset="reset",
+        destroy="destroy",
     )
 
     @classmethod
@@ -330,7 +330,7 @@ class CmdDummy(BaseTyperizable):
             DummyProviderYAML.merge(session)
 
     @classmethod
-    def reset(cls, _context: typer.Context):
+    def destroy(cls, _context: typer.Context):
         """Reset without destroying reports."""
 
         context: ContextDataDummy = _context.obj

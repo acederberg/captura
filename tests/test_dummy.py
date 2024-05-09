@@ -27,11 +27,11 @@ from app.schemas import AsOutput, DocumentSchema, OutputWithEvents
 from client.config import ProfileConfig
 from dummy import DummyHandler, DummyProvider, GetPrimaryKwargs
 from tests.config import PytestClientConfig
-from tests.conftest import client_config
+from tests.conftest import COUNT, client_config
 
 
 @pytest.mark.parametrize(
-    "count", [(None, k) for k in range(5)]
+    "count", [(None, k) for k in range(COUNT)]
 )  # , indirect=["dummy"])
 class TestDummyProvider:
     """Because if this is not tested then tests are unstable."""
@@ -504,7 +504,8 @@ class TestDummyProvider:
 
         uuid_collection = uuids(dummy.get_collections(10))
         data = dummy.get_data_assignment_document(
-            dict(get_primary_kwargs=GetPrimaryKwargs(uuids=uuid_collection))
+            dict(get_primary_kwargs=GetPrimaryKwargs(uuids=uuid_collection)),
+            n=10,
         )
         assert uuids(data.data.collections) == uuid_collection
 

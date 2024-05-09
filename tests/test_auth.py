@@ -33,8 +33,7 @@ class TestAuth:
         assert p.match("Bearer") is None
 
     def test_pytestauth(self, auth):
-        payload = dict(foo="bar", aud=auth.audience, iss=auth.issuer)
-
+        payload = dict(foo="bar", aud=list(auth.audience), iss=auth.issuer)
         encoded = f"Bearer {auth.encode(payload)}"
         decoded = auth.decode(encoded)
 

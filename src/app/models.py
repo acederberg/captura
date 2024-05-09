@@ -382,8 +382,6 @@ class SearchableTableMixins(PrimaryTableMixins):
         limit: int | None = None,
         randomize: bool = False,
     ):
-        print("q_search_conds", uuids)
-
         if not all_ and user_uuid is None:
             msg = "`all_` must be true when a user is not provided."
             raise ValueError(msg)
@@ -1701,7 +1699,7 @@ ResolvedRawAny = (
 )
 
 
-def uuids(vs: Resolvable[T_Resolvable]) -> Set[str]:
+def uuids(vs: Dict[str, T_Resolvable] | Resolvable[T_Resolvable]) -> Set[str]:
     match vs:
         case tuple():
             return {vv.uuid for vv in vs}
@@ -1709,6 +1707,8 @@ def uuids(vs: Resolvable[T_Resolvable]) -> Set[str]:
             return vs
         case str():
             return {vs}
+        case dict():
+            return set(item.uuid for item in vs.values())
         case _ as item:
             return {item.uuid}
 

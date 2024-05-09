@@ -26,7 +26,6 @@ class PytestSubConfig(BaseHashable):
         the tables do not exist, they will be created.
     """
 
-    recreate_tables: Annotated[bool, Field(default=True)]
     generate_reports: Annotated[bool, Field(default=False)]
 
 

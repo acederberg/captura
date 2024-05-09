@@ -54,6 +54,8 @@ from app.models import (
 from dummy import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
+from ..conftest import COUNT
+
 # Base
 
 logger = util.get_logger(__name__)
@@ -316,7 +318,7 @@ class TestAccessUser(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_overloads(self, dummy: DummyProvider, count):
@@ -354,7 +356,7 @@ class TestAccessUser(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_deleted(self, dummy: DummyProviderYAML, count):
@@ -375,7 +377,7 @@ class TestAccessUser(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_modify(self, dummy: DummyProvider, count):
@@ -431,7 +433,7 @@ class TestAccessUser(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_private(self, dummy: DummyProvider, count):
@@ -468,7 +470,7 @@ class TestAccessUser(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_dne(self, dummy: DummyProvider, count):
@@ -494,7 +496,7 @@ class TestAccessCollection(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_overloads(self, dummy: DummyProvider, count):
@@ -531,7 +533,7 @@ class TestAccessCollection(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_private(self, dummy: DummyProvider, count):
@@ -576,7 +578,7 @@ class TestAccessCollection(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_deleted(self, dummy: DummyProvider, count):
@@ -619,7 +621,7 @@ class TestAccessCollection(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_dne(self, dummy: DummyProvider, count):
@@ -640,7 +642,7 @@ class TestAccessCollection(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_modify(self, dummy: DummyProvider, count):
@@ -692,7 +694,7 @@ class TestAccessDocument(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_overloads(self, dummy: DummyProvider, count):
@@ -724,7 +726,7 @@ class TestAccessDocument(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_private(self, dummy: DummyProvider, count):
@@ -793,7 +795,7 @@ class TestAccessDocument(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_check_user_can_access(self, dummy: DummyProvider, count):
@@ -965,7 +967,7 @@ class TestAccessDocument(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_modify(self, dummy: DummyProvider, count):
@@ -1002,7 +1004,7 @@ class TestAccessDocument(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_deleted(self, dummy: DummyProvider, count):
@@ -1053,7 +1055,7 @@ class TestAccessDocument(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_dne(self, dummy: DummyProvider, count):
@@ -1259,7 +1261,7 @@ class TestAccessGrant(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_self_access_only(self, dummy: DummyProvider, count):
@@ -1294,7 +1296,7 @@ class TestAccessGrant(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_owner_access_only(self, dummy: DummyProvider, count):
@@ -1380,7 +1382,7 @@ class TestAccessGrant(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_overloads(self, dummy: DummyProvider, count):
@@ -1475,7 +1477,7 @@ class TestAccessGrant(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_deleted(self, dummy: DummyProvider, count):
@@ -1535,7 +1537,7 @@ class TestAccessGrant(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_pending(self, dummy: DummyProvider, count):
@@ -1604,7 +1606,7 @@ class TestAccessGrant(BaseTestAccess):
 
     @pytest.mark.parametrize(
         "dummy, count",
-        [(None, k) for k in range(5)],
+        [(None, k) for k in range(COUNT)],
         indirect=["dummy"],
     )
     def test_dne(self, dummy: DummyProvider, count):

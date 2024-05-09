@@ -1,15 +1,19 @@
 # =========================================================================== #
+from datetime import datetime
+from os import path
 from typing import Annotated, Any, AsyncGenerator, Dict, Iterable, List, Self, Set
 
 import httpx
 import pytest
 import pytest_asyncio
+import yaml
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text, true
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
+from yaml_settings_pydantic import BaseYamlSettings, YamlFileConfigDict
 
 # --------------------------------------------------------------------------- #
 from app import depends, util
@@ -20,8 +24,133 @@ from app.schemas import mwargs
 from app.views import AppView
 from dummy import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
+from tests.flakey import FLAKEY_PATH, FLAKEY_STASHKEY, Flake, Flakey
 
 logger = util.get_logger(__name__)
+
+COUNT = 5
+
+
+# --------------------------------------------------------------------------- #
+# Hooks
+#
+# NOTE: I've never used them before but they are extremely helpful. See docs
+#       here:
+#
+#       .. code:: txt
+#
+#          https://docs.pytest.org/en/7.1.x/reference/reference.html
+#
+
+
+def pytest_exception_interact(
+    node: pytest.Collector | pytest.Item,
+    call: pytest.CallInfo,
+    report: pytest.CollectReport | pytest.TestReport,
+):
+    if report.passed:
+        return
+    elif call.excinfo is None:
+        return
+
+    match (node, report):
+        case (pytest.Collector(), _) | (_, pytest.CollectReport):
+            logger.debug("Not handling for exception raise via collection.")
+            return
+
+    err = call.excinfo.value
+    if not isinstance(err, AssertionError):
+        return
+
+    node.keywords
+    flakey = node.config.stash[FLAKEY_STASHKEY]
+    if flakey.register(node, call) is None:  # type: ignore
+        return
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: pytest.ExitCode):
+
+    flakey = session.config.stash[FLAKEY_STASHKEY]
+
+    with open(FLAKEY_PATH, "w") as file:
+        yaml.dump(flakey.model_dump(mode="json"), file)
+
+
+def pytest_addoption(parser: pytest.Parser, pluginmanager: pytest.PytestPluginManager):
+    # NOTE: Because count will be necessary to configure for CI and it is
+    #       easier to update configuration as opposed to updating pipeline
+    #       scripts.
+    parser.addini(
+        name="count",
+        help="Rerun count for tests.",
+        type="string",
+    )
+
+    # NOTE: Because high count can take a long time when one might only want
+    #       to have a general idea if tests pass or not.
+    parser.addoption(
+        "--count",
+        help=(
+            "Rerun count for tests. Tests are repeated due to inherit "
+            "flakeyness resulting from the randomness of the cases provided "
+            "dummy provider."
+        ),
+    )
+
+    # NOTE: Used to populate ``pytest.Config.stash[FLAKEY_STASHKEY]``.
+    msg_see_flakey = "See `tests.flakey:Flakey.ignore`."
+    parser.addini(
+        name="flakey_ignore",
+        help=msg_see_flakey,
+        type="linelist",
+    )
+    parser.addini(
+        name="flakey_ignore_err",
+        help=msg_see_flakey,
+        type="linelist",
+    )
+    # parser.addoption(
+    #     name="flakey_rerun",
+    #     help=f"Run all recently flakey from ``flakey.yaml``. {msg_see_flakey}",
+    # )
+
+
+def pytest_configure(config: pytest.Config):
+    # NOTE: To see the effect of this hook run with the ``--collect-only``
+    #       flag, set ``count`` in an ini configuration source or via the
+    #       command line. If no source is found the default value is used.
+    #       The command line option overwrites the ini option, which overwrites
+    #       the default value.
+    count_ini = config.getini("count")
+    count_opt = config.getoption("--count")
+
+    msg = "option `count` must be numeric string"
+    assert count_ini is None or isinstance(count_ini, str)
+    if count_ini:
+        assert count_ini.isnumeric(), f"`ini` configuration {msg}."
+
+    assert count_opt is None or isinstance(count_opt, str)
+    if count_opt:
+        assert count_opt.isnumeric(), f"Command {msg}."
+
+    count = count_opt or count_ini or "5"
+    global COUNT
+    COUNT = int(count)
+
+    # NOTE: Add ``flakey.yaml`` to the stash so that dependency injection is
+    #       maintained. This cannot be done with count as it is not in an
+    #       injectable context.
+    Flakey.yaml_ensure()
+
+    ignore_ini = config.getini("flakey_ignore") or list()
+    ignore_ini_err = config.getini("flakey_ignore_err") or list()
+    # assert isinstance(ignore_ini, list)
+    # assert all(isinstance(item, str) for item in ignore_ini)
+
+    # Flakey()
+    flakey = mwargs(Flakey, ignore=ignore_ini, ignore_err=ignore_ini_err)
+    config.stash[FLAKEY_STASHKEY] = flakey
+
 
 # =========================================================================== #
 # Test configuration and configuration fixture
@@ -96,8 +225,6 @@ async def app(
             return config
 
         app.dependency_overrides[depends.config] = config_callback
-        print("========================================")
-        print(config.model_config.get("yaml_files"))
         return app
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
@@ -257,13 +384,12 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
         result = list(connection.execute(text("SHOW TABLES;")).scalars())
         exists = len(result) > 0
 
-    if config.tests.recreate_tables and not exists:
+    if not exists:
         logger.debug("Recreating tables.")
-        metadata.drop_all(engine)
         metadata.create_all(engine)
-    elif not exists:
-        logger.debug("Creating tables.")
-        metadata.create_all(engine)
+    # elif not exists:
+    #     logger.debug("Creating tables.")
+    #     metadata.create_all(engine)
     else:
         logger.debug("Doing nothing to tables.")
 

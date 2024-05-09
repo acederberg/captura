@@ -4,14 +4,17 @@ from http import HTTPMethod
 from typing import Any, Callable, Dict, Generic, Set, Tuple, Type, TypeVar, overload
 
 from fastapi import HTTPException
+from rich.json import JSON
 from sqlalchemy import Delete as sqaDelete
 from sqlalchemy import Update as sqaUpdate
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
+from app import util
 from app.auth import Token
 from app.controllers.access import Access, H, with_access
 from app.controllers.base import (
+    BaseResolvedPrimary,
     Data,
     DataResolvedGrant,
     KindData,
@@ -45,9 +48,12 @@ from app.schemas import (
     DocumentCreateSchema,
     DocumentUpdateSchema,
     GrantCreateSchema,
+    GrantSchema,
     UserCreateSchema,
     UserUpdateSchema,
+    mwargs,
 )
+from app.util import CONSOLE_APP
 
 # Typehints for assoc callback.
 # NOTE: Tried protocol, too much of a pain in the ass.
@@ -119,7 +125,6 @@ class Create(WithDelete, Generic[T_Create]):
     # NOTE: `PUT` will only be supported on assignments and grants for now
     #       (force overwriting of existing). This is because `PATCH` will be
     #       used to accept grants by grant uuid.
-    create_data: T_Create | None
 
     def __init__(
         self,
@@ -166,11 +171,12 @@ class Create(WithDelete, Generic[T_Create]):
         kind = KindEvent.create if self.method == H.POST else KindEvent.update
         return dict(**super().event_common, kind=kind)
 
+    # TODO: Make this work with generics.
     def assoc(
         self,
         data: DataResolvedGrant | DataResolvedAssignment,
         create_assoc: AssocCallback,
-    ) -> Tuple[AssocData, DataResolvedGrant | DataResolvedAssignment]:
+    ) -> Tuple[DataResolvedGrant | DataResolvedAssignment, AssocData]:
         """Symetrically handle forced creation.
 
         When :attr:`force` is ``True``, lingering assignments staged for
@@ -191,6 +197,7 @@ class Create(WithDelete, Generic[T_Create]):
         # NOTE: By default, only create for those that hove no assocs.
         assoc_data, model_assoc = self.delete.split_assocs(data)
         uuid_target_create = assoc_data.uuid_target_none.copy()
+        CONSOLE_APP.print(assoc_data.render())
 
         if self.method != HTTPMethod.POST:
             raise HTTPException(405)
@@ -209,39 +216,35 @@ class Create(WithDelete, Generic[T_Create]):
                     uuid_assoc=list(assoc_data.uuid_assoc_deleted),
                 )
         else:
-            # NOTE: This should not delete grants belonging to the token holder
-            #       otherwise integrity errors will show up later, thus the
-            #       re-addition of token holder grants.
-            if (
-                self.token.uuid == data.data.source.uuid
-                or self.token.uuid in data.data.uuid_target
-            ):
-                msg = (
-                    "This request results in user deleting own grants. "
-                    "This can only be done by directly deleting these "
-                    "grants."
-                )
-                raise HTTPException(400, detail=dict(msg=msg))
-
-            q_del, uuid_assoc_rm = assoc_data.q_del(model_assoc, True)
-
+            q_del, uuid_assoc_rm = assoc_data.q_del(model_assoc, True, rm_active=False)
             q_assocs = model_assoc.q_uuid(uuid_assoc_rm)
             assocs_rm = tuple(self.session.scalars(q_assocs))
+            # print(uuid_assoc_rm)
+            # util.sql(self.session, q_del)
 
             self.session.execute(q_del)
             event_rm = self.delete.create_event_assoc(data, assocs_rm)
-            uuid_target_create |= assoc_data.uuid_assoc_deleted
+            uuid_target_create |= assoc_data.uuid_target_deleted
 
-        targets = (tt for tt in data.data.target if tt.uuid in uuid_target_create)
+        targets = tuple(tt for tt in data.data.target if tt.uuid in uuid_target_create)
         assocs: Dict[str, Grant] | Dict[str, Assignment] = {
             target.uuid: create_assoc(data, target)  # type: ignore
             for target in targets
         }
 
         # WARNING! OVERWRITES!
-        data_final = data.model_copy(deep=True)
-        setattr(data_final.data, data_final.data._attr_name_target, targets)
-        setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
+        resolved_raw = {
+            data.data._attr_name_source: data.data.source,
+            data.data._attr_name_target: targets,
+            data.data._attr_name_assoc: assocs,
+        }
+        if data.data.kind_assoc == KindObject.grant:
+            resolved_raw["token_user_grants"] = getattr(data.data, "token_user_grants")
+
+        data_final: DataResolvedGrant | DataResolvedAssignment = mwargs(
+            Data[data.data.__class__],  # type: ignore
+            data=data.data.__class__.model_validate(resolved_raw),
+        )
 
         event_create = self.create_event_assoc(data_final, assocs)
         if event_rm is not None:
@@ -258,19 +261,26 @@ class Create(WithDelete, Generic[T_Create]):
         data_final.event = event
         setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
 
-        return data_final, assoc_data
+        # import json
+        # from pydantic import TypeAdapter
+        # from rich.table import Table
+        # from app.schemas import AssignmentSchema, GrantSchema
+        #
+        # table = Table(show_lines=False, show_header=False)
+        # table.add_column()
+        # table.add_column()
+        # table.add_row("data.data.assoc", str(data.data.assoc))
+        # table.add_row("self.force", str(self.force))
+        # table.add_row("assoc_data", assoc_data.render())
+        # self.session.add_all(assocs.values())
+        # table.add_row(
+        #     "assocs",
+        #     str([[aa.uuid_collection, aa.uuid_document] for aa in assocs.values()]),
+        # )
+        # table.title = "From Create"
+        # CONSOLE_APP.print(table)
 
-    # @overload
-    # def create_event_assoc(
-    #     self, data: DataResolvedAssignment,
-    #     grants: Dict[str, Assignment],
-    # ) -> Event: ...
-    #
-    # @overload
-    # def create_event_assoc(
-    #     self, data: DataResolvedGrant,
-    #     grants: Dict[str, Grant]
-    # ) -> Event: ...
+        return data_final, assoc_data
 
     def create_event_assoc(
         self,

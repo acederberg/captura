@@ -22,7 +22,11 @@ from app.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, 
 from client.requests import Requests
 from client.requests.base import params
 from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
+from tests.test_views.util import (
+    COUNT,
+    BaseEndpointTest,
+    BaseEndpointTestPrimaryCreateMixins,
+)
 
 
 class CommonDocumentTests(BaseEndpointTest):
@@ -192,11 +196,7 @@ class CommonDocumentTests(BaseEndpointTest):
             raise err
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsRead(CommonDocumentTests):
     method = H.GET
 
@@ -235,11 +235,7 @@ class TestDocumentsRead(CommonDocumentTests):
         assert data.data.uuid == document_other.uuid
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsCreate(
     BaseEndpointTestPrimaryCreateMixins,
     CommonDocumentTests,
@@ -295,11 +291,7 @@ class TestDocumentsCreate(
         assert False
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsUpdate(CommonDocumentTests):
     method = H.PATCH
 
@@ -386,11 +378,7 @@ class TestDocumentsUpdate(CommonDocumentTests):
         assert document_db.name == data.data.name == name
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestDocumentsDelete(CommonDocumentTests):
     method = H.DELETE
 

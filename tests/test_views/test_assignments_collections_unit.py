@@ -24,7 +24,7 @@ from app.schemas import (
 )
 from client.requests import Requests
 from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import BaseEndpointTest
+from tests.test_views.util import COUNT, BaseEndpointTest
 
 
 class CommonAssignmentsCollectionsTests(BaseEndpointTest):
@@ -125,11 +125,7 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
             raise err
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
     method = H.GET
 
@@ -275,11 +271,7 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
         assert len(data.data) == n
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
     method = H.DELETE
 
@@ -366,11 +358,7 @@ class TestAssignmentsCollectionsDelete(CommonAssignmentsCollectionsTests):
             assert assignment_db is None
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
     method = H.POST
 

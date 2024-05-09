@@ -118,7 +118,7 @@ class DocumentAssignmentView(BaseView):
         """
         data = create.access.d_assignment_document(
             uuid_document,
-            uuid_collection,
+            uuid_collection,  # type: ignore
             allow_public=False,
             level=Level.own,
             validate_collections=False,

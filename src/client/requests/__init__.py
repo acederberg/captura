@@ -53,15 +53,42 @@ class Requests(BaseRequests):
         self,
         context: ContextData,
         client: httpx.AsyncClient,
+        *,
         handler: AssertionHandler | None = None,
+        handler_methodize: bool = False,
     ):
-        super().__init__(context, client, handler=handler)
+        super().__init__(
+            context,
+            client,
+            handler=handler,
+            handler_methodize=handler_methodize,
+        )
         self.assignments = AssignmentRequests.spawn_from(self)
         self.collections = CollectionRequests.spawn_from(self)
         self.documents = DocumentRequests.spawn_from(self)
         self.grants = GrantRequests.spawn_from(self)
         self.users = UserRequests.spawn_from(self)
         self.tokens = TokenRequests.spawn_from(self)
+
+    @property
+    def a(self) -> AssignmentRequests:
+        return self.assignments
+
+    @property
+    def c(self) -> CollectionRequests:
+        return self.collections
+
+    @property
+    def d(self) -> DocumentRequests:
+        return self.documents
+
+    @property
+    def g(self) -> GrantRequests:
+        return self.grants
+
+    @property
+    def u(self) -> UserRequests:
+        return self.users
 
     @classmethod
     def req_routes(

@@ -4,9 +4,10 @@ from typing import Any, ClassVar, Dict, List, Set
 
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import false, select
+from sqlalchemy import delete, false, func, select
 
 # --------------------------------------------------------------------------- #
+from app import util
 from app.controllers.access import H
 from app.err import (
     ErrAccessDocumentGrantBase,
@@ -15,7 +16,7 @@ from app.err import (
     ErrObjMinSchema,
 )
 from app.fields import KindObject, Level
-from app.models import Assignment, Collection
+from app.models import Assignment, Collection, uuids
 from app.schemas import (
     AsOutput,
     AssignmentSchema,
@@ -23,9 +24,10 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
+from client.handlers import RequestHandlerData
 from client.requests import Requests
 from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import BaseEndpointTest
+from tests.test_views.util import COUNT, BaseEndpointTest
 
 
 class CommonAssignmentsDocumentsTests(BaseEndpointTest):
@@ -39,7 +41,7 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
     ):
         (document,) = dummy.get_documents(1, GetPrimaryKwargs(deleted=True), other=True)
 
-        fn = self.fn(requests)
+        fn = self.fn(requests)  # type: ignore
         res = await fn(
             document.uuid, uuid_collection={secrets.token_urlsafe(9) for _ in range(3)}
         )
@@ -102,6 +104,10 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
     ):
         session, level = dummy.session, Level.view
         (document,) = dummy.get_documents(level=level, n=1)
+        (collection,) = dummy.get_collections(1)
+        session.merge(Assignment(id_document=document.id, id_collection=collection.id))
+        session.commit()
+
         grant = dummy.get_document_grant(document)
 
         # NOTE: Only collection owners should be able to add to and remove
@@ -157,11 +163,7 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
 
 # NOTE: The ownership of documents should work exactly as it does in grants.
 #       Should find a way to reuse.
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
     method = H.GET
 
@@ -176,8 +178,13 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
         fn = self.fn(requests)
 
         (document,) = dummy.get_documents(level=Level.view, n=1)
-        document.public = True
-        session.add(document)
+
+        assignments = (
+            Assignment(id_document=document.id, id_collection=cc.id)
+            for cc in dummy.get_collections(10)
+        )
+        tuple(map(session.merge, assignments))
+        session.commit()
 
         # NOTE: Providing no parameters should return all assignments.
         res = await fn(document.uuid)
@@ -233,9 +240,6 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
 
         # NOTE: Because with n >= 6 entries, odds are 1/3 * 6! = 1/320 that this does not happen.
         if len(data_ordered.data) > 5:
-            requests.context.console_handler.print_json(
-                data_ordered.model_dump(mode="json"),
-            )
             aa, bb, cc = (
                 tuple(dd.uuid for dd in data.data)
                 for data in (data_ordered, data_rand1, data_rand2)
@@ -243,11 +247,7 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
             assert aa != bb != cc
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
     method = H.POST
 
@@ -262,15 +262,27 @@ class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
         fn_read = requests.assignments.documents.read
 
         (document,) = dummy.get_documents(level=Level.own, n=1)
-
-        q = select(Collection).join(Assignment)
-        q = q.where(Assignment.id_document == document.id).limit(10)
-        q = q.where(Assignment.deleted == false(), Collection.deleted == false())
-
-        collections = tuple(session.scalars(q))
-        uuid_collection = Collection.resolve_uuid(dummy.session, collections)
+        collections = dummy.get_collections(10, other=None)
+        uuid_collection = uuids(collections)
         uuid_collection_list = list(uuid_collection)
-        n_collections = len(uuid_collection)
+        n_collections = len(uuid_collection_list)
+        assert len(collections)
+
+        assignments = tuple(
+            Assignment(id_document=document.id, id_collection=cc.id, deleted=False)
+            for cc in collections
+        )
+        tuple(map(session.merge, assignments))
+        session.commit()
+        session.expire_all()
+
+        n_created = session.scalar(
+            q := select(func.count(Assignment.uuid)).where(
+                Assignment.id_collection.in_([cc.id for cc in collections]),
+                Assignment.id_document == document.id,
+            )
+        )
+        assert n_created == n_collections
 
         # NOTE: Verify can read.
         res = await fn_read(document.uuid, uuid_collection=uuid_collection_list)
@@ -341,11 +353,7 @@ class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
             assert assignment_db is None
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
     method = H.POST
 
@@ -361,14 +369,18 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
 
         (document,) = dummy.get_documents(n=1, level=Level.own)
 
-        q = select(Collection).join(Assignment)
-        q = q.where(Assignment.id_document != document.id).limit(10)
-        q = q.where(Assignment.deleted == false())
+        # NOTE: Delete all assignments for this document.
+        q = delete(Assignment).where(Assignment.id_document == document.id)
+        session.execute(q)
+        session.commit()
 
-        collections = tuple(session.scalars(q))
-        uuid_collection = Collection.resolve_uuid(dummy.session, collections)
-        uuid_collection_list = list(uuid_collection)
-        assert (n_collections := len(uuid_collection)) > 1
+        collections = dummy.get_collections(other=None, n=10)
+        uuid_collection_list = [cc.uuid for cc in collections]
+        n_collections = len(uuid_collection_list)
+
+        # uuid_collection = Collection.resolve_uuid(dummy.session, collections)
+        # uuid_collection_list = list(uuid_collection)
+        # assert (n_collections := len(uuid_collection)) > 1
 
         # NOTE: Assignments should not exist.
         res = await fn_read(document.uuid, uuid_collection=uuid_collection_list)
@@ -427,7 +439,11 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
         if err := self.check_status(requests, res):
             raise err
 
-        # NOTE: Ensure that some were deleted.
+        data = self.adapter_w_events.validate_json(res.content)
+        assert n_collections_rm == len(data.data)
+        uuids_b4 = set(aa.uuid for aa in data.data)
+
+        # NOTE: Ensure that all but one were deleted.
         res = await fn_read(document.uuid, uuid_collection=uuid_collection_list_rm)
         if err := self.check_status(requests, res):
             raise err
@@ -435,7 +451,13 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
         data = self.adapter.validate_json(res.content)
         assert data.kind is None
 
-        uuids_b4 = set(aa.uuid for aa in data.data)
+        res = await fn_read(document.uuid, uuid_collection=uuid_collection_list)
+        if err := self.check_status(requests, res):
+            raise err
+
+        data = self.adapter.validate_json(res.content)
+        assert data.kind == KindObject.assignment
+        assert len(data.data) == 1
 
         # NOTE: Force create. Should recreate all.
         res = await fn(document.uuid, uuid_collection=uuid_collection_list)
@@ -451,14 +473,24 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
             raise err
 
         data = self.adapter_w_events.validate_json(res.content)
-        requests.context.console_handler.print_json(
-            [item.model_dump(mode="json") for item in data.data]
-        )
         assert data.kind == KindObject.assignment
-        assert len(data.data) == n_collections
+        assert len(data.data) == n_collections - 1  # bc all but one rmd
         assert len(data.events) == 1
         assert len(data.events[0].children) == 2
-        assert len(data.events[0].children[0].children) == n_collections
+
+        # requests.context.console_handler.handle(
+        #     request_handler_data=RequestHandlerData(
+        #         response=res,
+        #         data=data.model_dump(mode="json"),
+        #     )
+        # )
+        print(
+            set(
+                (ee.uuid_obj, ee.kind_obj) for ee in data.events[0].children[0].children
+            )
+        )
+        assert len(data.events[0].children[1].children) == n_collections - 1
+        assert len(data.events[0].children[0].children) == n_collections - 1
 
         # NOTE: Verify with read.
         res = await fn_read(document.uuid, uuid_collection=uuid_collection_list)

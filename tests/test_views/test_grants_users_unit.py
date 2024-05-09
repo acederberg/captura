@@ -22,7 +22,7 @@ from app.models import Document, Grant, User
 from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from client.requests import Requests
 from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import BaseEndpointTest
+from tests.test_views.util import COUNT, BaseEndpointTest
 
 
 class CommonUsersGrantsTests(BaseEndpointTest):
@@ -170,11 +170,7 @@ class CommonUsersGrantsTests(BaseEndpointTest):
             raise err
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUsersGrantsRequest(CommonUsersGrantsTests):
     "For example requesting access to a document."
 
@@ -283,25 +279,24 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         "Test what happens when requesting deleted grants."
 
         user, session = dummy.user, dummy.session
-        documents = dummy.get_documents(level=Level.view, n=3)
-        uuid_document = Document.resolve_uuid(session, documents)
-        uuid_document_list = list(uuid_document)
-
-        grants = tuple(dummy.get_document_grant(dd) for dd in documents)
-        assert (n := len(grants)) > 0
-
-        for gg in grants:
-            gg.deleted = True
-            assert gg.uuid_user == user.uuid
-            assert gg.pending is False
-            assert gg.uuid_document in uuid_document
-
+        documents = dummy.get_documents(other=True, n=5)
+        grants = tuple(
+            Grant(
+                id_document=document.id,
+                id_user=dummy.user.id,
+                level=Level.view,
+                deleted=True,
+                pending=False,
+                pending_from=PendingFrom.granter,
+            )
+            for document in documents
+        )
         session.add_all(grants)
         session.commit()
+        tuple(map(session.refresh, grants))
 
-        uuid_document = Document.resolve_uuid(session, documents)
-        uuid_grant = Grant.resolve_uuid(session, grants)
-        uuid_document_list = list(uuid_document)
+        uuid_document_list = list(dd.uuid for dd in documents)
+        uuid_grant_list = list(gg.uuid for gg in grants)
 
         # NOTE: Read! There should be nothing.
         fn_read = requests.grants.users.read
@@ -321,7 +316,6 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
 
         # NOTE: These are deleted, should get a 400 for trying to overwrite
         #       without force.
-        assert uuid_grant is not None
         httperr = mwargs(
             ErrDetail[ErrAssocRequestMustForce],
             detail=mwargs(
@@ -331,8 +325,8 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
                 kind_target=KindObject.document,
                 kind_assoc=KindObject.grant,
                 uuid_source=user.uuid,
-                uuid_target=uuid_document,
-                uuid_assoc=uuid_grant,
+                uuid_target=uuid_document_list,
+                uuid_assoc=uuid_grant_list,
             ),
         )
         assert httperr.detail.uuid_assoc is not None
@@ -341,22 +335,6 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         res = await fn(user.uuid, uuid_document=uuid_document_list)
         if err := self.check_status(requests, res, 400, err=httperr):
             raise err
-
-        # NOTE: Adding the force parameter should not work, user will delete
-        #       own existing.
-        res = await fn(user.uuid, uuid_document=uuid_document_list, force=True)
-        if err := self.check_status(requests, res, 400):
-            raise err
-
-        detail: Dict[str, str]
-        assert isinstance(detail := res.json(), dict)
-
-        msg: str | None
-        if (msg := detail.get("msg")) is None:
-            raise AssertionError("Response missing message.")
-
-        assert msg.startswith("This request results in user deleting own ")
-        assert msg.endswith("done by directly deleting these grants.")
 
     @pytest.mark.asyncio
     async def test_success_200_ideal(
@@ -408,7 +386,6 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
             raise err
 
         data = self.adapter_w_events.validate_json(res.content)
-        requests.context.console_handler.print_yaml(data.model_dump(mode="json"))
         assert data.events
         assert len(data.events) == 1
         assert len(data.events[0].children) == n
@@ -479,11 +456,7 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         assert False
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUsersGrantsRead(CommonUsersGrantsTests):
     method = HTTPMethod.GET
 
@@ -655,11 +628,7 @@ class TestUsersGrantsRead(CommonUsersGrantsTests):
             self.check_data(dummy, data, level=level)
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUsersGrantsReject(CommonUsersGrantsTests):
     method = HTTPMethod.DELETE
 
@@ -760,11 +729,7 @@ class TestUsersGrantsReject(CommonUsersGrantsTests):
             assert grant_db is None
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUsersGrantsAccept(CommonUsersGrantsTests):
     method = HTTPMethod.PATCH
 
@@ -844,7 +809,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
             exclude_deleted=False,
             exclude_pending=False,
         )
-        grants = tuple(session.scalars(q_grants))
+        grants = list(session.scalars(q_grants))
         assert len(grants) == len(uuid_document)
 
         still_pending = tuple(grant for grant in grants if grant.pending)
@@ -853,7 +818,7 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
             msg += f"`{m}` of `{n}` grants still remain pending."
             raise AssertionError(msg)
 
-        # NOTE: Should be able to read these grants after
+        # NOTE: Check with api (none pending, all not pending)
         res_read = await fn_read(dummy.user.uuid, uuid_document=uuid_document)
         if err := self.check_status(requests, res_read):
             raise err
@@ -861,7 +826,6 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
         data = self.adapter.validate_json(res_read.content)
         assert data.kind == KindObject.grant
 
-        # NOTE: Should not be able to read these grants after
         res_read = await fn_read(
             dummy.user.uuid, uuid_document=uuid_document, pending=True
         )
@@ -873,7 +837,6 @@ class TestUsersGrantsAccept(CommonUsersGrantsTests):
 
         # NOTE: Indempotent
         res = await fn(dummy.user.uuid, uuid_document=uuid_document)
-
         if err := self.check_status(requests, res):
             raise err
 

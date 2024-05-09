@@ -29,7 +29,7 @@ from client.requests import Requests
 from dummy import DummyProvider
 from dummy.mk import fkit
 from dummy.reports import ReportController
-from tests.test_views.util import BaseEndpointTest
+from tests.test_views.util import COUNT, BaseEndpointTest
 
 
 class CommonUserTests(BaseEndpointTest):
@@ -88,7 +88,7 @@ class CommonUserTests(BaseEndpointTest):
     ):
         "Test no such user."
         session = dummy.session
-        user_other = next(uu for uu in dummy.get_users(2) if uu != dummy.user)
+        (user_other,) = dummy.get_users(1, other=True)
         user_other.deleted = True
         session.add(user_other)
         session.commit()
@@ -114,7 +114,7 @@ class CommonUserTests(BaseEndpointTest):
         count: int,
     ):
         session = dummy.session
-        user_other = next(user for user in dummy.get_users(2) if user != dummy.user)
+        (user_other,) = dummy.get_users(1, other=True)
         user_other.deleted = False
         if self.method == H.GET:
             user_other.public = False
@@ -148,11 +148,7 @@ class CommonUserTests(BaseEndpointTest):
                 raise err
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUserRead(CommonUserTests):
     method = H.GET
     adapter = TypeAdapter(AsOutput[UserSchema])
@@ -183,7 +179,7 @@ class TestUserRead(CommonUserTests):
         assert data.kind_nesting is None
         assert data.data.uuid == user.uuid
 
-        user_other = next(uu for uu in dummy.get_users(2) if uu != user)
+        (user_other,) = dummy.get_users(1, other=True)
         user_other.public = True
         user_other.deleted = False
         session.add(user_other)
@@ -199,11 +195,7 @@ class TestUserRead(CommonUserTests):
         assert data.data.uuid == user_other.uuid
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUserUpdate(CommonUserTests):
     method = H.PATCH
 
@@ -241,11 +233,7 @@ class TestUserUpdate(CommonUserTests):
         assert data.data.name == user_name_new
 
 
-@pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
-)
+@pytest.mark.parametrize("count", [count for count in range(COUNT)])
 class TestUserDelete(CommonUserTests):
     method = H.DELETE
 
@@ -442,9 +430,8 @@ class CommonUserSearchTests(CommonUserTests):
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestUsersSearch(CommonUserSearchTests):
     method = H.GET
@@ -466,9 +453,8 @@ class TestUsersSearch(CommonUserSearchTests):
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestUserDocumentsSearch(CommonUserSearchTests):
     method = H.GET
@@ -486,9 +472,8 @@ class TestUserDocumentsSearch(CommonUserSearchTests):
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestUserCollectionsSearch(CommonUserSearchTests):
     method = H.GET

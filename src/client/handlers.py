@@ -622,6 +622,32 @@ class AssertionHandler(BaseRequestHandler[Tuple[RequestHandlerData, ...]]):
             msg = "`AssertionHandler` does not accept `handler_data`."
             raise ValueError(msg)
 
+        request_handler_datas, err = self.check_status(
+            response,
+            data,
+            adapter,
+            expect_err=expect_err,
+            expect_status=expect_status,
+            request_handler_data=request_handler_data,
+        )
+        if err is not None:
+            raise err
+
+        return request_handler_datas
+
+    def check_status(
+        self,
+        response: httpx.Response | Iterable[httpx.Response] | None = None,
+        data: Any | Tuple[Any, ...] | None = None,
+        adapter: TypeAdapter | None = None,
+        *,
+        expect_err: ErrDetail | None = None,
+        expect_status: int | None = None,
+        request_handler_data: ResolvableRequestHandlerDatas | None = None,
+    ) -> Tuple[
+        Tuple[RequestHandlerData, ...],
+        AssertionError | None,
+    ]:
         request_handler_datas = self.resolve(
             response,
             data,
@@ -631,13 +657,14 @@ class AssertionHandler(BaseRequestHandler[Tuple[RequestHandlerData, ...]]):
             request_handler_data=request_handler_data,
         )
 
+        err = None
         if err_table := self.compile(self.collect(request_handler_datas)):
             with self.console.capture() as capture:
                 self.console.print(err_table)
 
-            raise AssertionError(capture.get())
+            err = AssertionError(capture.get())
 
-        return request_handler_datas
+        return request_handler_datas, err
 
     def compile(self, err_tables: Tuple[Table, ...]) -> Table | None:
         if len(err_tables) == 0:

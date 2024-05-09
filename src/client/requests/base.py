@@ -3,6 +3,7 @@ import asyncio
 import functools
 from collections.abc import Awaitable
 from typing import (
+    Annotated,
     Any,
     Awaitable,
     Callable,
@@ -25,8 +26,10 @@ import typer
 import yaml
 from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
-from pydantic import BaseModel, ConfigDict, SecretStr, computed_field
+from pydantic import BaseModel, ConfigDict, SecretStr, TypeAdapter, computed_field
 from rich.console import Console
+from typer.cli import Command
+from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
 from app.fields import Singular
@@ -40,6 +43,7 @@ from client.handlers import (
     BaseHandlerData,
     BaseRequestHandler,
     ConsoleHandler,
+    RequestHandlerData,
     render_request,
 )
 
@@ -246,8 +250,8 @@ def methodize(
         req = fn(self.__class__, self.context, *args, **kwargs)  # type: ignore
         res = await self.client.send(req)
 
-        if self.handler is not None:
-            self.handler(res)
+        if self.handler_methodize:
+            self.handler(res, **self.create_handler_args())
         return res
 
     return wrapper
@@ -341,10 +345,18 @@ class BaseRequests(BaseTyperizable):
     typer_check_verbage: ClassVar[bool] = True
     typer_commands: ClassVar[Dict[str, str]] = dict()
     typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()  # type: ignore
+    # adapter: ClassVar[TypeAdapter]
 
     context: ContextData
     client: httpx.AsyncClient
-    _handler: AssertionHandler | None
+    handler: AssertionHandler
+    handler_methodize: Annotated[
+        bool,
+        Doc(
+            "When ``True``, methodized functions will use this callback. "
+            "The attached handler will be ignored."
+        ),
+    ]
 
     def __init__(
         self,
@@ -352,14 +364,16 @@ class BaseRequests(BaseTyperizable):
         client: httpx.AsyncClient,
         *,
         handler: AssertionHandler | None = None,
+        handler_methodize: bool = False,
     ):
         self.context = context
         self.client = client
-        self.handler = (
-            handler if handler is not None else AssertionHandler(self.context.config)
-        )
+        self.handler = handler or AssertionHandler(context.config)
+        self.handler_methodize = handler_methodize
 
-    # def
+    @functools.cached_property
+    def context_wrapped(self) -> typer.Context:
+        return typer.Context(Command("empty"), obj=self.context)
 
     @classmethod
     def spawn_from(cls, v: "BaseRequests") -> Self:
@@ -367,14 +381,24 @@ class BaseRequests(BaseTyperizable):
         return cls(
             context=v.context,
             client=v.client,
+            handler=v.handler,
+            handler_methodize=v.handler_methodize,
         )
 
-    async def gather(self, *items: httpx.Request) -> List[httpx.Response]:
+    async def gather(
+        self, *items: httpx.Request, **handler_kwargs
+    ) -> Tuple[RequestHandlerData, ...]:
         responses = await asyncio.gather(*map(self.client.send, items))
-        if self.handler is not None:
-            self.handler(responses)
+        return self.handler(responses, **handler_kwargs)
 
-        return responses
+    async def send(
+        self, request: httpx.Request, **handler_kwargs
+    ) -> RequestHandlerData:
+        response = await self.client.send(request)
+        return self.handler(response, **handler_kwargs)[0]
+
+    def create_handler_args(self) -> Dict[str, Any]:
+        return dict()
 
 
 def params(**kwargs) -> Dict[str, Any]:

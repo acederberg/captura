@@ -15,42 +15,41 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from app.models import Collection, Document
+from app.models import Collection, Document, uuids
 from app.schemas import mwargs
 from dummy import DummyProvider
 
 
-def test_UuidSetFromModel(sessionmaker: sessionmaker):
-    with sessionmaker() as session:
-        uuids_expected = {"aaa-aaa-aaa", "draculaflow"}
-        docs = Document.if_many(session, uuids_expected)
-        assert len(docs) == 2
+def test_UuidSetFromModel(dummy: DummyProvider):
+    docs = dummy.get_documents(n=2, other=True)
+    uuids_expected = uuids(docs)
+    assert len(docs) == 2
 
-        res = mwargs(ResolvedDocument, documents=docs, token_user_grants={})
-        assert res.documents == docs
-        assert res.uuid_documents == uuids_expected
+    res = mwargs(ResolvedDocument, documents=docs, token_user_grants={})
+    assert res.documents == docs
+    assert res.uuid_documents == uuids_expected
 
 
-def test_UuidFromModel(sessionmaker: sessionmaker):
-    with sessionmaker() as session:
-        uuid_doc_expected = "aaa-aaa-aaa"
-        uuid_col_expected = {"foo-ooo-ool", "eee-eee-eee"}
-        doc = Document.if_exists(session, uuid_doc_expected)
-        collections = Collection.if_many(session, uuid_col_expected)
+def test_UuidFromModel(dummy: DummyProvider):
+    (doc,) = dummy.get_documents(other=True, n=1)
+    uuid_doc_expected = doc.uuid
 
-        assert len(collections) == 2
-        res = mwargs(
-            ResolvedAssignmentDocument,
-            document=doc,
-            collections=collections,
-            assignments=dict(),
-        )
-        assert res.uuid_collections == uuid_col_expected
-        assert res.uuid_document == uuid_doc_expected
-        assert isinstance(res.assignments, dict)
-        assert isinstance(res.uuid_assignments, set)
-        assert isinstance(res.uuid_document, str)
-        assert isinstance(res.uuid_collections, set)
+    collections = dummy.get_collections(other=True, n=10)
+    uuid_col_expected = uuids(collections)
+
+    assert len(collections) == 10
+    res = mwargs(
+        ResolvedAssignmentDocument,
+        document=doc,
+        collections=collections,
+        assignments=dict(),
+    )
+    assert res.uuid_collections == uuid_col_expected
+    assert res.uuid_document == uuid_doc_expected
+    assert isinstance(res.assignments, dict)
+    assert isinstance(res.uuid_assignments, set)
+    assert isinstance(res.uuid_document, str)
+    assert isinstance(res.uuid_collections, set)
 
 
 def test_base_controller(dummy: DummyProvider):

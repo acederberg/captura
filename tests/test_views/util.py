@@ -34,7 +34,7 @@ from client.handlers import CONSOLE, AssertionHandler
 from client.requests import Requests
 from dummy import DummyHandler, DummyProvider
 
-from ..conftest import PytestClientConfig
+from ..conftest import COUNT, PytestClientConfig
 
 DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"
@@ -132,7 +132,7 @@ class BaseEndpointTest(abc.ABC):
     adapter: ClassVar[TypeAdapter]
     adapter_w_events: ClassVar[TypeAdapter]
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")
     def dummy(
         self, dummy_handler: DummyHandler
     ) -> Generator[DummyProvider, None, None]:
@@ -158,9 +158,8 @@ class BaseEndpointTest(abc.ABC):
         client_config: PytestClientConfig,
         # async_client: httpx.AsyncClient,
     ) -> AsyncGenerator[Requests, Any]:
-        print(app if app is None else app.dependency_overrides)
         async with httpx.AsyncClient(app=app) as client:
-            yield dummy.requests(client_config, client)
+            yield dummy.requests(client_config, client, handler_methodize=False)
 
     def check_status(
         self,
@@ -170,7 +169,10 @@ class BaseEndpointTest(abc.ABC):
         err: ErrDetail | None = None,
     ) -> AssertionError | None:
         # handler = AssertionHandler(requests.context.config)
-        return requests.handler(response, expect_err=err, expect_status=expect)
+        hd, ee = requests.handler.check_status(
+            response, expect_err=err, expect_status=expect
+        )
+        return ee
 
     # ----------------------------------------------------------------------- #
     # Errors

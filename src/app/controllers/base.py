@@ -295,11 +295,9 @@ class BaseResolved(BaseModel):
             )
         cls.registry[cls.kind] = cls
 
-    def register(self, session: Session) -> None:
-        ...
+    def register(self, session: Session) -> None: ...
 
-    def refresh(self, session: Session) -> None:
-        ...
+    def refresh(self, session: Session) -> None: ...
 
     @classmethod
     def get(cls, resolvable_kind: ResolvableKindData) -> "Type[BaseResolved]":
@@ -402,8 +400,9 @@ class BaseResolvedSecondary(BaseResolved):
         cls._attr_name_assoc = Singular(cls.kind_assoc.name).name
 
     @classmethod
-    def get_model_assoc(cls) -> Type[Grant] | Type[Assignment]:
-        return resolve_model(cls.kind_assoc)
+    def get_model(cls, for_: Literal["assoc", "target", "source"] = "assoc") -> Type:
+        kind = getattr(cls, f"kind_{for_}")
+        return resolve_model(kind)
 
     @computed_field
     @property
@@ -654,6 +653,10 @@ class Data(BaseModel, Generic[T_Data]):
     @property
     def kind(self) -> KindData:
         return self.data.kind
+
+    # @property
+    # def resolved_cls(self) -> T_Data:
+    #     return self.data.__class__
 
     # ----------------------------------------------------------------------- #
 

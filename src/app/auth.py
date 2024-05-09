@@ -188,8 +188,10 @@ class Auth:
         if self.private_key is None:
             raise ValueError("Cannot encode without a private key.")
         kid = list(self.public_keys.keys())[0]
-        payload["iss"] = self.issuer
-        payload["aud"] = self.audience
+        if "iss" not in payload:
+            payload["iss"] = self.issuer
+        if "aud" not in payload:
+            payload["aud"] = self.audience
         return jwt.encode(
             payload, self.private_key, algorithm="RS256", headers={"kid": kid}
         )
@@ -344,12 +346,10 @@ class Token(BaseModel):
     def encode(self, auth: Auth) -> str:
         payload = self.model_dump(exclude={"tier", "read"})
 
-        print(payload)
         permissions = [f"read:{item.name}" for item in self.read]
         permissions.append(f"tier:{self.tier.name}")
         payload.update(permissions=permissions)
 
-        print(payload)
         return auth.encode(payload)
 
     # NOTE: This function is stupid. Why did I add it?

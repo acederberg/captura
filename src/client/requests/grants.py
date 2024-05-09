@@ -7,6 +7,7 @@ import typer
 # --------------------------------------------------------------------------- #
 from app.models import LevelStr
 from client import flags
+from client.handlers import AssertionHandler
 from client.requests.base import BaseRequests, ContextData, methodize, params
 
 
@@ -46,12 +47,13 @@ class DocumentGrantRequests(BaseRequests):
         *,
         level: flags.FlagLevel = LevelStr.view,
         uuid_user: flags.FlagUUIDUsersOptional = None,
+        force: flags.FlagForce = False,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
             context.url(cls.fmt_url.format(uuid_document)),
-            params=params(uuid_user=uuid_user, level=level.name),
+            params=params(uuid_user=uuid_user, level=level.name, force=force),
             headers=context.headers,
         )
 
@@ -214,12 +216,27 @@ class GrantRequests(BaseRequests):
         context: ContextData,
         client: httpx.AsyncClient,
         *,
-        grants_documents: DocumentGrantRequests | None = None,
-        grants_users: UserGrantRequests | None = None,
+        handler: AssertionHandler | None = None,
+        handler_methodize: bool = True,
+        documents: DocumentGrantRequests | None = None,
+        users: UserGrantRequests | None = None,
     ):
-        super().__init__(context, client)
-        self.documents = grants_documents or DocumentGrantRequests.spawn_from(self)
-        self.users = grants_users or UserGrantRequests.spawn_from(self)
+        super().__init__(
+            context,
+            client,
+            handler=handler,
+            handler_methodize=handler_methodize,
+        )
+        self.documents = documents or DocumentGrantRequests.spawn_from(self)
+        self.users = users or UserGrantRequests.spawn_from(self)
+
+    @property
+    def d(self) -> DocumentGrantRequests:
+        return self.documents
+
+    @property
+    def u(self) -> UserGrantRequests:
+        return self.users
 
 
 __all__ = (

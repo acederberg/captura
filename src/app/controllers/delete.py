@@ -4,8 +4,9 @@ from typing import Any, Dict, Literal, Self, Set, Tuple, Type, overload
 
 from fastapi import HTTPException
 from pydantic import BaseModel, model_validator
+from rich.table import Table
 from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import Select, Update, delete, false, select, true, update
+from sqlalchemy import Select, Update, and_, delete, false, or_, select, true, update
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
@@ -64,10 +65,50 @@ class AssocData(BaseModel):
         assert not len(self.uuid_assoc_active & self.uuid_assoc_none)
         assert not len(self.uuid_assoc_deleted & self.uuid_assoc_none)
 
+        assert len(self.uuid_target_active) == len(self.uuid_assoc_active)
+        assert len(self.uuid_target_deleted) == len(self.uuid_assoc_deleted)
+
         return self
 
-    def q_del(self, model_assoc: Type, force: bool):
-        uuid_assoc_rm = self.uuid_assoc_active.copy()
+    def render(self) -> Table:
+        table = Table(show_header=False, show_lines=False, pad_edge=False)
+        table.add_column()
+        table.add_column()
+        table.add_row(
+            "uuid_target_none",
+            str(self.uuid_target_none),
+            style="red",
+        )
+        table.add_row(
+            "uuid_target_active",
+            str(self.uuid_target_active),
+            style="blue",
+        )
+        table.add_row(
+            "uuid_target_deleted",
+            str(self.uuid_target_deleted),
+            style="green",
+        )
+        table.add_row(
+            "uuid_assoc_none",
+            str(self.uuid_assoc_none),
+            style="red",
+        )
+        table.add_row(
+            "uuid_assoc_active",
+            str(self.uuid_assoc_active),
+            style="blue",
+        )
+        table.add_row(
+            "uuid_assoc_deleted",
+            str(self.uuid_assoc_deleted),
+            style="green",
+        )
+        return table
+
+    def q_del(self, model_assoc: Type, force: bool, *, rm_active: bool = True):
+
+        uuid_assoc_rm = self.uuid_assoc_active.copy() if rm_active else set()
         if force:
             uuid_assoc_rm |= self.uuid_assoc_deleted
             q_del = delete(model_assoc).where(model_assoc.uuid.in_(uuid_assoc_rm))
@@ -98,15 +139,7 @@ class Delete(WithAccess):
             else lambda child: setattr(child, "deleted", True)
         )
         _ = tuple(
-            (
-                meth(child),
-                info.add(
-                    (
-                        child.kind_obj,
-                        child.uuid_obj,
-                    )
-                ),
-            )
+            (meth(child), info.add((child.kind_obj, child.uuid_obj)))
             for child in item.flattened()
         )
 
@@ -199,9 +232,22 @@ class Delete(WithAccess):
         data: DataResolvedGrant | DataResolvedAssignment,
     ) -> Tuple[AssocData, Type]:
 
-        assert data.data.uuid_assoc is not None
-        model_assoc = data.data.get_model_assoc()
-        q_assoc = select(model_assoc).where(model_assoc.uuid.in_(data.data.uuid_assoc))
+        model_assoc = data.data.get_model("assoc")
+        model_target = data.data.get_model("target")
+        q_assoc = (
+            select(model_assoc)
+            .join(model_target)
+            .where(
+                or_(
+                    model_assoc.uuid.in_(data.data.uuid_assoc),
+                    and_(
+                        model_target.uuid.in_(data.data.uuid_target),
+                        getattr(model_assoc, "id_" + data.data.kind_source.name)
+                        == data.data.source.id,
+                    ),
+                )
+            )
+        )
         uuid_target_attr = "uuid_" + data.data.kind_target.name
 
         # NOTE: Simplify this.

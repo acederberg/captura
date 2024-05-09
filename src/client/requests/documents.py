@@ -3,6 +3,7 @@ import typer
 
 # --------------------------------------------------------------------------- #
 from client import flags
+from client.handlers import AssertionHandler
 from client.requests.assignments import DocumentAssignmentRequests
 from client.requests.base import BaseRequests, ContextData, methodize, params
 from client.requests.grants import DocumentGrantRequests
@@ -17,8 +18,36 @@ class DocumentRequests(BaseRequests):
         create="req_create",
     )
     typer_children = dict(
-        grants=DocumentGrantRequests, assignments=DocumentAssignmentRequests
+        grants=DocumentGrantRequests,
+        assignments=DocumentAssignmentRequests,
     )
+    grants: DocumentGrantRequests
+    assignments: DocumentAssignmentRequests
+
+    def __init__(
+        self,
+        context: ContextData,
+        client: httpx.AsyncClient,
+        *,
+        handler: AssertionHandler | None = None,
+        handler_methodize: bool = False,
+    ):
+        super().__init__(
+            context,
+            client,
+            handler=handler,
+            handler_methodize=handler_methodize,
+        )
+        self.grants = DocumentGrantRequests.spawn_from(self)
+        self.assignments = DocumentAssignmentRequests.spawn_from(self)
+
+    @property
+    def g(self) -> DocumentGrantRequests:
+        return self.grants
+
+    @property
+    def a(self) -> DocumentAssignmentRequests:
+        return self.assignments
 
     @classmethod
     def req_delete(
@@ -36,6 +65,7 @@ class DocumentRequests(BaseRequests):
         name: flags.FlagName,
         description: flags.FlagDescription,
         content: flags.FlagContentOptional = None,
+        public: flags.FlagPublic = False,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
@@ -45,6 +75,7 @@ class DocumentRequests(BaseRequests):
                 name=name,
                 description=description,
                 content=content,
+                public=public,
             ),
             headers=context.headers,
         )

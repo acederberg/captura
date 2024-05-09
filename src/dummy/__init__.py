@@ -39,6 +39,7 @@ from app.controllers.base import (
     ResolvedUser,
     T_ResolvedPrimary,
 )
+from app.controllers.create import Create
 from app.controllers.delete import Delete
 from app.fields import KindEvent, KindObject, Level
 from app.models import (
@@ -932,7 +933,24 @@ class BaseDummyProvider:
             force=force,
         )
 
-    def requests(self, client_config, client: httpx.AsyncClient) -> Requests:
+    def create(
+        self,
+        *,
+        api_origin: str,
+        force: bool = True,
+        method: HTTPMethod = HTTPMethod.GET,
+    ) -> Create:
+        return Create(
+            self.session,
+            self.token,
+            method,
+            api_origin=api_origin,
+            access=self.access(method=method),
+            delete=self.delete(api_origin=api_origin, force=force, method=method),
+            force=force,
+        )
+
+    def requests(self, client_config, client: httpx.AsyncClient, **kwargs) -> Requests:
         # NOTE: Build configuration and context for the requests client. This
         #       is approximately that which is used by the client.
         profile = mwargs(
@@ -944,9 +962,9 @@ class BaseDummyProvider:
                 hosts=dict(default=client_config.host),
                 profiles=dict(default=profile),
             ),
-            console_handler=ConsoleHandler(output=Output.yaml),  # type: ignore
+            console_handler=ConsoleHandler(client_config),  # type: ignore
         )
-        return Requests(context, client)
+        return Requests(context, client, **kwargs)
 
     def dispose(self):
         logger.debug("Disposing of dummy data for user `%s`.", self.user.uuid)
@@ -1296,10 +1314,9 @@ class DummyHandler:
             n_generate = dummies.minimum_count - n_users
 
             logger.debug("Generating `%s` dummies.", n_generate)
-            while (n_generate := n_generate - 1) > 0:
+            while (n_generate := n_generate - 1) >= 0:
                 dd = DummyProvider(self.config, session, auth=self.auth)
                 self.user_uuids.append(dd.user.uuid)
-                n_generate -= 1
 
             q_user_uuids = select(User.uuid).where(User.id > dummies.minimum_user_id)
             user_uuids = list(session.scalars(q_user_uuids))

@@ -1,7 +1,7 @@
 # =========================================================================== #
 
 # =========================================================================== #
-from typing import Optional
+from typing import Annotated, Optional
 
 import httpx
 import rich
@@ -9,7 +9,8 @@ import typer
 
 # --------------------------------------------------------------------------- #
 from client import flags
-from client.requests.base import BaseRequests, ContextData, methodize, params
+from client.handlers import AssertionHandler
+from client.requests.base import BaseRequests, ContextData, methodize, params, typerize
 from client.requests.grants import UserGrantRequests
 
 
@@ -49,8 +50,6 @@ class UserRequests(BaseRequests):
             ),
         )
 
-    search = methodize(req_search, __func__=req_search.__func__)
-
     @classmethod
     def req_read(
         cls, _context: typer.Context, uuid_user: flags.ArgUUIDUser
@@ -61,8 +60,6 @@ class UserRequests(BaseRequests):
             context.url(f"/users/{uuid_user}"),
             headers=context.headers,
         )
-
-    read = methodize(req_read, __func__=req_read.__func__)
 
     @classmethod
     def req_update(
@@ -151,35 +148,34 @@ class UserRequests(BaseRequests):
     update = methodize(req_update, __func__=req_update.__func__)  # type: ignore
     create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
     delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
+    search = methodize(req_search, __func__=req_search.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
 
-    def __init__(self, context: ContextData, client: httpx.AsyncClient):
-        super().__init__(context, client)
+    def __init__(
+        self,
+        context: ContextData,
+        client: httpx.AsyncClient,
+        *,
+        handler: AssertionHandler | None = None,
+        handler_methodize: bool = False,
+    ):
+        super().__init__(
+            context,
+            client,
+            handler=handler,
+            handler_methodize=handler_methodize,
+        )
         self.grants = UserGrantRequests.spawn_from(self)
 
+    @property
+    def g(self) -> UserGrantRequests:
+        return self.grants
 
-__all__ = ("UserRequests", "DemoRequests")
+
+__all__ = ("UserRequests",)
 
 
 if __name__ == "__main__":
-    # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
 
     users = typerize(UserRequests)
     users()
-
-# from app.schemas import mwargs
-# from client.config import Config
-# from client.handlers import ConsoleHandler
-#
-#
-# async def main():
-#     context = ContextData(config=Config(), console_handler=mwargs(ConsoleHandler))
-#     async with httpx.AsyncClient() as client:
-#
-#         u = DemoRequests(context=context, client=client)
-#         res = await u.read()
-#         print("HERE", res)
-#
-# import asyncio
-#
-# asyncio.run(main())

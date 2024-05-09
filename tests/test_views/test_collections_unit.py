@@ -27,7 +27,11 @@ from app.schemas import (
 from client.requests import Requests
 from client.requests.base import P_Wrapped
 from dummy import DummyProvider
-from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
+from tests.test_views.util import (
+    COUNT,
+    BaseEndpointTest,
+    BaseEndpointTestPrimaryCreateMixins,
+)
 
 
 class CommonCollectionsTests(BaseEndpointTest):
@@ -169,9 +173,8 @@ class CommonCollectionsTests(BaseEndpointTest):
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestCollectionsRead(CommonCollectionsTests):
     method = H.GET
@@ -234,9 +237,8 @@ def add_uuid_placeholder(
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestCollectionsCreate(
     BaseEndpointTestPrimaryCreateMixins,
@@ -303,9 +305,8 @@ class TestCollectionsCreate(
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestCollectionsUpdate(CommonCollectionsTests):
     method = H.PATCH
@@ -392,9 +393,8 @@ class TestCollectionsUpdate(CommonCollectionsTests):
 
 
 @pytest.mark.parametrize(
-    "dummy, requests, count",
-    [(None, None, count) for count in range(5)],
-    indirect=["dummy", "requests"],
+    "count",
+    [count for count in range(COUNT)],
 )
 class TestCollectionsDelete(CommonCollectionsTests):
     method = H.DELETE

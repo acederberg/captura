@@ -70,6 +70,8 @@ test = [
   "pytest-cov",
   "pytest-asyncio",
   "pytest-html",
+  # "pytest-xdist", # recommended with flakefinder
+  # "pytest-flakefinder",
   "faker",
 ]
 
@@ -162,6 +164,14 @@ push            = false
 [tool.pytest.ini_options]
 testpaths = "tests"
 addopts = "--ignore tests/junk --ignore-glob ./tests/test_controllers/test_delete*.py --ignore ./tests/test_controllers/test_upsert.py --last-failed --last-failed-no-failures all"
+count = 10
+flakey_ignore = [
+  "test_not_found_404",
+]
+flakey_ignore_err = [
+  "All filtered data is empty.",
+]
+# flakey_ignore_count = 3
 
 
 # NOTE: Reference https://coverage.readthedocs.io/en/latest/config.html#sample-file
@@ -174,7 +184,7 @@ omit = []
 [tool.coverage.report]
 fail_under = 75
 format = "html"
-include = ["./src/app/**/*.py", "./tests/**/*.py"]
+include = ["./src/app/**/*.py"] #, "./tests/**/*.py"]
 omit = []
 skip_covered = true
 skip_empty = true

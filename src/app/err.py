@@ -147,8 +147,7 @@ class ErrUpdateGrantPendingFrom(ErrBase):
 
 class ErrAssocRequestMustForce(ErrBase):
     _msg_force: ClassVar[str] = (
-        "Some targets have existing assignments awaiting cleanup. Try this "
-        "request again with `force=true` or make an equivalent `PUT` request."
+        "Some targets have existing assignments awaiting cleanup."
     )
 
     kind_target: fields.FieldKindObject
