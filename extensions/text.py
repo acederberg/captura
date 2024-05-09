@@ -4,7 +4,7 @@ from typing import Annotated, List
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, TypeAdapter, Field
+from pydantic import BaseModel, Field, TypeAdapter
 
 # --------------------------------------------------------------------------- #
 from app import fields
@@ -13,7 +13,6 @@ from app.depends import DependsAccess, DependsRead
 from app.schemas import AsOutput, EditSchema, TimespanLimitParams, mwargs
 from app.views import BaseView, args
 
-# --------------------------------------------------------------------------- #
 # Fields
 
 LENGTH_MESSAGE: int = 1024

@@ -1,7 +1,6 @@
 # =========================================================================== #
 import json
 from typing import Any, Callable, Dict, Iterable, Tuple, TypeAlias
-from app.err import ErrBase
 
 import pytest
 from fastapi import HTTPException
@@ -9,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
+from app.err import ErrBase
 from app.models import Assignment, Collection, Document, Grant, User
 from app.schemas import CollectionSchema, DocumentSchema, GrantSchema, UserSchema
 

@@ -432,8 +432,7 @@ class ReportRich:
         return layout
 
 
-class ReportUserMinimalSchema(BaseReportSchema):
-    ...
+class ReportUserMinimalSchema(BaseReportSchema): ...
 
 
 class ReportUserSchema(ReportRich, ReportUserMinimalSchema):

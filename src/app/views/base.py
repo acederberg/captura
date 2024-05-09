@@ -199,5 +199,4 @@ class ViewMeta(type):
         return T
 
 
-class BaseView(ViewMixins, metaclass=ViewMeta):
-    ...
+class BaseView(ViewMixins, metaclass=ViewMeta): ...
