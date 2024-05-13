@@ -26,7 +26,19 @@ class PytestSubConfig(BaseHashable):
         the tables do not exist, they will be created.
     """
 
-    generate_reports: Annotated[bool, Field(default=False)]
+    generate_reports: Annotated[
+        bool,
+        Field(
+            default=False,
+            description=(
+                "When ``True``, a dummy report is generated before the "
+                "execution of each module. If ``generate_dummies`` is ``True``"
+                "then reports will be created after ``DummyHandler.dispose`` "
+                "and ``DummyHandler.restore`` is called."
+            ),
+        ),
+    ]
+    generate_dummies: Annotated[bool, Field(default=False)]
 
 
 class PytestConfig(ConfigSimulatus):
@@ -37,7 +49,6 @@ class PytestConfig(ConfigSimulatus):
     :attr tests: Test specific configuration.
     """
 
-    ...
     model_config = YamlSettingsConfigDict(
         yaml_files=util.PATH_CONFIG_TEST_APP,
         yaml_reload=False,
@@ -60,7 +71,6 @@ class PytestClientConfig(ClientConfig):
 
 
 class CommandConfig(BaseTyperizable):
-
     typer_commands = {
         "client": "print_config_client",
         "app": "print_config_app",
@@ -96,7 +106,6 @@ class CommandConfig(BaseTyperizable):
 
 
 if __name__ == "__main__":
-
     tt = typerize(
         CommandConfig,
         typerize_fn=None,

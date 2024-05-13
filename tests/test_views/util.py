@@ -133,22 +133,8 @@ class BaseEndpointTest(abc.ABC):
     adapter_w_events: ClassVar[TypeAdapter]
 
     @pytest.fixture(scope="function")
-    def dummy(
-        self, dummy_handler: DummyHandler
-    ) -> Generator[DummyProvider, None, None]:
-        with dummy_handler.sessionmaker() as session:
-            dummy = DummyProvider(
-                dummy_handler.config,
-                session,
-                use_existing=dummy_handler.user_uuids,
-            )
-
-            dummy.user.deleted = False
-            session.add(dummy.user)
-            session.commit()
-            session.refresh(dummy.user)
-
-            yield dummy
+    def dummy(self, dummy) -> Generator[DummyProvider, None, None]:
+        yield dummy
 
     @pytest_asyncio.fixture(scope="function")
     async def requests(

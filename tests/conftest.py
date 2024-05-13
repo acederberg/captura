@@ -1,4 +1,5 @@
 # =========================================================================== #
+import argparse
 from datetime import datetime
 from os import path
 from typing import Annotated, Any, AsyncGenerator, Dict, Iterable, List, Self, Set
@@ -7,6 +8,7 @@ import httpx
 import pytest
 import pytest_asyncio
 import yaml
+from _pytest.stash import StashKey
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text, true
@@ -24,11 +26,12 @@ from app.schemas import mwargs
 from app.views import AppView
 from dummy import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
-from tests.flakey import FLAKEY_PATH, FLAKEY_STASHKEY, Flake, Flakey
+from tests.flakey import FLAKEY_PATH, Flake, Flakey
 
 logger = util.get_logger(__name__)
 
 COUNT = 5
+FLAKEY = True
 
 
 # --------------------------------------------------------------------------- #
@@ -41,6 +44,9 @@ COUNT = 5
 #
 #          https://docs.pytest.org/en/7.1.x/reference/reference.html
 #
+STASHKEY_CONFIG_FLAKEY = StashKey[Flakey]()
+STASHKEY_CONFIG_CAPTRUA = StashKey[PytestConfig]()
+STASHKEY_CONFIG_LEGERE = StashKey[PytestClientConfig]()
 
 
 def pytest_exception_interact(
@@ -48,6 +54,10 @@ def pytest_exception_interact(
     call: pytest.CallInfo,
     report: pytest.CollectReport | pytest.TestReport,
 ):
+    if FLAKEY:
+        return
+
+    logger.debug("Check exception from `%s` for flakeyness.", node.name)
     if report.passed:
         return
     elif call.excinfo is None:
@@ -62,21 +72,27 @@ def pytest_exception_interact(
     if not isinstance(err, AssertionError):
         return
 
-    node.keywords
-    flakey = node.config.stash[FLAKEY_STASHKEY]
+    logger.debug("Recording flakey test in `flakey.yaml`.")
+    flakey = node.config.stash[STASHKEY_CONFIG_FLAKEY]
     if flakey.register(node, call) is None:  # type: ignore
         return
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: pytest.ExitCode):
-
-    flakey = session.config.stash[FLAKEY_STASHKEY]
+    logger.info("Recording flakey tests in `flakey.yaml`.")
+    flakey = session.config.stash[STASHKEY_CONFIG_FLAKEY]
 
     with open(FLAKEY_PATH, "w") as file:
         yaml.dump(flakey.model_dump(mode="json"), file)
 
 
+# NOTE: Do not add settings that belong directly in ``tests.config.PytestConfig``
+#       or ``test.config.PytestClientConfig``. This should include global
+#       tests settings only and preference should be given to the
+#       afforementioned classes.
 def pytest_addoption(parser: pytest.Parser, pluginmanager: pytest.PytestPluginManager):
+    logger.debug("Configuring additional `pytest` flags and `ini` options.")
+
     # NOTE: Because count will be necessary to configure for CI and it is
     #       easier to update configuration as opposed to updating pipeline
     #       scripts.
@@ -96,8 +112,17 @@ def pytest_addoption(parser: pytest.Parser, pluginmanager: pytest.PytestPluginMa
             "dummy provider."
         ),
     )
+    parser.addoption(
+        "--generate-dummies",
+        help="Overwrites `PytestConfig.tests.generate_reports`.",
+        action=argparse.BooleanOptionalAction,
+    )
 
-    # NOTE: Used to populate ``pytest.Config.stash[FLAKEY_STASHKEY]``.
+    # NOTE: Configuration flags.
+    parser.addoption("--config-captura", help="Overwrite the app config path.")
+    parser.addoption("--config-legere", help="Overwrite the client config path.")
+
+    # NOTE: Used to populate ``pytest.Config.stash[STASHKEY_CONFIG_FLAKEY]``.
     msg_see_flakey = "See `tests.flakey:Flakey.ignore`."
     parser.addini(
         name="flakey_ignore",
@@ -109,6 +134,17 @@ def pytest_addoption(parser: pytest.Parser, pluginmanager: pytest.PytestPluginMa
         help=msg_see_flakey,
         type="linelist",
     )
+    parser.addoption(
+        "--flakey-clear",
+        action=argparse.BooleanOptionalAction,
+        help="Clear `flakey.yaml` before tests.",
+    )
+    parser.addoption(
+        "--flakey",
+        action=argparse.BooleanOptionalAction,
+        help="Collection flakey tests in `flakey.yaml`.",
+    )
+
     # parser.addoption(
     #     name="flakey_rerun",
     #     help=f"Run all recently flakey from ``flakey.yaml``. {msg_see_flakey}",
@@ -137,35 +173,50 @@ def pytest_configure(config: pytest.Config):
     global COUNT
     COUNT = int(count)
 
+    # ----------------------------------------------------------------------- #
     # NOTE: Add ``flakey.yaml`` to the stash so that dependency injection is
     #       maintained. This cannot be done with count as it is not in an
     #       injectable context.
-    Flakey.yaml_ensure()
+    # NOTE: Add other configurations to the stash. These will be served using
+    #       the ``config`` and ``config_client`` fixtures.
 
-    ignore_ini = config.getini("flakey_ignore") or list()
-    ignore_ini_err = config.getini("flakey_ignore_err") or list()
-    # assert isinstance(ignore_ini, list)
-    # assert all(isinstance(item, str) for item in ignore_ini)
+    logger.debug("Loading and stashing configurations.")
 
-    # Flakey()
-    flakey = mwargs(Flakey, ignore=ignore_ini, ignore_err=ignore_ini_err)
-    config.stash[FLAKEY_STASHKEY] = flakey
+    flakey = config.getoption("--flakey")
+    flakey_clear = config.getoption("--flakey-clear")
+    flakey_ignore_ini = config.getini("flakey_ignore") or list()
+    flakey_ignore_ini_err = config.getini("flakey_ignore_err") or list()
+    Flakey.yaml_ensure(bool(flakey_clear))
+    global FLAKEY
+    FLAKEY = flakey
+
+    flakey = mwargs(Flakey, ignore=flakey_ignore_ini, ignore_err=flakey_ignore_ini_err)
+    config.stash[STASHKEY_CONFIG_FLAKEY] = flakey
+
+    config_captura = resolve_config_captura(config)
+    if generate_dummies := config.getoption("--generate-dummies"):
+        assert isinstance(generate_dummies, bool), "Should be `bool`."
+        config_captura.tests.generate_dummies = generate_dummies
+
+    config.stash[STASHKEY_CONFIG_CAPTRUA] = config_captura
+    config.stash[STASHKEY_CONFIG_LEGERE] = resolve_config_legere(config)
 
 
-# =========================================================================== #
-# Test configuration and configuration fixture
+def resolve_config_captura(pytestconfig: pytest.Config) -> PytestConfig:
+    if config_captura_path := pytestconfig.getoption("--config-captura"):
+        logger.warning(
+            "Loading app configuration from alternative path `%s`.",
+            config_captura_path,
+        )
+        PytestConfig.model_config["yaml_files"] = config_captura_path
 
-
-# NOTE: Session scoping works like fastapi dependency caching, so these will
-#       only ever be called once in a test session.
-@pytest.fixture(scope="session")
-def config() -> PytestConfig:
     logger.debug("Loading application configuration.")
     app = AppConfig.model_validate(
         {
             "logging_configuration_path": util.Path.base("logging.test.yaml"),
         }
     )
+
     if (config := mwargs(PytestConfig, app=app)).auth0.use:
         raise AssertionError(
             "Refusing to perform tests with `config.auth0.use=True`. "
@@ -176,27 +227,46 @@ def config() -> PytestConfig:
     return config
 
 
-@pytest.fixture(scope="session")
-def client_config() -> PytestClientConfig:
+def resolve_config_legere(pytestconfig: pytest.Config):
+    if config_legere_path := pytestconfig.getoption("--config-legere"):
+        logger.warning(
+            "Loading client configuration from alternative path `%s`.",
+            config_legere_path,
+        )
+        PytestConfig.model_config["yaml_files"] = config_legere_path
+
     logger.debug("Loading client configuration.")
-    # raw: Dict[str, Any] = dict(
-    #     hosts=dict(
-    #         docker=dict(host="http://localhost:8080", remote=True),
-    #         app=dict(host="http://localhost:8080", remote=False),
-    #     ),
-    #     profiles=dict(me=dict(token=None, uuid_user="000-000-000")),
-    #     use=dict(host="app", profile="me"),
-    # )
     return PytestClientConfig.model_validate({})
 
 
+# =========================================================================== #
+# NOTE: Configuration fixtures.
+
+
+# NOTE: Session scoping works like fastapi dependency caching, so these will
+#       only ever be called once in a test session. This should be specified
+#       in ``config/app.test.yaml``.
+@pytest.fixture(scope="session")
+def config(pytestconfig: pytest.Config) -> PytestConfig:
+    return pytestconfig.stash[STASHKEY_CONFIG_CAPTRUA].model_copy()
+
+
+# NOTE: Should be specified in config/client.test.yaml or overwritten using
+#       ``--config-legere``. Returning copies of models will help preventing
+#       overwrites being maintained from any test.
+@pytest.fixture(scope="session")
+def client_config(pytestconfig: pytest.Config) -> PytestClientConfig:
+    return pytestconfig.stash[STASHKEY_CONFIG_LEGERE].model_copy()
+
+
+# NOTE: Was this necessary? Currently impartial.
 class PytestContext(BaseModel):
     reloaded: bool = False
     config: PytestConfig
     config_client: PytestClientConfig
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def context(
     config: PytestConfig,
     client_config: PytestClientConfig,
@@ -209,10 +279,8 @@ def context(
 # Application fixtures.
 
 
-@pytest_asyncio.fixture(scope="session")
-async def app(
-    client_config: PytestClientConfig, config: PytestConfig
-) -> FastAPI | None:
+@pytest.fixture(scope="session")
+def app(client_config: PytestClientConfig, config: PytestConfig) -> FastAPI | None:
     if (host := client_config.host) is None or not host.remote:
         logger.info("Using httpx client with app instance.")
 
@@ -221,10 +289,11 @@ async def app(
         app: FastAPI
         app = AppView.view_router  # type: ignore
 
-        def config_callback():
-            return config
+        # def config_callback():
+        #     return config
 
-        app.dependency_overrides[depends.config] = config_callback
+        # NOTE: Dependency overwrites.
+        app.dependency_overrides[depends.config] = lambda: config
         return app
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
@@ -259,31 +328,37 @@ def session(sessionmaker):
     logger.debug("Session closed.")
 
 
-# TODO: Try out module scoping.
 @pytest.fixture(scope="module")
 def dummy_handler(
-    request, sessionmaker: _sessionmaker, config: PytestConfig, auth: Auth
+    request,
+    sessionmaker: _sessionmaker,
+    config: PytestConfig,
+    auth: Auth,
+    worker_id: str,
 ):
-    user_uuids: List[str] = list()
-    handler = DummyHandler(
-        sessionmaker,
-        config,
-        user_uuids,
-        auth=auth,
-    )
-
-    logger.info("Cleaning an restoring database.")
     name_module = f"(`module={request.node.name}`) "
+    with sessionmaker() as session:
+        uuid_user = list(session.scalars(select(User.uuid)))
+
+    handler = DummyHandler(sessionmaker, config, uuid_user, auth=auth)
+    if worker_id != "master":
+        return handler
+
     if generate_reports := config.tests.generate_reports:
-        handler.create_report(f"Before disposal {name_module}.")
+        handler.create_report(f"For {name_module}.")
 
-    handler.dispose()
-    if generate_reports:
-        handler.create_report(f"After disposal {name_module}.")
+    if config.tests.generate_dummies:
+        logger.info("Cleaning and restoring database.")
+        handler.dispose()
+        if generate_reports:
+            note = f"Post ``DummyHandler.restore`` {name_module}."
+            handler.create_report(note)
 
-    handler.restore()
-    if generate_reports:
-        handler.create_report(f"After restoration {name_module}.")
+        handler.restore()
+        if generate_reports:
+            note = f"Post ``DummyHandle.dispose`` restoration {name_module}."
+            handler.create_report(note)
+
     return handler
 
 
@@ -344,38 +419,24 @@ def dummy_disposable(request, dummy_handler: DummyHandler):
         yield dummy
 
 
-@pytest.fixture(scope="function")
-def yaml_dummy(request, dummy_handler: DummyHandler):
-    logger.debug("Providing dummy for user uuid `000-000-000`.")
-    with dummy_handler.sessionmaker() as session:
-        user = session.get(User, 2)
-        assert user is not None
-
-        dd = DummyProviderYAML(
-            dummy_handler.config,
-            session,
-            auth=dummy_handler.auth,
-            user=user,
-            client_config_cls=PytestClientConfig,
-        )
-        dd.merge(session)
-        dd.session.refresh(dd.user)
-
-        yield dd
-
-
 # --------------------------------------------------------------------------- #
 # Loading fixtures
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_logging(config: PytestConfig) -> None:
+def setup_cleanup(
+    engine: Engine,
+    sessionmaker: _sessionmaker,
+    config: PytestConfig,
+    worker_id: str,
+):
     util.setup_logging(config.app.logging_configuration_path)
-    return
 
+    print(worker_id)
+    if worker_id != "master":
+        yield
+        return
 
-@pytest.fixture(scope="session")
-def setup_cleanup(engine: Engine, config: PytestConfig):
     logger.info("Setting up.")
     logger.debug("Verifying tables.")
     metadata = Base.metadata
@@ -387,20 +448,10 @@ def setup_cleanup(engine: Engine, config: PytestConfig):
     if not exists:
         logger.debug("Recreating tables.")
         metadata.create_all(engine)
-    # elif not exists:
-    #     logger.debug("Creating tables.")
-    #     metadata.create_all(engine)
-    else:
-        logger.debug("Doing nothing to tables.")
 
-    yield
-
-
-@pytest.fixture(scope="session", autouse=True)
-def load_tables(
-    setup_cleanup, config: PytestConfig, auth: Auth, sessionmaker: _sessionmaker
-):
     with sessionmaker() as session:
         logger.info("Loading tables with dummy data from `YAML`.")
         DummyProviderYAML.merge(session)
         logger.info("Generating dummy data.")
+
+    yield

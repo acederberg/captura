@@ -26,6 +26,8 @@ from typing import (
     Generic,
     List,
     Optional,
+    ParamSpec,
+    Protocol,
     Self,
     Set,
     Type,
@@ -683,9 +685,18 @@ class OutputWithEvents(AsOutput, Generic[T_Output]):
     events: Annotated[List[EventSchema], Field()]
 
 
-T_mwargs = TypeVar("T_mwargs", bound=type(BaseModel))
+# --------------------------------------------------------------------------- #
 
 
-# Cause I hate wrapping kwargs in dict.
+class TMwargs(Protocol):
+    # NOTE: Adding a signature for init with ``kwargs`` is a pain.
+    ...
+
+
+T_mwargs = TypeVar("T_mwargs", bound=BaseModel | TMwargs)
+
+
+# NOTE: Cause I hate wrapping kwargs in dict and pydantic constructor hints are
+#       often annoying. This can be applied anything with a kwargs constructor.
 def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
     return M(**kwargs)

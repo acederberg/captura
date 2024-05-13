@@ -21,7 +21,7 @@ import httpx
 import yaml
 from cryptography.utils import cached_property
 from sqlalchemy import delete, desc, false, func, or_, select, true, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 from typing_extensions import Doc
 
@@ -71,7 +71,7 @@ from client.requests import Requests
 from client.requests.base import ContextData
 from dummy.config import ConfigSimulatus, DummyConfig
 from dummy.mk import Mk, combos
-from dummy.reports import ReportController
+from dummy.reports import Report, ReportController
 
 util.setup_logging(util.Path.base("logging.test.yaml"))
 logger = util.get_logger(__name__)
@@ -143,7 +143,7 @@ class BaseDummyProvider:
         logger.debug("Making documents.")
 
         assert isinstance(self.dummy, DummyConfig)
-        a, b = self.dummy.minimum_count_documents, self.dummy.maximum_count_documents
+        a, b = self.dummy.documents.minimum, self.dummy.documents.maximum
         return tuple(Mk.document() for _ in range(randint(a, b)))
 
     def mk_assignments(
@@ -206,7 +206,7 @@ class BaseDummyProvider:
         # NOTE: Grants giving access to documents that exist already.
         if not exclude_grants_self:
             logger.debug("Making grants for `%s` on documents created by others.")
-            a, b = dummies.maximum_count_grants_self, dummies.maximum_count_grants_self
+            a, b = dummies.grants.minimum_self, dummies.grants.maximum_self
             q_ids_has_grants = (
                 select(Document.id)
                 .join(Grant)
@@ -257,8 +257,8 @@ class BaseDummyProvider:
             .where(User.id != self.user.id)
             .limit(
                 randint(
-                    dummies.minimum_count_grants_other,
-                    dummies.maximum_count_grants_other,
+                    dummies.grants.minimum_other,
+                    dummies.grants.maximum_other,
                 )
             )
         )
@@ -290,7 +290,7 @@ class BaseDummyProvider:
     def mk_collections(self) -> Tuple[Collection, ...]:
         logger.debug("Making collections...")
         dummies = self.dummy
-        a, b = dummies.minimum_count_documents, dummies.maximum_count_documents
+        a, b = dummies.documents.minimum, dummies.documents.maximum
         return tuple(Mk.collection(user=self.user) for _ in range(randint(a, b)))
 
     def mk(
@@ -460,7 +460,9 @@ class BaseDummyProvider:
                 )
                 return models
             else:
-                # self.tainted = True
+                ReportController(self.session).create_user(
+                    note=f"Failed to find `{Model.__tablename__}`. ", user=self.user
+                )
 
                 raise AssertionError(
                     f"Could not find test data for `{self.user.uuid}` table "
@@ -1072,11 +1074,6 @@ class DummyProviderYAML(BaseDummyProvider):
             (DummyProviderYAMLInfo,),
             dict(M=Document),
         ),
-        # type(
-        #     "DummyProviderYAMLEdit",
-        #     (DummyProviderYAMLInfo,),
-        #     dict(M=Edit),
-        # ),
         type(
             "DummyProviderYAMLGrant",
             (DummyProviderYAMLInfo,),
@@ -1097,8 +1094,6 @@ class DummyProviderYAML(BaseDummyProvider):
     @classmethod
     def merge(cls, session: Session) -> None:
         logger.info("Merging YAML data into database.")
-        # backwards = list(Base.metadata.sorted_tables)
-        # backwards.reverse()
         for table in Base.metadata.sorted_tables:
             yaml_data = DummyProviderYAMLInfo.dummies_info.get(table.name)
             if yaml_data is None:
@@ -1140,7 +1135,7 @@ class DummyProvider(BaseDummyProvider):
                     .where(
                         # NOTE: Not too used already, not tainted.
                         func.JSON_LENGTH(User.content, "$.dummy.used_by")
-                        < self.dummy.maximum_use_count,
+                        < self.dummy.users.maximum_uses,
                         func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
                         User.uuid.in_(dummy_user_uuids),
                         func.JSON_OVERLAPS(
@@ -1148,13 +1143,15 @@ class DummyProvider(BaseDummyProvider):
                         )
                         != 1,
                         User.deleted == false(),
+                        User.id < self.dummy.users.minimum_id,
                     )
                     .order_by(func.random())
                     .limit(1)
                 )
+                util.sql(session, q_user)
                 user = session.scalar(q_user)
                 if user is None:
-                    logger.info("No suitable dummy found. Building a new dummy.")
+                    logger.warning("No suitable dummy found. Building a new dummy.")
                     self.user = self.mk_user()
                     self.mk()
                     return
@@ -1200,36 +1197,13 @@ class DummyProvider(BaseDummyProvider):
     def info_is_tainted(self, maximum_use_count: int | None = None) -> bool | None:
         session = self.session
         if maximum_use_count is None:
-            maximum_use_count = self.dummy.maximum_use_count
+            maximum_use_count = self.dummy.users.maximum_uses
 
         # NOTE: Naming easter egg.
         a = func.JSON_LENGTH(User.content, "$.dummy.used_by") >= maximum_use_count
         b = func.JSON_VALUE(User.content, "$.dummy.tainted") > 0
         q = select(or_(a, b)).where(User.uuid == self.user.uuid)
         return session.scalar(q)
-
-    # def check_health(self):
-    #
-    #     session, user = self.session, self.user
-    #     n_collections = session.scalar(
-    #         select(Collection).where(Collection.id_user == user.id)
-    #     )
-    #     if n_collections is None:
-    #         self.mk_collections()
-    #
-    #     n_documents_create = session.scalar(
-    #         select(Document)
-    #         .join(Grant)
-    #         .where(
-    #             Grant.pending_from == PendingFrom.created,
-    #             Grant.id_user == user.id,
-    #         )
-    #     )
-    #     n_documents_shared = session.scalar(
-    #         select(Document)
-    #         .join(Grant)
-    #         .where(Grant.pending_from != PendingFrom.created, Grant.id_user == user.id)
-    #     )
 
 
 # --------------------------------------------------------------------------- #
@@ -1262,7 +1236,7 @@ class DummyHandler:
         maximum_use_count: int | None = None,
     ):
         if maximum_use_count is None:
-            maximum_use_count = self.dummy.maximum_use_count
+            maximum_use_count = self.dummy.users.maximum_uses
 
         conds = list()
         if uuids is not None:
@@ -1303,22 +1277,27 @@ class DummyHandler:
             session.add(report)
             session.commit()
 
-    def restore(self) -> Self:
+    def restore(
+        self,
+        callback: Callable[[DummyProvider, int, int], None] | None = None,
+    ) -> Self:
         with self.sessionmaker() as session:
             logger.debug("Getting current user count.")
             uuids_existing = list(session.scalars(select(User.id, User.uuid)))
             n_users = len(uuids_existing)
             assert n_users is not None
 
-            dummies = self.dummy
-            n_generate = dummies.minimum_count - n_users
+            dummies: DummyConfig = self.dummy
+            n_generate = dummies.users.minimum - n_users
 
-            logger.debug("Generating `%s` dummies.", n_generate)
-            while (n_generate := n_generate - 1) >= 0:
+            logger.info("Generating `%s` dummies.", n_generate)
+            for count in range(n_generate):
                 dd = DummyProvider(self.config, session, auth=self.auth)
+                if callback is not None:
+                    callback(dd, count, n_generate)
                 self.user_uuids.append(dd.user.uuid)
 
-            q_user_uuids = select(User.uuid).where(User.id > dummies.minimum_user_id)
+            q_user_uuids = select(User.uuid)
             user_uuids = list(session.scalars(q_user_uuids))
             self.user_uuids = user_uuids
 

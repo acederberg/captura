@@ -1,5 +1,6 @@
 # =========================================================================== #
 import json
+from datetime import datetime
 from functools import cached_property
 from typing import Annotated, List, Optional, Self
 
@@ -11,7 +12,7 @@ from rich.align import Align
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 
@@ -21,7 +22,8 @@ from app.auth import Token
 from app.config import Config
 from app.models import Base, Document
 from app.schemas import TimespanLimitParams, UserExtraSchema, mwargs
-from client.handlers import ConsoleHandler
+from client.config import Output, OutputConfig
+from client.handlers import ConsoleHandler, HandlerData
 from client.requests.base import BaseTyperizable, typerize
 from dummy import DummyHandler, DummyProvider, DummyProviderYAML
 from dummy.config import ConfigSimulatus, DummyConfig
@@ -37,11 +39,78 @@ from dummy.reports import (
 
 CONSOLE = Console()
 
+# --------------------------------------------------------------------------- #
+# Flags
+
+FlagNote = Annotated[
+    str,
+    OPTION_NOTE := typer.Option(
+        "--note",
+        help="Note associated with a report.",
+    ),
+]
+FlagNoteOptional = Annotated[Optional[str], OPTION_NOTE]
+FlagBefore = Annotated[Optional[int], typer.Option("--before")]
+FlagAfter = Annotated[Optional[int], typer.Option("--after")]
+FlagLimit = Annotated[
+    int,
+    typer.Option(
+        "--limit",
+        "-n",
+        help="Maximum number of reports to display.",
+    ),
+]
+FlagUUIDUserOptional = Annotated[
+    Optional[str],
+    typer.Option(
+        "--uuid-user",
+        help="UUID of the report subject. When this is ``None``, aggregate reports are created.",
+    ),
+]
+FlagUUIDUserListOptional = Annotated[
+    Optional[List[str]], typer.Option("--uuid-user", help="User uuids.")
+]
+
+FlagCount = Annotated[
+    int, typer.Option("--count", help="Number of dummies to generate/taint.")
+]
+FlagManifest = Annotated[
+    Optional[str],
+    typer.Option(
+        "--manifest",
+        "-f",
+        help="Dummy configuration to overwrite that specified by the config.",
+    ),
+]
+FlagManifestPreview = Annotated[
+    bool,
+    typer.Option("--preview", help="Manifest preview (as YAML)."),
+]
+
+ArgUUIDReport = Annotated[str, typer.Argument(help="Report UUID.")]
+
 
 class ContextDataDummy(BaseModel):
+    # NOTE: Global options for flags do not exist. Instead, create a manifest.
     quiet: bool = True
     config: ConfigSimulatus
-    # console_handler: ConsoleHandler
+    config_output: OutputConfig
+
+    def register_manifest(self, manifest_path: str | None) -> DummyConfig | None:
+        if manifest_path is None:
+            return
+
+        manifest = DummyConfig.load(manifest_path)
+        self.config.dummy = manifest
+
+        return manifest
+
+    def preview_manifest(self):
+        data = HandlerData(
+            data=self.config.dummy.model_dump(),
+            output_config=self.config_output,
+        )
+        data.print()
 
     @cached_property
     def dummy_handler(self) -> DummyHandler:
@@ -65,11 +134,16 @@ class ContextDataDummy(BaseModel):
                     yaml.safe_load(file),
                 )
 
-        context.obj = cls(config=config, quiet=quiet)
+        config_output = mwargs(OutputConfig, output=Output.yaml)
+        context.obj = cls(config=config, quiet=quiet, config_output=config_output)
 
 
-class CmdSnapshot(BaseTyperizable):
-    """Server side snapshot."""
+# --------------------------------------------------------------------------- #
+# Typerizables
+
+
+class CmdReport(BaseTyperizable):
+    """Reports management."""
 
     typer_decorate = False
     typer_check_verbage = False
@@ -84,7 +158,9 @@ class CmdSnapshot(BaseTyperizable):
     )
 
     @classmethod
-    def delete(cls, _context: typer.Context, uuid_report: str):
+    def delete(cls, _context: typer.Context, uuid_report: ArgUUIDReport):
+        """Delete one report."""
+
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
@@ -94,10 +170,12 @@ class CmdSnapshot(BaseTyperizable):
                 )
             except HTTPException as err:
                 print(err)
-                raise typer.exit(1)
+                raise typer.Exit(1)
 
     @classmethod
-    def view(cls, _context: typer.Context, uuid_report: str):
+    def view(cls, _context: typer.Context, uuid_report: ArgUUIDReport):
+        """View *(in detail)* a report."""
+
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
@@ -112,12 +190,9 @@ class CmdSnapshot(BaseTyperizable):
         CONSOLE.print(report)
 
     @classmethod
-    def amend(
-        cls,
-        _context: typer.Context,
-        uuid_report: str,
-        note: Annotated[str, typer.Option("--note")],
-    ):
+    def amend(cls, _context: typer.Context, uuid_report: ArgUUIDReport, note: FlagNote):
+        """Update a note on a report."""
+
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
@@ -134,18 +209,17 @@ class CmdSnapshot(BaseTyperizable):
     def history(
         cls,
         _context: typer.Context,
-        uuid_user: Optional[str] = None,
-        before: Optional[int] = None,
-        after: Optional[int] = None,
-        limit: int = 10,
+        uuid_user: FlagUUIDUserOptional = None,
+        before: FlagBefore = None,
+        after: FlagAfter = None,
+        limit: FlagLimit = 10,
     ):
+        """View the latest reports."""
+
         context: ContextDataDummy = _context.obj
+        tsp = mwargs(TimespanLimitParams, before=before, after=after, limit=limit)
         with context.dummy_handler.sessionmaker() as session:
-            reports = ReportView.get_reports(
-                ReportController(session),
-                TimespanLimitParams(before=before, after=after, limit=limit),
-                uuid_user,
-            )
+            reports = ReportView.get_reports(ReportController(session), tsp, uuid_user)
 
             if not reports:
                 CONSOLE.print("[green]No reports to show.")
@@ -153,15 +227,12 @@ class CmdSnapshot(BaseTyperizable):
 
             tt = pydantic_table(reports)
             CONSOLE.print(tt)
-            # report, *_ = reports
-            # tt = Table()
-            # for
 
     @classmethod
     def all(
         cls,
         _context: typer.Context,
-        note: Optional[str] = None,
+        note: FlagNoteOptional = None,
     ):
         note = note or "From `CmdSnapshot.all`."
         context: ContextDataDummy = _context.obj
@@ -181,8 +252,8 @@ class CmdSnapshot(BaseTyperizable):
     def user(
         cls,
         _context: typer.Context,
-        uuid: Optional[str] = None,
-        note: Optional[str] = None,
+        uuid: FlagUUIDUserOptional = None,
+        note: FlagNoteOptional = None,
     ):
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
@@ -214,7 +285,7 @@ class CmdSnapshot(BaseTyperizable):
     def aggregate(
         cls,
         _context: typer.Context,
-        note: Optional[str] = None,
+        note: FlagNoteOptional = None,
     ):
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
@@ -229,62 +300,16 @@ class CmdSnapshot(BaseTyperizable):
             CONSOLE.print(report)
 
 
-class CmdDummy(BaseTyperizable):
+class CmdUser(BaseTyperizable):
+    """Manage dummy users."""
+
     typer_decorate = False
     typer_check_verbage = False
-    typer_commands = dict()
-    typer_children = dict(snapshot=CmdSnapshot)
-
-    typer_commands = dict(
-        dispose="dispose",
-        restore="restore",
-        init="initialize",
-        spawn="spawn",
-        taint="taint",
-        destroy="destroy",
-    )
+    typer_commands = dict(new="new", get="get", taint="taint")
 
     @classmethod
-    def dispose(
-        cls,
-        _context: typer.Context,
-        uuids: Annotated[Optional[List[str]], typer.Option("--uuid")] = None,
-        preview: bool = False,
-    ):
-        context: ContextDataDummy = _context.obj
-
-        if not preview:
-            CONSOLE.print("[grenn]Cleaning up tainted data.")
-            context.dummy_handler.dispose(set(uuids) if uuids is not None else None)
-            CONSOLE.print("[green]Done cleaning up.")
-            return
-
-        with context.dummy_handler.sessionmaker() as session:
-            users = session.scalars(context.dummy_handler.q_clean())
-            dumped = json.dumps(
-                [
-                    UserExtraSchema.model_validate(user).model_dump(
-                        mode="json", include={"uuid", "content"}
-                    )
-                    for user in users
-                ]
-            )
-
-        CONSOLE.print(Panel(Align.left(JSON(dumped))))
-
-    @classmethod
-    def restore(cls, _context: typer.Context):
-        context: ContextDataDummy = _context.obj
-
-        CONSOLE.print("[green]Restoring dummies...")
-        with context.dummy_handler.sessionmaker() as session:
-            DummyProviderYAML.merge(session)
-
-        context.dummy_handler.restore()
-        CONSOLE.print("[green]Done restoring dummies.")
-
-    @classmethod
-    def spawn(cls, _context: typer.Context, count: int = 1):
+    def new(cls, _context: typer.Context, count: FlagCount = 1):
+        """Spawn one (or more when ``--count`` is specified)."""
         context: ContextDataDummy = _context.obj
         handler = context.dummy_handler
         with handler.sessionmaker() as session:
@@ -292,7 +317,26 @@ class CmdDummy(BaseTyperizable):
                 DummyProvider(handler.config, session, use_existing=None)
 
     @classmethod
-    def taint(cls, _context: typer.Context, count: int = 1, uuid: Optional[str] = None):
+    def get(cls, _context: typer.Context, count: FlagCount = 1):
+        """Get one (or more when ``--count`` is specified). The intended use
+        of this is as a tool to debug any strangeness with pytest fixtures.
+        """
+        context: ContextDataDummy = _context.obj
+        handler = context.dummy_handler
+        with handler.sessionmaker() as session:
+            q_existing = select(User).order_by(func.random()).limit(count)
+            existing = session.scalars(q_existing)
+            for ee in existing:
+                DummyProvider(handler.config, session, use_existing=ee)
+
+    @classmethod
+    def taint(
+        cls,
+        _context: typer.Context,
+        count: FlagCount = 1,
+        uuid: FlagUUIDUserOptional = None,
+    ):
+        """Taint one (or more when ``--count`` is specified)."""
         context: ContextDataDummy = _context.obj
         handler = context.dummy_handler
         with handler.sessionmaker() as session:
@@ -319,10 +363,101 @@ class CmdDummy(BaseTyperizable):
             )
             session.commit()
 
-            CONSOLE.print(Panel(Align.left(JSON(dumped))))
+            if not context.quiet:
+                CONSOLE.print(Panel(Align.left(JSON(dumped))))
+
+
+class CmdDummy(BaseTyperizable):
+    """Manage Captura dummy data and create reports."""
+
+    typer_decorate = False
+    typer_check_verbage = False
+    typer_commands = dict(
+        preview="preview",
+        dispose="dispose",
+        apply="apply",
+        destroy="destroy",
+        initialize="initialize",
+    )
+    typer_children = dict(reports=CmdReport, users=CmdUser)
+
+    @classmethod
+    def dispose(
+        cls,
+        _context: typer.Context,
+        manifest: FlagManifest = None,
+        uuids: FlagUUIDUserListOptional = None,
+        preview: FlagManifestPreview = False,
+    ):
+        """Dispose of all tainted dummies. To clear the database, see
+        ``destroy``.
+        """
+        context: ContextDataDummy = _context.obj
+        context.register_manifest(manifest)
+        if preview:
+            context.preview_manifest()
+            return
+
+        CONSOLE.print("[grenn]Cleaning up tainted data.")
+        context.dummy_handler.dispose(set(uuids) if uuids is not None else None)
+        CONSOLE.print("[green]Done cleaning up.")
+        return
+
+        # with context.dummy_handler.sessionmaker() as session:
+        #     users = session.scalars(context.dummy_handler.q_clean())
+        #     dumped = json.dumps(
+        #         [
+        #             UserExtraSchema.model_validate(user).model_dump(
+        #                 mode="json", include={"uuid", "content"}
+        #             )
+        #             for user in users
+        #         ]
+        #     )
+        #
+        # CONSOLE.print(Panel(Align.left(JSON(dumped))))
+
+    @classmethod
+    def apply(
+        cls,
+        _context: typer.Context,
+        manifest: FlagManifest = None,
+        preview: FlagManifestPreview = False,
+    ):
+        """Create dummies to meet the criteria specified in config. To view the
+        config, see ``config``.
+        """
+
+        context: ContextDataDummy = _context.obj
+        context.register_manifest(manifest)
+        if preview:
+            context.preview_manifest()
+            return
+
+        from rich.progress import Progress
+
+        CONSOLE.print("[green]Restoring dummies...")
+        with context.dummy_handler.sessionmaker() as session:
+            DummyProviderYAML.merge(session)
+
+        start = datetime.now()
+        with Progress() as progress:
+            t = progress.add_task(description="Dummies Generated")
+            context.dummy_handler.restore(
+                callback=lambda dd, count, n: progress.update(
+                    t,
+                    advance=1,
+                    total=n,
+                )
+            )
+        end = datetime.now()
+
+        CONSOLE.print("[green]Done restoring dummies.")
+        CONSOLE.print(f"[green]Total time: {end - start}")
 
     @classmethod
     def initialize(cls, _context: typer.Context):
+        """Add the tables required for reports to the database."""
+
         context: ContextDataDummy = _context.obj
 
         with context.dummy_handler.sessionmaker() as session:
@@ -330,20 +465,37 @@ class CmdDummy(BaseTyperizable):
             DummyProviderYAML.merge(session)
 
     @classmethod
-    def destroy(cls, _context: typer.Context):
-        """Reset without destroying reports."""
+    def destroy(
+        cls,
+        _context: typer.Context,
+        destroy_reports: Annotated[
+            bool,
+            typer.Option(
+                "--destroy-reports",
+                help="When true, the reports table is emptied.",
+            ),
+        ] = False,
+    ):
+        """Empty all tables."""
 
         context: ContextDataDummy = _context.obj
 
         with context.dummy_handler.sessionmaker() as session:
-            users = session.scalars(select(User))
-            documents = session.scalars(select(Document))
-
-            for items in (users, documents):
-                for item in items:
-                    session.delete(item)
+            # NOTE: Using delete directly to avoid memory overhead. Relations
+            #       are configured on the database side and not on this side
+            #       using ``FOREIGN KEY ... ON DELETE CASCADE``.
+            session.execute(delete(User))
+            session.execute(delete(Document))
+            if destroy_reports:
+                session.execute(delete(Report))
 
             session.commit()
+
+    @classmethod
+    def preview(cls, _context: typer.Context, manifest_path: FlagManifest = None):
+        context: ContextDataDummy = _context.obj
+        context.register_manifest(manifest_path)
+        context.preview_manifest()
 
 
 def main():

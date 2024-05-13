@@ -46,16 +46,16 @@ handlers:
   #   stream: ext://sys.stdout
 loggers:
   root:
-    level: WARNING
+    level: INFO
     handlers:
       - stdout_dev
       - file_json
   # NOTE: DO NOT ADD HANDLERS HERE! HANDLED DATA IS PASSED UP THE TREE!
-  __main__:
-    level: DEBUG
+  # __main__:
+  #   level: DEBUG
   tests.conftest:
     level: DEBUG
-  tests.dummy:
+  dummy:
     level: DEBUG
   tests.test_controllers.test_access:
     level: DEBUG

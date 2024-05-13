@@ -28,6 +28,7 @@ from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
 from pydantic import BaseModel, ConfigDict, SecretStr, TypeAdapter, computed_field
 from rich.console import Console
+from rich.table import Table
 from typer.cli import Command
 from typing_extensions import Doc
 
@@ -303,7 +304,7 @@ def typerize(
     callback = ContextData.for_typer if callback is None else callback
     callback = callback if not exclude_callback else None
 
-    tt = typer.Typer()
+    tt = typer.Typer(help=cls.typer_help or cls.__doc__)
     if not exclude_callback:
         assert callback is not None
         tt.callback()(callback)
@@ -334,18 +335,16 @@ def typerize(
 
 
 class BaseTyperizable:
+    typer_help: ClassVar[str | None] = None
     typer_decorate: ClassVar[bool] = True
     typer_check_verbage: ClassVar[bool] = True
     typer_commands: ClassVar[Dict[str, str]] = dict()
     typer_children: ClassVar[Dict[str, Type["BaseTyperizable"]]] = dict()
 
+    def render_table(self) -> Table | None: ...
+
 
 class BaseRequests(BaseTyperizable):
-    typer_decorate: ClassVar[bool] = True
-    typer_check_verbage: ClassVar[bool] = True
-    typer_commands: ClassVar[Dict[str, str]] = dict()
-    typer_children: ClassVar[Dict[str, Type["BaseRequests"]]] = dict()  # type: ignore
-    # adapter: ClassVar[TypeAdapter]
 
     context: ContextData
     client: httpx.AsyncClient

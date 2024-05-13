@@ -60,14 +60,6 @@ class KindReport(str, enum.Enum):
 
 class Report(Base):
     __tablename__ = "reports"
-    # __tablediff__ = {
-    #     "count_users",
-    #     "count_collections",
-    #     "count_documents",
-    #     "count_events",
-    #     "count_grants",
-    #     "count_assignments",
-    # }
 
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
@@ -80,7 +72,6 @@ class Report(Base):
     children: Mapped[List["Report"]] = relationship(
         "Report",
         foreign_keys=uuid_parent,
-        cascade="delete, all",
     )
 
     timestamp: Mapped[int] = mapped_column(
@@ -106,7 +97,8 @@ class ReportGrant(Base):
 
     uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
     uuid_report: Mapped[MappedColumnUUID] = mapped_column(
-        ForeignKey("reports.uuid", ondelete="CASCADE")
+        ForeignKey("reports.uuid", ondelete="CASCADE"),
+        nullable=False,
     )
 
     report = relationship("Report")
@@ -451,7 +443,7 @@ class ReportUserSchema(ReportRich, ReportUserMinimalSchema):
 
 
 class ReportAggregateMinimalSchema(BaseReportSchema):
-    count_users: int
+    count_users: int | None
 
 
 class ReportAggregateSchema(ReportRich, BaseReportSchema):

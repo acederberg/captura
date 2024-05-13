@@ -163,7 +163,7 @@ push            = false
 # NOTE: Look at this later: https://docs.pytest.org/en/6.2.x/usage.html#dropping-to-pdb-python-debugger-on-failures
 [tool.pytest.ini_options]
 testpaths = "tests"
-addopts = "--ignore tests/junk --ignore-glob ./tests/test_controllers/test_delete*.py --ignore ./tests/test_controllers/test_upsert.py --last-failed --last-failed-no-failures all"
+addopts = "--ignore tests/junk --ignore-glob ./tests/test_controllers/test_delete.py --ignore ./tests/test_controllers/test_upsert.py --last-failed --last-failed-no-failures all"
 count = 10
 flakey_ignore = [
   "test_not_found_404",
@@ -171,21 +171,20 @@ flakey_ignore = [
 flakey_ignore_err = [
   "All filtered data is empty.",
 ]
-# flakey_ignore_count = 3
 
 
 # NOTE: Reference https://coverage.readthedocs.io/en/latest/config.html#sample-file
 [tool.coverage.run]
 branch = true
-include = ["./src/app/**/*.py", "./tests/**/*.py"]
-omit = []
+include = ["./src/app/**/*.py"]
+omit = ["./tests/**/*.py"]
 
 
 [tool.coverage.report]
 fail_under = 75
 format = "html"
-include = ["./src/app/**/*.py"] #, "./tests/**/*.py"]
-omit = []
+include = ["./src/app/**/*.py"]
+omit = ["./tests/**/*.py"]
 skip_covered = true
 skip_empty = true
 sort = "-cover" # NOTE: Sort from least to greatest coverage.

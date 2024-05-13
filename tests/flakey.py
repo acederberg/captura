@@ -14,7 +14,7 @@ from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 from app import util
 from app.schemas import mwargs
 
-FLAKEY_PATH = util.Path.tests("flakey.yaml")
+FLAKEY_PATH = util.Path.config("flakey.yaml")
 
 
 # NOTE: See `pytest_exception_interact` for details.
@@ -85,8 +85,9 @@ class Flakey(BaseYamlSettings):
     flakes: Annotated[List[Flake], Field(default_factory=list)]
 
     @classmethod
-    def yaml_ensure(cls):
-        if not os.path.exists(FLAKEY_PATH):
+    def yaml_ensure(cls, clear: bool = False):
+
+        if not os.path.exists(FLAKEY_PATH) or clear:
             with open(FLAKEY_PATH, "w") as file:
                 yaml.dump(dict(flakes=list()), file)
 

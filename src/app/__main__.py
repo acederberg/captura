@@ -18,12 +18,6 @@ from app.depends import session_maker
 
 from . import util
 
-# try:
-#     docker = importlib.import_module("docker")
-# except ImportError:
-#     docker = None
-
-
 CONSOLE = Console()
 FlagRun = Annotated[bool, typer.Option("--run", "--exit")]
 FlagDummies = Annotated[bool, typer.Option("--dummies")]

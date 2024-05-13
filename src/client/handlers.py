@@ -134,14 +134,12 @@ class BaseHandlerData(Generic[T_HandlerData]):
     def __init__(
         self,
         data: T_HandlerData | None = None,
-        expect_err: ErrDetail | None = None,
         output_config: OutputConfig | None = None,
         adapter: TypeAdapter[T_HandlerData] | None = None,
     ) -> None:
         self.data = data
         self.adapter = adapter
         self.output_config = output_config or mwargs(OutputConfig)
-        self.expect_err = expect_err
 
     def __rich__(self) -> Layout | Panel | str:
         render, _ = self.render()
