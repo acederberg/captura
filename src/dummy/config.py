@@ -40,9 +40,30 @@ class DummyGrantConfig(BaseHashable):
 
 
 class DummyUserConfig(BaseHashable):
-    minimum_id: Annotated[int, Field(default=50)]
-    minimum: Annotated[int, Field(default=125)]
-    maximum_uses: Annotated[int, Field(default=3)]
+    # minimum_id: Annotated[int, Field(default=50)]
+    minimum: Annotated[
+        int,
+        Field(
+            default=125,
+            description=(
+                "Minimum number of users that ``DummyHandler`` will maintain "
+                "in the database."
+            ),
+        ),
+    ]
+    maximum_uses: Annotated[
+        int | None,
+        Field(
+            default=100,
+            description=(
+                "Number of times that a dummy may be used before it is "
+                "disposed. Note that ``tainted`` dummies will still be "
+                "disposed of. Generally this number should be high if tests"
+                "are to complete quickly. When ``None``, dummies have no use "
+                "limit."
+            ),
+        ),
+    ]
 
 
 # NOTE: Inherits from :class:`BaseHashable` because this will be used to

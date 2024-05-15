@@ -134,6 +134,13 @@ class BaseEndpointTest(abc.ABC):
 
     @pytest.fixture(scope="function")
     def dummy(self, dummy) -> Generator[DummyProvider, None, None]:
+        dummy.user.deleted = False
+
+        session = dummy.session
+        session.add(dummy.user)
+        session.commit()
+        session.refresh(dummy.user)
+
         yield dummy
 
     @pytest_asyncio.fixture(scope="function")

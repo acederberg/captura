@@ -20,5 +20,5 @@ logs
 cov
 test-results.html
 .jsonl
-temp.sql
+temp.*
 flakey.yaml

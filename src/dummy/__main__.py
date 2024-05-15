@@ -12,30 +12,21 @@ from rich.align import Align
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
+from rich.table import Table
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 
 # --------------------------------------------------------------------------- #
 from app import User
-from app.auth import Token
-from app.config import Config
+from app.fields import KindObject
 from app.models import Base, Document
 from app.schemas import TimespanLimitParams, UserExtraSchema, mwargs
 from client.config import Output, OutputConfig
-from client.handlers import ConsoleHandler, HandlerData
+from client.handlers import HandlerData
 from client.requests.base import BaseTyperizable, typerize
 from dummy import DummyHandler, DummyProvider, DummyProviderYAML
 from dummy.config import ConfigSimulatus, DummyConfig
-from dummy.reports import (
-    Report,
-    ReportAggregateSchema,
-    ReportController,
-    ReportUserSchema,
-    ReportView,
-    pydantic_table,
-    report_controller,
-)
+from dummy.reports import Report, ReportController, ReportView, row2dict
 
 CONSOLE = Console()
 
@@ -60,6 +51,7 @@ FlagLimit = Annotated[
         help="Maximum number of reports to display.",
     ),
 ]
+FlagTags = Annotated[Optional[List[str]], typer.Option("--tag")]
 FlagUUIDUserOptional = Annotated[
     Optional[str],
     typer.Option(
@@ -117,7 +109,7 @@ class ContextDataDummy(BaseModel):
         engine = self.config.engine()
         sm = _sessionmaker(engine)
 
-        return DummyHandler(sm, self.config, user_uuids=list())
+        return DummyHandler(sm, self.config)
 
     @classmethod
     def for_typer(
@@ -155,7 +147,16 @@ class CmdReport(BaseTyperizable):
         delete="delete",
         all="all",
         amend="amend",
+        destroy="destroy",
     )
+
+    @classmethod
+    def destroy(cls, _context: typer.Context):
+        "Empty the reports table."
+        context: ContextDataDummy = _context.obj
+        with context.dummy_handler.sessionmaker() as session:
+            session.execute(delete(Report))
+            session.commit()
 
     @classmethod
     def delete(cls, _context: typer.Context, uuid_report: ArgUUIDReport):
@@ -179,10 +180,7 @@ class CmdReport(BaseTyperizable):
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
-                report = ReportView.read_report(
-                    ReportController(session),
-                    uuid_report,
-                )
+                report = ReportView.get_report(ReportController(session), uuid_report)
             except HTTPException as err:
                 print(err)
                 raise typer.Exit(1)
@@ -190,16 +188,23 @@ class CmdReport(BaseTyperizable):
         CONSOLE.print(report)
 
     @classmethod
-    def amend(cls, _context: typer.Context, uuid_report: ArgUUIDReport, note: FlagNote):
+    def amend(
+        cls,
+        _context: typer.Context,
+        uuid_report: ArgUUIDReport,
+        note: FlagNoteOptional = None,
+        tags: FlagTags = None,
+    ):
         """Update a note on a report."""
 
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
             try:
-                ReportView.update_report(
+                ReportView.put_report(
                     ReportController(session),
                     uuid_report,
                     note,
+                    tags,
                 )
             except HTTPException as err:
                 print(err)
@@ -213,26 +218,56 @@ class CmdReport(BaseTyperizable):
         before: FlagBefore = None,
         after: FlagAfter = None,
         limit: FlagLimit = 10,
+        kind_count: Annotated[
+            Optional[KindObject],
+            typer.Option("--kind-count", "-k", help="Order by this count"),
+        ] = None,
+        kind_count_desc: Annotated[
+            bool,
+            typer.Option(
+                "--kind-count-desc/--kind-count-asc",
+                help="Order direction of `--kind-count`.",
+            ),
+        ] = False,
+        exclude_children: bool = True,
+        tags: FlagTags = None,
     ):
         """View the latest reports."""
 
         context: ContextDataDummy = _context.obj
         tsp = mwargs(TimespanLimitParams, before=before, after=after, limit=limit)
         with context.dummy_handler.sessionmaker() as session:
-            reports = ReportView.get_reports(ReportController(session), tsp, uuid_user)
+            reports = ReportView.get_reports(
+                ReportController(session),
+                tsp,
+                uuid_user,
+                exclude_children=exclude_children,
+                kind_count=kind_count,
+                kind_count_desc=kind_count_desc,
+                tags=tags,
+            )
 
             if not reports:
                 CONSOLE.print("[green]No reports to show.")
                 raise typer.Exit(0)
 
-            tt = pydantic_table(reports)
-            CONSOLE.print(tt)
+            table = Table()
+            for count, item in enumerate(reports):
+                flattened = item.flatten()
+                if count == 0:
+                    tuple(map(table.add_column, flattened.keys()))
+
+                style = "blue" if count % 2 else "cyan"
+                table.add_row(*map(str, flattened.values()), style=style)
+
+            CONSOLE.print(table)
 
     @classmethod
     def all(
         cls,
         _context: typer.Context,
         note: FlagNoteOptional = None,
+        tags: FlagTags = None,
     ):
         note = note or "From `CmdSnapshot.all`."
         context: ContextDataDummy = _context.obj
@@ -243,6 +278,7 @@ class CmdReport(BaseTyperizable):
             uuid_report = ReportView.post_report_build_all(
                 ReportController(session),
                 note,
+                tags=tags,
             )
 
         if not context.quiet:
@@ -254,6 +290,7 @@ class CmdReport(BaseTyperizable):
         _context: typer.Context,
         uuid: FlagUUIDUserOptional = None,
         note: FlagNoteOptional = None,
+        tags: FlagTags = None,
     ):
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
@@ -276,6 +313,7 @@ class CmdReport(BaseTyperizable):
                 note=note or "From `CmdSnapshot.user`.",
                 uuid_user=user.uuid,
                 return_report=context.quiet,
+                tags=tags,
             )
 
         if not context.quiet:
@@ -286,6 +324,7 @@ class CmdReport(BaseTyperizable):
         cls,
         _context: typer.Context,
         note: FlagNoteOptional = None,
+        tags: FlagTags = None,
     ):
         context: ContextDataDummy = _context.obj
         with context.dummy_handler.sessionmaker() as session:
@@ -294,6 +333,7 @@ class CmdReport(BaseTyperizable):
                 note=note or "From `CmdSnapshot.aggregate`.",
                 uuid_user=None,
                 return_report=not context.quiet,
+                tags=tags,
             )
 
         if not context.quiet:
@@ -305,7 +345,7 @@ class CmdUser(BaseTyperizable):
 
     typer_decorate = False
     typer_check_verbage = False
-    typer_commands = dict(new="new", get="get", taint="taint")
+    typer_commands = dict(new="new", get="get", taint="taint", search="search")
 
     @classmethod
     def new(cls, _context: typer.Context, count: FlagCount = 1):
@@ -328,6 +368,26 @@ class CmdUser(BaseTyperizable):
             existing = session.scalars(q_existing)
             for ee in existing:
                 DummyProvider(handler.config, session, use_existing=ee)
+
+    @classmethod
+    def search(
+        cls,
+        _context: typer.Context,
+        limit: FlagLimit = 10,
+    ):
+        context: ContextDataDummy = _context.obj
+        q = DummyHandler.q_select(limit)
+        with context.dummy_handler.sessionmaker() as session:
+            table = Table()
+            for count, row in enumerate(session.execute(q).all()):
+                flattened = row2dict(row)
+                if count == 0:
+                    tuple(map(table.add_column, flattened.keys()))
+
+                style = "blue" if count % 2 else "cyan"
+                table.add_row(*map(str, flattened.values()), style=style)
+
+            CONSOLE.print(table)
 
     @classmethod
     def taint(
@@ -388,12 +448,19 @@ class CmdDummy(BaseTyperizable):
         manifest: FlagManifest = None,
         uuids: FlagUUIDUserListOptional = None,
         preview: FlagManifestPreview = False,
+        prune: int = 0,
     ):
         """Dispose of all tainted dummies. To clear the database, see
         ``destroy``.
         """
         context: ContextDataDummy = _context.obj
         context.register_manifest(manifest)
+        if prune:
+            if prune < 2:
+                CONSOLE.print("[red]Maximum uses too small to prune.")
+                raise typer.Exit()
+
+            context.config.dummy.users.maximum_uses = prune
         if preview:
             context.preview_manifest()
             return
@@ -496,6 +563,13 @@ class CmdDummy(BaseTyperizable):
         context: ContextDataDummy = _context.obj
         context.register_manifest(manifest_path)
         context.preview_manifest()
+
+
+# =========================================================================== #
+import logging
+import logging.config
+
+logging.config.dictConfig
 
 
 def main():

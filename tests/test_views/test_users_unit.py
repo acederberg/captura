@@ -90,6 +90,7 @@ class CommonUserTests(BaseEndpointTest):
         session = dummy.session
         (user_other,) = dummy.get_users(1, other=True)
         user_other.deleted = True
+        user_other.public = False
         session.add(user_other)
         session.commit()
 

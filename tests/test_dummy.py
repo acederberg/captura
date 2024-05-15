@@ -192,11 +192,7 @@ class TestDummyProvider:
         assert len(collections_other) == n_other
 
     def test_get_documents(self, dummy: DummyProvider, count: int):
-        kwargs = GetPrimaryKwargs(
-            retry=False,
-            allow_empty=True,
-        )
-        dummy.get_documents_retry_callback()
+        kwargs = GetPrimaryKwargs(allow_empty=False)
 
         for level in list(Level):
             documents = dummy.get_documents(10, kwargs, level=level, other=False)
@@ -214,7 +210,6 @@ class TestDummyProvider:
                     Document.uuid.in_(uuid_documents),
                 )
             )
-            # util.sql(dummy.session, q_grants)
             grants = tuple(dummy.session.scalars(q_grants))
             assert len(grants) == n
             assert all(gg.level.value >= level.value for gg in grants)

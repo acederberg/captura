@@ -197,7 +197,6 @@ class Create(WithDelete, Generic[T_Create]):
         # NOTE: By default, only create for those that hove no assocs.
         assoc_data, model_assoc = self.delete.split_assocs(data)
         uuid_target_create = assoc_data.uuid_target_none.copy()
-        CONSOLE_APP.print(assoc_data.render())
 
         if self.method != HTTPMethod.POST:
             raise HTTPException(405)
@@ -219,8 +218,6 @@ class Create(WithDelete, Generic[T_Create]):
             q_del, uuid_assoc_rm = assoc_data.q_del(model_assoc, True, rm_active=False)
             q_assocs = model_assoc.q_uuid(uuid_assoc_rm)
             assocs_rm = tuple(self.session.scalars(q_assocs))
-            # print(uuid_assoc_rm)
-            # util.sql(self.session, q_del)
 
             self.session.execute(q_del)
             event_rm = self.delete.create_event_assoc(data, assocs_rm)
@@ -261,6 +258,9 @@ class Create(WithDelete, Generic[T_Create]):
         data_final.event = event
         setattr(data_final.data, data_final.data._attr_name_assoc, assocs)
 
+        # ------------------------------------------------------------------- #
+        #
+        # NOTE: This snippet was helpful in debugging, do not delete.
         # import json
         # from pydantic import TypeAdapter
         # from rich.table import Table
@@ -278,7 +278,8 @@ class Create(WithDelete, Generic[T_Create]):
         #     str([[aa.uuid_collection, aa.uuid_document] for aa in assocs.values()]),
         # )
         # table.title = "From Create"
-        # CONSOLE_APP.print(table)
+        #
+        # ------------------------------------------------------------------- #
 
         return data_final, assoc_data
 

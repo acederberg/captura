@@ -20,7 +20,17 @@ from typing import (
 import httpx
 import yaml
 from cryptography.utils import cached_property
-from sqlalchemy import delete, desc, false, func, or_, select, true, update
+from sqlalchemy import (
+    delete,
+    desc,
+    false,
+    func,
+    literal_column,
+    or_,
+    select,
+    true,
+    update,
+)
 from sqlalchemy.orm import Session, session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 from typing_extensions import Doc
@@ -412,13 +422,15 @@ class BaseDummyProvider:
         deleted: bool | None = False,
         uuids: Set[str] | None = None,
         callback: Callable[[Any], Any] | None = None,
-        retry_callback: Callable[[], None] | None = None,
-        retry_count: int = 0,
+        retry_callback: Callable[[], Tuple[T_ResolvedPrimary, ...]] | None = None,
         retry_count_max: int = 1,
         retry: bool = True,
         allow_empty: bool = False,
     ) -> Tuple[T_ResolvedPrimary, ...]:
         Model = resolve_model(model)
+
+        if depr := tuple(map(lambda v: v is not None, (retry_count_max, retry))):
+            logger.warning(f"Retry args `{depr}` are depricated.")
 
         logger.debug("Getting data of kind `%s`.", Model.__tablename__)
         conds = list()
@@ -438,38 +450,22 @@ class BaseDummyProvider:
         # NOTE: Move assertions here to avoid preflight checks in tests.
         models = tuple(self.session.scalars(q))
         if not allow_empty and len(models) == 0:
-            logger.debug(
-                "Found empty results for kind `%s`.",
-                Model.__tablename__,
+
+            ReportController(self.session).create(
+                note=f"Failed to find `{Model.__tablename__}`. ",
+                user=self.user,
+                fn="Dummy.get_primary",
+                module="dummy.__init__",
+                tags=["pytest", "get_primary", "fail"]
             )
-            if retry and retry_count < retry_count_max:
-                self.randomize_primary(Model)
+            if retry_callback is not None:
+                return retry_callback()
 
-                if retry_callback is not None:
-                    retry_callback()
-
-                models = self.get_primary(
-                    Model,
-                    n,
-                    callback=callback,
-                    retry_callback=retry_callback,
-                    public=public,
-                    deleted=deleted,
-                    retry_count=retry_count + 1,
-                    retry=True,
-                )
-                return models
-            else:
-                ReportController(self.session).create_user(
-                    note=f"Failed to find `{Model.__tablename__}`. ", user=self.user
-                )
-
-                raise AssertionError(
-                    f"Could not find test data for `{self.user.uuid}` table "
-                    f"`{Model.__tablename__}` after `{retry_count}` "
-                    "randomizations. Offending query:\n"
-                    f"{util.sql_render(self.session, q)}"
-                )
+            raise AssertionError(
+                f"Could not find test data for `{self.user.uuid}` table "
+                f"`{Model.__tablename__}`. Offending query:\n"
+                f"{util.sql_render(self.session, q)}"
+            )
 
         if deleted is not None:
             logger.debug("Checking deleted.")
@@ -509,15 +505,6 @@ class BaseDummyProvider:
 
     # ----------------------------------------------------------------------- #
 
-    def get_documents_retry_callback(self):
-        logger.debug("Calling `get_collections_retry_callback`.")
-        self.randomize_grants()
-        # self.mk(
-        #     create_documents_unique=False,
-        #     create_grants=dict(exclude_grants_self=True),
-        # )
-        self.session.commit()  # NOTE: It might look stupid to do this but it works.
-
     def get_documents(
         self,
         n: int,
@@ -554,11 +541,60 @@ class BaseDummyProvider:
 
             return q
 
+        def get_documents_retry_callback():
+            if other:
+                raise ValueError("Not yet supported.")
+
+            pending_from = kwargs.get("pending_from")
+            if pending_from == PendingFrom.created:
+                assert n == 1
+                uuid = secrets.token_urlsafe(8)
+                document = Document(
+                    uuid=uuid,
+                    name=f"document-get-documents-retry-callback-{uuid}",
+                    description="Made because of failure of `get_primary`.",
+                )
+                self.session.add(document)
+                self.session.commit()
+                self.session.refresh(document)
+
+                self.session.add(
+                    Grant(
+                        uuid=secrets.token_urlsafe(8),
+                        id_document=document.id,
+                        id_user=self.user.id,
+                        level=level or Level.own,
+                        pending_from=PendingFrom.created,
+                        pending=kwargs.get("pending", False),
+                        deleted=kwargs.get("deleted", False),
+                    )
+                )
+                self.session.commit()  # NOTE: It might look stupid to do this but it works.
+                return (document,)
+
+            documents = self.get_documents(n, other=True)
+            grants = tuple(
+                Grant(
+                    uuid=secrets.token_urlsafe(8),
+                    id_document=document.id,
+                    id_user=self.user.id,
+                    level=level or Level.own,
+                    pending_from=PendingFrom.created,
+                    pending=kwargs.get("pending", False),
+                    deleted=kwargs.get("deleted", False),
+                )
+                for document in documents
+            )
+            self.session.add_all(grants)
+            self.session.commit()
+
+            return documents
+
         return self.get_primary(
             Document,
             n,
             callback=callback,
-            retry_callback=self.get_documents_retry_callback,
+            retry_callback=get_documents_retry_callback,
             **get_primary_kwargs,
         )
 
@@ -971,12 +1007,9 @@ class BaseDummyProvider:
     def dispose(self):
         logger.debug("Disposing of dummy data for user `%s`.", self.user.uuid)
         session = self.session
-        session.reset()
 
-        user = session.scalar(select(User).where(User.uuid == self.user.uuid))
-        if user is not None:
-            session.delete(user)
-            session.commit()
+        session.execute(delete(User).where(User.uuid==self.user.uuid))
+        session.commit()
 
 
 # =========================================================================== #
@@ -1111,13 +1144,34 @@ class DummyProvider(BaseDummyProvider):
     session: Session
     auth: Auth
 
+    @classmethod
+    def q_select_suitable(cls):
+        conds = [
+            func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
+            func.JSON_OVERLAPS(
+                '["YAML"]', func.JSON_VALUE(User.content, "$.tags")
+            )
+            != 1,
+            User.deleted == false(),
+        ]
+
+        if cls.dummy.users.maximum_uses:
+            conds.append(
+                func.JSON_LENGTH(User.content, "$.dummy.used_by")
+                < cls.dummy.users.maximum_uses
+            )
+
+        return select(User) .where(*conds) .order_by(func.random()) .limit(1)
+
+
+
     def __init__(
         self,
         config: ConfigSimulatus,
         session: Session,
         *,
         auth: Auth | None = None,
-        use_existing: List[str] | User | None = None,
+        use_existing: None | User = None,
         client_config_cls: Type | None = None,
     ):
         self.config = config
@@ -1128,28 +1182,9 @@ class DummyProvider(BaseDummyProvider):
         self.client_config_cls = client_config_cls or ClientConfig
 
         match use_existing:
-            case list() as dummy_user_uuids:
+            case None:
                 logger.info("Searching for existing dummy.")
-                q_user = (
-                    select(User)
-                    .where(
-                        # NOTE: Not too used already, not tainted.
-                        func.JSON_LENGTH(User.content, "$.dummy.used_by")
-                        < self.dummy.users.maximum_uses,
-                        func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
-                        User.uuid.in_(dummy_user_uuids),
-                        func.JSON_OVERLAPS(
-                            '["YAML"]', func.JSON_VALUE(User.content, "$.tags")
-                        )
-                        != 1,
-                        User.deleted == false(),
-                        User.id < self.dummy.users.minimum_id,
-                    )
-                    .order_by(func.random())
-                    .limit(1)
-                )
-                util.sql(session, q_user)
-                user = session.scalar(q_user)
+                user = session.scalar(self.q_select_suitable())
                 if user is None:
                     logger.warning("No suitable dummy found. Building a new dummy.")
                     self.user = self.mk_user()
@@ -1205,6 +1240,9 @@ class DummyProvider(BaseDummyProvider):
         q = select(or_(a, b)).where(User.uuid == self.user.uuid)
         return session.scalar(q)
 
+    # @classmethod
+    # def
+
 
 # --------------------------------------------------------------------------- #
 
@@ -1214,13 +1252,13 @@ class DummyHandler:
     config: ConfigSimulatus
     sessionmaker: _sessionmaker[Session]
     auth: Auth
-    user_uuids: List[str]
+    # user_uuids: List[str]
 
     def __init__(
         self,
         sessionmaker: _sessionmaker,
         config: ConfigSimulatus,
-        user_uuids: List[str],
+        # user_uuids: List[str],
         *,
         auth: Auth | None = None,
     ):
@@ -1228,9 +1266,9 @@ class DummyHandler:
         self.config = config
         self.sessionmaker = sessionmaker
         self.auth = auth or Auth.forPyTest(config)
-        self.user_uuids = user_uuids
+        # self.user_uuids = user_uuids
 
-    def q_clean(
+    def q_dispose(
         self,
         uuids: Set[str] | None = None,
         maximum_use_count: int | None = None,
@@ -1242,12 +1280,44 @@ class DummyHandler:
         if uuids is not None:
             conds.append(User.uuid.in_(uuids))
 
-        return select(User).where(
+        return delete(User).where(
             or_(
                 func.JSON_LENGTH(User.content, "$.dummy.used_by") >= maximum_use_count,
-                func.JSON_VALUE(User.content, "$.dummy.tainted"),
+                func.JSON_EXTRACT(User.content, "$.dummy.tainted") == true(),
             ),
             *conds,
+        )
+
+    @classmethod
+    def q_select(
+        cls,
+        limit: int = 10,
+    ):
+        return (
+            select(
+                User.id,
+                User.uuid,
+                func.JSON_VALUE(User.content, "$.dummy.used_by").label("used_by"),
+                func.JSON_LENGTH(User.content, "$.dummy.used_by").label(
+                    "used_by_count"
+                ),
+                func.JSON_VALUE(User.content, "$.dummy.tainted").label("tainted"),
+            )
+            .where(func.JSON_CONTAINS_PATH(User.content, "all", "$.dummy.tainted"))
+            .order_by(literal_column("used_by_count").desc())
+            .limit(limit)
+        )
+
+    # SELECT COUNT(uuid), JSON_LENGTH(users.content, "$.dummy.used_by") AS used_by_count FROM users GROUP BY used_by_count HAVING used_by_count >= 0;
+    @classmethod
+    def q_select_taintedness(cls, limit: int = 10):
+        used_by_count = func.JSON_LENGTH(User.content, "$.dummy.used_by")
+        used_by_count = used_by_count.label("used_by_count")
+        return (
+            select(func.count(User.uuid).label("count_users"), used_by_count)
+            .group_by(used_by_count)
+            .order_by(used_by_count)
+            .having(used_by_count >= 0)
         )
 
     def dispose(
@@ -1259,12 +1329,9 @@ class DummyHandler:
         note = note or "Generated by `dispose`."
         with self.sessionmaker() as session:
             logger.debug("Finding and removing tainted dummies.")
-            q_bad = self.q_clean(maximum_use_count=maximum_use_count, uuids=uuids)
-            for user in session.scalars(q_bad):
-                dd = DummyProvider(self.config, session, use_existing=user)
-                dd.dispose()
-
-            session.execute(delete(User).where(User.deleted == true()))
+            q_clean = self.q_dispose(maximum_use_count=maximum_use_count, uuids=uuids)
+            util.sql(session, q_clean)
+            session.execute(q_clean)
             session.commit()
 
     def create_report(
@@ -1295,10 +1362,5 @@ class DummyHandler:
                 dd = DummyProvider(self.config, session, auth=self.auth)
                 if callback is not None:
                     callback(dd, count, n_generate)
-                self.user_uuids.append(dd.user.uuid)
-
-            q_user_uuids = select(User.uuid)
-            user_uuids = list(session.scalars(q_user_uuids))
-            self.user_uuids = user_uuids
 
         return self

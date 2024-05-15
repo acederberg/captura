@@ -1,10 +1,12 @@
 # =========================================================================== #
 import json
-from typing import Annotated, Dict
+from typing import Annotated, ClassVar, Dict
 
+import pytest
 import typer
 from pydantic import BaseModel, Field, SecretStr
 from rich.console import Console
+from typing_extensions import Doc
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
@@ -41,6 +43,17 @@ class PytestSubConfig(BaseHashable):
     generate_dummies: Annotated[bool, Field(default=False)]
 
 
+# NOTE: Yes, I tried putting classvar inside the annotation. It didn't work.
+PytestConf = Annotated[
+    pytest.Config,
+    Doc(
+        "The actual pytest configuration. This is here to give access to "
+        "any necessary information about pytest without having to update "
+        "signatures."
+    ),
+]
+
+
 class PytestConfig(ConfigSimulatus):
     """Configuration with additional pytest section.
 
@@ -49,6 +62,7 @@ class PytestConfig(ConfigSimulatus):
     :attr tests: Test specific configuration.
     """
 
+    pytestconfig: ClassVar[PytestConf]
     model_config = YamlSettingsConfigDict(
         yaml_files=util.PATH_CONFIG_TEST_APP,
         yaml_reload=False,
@@ -60,6 +74,7 @@ class PytestConfig(ConfigSimulatus):
 
 
 class PytestClientConfig(ClientConfig):
+    pytestconfig: ClassVar[PytestConf]
     model_config = YamlSettingsConfigDict(
         yaml_files={
             util.PATH_CONFIG_TEST_CLIENT: YamlFileConfigDict(

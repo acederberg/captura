@@ -203,6 +203,7 @@ def pytest_configure(config: pytest.Config):
 
 
 def resolve_config_captura(pytestconfig: pytest.Config) -> PytestConfig:
+    PytestConfig.pytestconfig = pytestconfig
     if config_captura_path := pytestconfig.getoption("--config-captura"):
         logger.warning(
             "Loading app configuration from alternative path `%s`.",
@@ -228,6 +229,7 @@ def resolve_config_captura(pytestconfig: pytest.Config) -> PytestConfig:
 
 
 def resolve_config_legere(pytestconfig: pytest.Config):
+    PytestClientConfig.pytestconfig = pytestconfig
     if config_legere_path := pytestconfig.getoption("--config-legere"):
         logger.warning(
             "Loading client configuration from alternative path `%s`.",
@@ -432,7 +434,6 @@ def setup_cleanup(
 ):
     util.setup_logging(config.app.logging_configuration_path)
 
-    print(worker_id)
     if worker_id != "master":
         yield
         return
