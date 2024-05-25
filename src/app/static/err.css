@@ -1,0 +1,101 @@
+@import "nord.css";
+
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--nord0);
+  color: var(--nord7);
+  font-family: monospace;
+  font-size: xx-large;
+  text-align: center;
+}
+
+a {
+  color: var(--nord12);
+}
+h1 {
+  color: var(--nord4);
+}
+
+
+/* containers */
+
+.container {
+  min-height: 100%;
+  height: auto !important;
+  height: 100%;
+  /* background: var(--nord0); */
+}
+
+.container section {
+  min-height: 128px;
+  padding-bottom: 128px;
+  background: null;
+  /* background: var(--nord1); */
+}
+
+.container .info {
+  font-size: xxx-large;
+}
+
+.container .credits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+
+.container .credits {
+}
+
+.container .credits .credit {
+  display: block;
+  max-height: 256px;
+  max-width: 364px;
+  margin: 16px;
+  padding: 4px;
+}
+
+
+.container .credits .credit-svg img{
+  height: 128px;
+  width: 128px;
+}
+
+
+
+.container .spacer {
+  aspect-ratio: 960/300;
+  width: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+
+/* Waves */
+
+.wavey-nord0-nord1-nord7 {
+  background-image: url('./wavey/wavey-nord0-nord1-nord7.svg');
+}
+
+.wavey-nord1-nord0 {
+  background-image: url('./wavey/wavey-nord1-nord0.svg');
+}
+
+.wavey-nord0-nord1 {
+  background-image: url('./wavey/wavey-nord0-nord1.svg');
+}
+
+.wavey-nord1-nord7-nord10 {
+  background-image: url('./wavey/wavey-nord0-nord1-nord10.svg');
+}
+
+.wavey-nord1-nord7-nord10 {
+  background-image: url('./wavey/wavey-nord1-nord7-nord10.svg');
+}
+
+.wavey-nord0 {
+  background-image: url('./wavey/wavey-nord0.svg');
+}

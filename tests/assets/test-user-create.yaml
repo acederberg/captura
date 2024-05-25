@@ -1,0 +1,35 @@
+---
+name: "test create"
+description: "test user for test create."
+url_image: "http://github.com/acederberg"
+collections: 
+  - name: test create collection 1
+    description: test create user collection 1
+  - name: test create collection 2
+    description: test create user collection 2
+  - name: test create collection 3
+    description: test create user collection 3
+  - name: test create collection 4
+    description: test create user collection 4
+documents:
+  - name: test `POST /users` 1
+    description: test
+    content: |
+      # THIS IS A TEST
+
+      This is still a test.
+    format: md
+  - name: test `POST /users` 2
+    description: test
+    content: |
+      # THIS IS A TEST
+
+      This is still a test.
+    format: md
+  - name: test `POST /users` 3
+    description: test
+    content: |
+      # THIS IS A TEST
+
+      This is still a test.
+    format: md

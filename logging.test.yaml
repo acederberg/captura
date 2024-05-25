@@ -1,0 +1,62 @@
+
+version: 1
+formatters:
+  human:
+    format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+  json:
+    (): app.logger.JSONFormatter
+    fmt_keys: 
+      - levelname
+      - message
+      - timestamp
+      - name
+      - module
+      - funcName
+      - lineno
+      - threadName
+handlers:
+  stdout_dev:
+    class: rich.logging.RichHandler
+    level: DEBUG
+  stdout:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: human
+    stream: ext://sys.stdout
+  stderr:
+    class: logging.StreamHandler
+    level: WARNING
+    formatter: human
+    stream: ext://sys.stderr
+  file_json:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: logs/tests.jsonl
+    maxBytes: 10000000
+    backupCount: 5
+  # queue_handler:
+  #   class: logging.handlers.QueueHandler
+  #   # handlers:
+  #   # - stdout
+  #   # - file_json
+  #   respect_handler_level: true
+  # stdout:
+  #   formatter: human
+  #   stream: ext://sys.stdout
+loggers:
+  root:
+    level: WARNING
+    handlers:
+      - stdout_dev
+      - file_json
+  # NOTE: DO NOT ADD HANDLERS HERE! HANDLED DATA IS PASSED UP THE TREE!
+  # __main__:
+  #   level: DEBUG
+  # tests.conftest:
+  #   level: DEBUG
+  # dummy:
+  #   level: DEBUG
+  # tests.test_controllers.test_access:
+  #   level: DEBUG
+

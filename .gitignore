@@ -8,3 +8,17 @@ __pycache__
 config.yaml
 config.test.yaml
 .venv
+temp
+*.pem
+client-config.yaml
+client-config.test.yaml
+configs
+.venv-local
+batch
+logs
+.coverage
+cov
+test-results.html
+.jsonl
+temp.*
+flakey.yaml

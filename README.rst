@@ -37,6 +37,97 @@ The database should have, as of now, only four tables:
 - **DocumentHistories**. A log of updates to a document.
 
 
+Granting Process
+===============================================================================
+
+The following is the specification for how grants ought to work.
+
+Grants can be initiated two ways: by owners inviting others and acceptance of
+invitations by these others, or by non-owners requesting a level of access and
+an owner accepting their request.
+
+Owner Grants Access and Grantee Accepts.
+-------------------------------------------------------------------------------
+
+
+Document owner invites others. If pending grants exist, the invitations (in the
+form of events) are not recreated. If the grants are deleted and pending
+deletion, then adding the `force` parameter will be necessary.
+
+.. code:: sh
+
+   # Or equivilently
+   # POST /grants/documents/<uuid_document_k>?uuid_user=<uuid_user>
+   client --profile granter \
+      grant documents create \
+      --uuid-user $UUID_USER \
+      $UUID_DOCUMENT
+
+
+A user can read their own invitations like
+
+
+.. code:: sh
+
+   # GET /grants/users/<uuid_user>?pending=true
+   client --profile grantee \
+      grants users read \
+      --pending $UUID_USER
+
+
+
+Either of these will return an array of pending grants. A user can accept an
+invitation by sending a patch with grant uuids obtained from the above
+requests:
+
+.. code:: sh
+   export UUID_GRANT="..."
+
+   # PATCH /grants/users/<uuid_user>/accept?uuid_grant=<uuid_grant>
+   client --profile grantee \
+      grants users accept \
+      --uuid-grant $UUID_GRANT \
+      $UUID_USER
+
+
+Grantee Requests and Owner Requests
+-------------------------------------------------------------------------------
+
+A user can ask for a grant to many (only public) documents like
+
+.. code:: sh
+   export UUID_USER="000-000-000" UUID_DOCUMENT="aaa-aaa-aaa"
+
+   client --profile grantee \
+      grants users \
+      --uuid-document $UUID_DOCUMENT \
+      $UUID_USER
+
+
+Note that `UUID_USER` must be the uuid of the grantee. Only admins can request
+grants for users besides their own. The document holder can then view their
+pending grants:
+
+.. code:: sh
+
+   # GET /grants/documents/<uuid_document>?pending=true
+   client --profile granter \
+      grants documents read \
+      --pending $UUID_DOCUMENT
+
+which will return the pending grants. From this a granter can obtain grant
+uuids and accept it:
+
+.. code:: sh
+
+   export UUID_GRANT="000-000-000"
+
+   # PATCH /grants/documents/<uuid_document>/accept?uuid_grant=>uuid_grant>
+   client --profile grantee \
+      grants documents accept $UUID_GRANT
+
+
+
 API Endpoint Rubric
 ===============================================================================
 

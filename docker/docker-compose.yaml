@@ -1,29 +1,31 @@
 ---
-version: '3.9'
+# version: '3.9'
 services:
   server:
     build:
       context: '.'
       dockerfile: './dockerfile'
+    container_name: captura-server
     ports: 
       - target: 8080
         published: 8080
     networks:
-      documents: {}
+      captura: {}
     tty: true
     volumes:
       - '..:/app'
   db:
     image: mysql:8
+    container_name: captura-db
     environment:
       MYSQL_RANDOM_ROOT_PASSWORD: 1
       MYSQL_DATABASE: documents
       MYSQL_USER: documents
       MYSQL_PASSWORD: abcd1234
     networks:
-      documents: {}
+      captura: {}
 networks:
-  documents:
+  captura:
     driver: bridge
 
 

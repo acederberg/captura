@@ -1,0 +1,15 @@
+---
+- timestamp: 0
+  api_version: 0.0.0
+  api_origin: Assets
+  detail: |
+    This is a placeholder event so that dummies have something to find in 
+    `TestAccessEvent`.
+  timestamp: 1710252310
+  deleted: False
+  uuid_user: 000-000-000
+  uuid_obj: 000-000-000
+  kind_obj: event
+  kind: create
+
+

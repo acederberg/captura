@@ -1,528 +1,587 @@
-from typing import Any, ClassVar, Dict, List, Self, Type
+# =========================================================================== #
+import secrets
+from typing import Any, Dict, List, Set, Tuple
 
 import pytest
-import yaml
-from app import util
+from sqlalchemy import func, literal_column, select
+from sqlalchemy.orm import Session
+
+# --------------------------------------------------------------------------- #
+from app import __version__, util
+from app.auth import Auth
+from app.fields import Level, PendingFrom
 from app.models import (
-    AssocCollectionDocument,
-    AssocUserDocument,
-    Base,
+    Assignment,
     Collection,
     Document,
-    Edit,
-    User,
+    Event,
+    Grant,
+    KindEvent,
+    KindObject,
+    KindSelect,
+    Resolvable,
+    resolve_model,
 )
-from sqlalchemy import delete, func, select
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, make_transient, sessionmaker
+from dummy import DummyHandler, DummyProvider
+from tests.check import Check
+from tests.conftest import COUNT
 
 logger = util.get_logger(__name__)
 
 
-class ModelTestMeta(type):
-    __children__: ClassVar[Dict[str, "BaseModelTest"]] = dict()
+def test_flattened():
+    def make_uuid(char: str) -> str:
+        return "-".join(char * 3 for _ in range(3))
 
-    def __new__(cls, name, bases, namespace):
-        if name == "BaseModelTest":
-            return super().__new__(cls, name, bases, namespace)
+    def make(char: str, children: List[Event] = list()) -> Event:
+        uuid = make_uuid(char)
+        return Event(uuid=uuid, **common, children=children)
 
-        # M, since it is needed to determine the default dummies file name.
-        if (M := namespace.get("M")) is None:
-            raise ValueError("`M` must be defined.")
-        elif not issubclass(M, Base):
-            raise ValueError(f"`{name}.M={M}` must be a subclass of `{Base}`.")
+    common = dict(
+        kind=KindEvent.create,
+        kind_obj=KindObject.event,
+        uuid_obj="666-666-666",
+        uuid_user="test-flattened",
+        detail="TEST FLATTENED",
+        api_version=__version__,
+        api_origin="TestEvent",
+    )
 
-        if (dummies_file := namespace.get("dummies_file")) is None:
-            dummies_file = util.Path.test_assets(f"{M.__tablename__}.yaml")
-            namespace["dummies_file"] = dummies_file
+    # Traversing the below tree depth first should reorder the letters
+    B = make("B", [make("C"), make("D"), make("E", [make("F"), make("G")])])
+    H = make(
+        "H",
+        [make("I", [make("J"), make("K", [make("L"), make("M", [make("N")])])])],
+    )
+    A = make("A", [B, H])
 
-        # Dummies. Cannot declare dummies directly.
-        if namespace.get("dummies") is not None:
-            raise ValueError("Cannot specify dummies explicitly.")
+    nodechars = "ABCDEFGHIJKLMN"
+    uuids = {
+        node.uuid: make_uuid(nodechars[index])
+        for index, node in enumerate(A.flattened())
+    }
 
-        with open(dummies_file, "r") as file:
-            namespace["dummies"] = (dummies := yaml.safe_load(file))
+    assert list(uuids) == list(uuids.values())
 
-        _msg = f"`{name}.dummies_file={dummies_file}`"
-        if not isinstance(dummies, list):
-            raise ValueError(f"{_msg} must deserialize to a list.")
-        elif len(
-            bad := tuple(
-                index
-                for index, item in enumerate(dummies)
-                if not isinstance(item, dict)
+
+@pytest.mark.parametrize("count", list(range(COUNT)))
+class TestRelationships:
+    """It is important to note that the primary purpose of configuring the
+    object relationships is to ensure correct deletion cascading, thus why
+    all relationships load data that might be pending deletion, etc.
+
+    When this is not configured properly, it is easy to get strange and hard
+    to debug sqlalchemy errors as a result.
+
+    Please see
+
+    .. code:: txt
+
+        https://docs.sqlalchemy.org/en/20/orm/cascades.html#cascade-delete-many-to-many
+
+    """
+
+    # @pytest.mark.parametrize(
+    #     "dummy_disposable, count",
+    #     [(None, k) for k in range(3)],
+    #     indirect=["dummy_disposable"],
+    # )
+    def test_collection_deletion(self, dummy_disposable: DummyProvider, count: int):
+        dummy = dummy_disposable
+        collections, session = dummy.get_collections(15), dummy.session
+        msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
+
+        n_empty_assignments = 0
+        for collection in collections:
+            q_assignment = collection.q_select_assignment(exclude_deleted=False)
+            assignments = session.scalars(q_assignment)
+            uuid_assignment, uuid_document = zip(
+                *((item.uuid, item.uuid_document) for item in assignments)
             )
-        ):
-            raise ValueError(f"{_msg} has bad entries in positions `{bad}`.")
 
-        T = super().__new__(cls, name, bases, namespace)
-        cls.__children__[T.M.__tablename__] = T  # type: ignore
-        return T
+            if not (n_assignment := len(uuid_assignment)):
+                n_empty_assignments += 1
 
-
-class BaseModelTest(metaclass=ModelTestMeta):
-    # NOTE: This will matter less when the dummy data project is copmlete.
-    M: ClassVar[Type[Base]]
-    dummies_file: ClassVar[str]
-    dummies: ClassVar[List[Dict[str, Any]]]
-
-    @classmethod
-    def preload(cls, item):
-        return item
-
-    @classmethod
-    def clean(cls, session: Session) -> None:
-        logger.debug("Cleaning %s.", cls.M.__tablename__)
-        for item in session.execute(select(cls.M)).scalars():
-            session.delete(item)
-        session.commit()
-
-    @classmethod
-    def load(cls, session: Session, start: int = 0, stop: int | None = None) -> None:
-        logger.debug("Adding %s dummies from `%s`.", cls.M, cls.dummies_file)
-        session.add_all(
-            list(cls.preload(cls.M(**item)) for item in cls.dummies[start:stop])
-        )
-        session.commit()
-
-
-# NOTE: Test suites must be defined in appropraite order to ensure that
-#       integrity constraints allow data to be inserted successfully.
-class TestUser(BaseModelTest):
-    M = User
-
-    @classmethod
-    def create_user(cls, session: Session, id: int = 1) -> None:
-        """Recreate the user with id :param:`id` and regenerate any associated
-        objects for which deletion cascading should apply.
-
-
-        Documents should not cascade deletion except for documents that user
-        is the sole owner of, as stated in **section B.4.a.1**, but the plan
-        is to enforce this at the API level. The same applies for the
-        :attr:`Edit` objects associated with the document. This
-        implies that only the :class:`Collection` objects associated with the
-        user must be regenerated along with the user.
-
-        :param session:
-        :param id:
-        """
-        logger.debug("Adding user with id `%s`.", id)
-        raw = next((m for m in cls.dummies if m["id"] == 1), None)
-        if raw is None:
-            raise ValueError(f"Could not find user with id `{id}`.")
-        session.add(cls.M(**raw))
-        session.commit()
-
-    @classmethod
-    def get_user(cls, session: Session, id: int = 1) -> User:
-        """Get the :class:`User` with ``User.id`` equal to :param:`id` in the
-        provided :param:`session`.
-
-        :param session: database session.
-        :param id: `User.id` to match against.
-        :raises AssertionError: When the user with the specified :param:`id`
-            does not exist.
-        :returns: The user.
-        """
-        user = session.execute(select(User).where(User.id == id)).scalar()
-        assert user is not None, f"Expected user with id `{id}`."
-        return user
-
-    def make_transient(self, session: Session, user: User):
-        """Make the user object and its mapped objects transient.
-
-        This is useful for reinstantiating :class:`User` objects and their
-        child objects after deletion with `session.delete`.
-
-        :param session:
-        :param user:
-        :returns: None
-        """
-        make_transient(user)
-        for collection in user.collections.values():
-            make_transient(collection)
-        for edit in user.edits:
-            make_transient(edit)
-
-    def test_collections_relationship(self, sessionmaker: sessionmaker[Session]):
-        logger.debug("Initializing collections.")
-        with sessionmaker() as session:
-            q_collections = select(Collection)
-            collections: List[Collection] = list(
-                session.execute(q_collections).scalars()
-            )
-            assert len(collections), "Collections not found."
-
-            for collection in collections:
-                collection.id_user = None  # type: ignore
-
-            session.add_all(collections)
+            # --------------------------------------------------------------- #
+            dummy.session.delete(collection)
             session.commit()
 
-        logger.debug("Verifying that collections have no owner.")
-        with sessionmaker() as session:
-            # Check that collections were properly initialized.
-            collections = list(session.execute(q_collections).scalars())
-            assert len(collections), "Collections not found."
-            assert not len(
-                list(
-                    dict(id=cc.id, id_user=cc.id_user)
-                    for cc in collections
-                    if cc.id_user is not None
+            # NOTE: Assignments should have been deleted.
+            q_assignment_remaining = select(func.count(Assignment.uuid)).where(
+                Assignment.uuid.in_(uuid_assignment)
+            )
+            n_assignment_remaining = session.scalar(q_assignment_remaining)
+
+            if n_assignment_remaining:
+                raise AssertionError(
+                    msg_fmt.format(n_assignment_remaining, n_assignment, "assignments")
                 )
-            ), "Collections should not have an owner at this point."
 
-            # Check that user corresponds correctly.
-            user = self.get_user(session)
-            assert user is not None, "User with id `1` should exist."
-            assert not len(user.collections), "User should have no collections."
+            # NOTE: No documents should have been deleted.
+            q_documents_remaining = select(func.count(Document.uuid)).where(
+                Document.uuid.in_(uuid_document)
+            )
+            n_documents_remaining = session.scalar(q_documents_remaining)
+            assert n_documents_remaining is not None
+            print(uuid_document)
 
-            # Assign collections
-            logger.debug("Assigning collections to user with id `1`.")
-            user.collections = {cc.name: cc for cc in collections}
-            session.commit()
+            if n_documents_remaining != n_assignment:
+                raise AssertionError(
+                    f"`{n_assignment - n_documents_remaining}` of `{n_assignment}` "
+                    "`documents` were deleted. No `documents` should have "
+                    "been deleted."
+                )
 
-        logger.debug("Verifying reassignment.")
-        with sessionmaker() as session:
-            # Check that the ids were reassigned.
-            _ = select(Collection)
-            collections = list(session.execute(_).scalars())
-            assert len(collections), "Collections not found."
-            assert not len(
-                list(
-                    dict(id=cc.id, id_user=cc.id_user)
-                    for cc in collections
-                    if cc.id_user != 1
+        if n_empty_assignments:
+            raise AssertionError("All collections have empty assignments.")
+
+    # @pytest.mark.parametrize(
+    #     "dummy_disposable, count",
+    #     [(None, k) for k in range(3)],
+    #     indirect=["dummy_disposable"],
+    # )
+    def test_document_deletion(self, dummy_disposable: DummyProvider, count: int):
+        dummy = dummy_disposable
+        documents, session = dummy.get_documents(level=Level.view, n=15), dummy.session
+        uuid_column = literal_column("uuid")
+        msg_fmt = "`{}` of `{}` `{}` were not deleted. Check ORM relationships"
+        msg_fmt += " and queries."
+
+        n_empty_grants, n_empty_assignments = 0, 0
+        for document in documents:
+            # NOTE: Get uuids of of users, edits, and collections before
+            #       deletion.
+            q_grant_uuids = document.q_select_grants(
+                exclude_deleted=False,
+                exclude_pending=False,
+            )
+            q_grant_uuids = select(uuid_column).select_from(q_grant_uuids.subquery())
+
+            if not (uuid_grant := set(session.scalars(q_grant_uuids))):
+                n_empty_grants += 1
+                continue
+
+            q_assignment = document.q_select_assignment(
+                exclude_deleted=False,
+            )
+            assignments = tuple(session.scalars(q_assignment))
+            if not assignments:
+                n_empty_assignments += 1
+                continue
+
+            uuid_assignment, uuid_collection = (
+                set(uuids)
+                for uuids in zip(
+                    *((item.uuid, item.uuid_collection) for item in assignments)
                 )
             )
+            q_cols_remaining = select(func.count(Collection.uuid)).where(
+                Collection.uuid.in_(uuid_collection)
+            )
 
-        logger.debug("Verifiying deletion cascading.")
-        with sessionmaker() as session:
-            # NOTE: It is important to get a new user for this session. Things
-            #       become strange when this is not done, for instance
-            #       ``user.edits`` has null key values after deletion.
-            user = self.get_user(session)
-            session.delete(user)
+            # NOTE: Because there are not dummies.
+            # q_edit_uuids = select(Edit.uuid).where(Edit.id_document == document.id)
+            # uuid_edit = set(session.scalars(q_edit_uuids))
+
+            # --------------------------------------------------------------- #
+            dummy.session.delete(document)
             session.commit()
 
-            count = session.execute(
-                select(func.count()).select_from(Collection)
-            ).scalar()
-            assert count == 0
+            # NOTE: Count the number of remaining associated objects.
+            q_grant_remaining = select(func.count(Grant.uuid)).where(
+                Grant.uuid.in_(uuid_grant)
+            )
+            if n := session.scalar(q_grant_remaining):
+                msg = msg_fmt.format(n, len(uuid_grant), "grants")
+                raise AssertionError(msg)
 
-            # NOTE: Do not try to regenerate ownership at the end of these
-            #       tests. Most of the tests start by nullifying ownership
-            #       anyway. Must regenerate all test collections.
-            logger.debug("Regenerating user.")
-            self.create_user(session, 1)  # changes are commited
-            session.commit()
+            q_assignment_remaining = select(func.count(Assignment.uuid)).where(
+                Assignment.uuid.in_(uuid_assignment)
+            )
+            if m := session.scalar(q_assignment_remaining):
+                msg = msg_fmt.format(m, len(uuid_grant), "assignments")
+                raise AssertionError(msg)
 
-            TestCollection.load(session)
+                # q_edit_remaining = select(func.count(Edit.uuid)).where(
+                # Edit.uuid.in_(uuid_edit)
+                # )
+                # if p := session.scalar(q_edit_remaining):
+                #     msg = msg_fmt.format(p, len(uuid_edit), "edits")
+                raise AssertionError(msg)
 
-        logger.debug("Verifying regeneration.")
-        with sessionmaker() as session:
-            count = session.execute(select(func.count()).where(User.id == 1)).scalar()
-            assert count is not None
-            assert count > 0, "User with id `1` not regenerated."
+            # NOTE: Verify that documents were not deleted.
+            q_cols_remaining = select(func.count(Collection.uuid)).where(
+                Collection.uuid.in_(uuid_collection)
+            )
+            n_cols_remaining = session.scalar(q_cols_remaining)
+            if n_cols_remaining != (n_cols := len(uuid_collection)):
+                raise AssertionError(
+                    f"`{n_cols_remaining}` of `{n_cols}` collections were "
+                    "deleted. No collections should have been deleted."
+                )
 
-            count = session.execute(
-                select(func.count()).select_from(Collection)
-            ).scalar()
-            assert count is not None
-            assert count > 0, f"{collections = }"  # type: ignore
+        if n_empty_grants == len(documents):
+            raise AssertionError("All documents have empty grants.")
 
-    def test_documents_relationship(
-        self,
-        sessionmaker: sessionmaker[Session],
+        if n_empty_assignments == len(documents):
+            raise AssertionError("All documents have empty assignments.")
+
+    def test_user_deletion_documents(
+        self, dummy_handler: DummyHandler, session: Session, count: int
     ):
-        with sessionmaker() as session:
-            # NOTE: Initially there should be no documents for the user. Clear
-            #       documents for this user out directly through the
-            #       association table.
-            logger.debug(
-                "Clearing existing associations for user sby modifying the "
-                "association table directly."
+        n_empty_grants = 0
+        for _ in range(5):
+            dummy = DummyProvider(
+                dummy_handler.config, session, use_existing=dummy_handler.user_uuids
             )
-            assocs: List[AssocUserDocument] = list(
-                session.execute(
-                    select(AssocUserDocument).where(AssocUserDocument.id_user == 1)
-                ).scalars()
+            user = dummy.user
+            q_grants = user.q_select_grants(exclude_deleted=False)
+            grants = dummy.session.scalars(q_grants)
+
+            uuid_grant, uuid_document = zip(
+                *((item.uuid, item.uuid_document) for item in grants)
             )
-            for assoc in assocs:
-                session.delete(assoc)
-            session.commit()
 
-            # NOTE: Verify that the user has no associations after deleting
-            #       from the association table.
-            logger.debug("Verifying that associations were cleared.")
-            user: User = self.get_user(session)
-            assert not user.documents, "Expected no documents for users."
+            if n_empty_grants:
+                n_empty_grants += 1
 
-            # NOTE: Reassign these documents using the orm.
-            logger.debug("Reassigning documents to user 1 using the ORM.")
-            documents: List[Document] = list(
-                session.execute(
-                    q_docs := select(Document).where(Document.id.between(1, 3))
-                ).scalars()
+            q_uniq = user.q_select_documents(
+                uuid_document,
+                exclude_deleted=False,
+                n_owners=1,
+                n_owners_levelsets=True,
             )
-            assert len(documents), "Expected to find some documents."
-            user.documents = {dd.name: dd for dd in documents}
-            session.commit()
+            uuids_docs_uniq = set(item.uuid for item in session.scalars(q_uniq))
+            assert uuids_docs_uniq.issubset(uuid_document)
 
-        # New session just to be safe
-        with sessionmaker() as session:
-            logger.debug("Verifying that documents were reassigned.")
-            user = self.get_user(session)
-            assert user.documents, "Expected documents to be assigned to user."
-
-            # NOTE: Deletion cannot cascade as it would require adding the
-            #       access level to the join condition. Deletions of this sort
-            #       require additional database operations (verifying that
-            #       the deleted user is the sole owner) and therefore the logic
-            #       will be placed in API endpoints.
-            #
-            # NOTE: Required for **section B.4.a.1** for the above reasons.
-            #
-            logger.debug("Deleting user 1.")
             session.delete(user)
             session.commit()
 
-            logger.debug("Checking that documents were not deleted.")
-            documents = list(session.execute(q_docs).scalars())
-            assert documents
-
-            self.create_user(session)
-            TestCollection.load(session, stop=len(user.collections))
-
-    def test_edits_relationship(self, sessionmaker: sessionmaker[Session]):
-        with sessionmaker() as session:
-            # NOTE: Initialize edits by nullifying the :class:`Edit`
-            #       objects' `user_id` field. Verify that this is consistent
-            #       with the user object.
-            logger.debug("Initializing edits (no ownership).")
-            edits: List[Edit] = list(
-                session.execute(
-                    select(Edit).where(Edit.id_user == 1)
-                ).scalars()
+            # NOTE: Verify that grants have been deleted.
+            q_grant_remaining = select(func.count(Grant.uuid)).where(
+                Grant.uuid.in_(uuid_grant)
             )
-            for edit in edits:
-                edit.id_user = None
-            session.add_all(edits)
-            session.commit()
+            n_grant_remaining = session.scalar(q_grant_remaining)
+            assert not n_grant_remaining
 
-            user = self.get_user(session)
-            assert not user.edits, "Expected no edits."
+            # NOTE: Verify that only orphan documents have been deleted.
+            # q_docs_remaining = select(func.count(Document.uuid)).where(
+            #     Document.uuid.in_(uuids_docs_uniq)
+            # )
+            # n_docs_remaining = session.scalar(q_docs_remaining)
+            # assert n_docs_remaining == 0
 
-            # NOTE: Assign edits and commit.
-            edits = list(
-                session.execute(
-                    q_edits := select(Edit).where(
-                        Edit.id.between(1, 5)
-                    )
-                ).scalars()
-            )
-            assert len(edits), "Expected edits."
-            user.edits = edits
-            session.commit()
+            dummy.dispose()
 
-        # New session for good measure
-        with sessionmaker() as session:
-            # NOTE: Verify that the selected edits were asssigned. The user
-            #       should be deleted, but id on the edits should havd id_user
-            #       nullified.
-            #
-            # NOTE: See **section B.4.a.1**. The logic required to determine
-            #       if a user is a sole owner of a document will happen inside
-            #       of api endpoints instead of at the level the ORM. Therefore
-            #       deletion should not be cascaded.
-            #
-            user = self.get_user(session)
-            assert len(user.edits) == len(edits)
-            session.delete(user)
-            session.commit()
-
-            edits = list(session.execute(q_edits).scalars())
-            assert len(edits), "Edits should still exist."
-
-            self.create_user(session)
-            TestCollection.load(session, stop=len(user.collections))
-
-
-class TestCollection(BaseModelTest):
-    M = Collection
-
-    def get_collection(self, session, id=1) -> Collection:
-        m = session.execute(select(Collection).where(Collection.id == id)).scalar()
-        if m is None:
-            raise AssertionError("Expected collection with id=`{id}`.")
-        return m
-
-    # def test_user_optional(self, sessionmaker: sessionmaker[Session]):
-    #     assert print(id(sessionmaker))
-    #     ...
-
-    def test_user_relationship(self, sessionmaker: sessionmaker[Session]):
-        with sessionmaker() as session:
-            collection = self.get_collection(session)
-            user_initial = collection.user
-            user_final = TestUser.get_user(
+    def test_user_deletion_collections(
+        self, dummy_handler: DummyHandler, session: Session, count: int
+    ):
+        n_no_collections = 0
+        for _ in range(0, 3):
+            dummy = DummyProvider(
+                dummy_handler.config,
                 session,
-                1 + (collection.user.id % 2),
+                use_existing=dummy_handler.user_uuids,
             )
-            user_initial_id, user_final_id = user_initial.id, user_final.id
-            assert user_final_id != user_initial_id
-
-            collection.user = user_final
-            session.commit()
-
-        with sessionmaker() as session:
-            collection = self.get_collection(session)
-            user_initial = TestUser.get_user(session, user_initial_id)
-            user_final = TestUser.get_user(session, user_final_id)
-            assert collection.name not in user_initial.collections
-            assert collection.name in user_final.collections
-            assert collection.id_user == user_final.id
-
-            collection.user = user_initial
-            session.add(collection)
-            session.commit()
-
-    def test_documents_relationship(self, sessionmaker: sessionmaker[Session]):
-        with sessionmaker() as session:
-            logger.debug("Manually deassigning documents from collection 1.")
-            assocs = list(
-                session.execute(
-                    select(AssocCollectionDocument).where(
-                        AssocCollectionDocument.id_collection == 1
-                    )
-                ).scalars()
+            user = dummy.user
+            uuid_collections = set(
+                session.scalars(
+                    select(Collection.uuid).where(Collection.id_user == user.id)
+                )
             )
-            for assoc in assocs:
-                assoc.id_collection = None
-            session.add_all(assocs)
+            if not len(uuid_collections):
+                n_no_collections += 1
+                continue
+
+            session.delete(user)
             session.commit()
+            session.expire_all()
 
-            logger.debug("Verifying that collection 1 has no documents.")
-            collection = self.get_collection(session)
-            assert not collection.documents, "Expected no documents in collection `1`."
-
-            documents = list(
-                session.execute(
-                    q_docs := select(Document).where(Document.id.between(1, 4))
-                ).scalars()
+            q_cols_remaining = select(func.count(Collection.uuid)).where(
+                Collection.uuid.in_(uuid_collections)
             )
-            collection.documents = {dd.name: dd for dd in documents}
-            session.commit()
+            n_cols_remaining = session.scalar(q_cols_remaining)
+            assert not n_cols_remaining
 
-        with sessionmaker() as session:
-            collection = self.get_collection(session)
-            assert collection.documents
+            dummy.dispose()
 
-            session.delete(collection)
-            session.commit()
+        if n_no_collections == 2:
+            msg = "All users had empty `collections`."
+            raise AssertionError(msg)
 
-        with sessionmaker() as session:
-            # Test deletion, etc
-            docs = list(session.execute(q_docs).scalars())
-            assert docs
+        # NOTE: Should fail since dummies do not generate edits.
+        # @pytest.mark.xfail
+        # def test_user_deletion_edits(self, auth: Auth, session: Session, count: int):
+        #     n_no_edits = 0
+        #     for dummy in (DummyProvider(auth, session) for _ in range(10)):
+        #         user = dummy.user
+        #
+        #         uuid_edits = set(
+        #             session.scalars(select(Edit.uuid).where(Edit.id_user == user.id))
+        #         )
+        #         if not (n_edits := len(uuid_edits)):
+        #             n_no_edits += 1
+        #             continue
+        #
+        #         session.delete(user)
+        #         session.commit()
+        #
+        #         q_edits_remaining = select(func.count(Edit.uuid)).where(
+        #             Edit.uuid.in_(uuid_edits)
+        #         )
+        #         n_edits_remaining = session.scalar(q_edits_remaining)
+        #         assert n_edits_remaining == n_edits
+        #
+        #         dummy.dispose()
+        #
+        #     if n_no_edits == 2:
+        #         raise AssertionError("All dummies had empty `edits`.")
+        #
+        # NOTE: Not necessary. But definitely nice to have.
+        # def test_dummy_dispose(self, dummy_disposable: DummyProvider, count: int = 1):
+        #     """Verify that `DummyProvider.dispose` cleans up a dummy as
+        #     desired."""
+        #
+        #     dummy, user, session = dummy_disposable, dummy_disposable.user, dummy_disposable.session
+        #     # uuid_user = user.uuid
+        #
+        #     # NOTE: Get documents. Only orphaned documents should be deleted.
+        #     q_uuid_doc = user.q_select_documents(exclude_deleted=False)
+        #     uuid_doc = set(item.uuid for item in session.scalars(q_uuid_doc))
+        #
+        #     q_uuid_document_uniq = user.q_select_documents(
+        #         exclude_deleted=False,
+        #         n_owners=1,
+        #         n_owners_levelsets=True,
+        #         kind_select=KindSelect.uuids,
+        #     )
+        #     uuid_doc_uniq = set(item.uuid for item in session.scalars(q_uuid_document_uniq))
+        #     assert uuid_doc_uniq.issubset(uuid_doc)
+        #
+        #     # NOTE: Get collections and edits. Collections should be deleted,
+        #     #       edits should not be deleted unless they belong to one of the
+        #     #       above documents.
+        #     q_uuid_edit = select(Edit.uuid).where(Edit.id_user == user.id)
+        #     uuid_edit = set(session.scalars(q_uuid_edit))
+        #
+        #     q_uuid_edit_uniq = q_uuid_edit.join(Document).where(
+        #         Document.uuid.in_(uuid_doc_uniq)
+        #     )
+        #     uuid_edit_uniq = set(session.scalars(q_uuid_edit_uniq))
+        #
+        #     q_uuid_collection = select(Collection.uuid).where(Collection.id_user == user.id)
+        #     uuid_collection = set(session.scalars(q_uuid_collection))
+        #
+        #     session.delete(user)
+        # session.commit()
 
 
-class TestDocument(BaseModelTest):
-    M = Document
+@pytest.mark.parametrize("count", list(range(COUNT)))
+class TestUser:
+    def test_q_select_documents(
+        self, dummy: DummyProvider, session: Session, count: int
+    ):
+        user, session = dummy.user, dummy.session
+        fn = user.q_select_documents
 
-    @classmethod
-    def preload(cls, item: Document) -> Document:
-        item.content = bytes(item.content, "utf-8")
-        return item
+        docs: Tuple[Document, ...]
+        grants: Tuple[Grant, ...]
+        kwargs: Dict[str, Any]
 
-    def get_document(self, session: Session, id: int = 1) -> Document:
-        m = session.execute(select(Document).where(Document.id == id)).scalar()
-        if m is None:
-            raise ValueError(f"Could not find document with id `{id}`.")
-        return m
+        def get_grants(docs: Resolvable[Document]) -> Tuple[Grant, ...]:
+            uuid_document = Document.resolve_uuid(session, docs)
+            q = select(Grant).join(Document)
+            q = q.where(Document.uuid.in_(uuid_document), Grant.id_user == user.id)
+            return tuple(session.scalars(q))
 
-    def test_collection_relation(self, sessionmaker: sessionmaker[Session]):
-        """Redundant."""
-        with sessionmaker() as session:
-            logger.debug("Manually nullifying collections for document `1`.")
-            assocs = list(
-                session.execute(
-                    select(AssocCollectionDocument).where(
-                        AssocCollectionDocument.id_document == 1
-                    )
-                ).scalars()
+        def uuids(docs) -> Set[str]:
+            return Document.resolve_uuid(session, docs)
+
+        check = Check(session)
+
+        # ------------------------------------------------------------------- #
+        with pytest.raises(ValueError) as err:
+            fn(exclude_pending=True, pending=True)
+
+        msg = "`pending` and `exclude_pending` cannot both be `True`."
+        assert str(err.value) == msg
+
+        kwargs = dict(exclude_pending=False, pending=True)
+        dummy.randomize_grants()
+        docs = tuple(session.scalars(q := fn(**kwargs).limit(10)))
+        util.sql(session, q)
+        if not len(docs):
+            msg = "Could not find pending documents for dummy `{}`."
+            raise AssertionError(msg.format(dummy.user.uuid))
+
+        assert len(grants := get_grants(uuid_document := uuids(docs))) == len(docs)
+
+        check.all_(grants, pending=True, deleted=False)
+        docs_by_uuid = tuple(session.scalars(fn(uuid_document)))
+        assert not len(docs_by_uuid)  # NOTE: `pending=False` by default.
+
+        # ------------------------------------------------------------------- #
+
+        n_mt = 0
+        for pending_from in list(PendingFrom):
+            kwargs = dict(pending_from=pending_from, pending=None, exclude_pending=True)
+            docs = tuple(session.scalars(fn(**kwargs).limit(10)))
+            if not (n := len(docs)):
+                # fmt = "Could not find docs pending from `{}` for dummy `{}`."
+                # msg = fmt.format(pending_from.name, dummy.user.uuid)
+                # raise AssertionError(msg)
+                n_mt += 1
+                continue
+
+            assert len(grants := get_grants(docs)) == len(docs)
+
+            # NOTE: Getting these documents using their uuids should not
+            uuid_document = Document.resolve_uuid(session, docs)
+            docs_by_uuid = tuple(session.scalars(Document.q_uuid(uuid_document)))
+            assert len(docs_by_uuid) == n
+
+            (
+                check.all_(
+                    grants,
+                    pending=False,
+                    pending_from=pending_from,
+                    deleted=False,
+                )
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+                .uuids(
+                    KindObject.document,
+                    docs,
+                    docs_by_uuid,
+                )
             )
-            for assoc in assocs:
-                session.delete(assoc)
-            session.commit()
 
-            logger.debug("Verifying that document `1` has no collections.")
-            document = self.get_document(session)
-            assert (
-                not document.collections
-            ), "Expected document `1` to have no collections."
+        if n_mt == 3:
+            raise AssertionError("All `pending_from` filtered data was empty.")
 
-            logger.debug("Assigning collections for document `1`.")
-            collections: List[Collection] = list(
-                session.execute(
-                    q_collections := select(Collection).where(
-                        Collection.id.between(1, 5)
-                    )
-                ).scalars(),
-            )
-            assert (
-                n_collections := len(collections)
-            ) > 0, "Expected to find collections."
-            document.collections = {cc.name: cc for cc in collections}
-            session.commit()
+        # ------------------------------------------------------------------- #
 
-        with sessionmaker() as session:
-            document = self.get_document(session)
-            assert len(document.collections) == n_collections
+        for level in list(Level):
+            kwargs = dict(level=level)
+            docs = tuple(session.scalars(fn(**kwargs)))
+            uuid_document = uuids(docs)
+            assert len(grants := get_grants(docs)) == len(docs)
 
-            # NOTE: Deleting the collection should not delete the document. See
-            #       **section B.4.b**.
-            session.delete(document)
-            session.commit()
-
-            collections = list(session.execute(q_collections).scalars())
-            assert len(collections) == n_collections, (
-                f"Expected `{n_collections}` results from execution of "
-                "`q_collections`."
+            (
+                check.all_(
+                    grants,
+                    level=lambda grant: grant.level.value < level.value,
+                    deleted=False,
+                )
+                .uuids(
+                    KindObject.document,
+                    docs,
+                    tuple(session.scalars(fn(uuid_document))),
+                )
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
             )
 
-            make_transient(document)
-            session.add(document)
+            # NOTE: Verify that count and uuids work correctly
+            kwargs.update(kind_select=KindSelect.count)
+            docs_count = session.scalar(q := fn(**kwargs))
+            assert docs_count == len(uuid_document)
+
+            kwargs.update(kind_select=KindSelect.uuids)
+            uuid_document_again = set(session.scalars(fn(**kwargs)))
+            assert uuid_document == uuid_document_again
+
+            # NOTE: The same as above but with level levelsets.
+            kwargs = dict(level=level, level_levelsets=True)
+            docs = tuple(session.scalars(fn(**kwargs)))
+            uuid_document = uuids(docs)
+            assert len(docs) == len(grants := get_grants(docs))
+
+            (
+                check.all_(grants, level=level, deleted=False)
+                .uuids(
+                    KindObject.document,
+                    docs,
+                    tuple(session.scalars(fn(uuid_document))),
+                )
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+            )
+
+            # NOTE: Verify that count and uuids work correctly
+            kwargs.update(kind_select=KindSelect.count)
+            docs_count = session.scalar(q := fn(**kwargs))
+            util.sql(session, q)
+            assert docs_count == len(uuid_document)
+
+            kwargs.update(kind_select=KindSelect.uuids)
+            uuid_document_again = set(session.scalars(fn(**kwargs)))
+            assert uuid_document == uuid_document_again
+
+        # ------------------------------------------------------------------- #
+
+        uuid_document = set()
+        for n_owners in range(1, 15):
+            # Add uniquely owned doc
+            doc = Document(
+                content=dict(
+                    tags=["test_models.TestUser.test_q_select_documents"],
+                    tainted=True,
+                ),
+                name=f"test-q-select-models-{secrets.token_urlsafe(8)}",
+                description="test",
+                deleted=False,
+            )
+            session.add(doc)
             session.commit()
+            session.expire(doc)
 
-    def test_edits_relationship(self, sessionmaker: sessionmaker[Session]):
-        with sessionmaker() as session:
-            document = self.get_document(session, 6)
-            assert len(document.edits) > 1, "Expected edits for document 6."
+            grant = Grant(
+                level=Level.own,
+                pending_from=PendingFrom.created,
+                pending=False,
+                deleted=False,
+                id_user=dummy.user.id,
+                id_document=doc.id,
+            )
 
-        with sessionmaker() as session:
-            edit_ids: List[int] = list(edit.id for edit in document.edits)
-
-            session.delete(document)
+            session.add(grant)
             session.commit()
+            session.expire_all()
 
-            q = select(Edit.id)
-            q = q.where(Edit.id.in_(edit_ids))
-            edit_ids_final = list(session.execute(q).scalars())
-            assert not edit_ids_final, "Expected no edits for document `6`."
+            uuid_document.add(doc.uuid)
+            kwargs = dict(n_owners=1, document_uuids=uuid_document)
+            docs = tuple(session.scalars(q := fn(**kwargs)))
 
+            q = user.q_select_documents_exclusive(uuid_document)
+            docs_exclusive = tuple(session.scalars(q))
 
-# NOTE: Other sides of relationships tested. Not going to bother testing as a
-#       result.
-class TestEdit(BaseModelTest):
-    M = Edit
+            assert len(grants := get_grants(docs)) == len(docs) == n_owners
+            (
+                check.all_(grants, deleted=False)
+                .uuids(
+                    KindObject.document,
+                    {gg.uuid_document for gg in grants},
+                    uuid_document,
+                )
+                .uuids(KindObject.document, docs, uuid_document)
+                .uuids(KindObject.document, docs, docs_exclusive)
+            )
 
-    @classmethod
-    def preload(cls, item: Edit) -> Edit:
-        item.content_previous = bytes(
-            item.content_previous,
-            "utf-8",
-        )  # type: ignore
-        return item
+            # NOTE: Verify that count and uuids are not allowed in this mode.
+            with pytest.raises(ValueError) as err:
+                kwargs.update(kind_select=KindSelect.count)
+                fn(**kwargs)
+
+            with pytest.raises(ValueError) as err:
+                kwargs.update(kind_select=KindSelect.uuids)
+                fn(**kwargs)

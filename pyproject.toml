@@ -6,13 +6,11 @@
 requires = ["setuptools >= 40.6.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[black]
-
 [project]
 authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
-name = "articles-api"
+name = "captura"
 version = "0.0.0"
-description = "An api to server markdown and reStructured text as json or rendered HTML."
+description = "An api to serve markdown and reStructured text as json or rendered HTML."
 readme = "README.rst"
 keywords = ["api", "rst", "markdown"]
 #liscense = "Lisense :: OSI Approved :: MIT License"
@@ -32,6 +30,8 @@ classifiers = [
     'Topic :: Internet',
 ]
 dependencies = [
+  "uvicorn",
+  "cryptography",
   "fastapi",
 	"pydantic>=2",
   "pydantic-settings>=2",
@@ -40,6 +40,11 @@ dependencies = [
   "PyMySQL",
   "PyMySQL[rsa]",
   "typer",
+  "rich",
+  "pyjwt[crypto]",
+	"httpx",
+  "websockets",
+  "itsdangerous",
 ]
 
 requires-python = ">=3.7" # because https://github.com/pydantic/pydantic/blob/main/pyproject.toml
@@ -55,18 +60,44 @@ dev = [
 	"flake8",
 	"mypy",
 	"isort",
-  "jedi-language-server"
+  "autoflake",
+  "jedi-language-server",
+  "docker",
+  "yamllint",
 ]
 test = [
 	"pytest",
+  "pytest-cov",
+  "pytest-asyncio",
+  "pytest-html",
+  # "pytest-xdist", # recommended with flakefinder
+  # "pytest-flakefinder",
+  "faker",
 ]
 
 
 [project.scripts]
-app = "app.__main__:main"
+captura = "app.__main__:main"
+legere = "client.__main__:main"
+simulatus = "dummy.__main__:main"
 
 
 [tool.black]
+
+
+# NOTE: See the documentation for the various configuration fields here:
+#
+#       .. code:: txt
+#
+#           https://pycqa.github.io/isort/docs/configuration/options.html
+#
+# NOTE: Does not support multiline headings. Is not indempotent.
+[tool.isort]
+profile = "black"
+import_heading_stdlib = "=========================================================================== #"
+import_heading_firstparty = "--------------------------------------------------------------------------- #" #\n# Captura\n"
+skip = [".venv-local", ".venv"]
+src_paths = ["src", "tests"]
 
 
 [tool.flake8]
@@ -85,10 +116,27 @@ ignore = [
 ]
 
 
-[tool.isort]
+[tool.autoflake]
+in_place = true
+remove_all_unused_imports = true
+recursive = true
 
 
 [tool.mypy]
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+
+# NOTE: See the following reference for this plugin:
+#
+#       .. code::text
+#
+#          https://docs.pydantic.dev/latest/integrations/mypy/#configuring-the-plugin
+#
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = false
+warn_required_dynamic_aliases = true
 
 
 [tool.bumpver]
@@ -106,3 +154,43 @@ push            = false
 
 
 [tool.setuptools_scm]
+
+
+[tool.setuptools.package-data]
+"captura" = ["py.typed"]
+
+
+# NOTE: Look at this later: https://docs.pytest.org/en/6.2.x/usage.html#dropping-to-pdb-python-debugger-on-failures
+[tool.pytest.ini_options]
+testpaths = "tests"
+addopts = "--ignore tests/junk --ignore-glob ./tests/test_controllers/test_delete.py --ignore ./tests/test_controllers/test_upsert.py --last-failed --last-failed-no-failures all"
+count = 10
+flakey_ignore = [
+  "test_not_found_404",
+]
+flakey_ignore_err = [
+  "All filtered data is empty.",
+]
+
+
+# NOTE: Reference https://coverage.readthedocs.io/en/latest/config.html#sample-file
+[tool.coverage.run]
+branch = true
+include = ["./src/app/**/*.py"]
+omit = ["./tests/**/*.py"]
+
+
+[tool.coverage.report]
+fail_under = 75
+format = "html"
+include = ["./src/app/**/*.py"]
+omit = ["./tests/**/*.py"]
+skip_covered = true
+skip_empty = true
+sort = "-cover" # NOTE: Sort from least to greatest coverage.
+
+
+# NOTE: Can be used to overwrite settings from `tool.coverage.report`.
+[tool.coverage.html]
+directory = "./src/app/static/cov"
+title = "Captura PyTest Coverage Report"

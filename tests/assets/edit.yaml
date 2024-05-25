@@ -2,7 +2,7 @@
 - id_document: 6
   id: 1
   id_user: 1
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -21,7 +21,7 @@
 - id_document: 6
   id_user: 1
   id: 2
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -41,7 +41,7 @@
 - id_document: 6
   id_user: 1
   id: 3
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -60,7 +60,7 @@
 - id_document: 6
   id_user: 1
   id: 4
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -78,7 +78,7 @@
 - id_document: 6
   id_user: 1
   id: 5
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -95,7 +95,7 @@
 - id_document: 6
   id_user: 1
   id: 6
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -111,7 +111,7 @@
 - id_document: 6
   id_user: 1
   id: 7
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -126,7 +126,7 @@
 - id_document: 6
   id_user: 1
   id: 8
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -140,7 +140,7 @@
 - id_document: 6
   id_user: 1
   id: 9
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -153,7 +153,7 @@
 - id_document: 6
   id_user: 1
   id: 10
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
@@ -165,7 +165,7 @@
 - id_document: 6
   id_user: 1
   id: 11
-  content_previous: |
+  content: |
 
     Rotton Possum
     ============================
