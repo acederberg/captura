@@ -342,7 +342,7 @@ def dummy_handler(
     with sessionmaker() as session:
         uuid_user = list(session.scalars(select(User.uuid)))
 
-    handler = DummyHandler(sessionmaker, config, uuid_user, auth=auth)
+    handler = DummyHandler(sessionmaker, config, auth=auth)
     if worker_id != "master":
         return handler
 
@@ -371,7 +371,6 @@ def dummy(request, dummy_handler: DummyHandler):
         dummy = DummyProvider(
             dummy_handler.config,
             session,
-            use_existing=dummy_handler.user_uuids,
             auth=dummy_handler.auth,
             client_config_cls=PytestClientConfig,
         )
@@ -410,7 +409,6 @@ def dummy_disposable(request, dummy_handler: DummyHandler):
             dummy_handler.config,
             session,
             auth=dummy_handler.auth,
-            use_existing=dummy_handler.user_uuids,
             client_config_cls=PytestClientConfig,
         )
         dummy.info_mark_used(request.node.name).info_mark_tainted()

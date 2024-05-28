@@ -6,7 +6,7 @@ from sqlalchemy.sql import text
 from app.models import User
 
 
-def test_fixture_works(engine: Engine, sessionmaker, load_tables):
+def test_fixture_works(engine: Engine, sessionmaker):
     """Make sure that the dummy providers are working."""
 
     with engine.begin() as connection:

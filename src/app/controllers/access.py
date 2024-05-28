@@ -379,10 +379,6 @@ class Access(BaseController):
         """
         # if user.admin:
         #     return user
-        # print("======================================================")
-        # print(user.deleted)
-        # print(user.uuid)
-        # input()
         if exclude_deleted:
             user.check_not_deleted()
 

@@ -28,7 +28,6 @@ import secrets
 import typing
 from typing import Annotated, Any, ClassVar, Dict, Literal, Set, Tuple, Unpack
 
-from authlib.integrations import starlette_client
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, computed_field
 from pydantic.fields import FieldInfo
 from sqlalchemy.engine import URL, Engine, create_engine
@@ -103,9 +102,9 @@ class MySqlHostConfig(BaseHashable):
     drivername: Annotated[str, Field("mysql+pymysql")]
     host: Annotated[str, Field("db")]
     port: Annotated[int, Field(3306)]
-    username: Annotated[str, Field("documents")]
-    password: Annotated[SecretStr, Field("abcd1234")]
-    database: Annotated[str, Field("documents")]
+    username: Annotated[str, Field("captura")]
+    password: Annotated[SecretStr, Field("changeme")]
+    database: Annotated[str, Field("captura")]
 
 
 class MySqlConfig(BaseHashable):
@@ -207,7 +206,7 @@ class AppConfig(BaseHashable):
     ]
     logging_configuration_path: Annotated[
         str,
-        Field(default=util.PATH_LOG_CONFIG),
+        Field(default=util.PATH_CONFIG_LOG),
     ]
 
     @computed_field

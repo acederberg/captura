@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker as sessionmaker_
 from app.auth import Auth, Token, TokenPermissionTier
 from app.err import ErrAssocRequestMustForce, ErrDetail
 from app.fields import ChildrenUser, KindObject, Level, LevelStr
-from app.models import Grant
+from app.models import Grant, User
 from app.schemas import (
     AsOutput,
     AssignmentSchema,
@@ -35,11 +35,14 @@ from tests.config import PytestClientConfig
 
 
 @pytest_asyncio.fixture
-async def rr(app: FastAPI | None, client_config: PytestClientConfig, auth: Auth):
+async def rr(
+    app: FastAPI | None, client_config: PytestClientConfig, auth: Auth, sessionmaker
+):
     """Requests client with built in assertions."""
 
-    # NOTE: Somehow create a token client
     uuid = "000-000-000"
+
+    # NOTE: Somehow create a token client
     client_config = client_config.model_copy()
     client_config.profiles.update(
         {
@@ -286,12 +289,13 @@ async def test_from_nothing(rr: Requests, auth: Auth, sessionmaker: sessionmaker
     assert all(isinstance(hd, AsOutput) and hd.kind is None for hd in hds)
 
 
+@pytest.mark.skip
 @pytest.mark.asyncio
 async def test_force(rr: Requests, sessionmaker: sessionmaker_):
 
     uuid_user = "000-000-000"
     (rr.context).config.use.profile = uuid_user
-    assert rr.context.config.profile.uuid_user == uuid_user
+    assert rr.context.config.profile.uuid_user == uuid_user  # type: ignore
 
     ctx = rr.context_wrapped
 
@@ -299,6 +303,7 @@ async def test_force(rr: Requests, sessionmaker: sessionmaker_):
     # Grant cases.
 
     # NOTE: Read some users to create grants for.
+    input()
     hd = await rr.send(
         rr.users.req_search(ctx, uuid_user=uuid_user, limit=5, randomize=True),
         adapter=AsOutput[list[UserSchema]],

@@ -1,0 +1,10 @@
+options:
+  tier: api
+git:
+  repository: ssh://git@github.com/acederberg/captura.git
+  branch: master
+  dockerfile: docker/dockerfile
+image:
+  repository: captura-test
+  target: production
+

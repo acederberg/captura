@@ -86,9 +86,6 @@ class DocumentGrantView(BaseView):
             pending=pending,
             exclude_pending=not pending,
         )
-        print("------------------------------------------------------------")
-        print(data.data.grants)
-        print(delete.force)
 
         events, grants = list(), list()
         if len(data.data.grants):
@@ -99,8 +96,6 @@ class DocumentGrantView(BaseView):
             data.commit(delete.session)
             events.append(EventSchema.model_validate(data.event))
 
-        print(data.event)
-        print(grants)
         return mwargs(
             OutputWithEvents[List[GrantSchema]],
             data=grants,
@@ -185,7 +180,6 @@ class DocumentGrantView(BaseView):
         )
         create.create_data = GrantCreateSchema(level=fr_level)
         data_final = create.grant_document(data)
-        print(data_final.data.grants)
         create.session.add_all(data_final.data.grants.values())
         data_final.commit(create.session)
 

@@ -11,9 +11,6 @@ from rich.console import Console
 from rich.syntax import Syntax
 from sqlalchemy.orm import Session
 
-ENV_PREFIX = "CAPTURA_"
-VERBOSE = environ.get(f"{ENV_PREFIX}VERBOSE")
-VERBOSE_HTTPEXCEPTIONS = environ.get(f"{ENV_PREFIX}VERBOSE_HTTPEXCEPTIONS")
 LOG_LEVEL = logging.INFO
 
 # =========================================================================== #
@@ -52,14 +49,33 @@ PATH_CLIENT: str = path.join(PATH_BASE, "src/client")
 PATH_CONFIG: str = path.join(PATH_BASE, "configs")
 PATH_DOCKER: str = path.join(PATH_BASE, "docker")
 PATH_TESTS: str = path.join(PATH_BASE, "tests")
-PATH_TESTS_ASSETS: str = environ.get(ENV_PREFIX + "CONFIG_PATH") or path.join(
-    PATH_TESTS, "assets"
-)
+PATH_TESTS_ASSETS: str = path.join(PATH_TESTS, "assets")
 
-PATH_CONFIG_APP = Path.config("app.yaml")
-PATH_CONFIG_CLIENT = Path.config("client.yaml")
-PATH_CONFIG_TEST_APP = Path.config("app.test.yaml")
-PATH_CONFIG_TEST_CLIENT = Path.config("client.test.yaml")
+
+# =========================================================================== #
+# Environment variables that have no configuration equivalent.
+
+
+# ENV_DATA = []
+
+
+def either(v: str, default: str):
+    envvar = f"{ENV_PREFIX}{v}"
+    w = environ.get(envvar, default)
+    # ENV_DATA.append(dict(name=w, default=default, value=w))
+    return w
+
+
+ENV_PREFIX = "CAPTURA_"
+PATH_CONFIG_APP = either("CONFIG_APP", Path.config("app.yaml"))
+PATH_CONFIG_CLIENT = either("CONFIG_CLIENT", Path.config("client.yaml"))
+PATH_CONFIG_TEST_APP = either("CONFIG_APP_TEST", Path.config("app.test.yaml"))
+PATH_CONFIG_TEST_CLIENT = either("CONFIG_CLIENT_TEST", Path.config("client.test.yaml"))
+PATH_STATIC = either("STATIC", Path.app("static"))
+PATH_CONFIG_LOG = environ.get(f"{ENV_PREFIX}CONFIG_LOG", Path.base("logging.yaml"))
+
+VERBOSE = environ.get(f"{ENV_PREFIX}VERBOSE")
+VERBOSE_HTTPEXCEPTIONS = environ.get(f"{ENV_PREFIX}VERBOSE_HTTPEXCEPTIONS")
 
 
 # =========================================================================== #
@@ -90,12 +106,8 @@ def check_enum_opt_attr(
 # LOGGING STUFF
 
 
-ENV_LOG_CONFIG = f"{ENV_PREFIX}LOG_CONFIG"
-PATH_LOG_CONFIG = environ.get(ENV_LOG_CONFIG, Path.base("logging.yaml"))
-
-
 # TODO: Add quehandler.
-def setup_logging(config_path: str = PATH_LOG_CONFIG):
+def setup_logging(config_path: str = PATH_CONFIG_LOG):
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
@@ -104,8 +116,7 @@ def setup_logging(config_path: str = PATH_LOG_CONFIG):
     return config, logging.getLogger
 
 
-DEFAULT_LOGGING_CONFIG_PATH = Path.base("logging.yaml")
-DEFAULT_LOGGING_CONFIG, _get_logger = setup_logging(DEFAULT_LOGGING_CONFIG_PATH)
+DEFAULT_LOGGING_CONFIG, _get_logger = setup_logging()
 
 
 def get_logger(name: str) -> logging.Logger:

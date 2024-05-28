@@ -231,9 +231,7 @@ class TestRelationships:
     ):
         n_empty_grants = 0
         for _ in range(5):
-            dummy = DummyProvider(
-                dummy_handler.config, session, use_existing=dummy_handler.user_uuids
-            )
+            dummy = DummyProvider(dummy_handler.config, session)
             user = dummy.user
             q_grants = user.q_select_grants(exclude_deleted=False)
             grants = dummy.session.scalars(q_grants)
@@ -278,11 +276,7 @@ class TestRelationships:
     ):
         n_no_collections = 0
         for _ in range(0, 3):
-            dummy = DummyProvider(
-                dummy_handler.config,
-                session,
-                use_existing=dummy_handler.user_uuids,
-            )
+            dummy = DummyProvider(dummy_handler.config, session)
             user = dummy.user
             uuid_collections = set(
                 session.scalars(

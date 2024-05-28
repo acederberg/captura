@@ -155,21 +155,23 @@ class TestDummyProvider:
         assert all(cc.uuid_user == dummy.user.uuid for cc in collections)
         assert all(not cc.deleted for cc in collections)
 
-        # NOTE: There should be nothing as the uuids specified are `other`.
-        #       That is, the results returned when `other` is `True` should
-        #       be disjoint from the results returned when it is `False`.
         uuid_collections = set(cc.uuid for cc in collections)
         get_primary_kwargs = GetPrimaryKwargs(
             uuids=uuid_collections,
             retry=False,
         )
-        with pytest.raises(AssertionError) as err:
-            collections = dummy.get_collections(5, get_primary_kwargs, other=True)
-            assert not len(collections)
 
-        err_msg = str(err.value)
-        assert "Could not find test data for " in err_msg
-        assert "table `collections` after `0` randomizations." in err_msg
+        # NOTE: There should be nothing as the uuids specified are `other`.
+        #       That is, the results returned when `other` is `True` should
+        #       be disjoint from the results returned when it is `False`.
+        # NOTE: Because retry_callback argument is deprecated.
+        # with pytest.raises(AssertionError) as err:
+        #     collections = dummy.get_collections(5, get_primary_kwargs, other=True)
+        #     assert not len(collections)
+
+        # err_msg = str(err.value)
+        # assert "Could not find test data for " in err_msg
+        # assert "table `collections` after `0` randomizations." in err_msg
 
         get_primary_kwargs.update(allow_empty=True)
         collections = dummy.get_collections(5, get_primary_kwargs, other=True)

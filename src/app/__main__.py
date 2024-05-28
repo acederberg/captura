@@ -7,8 +7,10 @@ from typing import Annotated, Any, Dict, Optional
 
 import typer
 import uvicorn.config
+import yaml
 from fastapi import FastAPI
 from rich.console import Console
+from rich.syntax import Syntax
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -55,13 +57,24 @@ class Cli:
         self.engine = self.config.engine()
         self.sesionmaker = session_maker(self.engine)
 
-    def show_config(self):
-        CONSOLE.print_json(
-            json.dumps(
-                self.config.model_dump(mode="json"),
-                indent=2,
+    def show_config(self, envvars: bool = False):
+        if envvars:
+            text = yaml.dump(
+                dict(
+                    path_static=util.PATH_STATIC,
+                    path_config_app=util.PATH_CONFIG_APP,
+                    path_config_client=util.PATH_CONFIG_CLIENT,
+                    path_config_test_app=util.PATH_CONFIG_TEST_APP,
+                    path_config_test_client=util.PATH_CONFIG_TEST_CLIENT,
+                    path_config_log=util.PATH_CONFIG_LOG,
+                    verbose=util.VERBOSE,
+                    verbose_httpexceptions=util.VERBOSE_HTTPEXCEPTIONS,
+                )
             )
-        )
+        else:
+            text = yaml.dump(self.config.model_dump(mode="json"), indent=2)
+        text = "---\n\n" + text
+        CONSOLE.print(Syntax(text, "yaml", theme="fruity"))
 
     def run(
         self,
@@ -102,6 +115,9 @@ class Cli:
         """
         reload = reload if reload is not None else self.config.app.is_dev
 
+        if reload:
+            util.CONSOLE_APP.print("[red]Reload is broken.")
+            raise typer.Exit(1)
         # if not for_coverage:
         self._run(app="app:app", reload=reload)
         return

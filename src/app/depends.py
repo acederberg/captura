@@ -11,7 +11,6 @@ be wrapped in ``Depends``.
 from functools import cache
 from typing import Annotated, Dict, TypeAlias
 
-from authlib.integrations import starlette_client
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.engine import Engine

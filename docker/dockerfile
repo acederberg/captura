@@ -1,15 +1,58 @@
+# --------------------------------------------------------------------------- #
 # NOTE: Caching of dependencies does not happen here, this project assumes that
 #       developers will use a venv which will be mounted.
 
-FROM python:3.11
+FROM python:3.11 AS base
 
-RUN useradd -d /home/documents documents \
-  && mkdir /home/documents \
-  && chown documents:documents /home/documents
+RUN useradd -d /home/captura captura \
+  && mkdir /home/captura \
+  && chown captura:captura /home/captura
 
-# `~/.bashrc` does not exist before this.
-COPY --chown=documents:documents --chmod=+x ./docker-entrypoint.sh /home/documents/.bashrc
-USER documents
-WORKDIR /app
+RUN chown -R captura:captura /home/captura
+
+USER captura
+WORKDIR /home/captura/app
 
 ENTRYPOINT ["bash"]
+
+
+# --------------------------------------------------------------------------- #
+
+FROM base AS dev
+
+COPY ./docker-entrypoint.sh /home/captura/.bashrc
+
+
+# --------------------------------------------------------------------------- #
+
+FROM base AS production
+
+COPY . /home/captura/app
+
+USER root
+RUN chown captura:captura -R /home/captura
+USER captura
+
+RUN mkdir /home/captura/.captura /home/captura/logs
+COPY logging.yaml /home/captura/.captura
+ENV CAPTURA_APP__ENVIRONMENT="production"
+ENV CAPTURA_CONFIG_LOG="/home/captura/.captura/logging.yaml"
+ENV CAPTURA_CONFIG_APP="/home/captura/.captura/app.yaml"
+ENV CAPTURA_CONFIG_CLIENT="/home/captura/.captura/client.yaml"
+ENV CAPTURA_STATIC="/home/captura/static"
+
+RUN pip install /home/captura/app
+ENTRYPOINT ["python3", "-m", "app", "run"]
+
+
+# --------------------------------------------------------------------------- #
+
+FROM prod AS test
+
+ENV CAPTURA_CONFIG_LOG = "/home/captura/.captura/logging.yaml
+ENV CAPTURA_CONFIG_APP_TEST = "/home/captura/.captura/app.yaml
+ENV CAPTURA_CONFIG_CLIENT_TEST = "/home/captura/.captura/client.yaml
+
+RUN pip install /home/captura/app[test]
+ENTRYPOINT ["python", "-m", "pytest"]
+
