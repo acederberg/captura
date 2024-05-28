@@ -70,7 +70,11 @@ class AppView(BaseView):
     #
     #       I'm aware the using `routes` is a bit taboo, but I think this is a
     #       cleaner pattern.
-    view_static = StaticFiles(directory=util.Path.app("static"))
+    routes = []
+    if util.path.exists(util.PATH_STATIC):
+        view_static = StaticFiles(directory=util.PATH_STATIC)
+        routes.append(Mount("/static", view_static))
+
     view_router = FastAPI(
         title="Captura Document Automation, Sharing, and Organization API.",
         description=description,
@@ -82,7 +86,7 @@ class AppView(BaseView):
         ),
         openapi_tags=OpenApiTagMetadata,
         swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"},
-        routes=[Mount("/static", view_static)],
+        routes=routes,
     )  # type: ignore
 
     view_routes = {

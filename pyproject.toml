@@ -6,6 +6,9 @@
 requires = ["setuptools >= 40.6.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
+
+
 [project]
 authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
 name = "captura"
@@ -33,7 +36,7 @@ dependencies = [
   "uvicorn",
   "cryptography",
   "fastapi",
-	"pydantic>=2",
+	"pydantic>=2,<2.7",
   "pydantic-settings>=2",
   "sqlalchemy>=2",
   "yaml-settings-pydantic>=2",
@@ -109,10 +112,6 @@ color = "always"
 filename = "**/*.py"
 ignore = [
 	"E133", # Stupid closing backet requires indentation
-	"E701", # Multiple statements on one line.
-	"E702", # Multiple statements on one line.
-	"E703", # Multiple statements on one line.
-	"E704", # Multiple statements on one line.
 ]
 
 
@@ -157,7 +156,7 @@ push            = false
 
 
 [tool.setuptools.package-data]
-"captura" = ["py.typed"]
+"captura" = ["py.typed", "*.yaml", "*.rst"]
 
 
 # NOTE: Look at this later: https://docs.pytest.org/en/6.2.x/usage.html#dropping-to-pdb-python-debugger-on-failures

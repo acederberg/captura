@@ -138,21 +138,12 @@ class BaseTestAccess(metaclass=AccessTestMeta):
     fn_access_types: ClassVar[Dict[str, Type]]
     allow_missing: ClassVar[bool] = False
 
-    @pytest.fixture(autouse=True, scope="session")
-    def fixtures(self, load_tables) -> None:
-        return
-
     @pytest.fixture(scope="class")
     def dummy(
         self, dummy_handler: DummyHandler
     ) -> Generator[DummyProvider, None, None]:
         with dummy_handler.sessionmaker() as session:
-            dummy = DummyProvider(
-                dummy_handler.config,
-                session,
-                use_existing=dummy_handler.user_uuids,
-            )
-
+            dummy = DummyProvider(dummy_handler.config, session)
             yield dummy
 
     def test_d_fn(self) -> None:

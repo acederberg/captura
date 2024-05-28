@@ -231,44 +231,6 @@ class BaseEndpointTestPrimaryCreateMixins:
 # =========================================================================== #
 
 
-# class BaseTestViews:
-#     T: Type[BaseRequests]
-#
-#     @pytest_asyncio.fixture(params=[DEFAULT_TOKEN_PAYLOAD])
-#     async def client(
-#         self,
-#         client_config: PytestClientConfig,
-#         async_client: httpx.AsyncClient,
-#         auth: Auth,
-#         request,
-#     ):
-#         token = auth.encode(request.param)
-#         return self.T(client_config, async_client, token=token)
-#
-#     @pytest.fixture(scope="session", autouse=True)
-#     def invoke_loader(self, load_tables, setup_cleanup): ...
-
-
-# class PytestHandler:
-#     # err: AssertionError | None
-#     data: Any | None
-#     res: httpx.Response | None
-#
-#     def __init__(self):
-#         # self.err = None
-#         self.data = None
-#         self.res = None
-#
-#     async def __call__(
-#         self, res: httpx.Response, data: Any | None = None
-#     ) -> httpx.Response:
-#         # self.err = None
-#         # self.data = (data := data or res.json())
-#         # if err := check_status(res):
-#         #     self.err = err
-#         return res
-
-
 # @checks_event
 # def check_event_update(
 #     _,

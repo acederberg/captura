@@ -635,12 +635,23 @@ class BaseDummyProvider:
     # ----------------------------------------------------------------------- #
 
     def get_collections_retry_callback(self):
-        logger.debug("Calling `get_collections_retry_callback`.")
-        self.mk(
-            create_documents_unique=False,
-            create_grants=dict(exclude_grants_self=True),
-        )
-        self.session.commit()  # NOTE: It might look stupid but it works.
+        # NOTE: Far less stupid.
+        session = self.session
+        logger.warning("Calling `get_collections_retry_callback`.")
+
+        collection = Mk.collection(id_user=self.user.id)
+        session.add(collection)
+        session.commit()
+        session.refresh(collection)
+
+        # NOTE: Because ids must exist (for now, until only uuids).
+        documents = self.get_documents(n=5, other=True)
+        assignments = self.mk_assignments(documents=documents, collections=(collection,))
+        session.add_all(assignments)
+        session.commit()
+
+        return (collection,)
+
 
     def get_collections(
         self,
@@ -1144,8 +1155,7 @@ class DummyProvider(BaseDummyProvider):
     session: Session
     auth: Auth
 
-    @classmethod
-    def q_select_suitable(cls):
+    def q_select_suitable(self):
         conds = [
             func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
             func.JSON_OVERLAPS(
@@ -1155,10 +1165,10 @@ class DummyProvider(BaseDummyProvider):
             User.deleted == false(),
         ]
 
-        if cls.dummy.users.maximum_uses:
+        if self.dummy.users.maximum_uses:
             conds.append(
                 func.JSON_LENGTH(User.content, "$.dummy.used_by")
-                < cls.dummy.users.maximum_uses
+                < self.dummy.users.maximum_uses
             )
 
         return select(User) .where(*conds) .order_by(func.random()) .limit(1)
@@ -1171,7 +1181,7 @@ class DummyProvider(BaseDummyProvider):
         session: Session,
         *,
         auth: Auth | None = None,
-        use_existing: None | User = None,
+        use_existing: bool | User = True,
         client_config_cls: Type | None = None,
     ):
         self.config = config
@@ -1182,14 +1192,18 @@ class DummyProvider(BaseDummyProvider):
         self.client_config_cls = client_config_cls or ClientConfig
 
         match use_existing:
-            case None:
-                logger.info("Searching for existing dummy.")
-                user = session.scalar(self.q_select_suitable())
+            case bool() as use_existing_bool:
+                user = None
+                if use_existing_bool:
+                    logger.info("Searching for existing dummy.")
+                    user = session.scalar(self.q_select_suitable())
+
                 if user is None:
-                    logger.warning("No suitable dummy found. Building a new dummy.")
+                    logger.warning("Building a new dummy.")
                     self.user = self.mk_user()
                     self.mk()
                     return
+
                 self.user = user
             case User() as user:
                 logger.info("Using existing dummy with uuid `%s`.", user.uuid)
@@ -1357,9 +1371,14 @@ class DummyHandler:
             dummies: DummyConfig = self.dummy
             n_generate = dummies.users.minimum - n_users
 
+            if n_generate < 0:
+                return self
+
+            print(dummies.users.minimum)
+            print(n_generate)
             logger.info("Generating `%s` dummies.", n_generate)
             for count in range(n_generate):
-                dd = DummyProvider(self.config, session, auth=self.auth)
+                dd = DummyProvider(self.config, session, auth=self.auth, use_existing=False,)
                 if callback is not None:
                     callback(dd, count, n_generate)
 

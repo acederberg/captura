@@ -14,14 +14,6 @@ from dummy import DummyProvider
 
 
 class TestDelete:
-    @pytest.fixture(autouse=True, scope="session")
-    def fixtures(self, load_tables) -> None:
-        return
-
-    # def check_data(self, data: Data, field: str,
-    #     if n := len(tuple(dd for dd in data.data.documents if not dd.deleted)):
-    #         msg = f"`{n}` of `{len(data.data.documents)}` collections not deleted."
-    #         raise AssertionError(msg)
 
     def test_delete_collection(self, dummy: DummyProvider):
         delete = dummy.visability(

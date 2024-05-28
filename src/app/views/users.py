@@ -272,6 +272,15 @@ class UserView(BaseView):
             events=[data.event],
         )
 
+    # @classmethod
+    # def patch_restore_user(
+    #     cls,
+    #     uuid_user: args.PathUUIDUser,
+    #     token: DependsTokenOptional,
+    #     access: DependsAccess,
+    # ):
+    #     ...
+
     @classmethod
     def delete_user(
         cls,

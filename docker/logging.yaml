@@ -1,0 +1,36 @@
+version: 1
+formatters:
+  json:
+    (): app.logger.JSONFormatter
+    fmt_keys: 
+      # foo : bar
+      - levelname
+      - message
+      - timestamp
+      - name
+      - module
+      - funcName
+      - lineno
+      - threadName
+
+handlers:
+  file_json:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: json
+    filename: /home/captura/logs/captura.jsonl
+    maxBytes: 10000000
+    backupCount: 5
+  json:
+    class: logging.StreamHandler
+    level: DEBUG
+    # formatter: json
+    
+# disable_existing_loggers: True
+loggers:
+  root:
+    level: INFO
+    handlers:
+      - json
+      - file_json
+
