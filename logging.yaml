@@ -8,7 +8,6 @@ formatters:
     fmt_keys: 
       # foo : bar
       - levelname
-      - message
       - timestamp
       - name
       - module

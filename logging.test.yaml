@@ -7,7 +7,6 @@ formatters:
     (): app.logger.JSONFormatter
     fmt_keys: 
       - levelname
-      - message
       - timestamp
       - name
       - module

@@ -59,23 +59,39 @@ PATH_TESTS_ASSETS: str = path.join(PATH_TESTS, "assets")
 # ENV_DATA = []
 
 
-def either(v: str, default: str):
+def from_env(v: str, default: str | None = None):
     envvar = f"{ENV_PREFIX}{v}"
     w = environ.get(envvar, default)
-    # ENV_DATA.append(dict(name=w, default=default, value=w))
+    if w is None:
+        msg = f"Could not determine value for environment variable `{w}`."
+        raise ValueError(msg)
     return w
 
 
 ENV_PREFIX = "CAPTURA_"
-PATH_CONFIG_APP = either("CONFIG_APP", Path.config("app.yaml"))
-PATH_CONFIG_CLIENT = either("CONFIG_CLIENT", Path.config("client.yaml"))
-PATH_CONFIG_TEST_APP = either("CONFIG_APP_TEST", Path.config("app.test.yaml"))
-PATH_CONFIG_TEST_CLIENT = either("CONFIG_CLIENT_TEST", Path.config("client.test.yaml"))
-PATH_STATIC = either("STATIC", Path.app("static"))
-PATH_CONFIG_LOG = environ.get(f"{ENV_PREFIX}CONFIG_LOG", Path.base("logging.yaml"))
+PATH_CONFIG_APP = from_env(
+    "CONFIG_APP",
+    Path.config("app.yaml"),
+)
+PATH_CONFIG_CLIENT = from_env(
+    "CONFIG_CLIENT",
+    Path.config("client.yaml"),
+)
+PATH_CONFIG_TEST_APP = from_env(
+    "CONFIG_APP_TEST",
+    Path.config("app.test.yaml"),
+)
+PATH_CONFIG_TEST_CLIENT = from_env(
+    "CONFIG_CLIENT_TEST",
+    Path.config("client.test.yaml"),
+)
 
-VERBOSE = environ.get(f"{ENV_PREFIX}VERBOSE")
-VERBOSE_HTTPEXCEPTIONS = environ.get(f"{ENV_PREFIX}VERBOSE_HTTPEXCEPTIONS")
+PATH_STATIC = from_env("STATIC", Path.app("static"))
+PATH_LOGS = from_env("LOGS", Path.base("logs"))
+PATH_CONFIG_LOG = from_env(f"LOGS_CONFIG", Path.base("logging.yaml"))
+
+VERBOSE = from_env("VERBOSE", "0") != "0"
+VERBOSE_HTTPEXCEPTIONS = from_env("VERBOSE_HTTPEXCEPTIONS", "0") != "0"
 
 
 # =========================================================================== #

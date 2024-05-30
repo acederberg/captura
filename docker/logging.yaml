@@ -3,9 +3,7 @@ formatters:
   json:
     (): app.logger.JSONFormatter
     fmt_keys: 
-      # foo : bar
       - levelname
-      - message
       - timestamp
       - name
       - module
@@ -14,23 +12,32 @@ formatters:
       - threadName
 
 handlers:
-  file_json:
-    class: logging.handlers.RotatingFileHandler
-    level: DEBUG
+  # file_json:
+  #   class: logging.handlers.RotatingFileHandler
+  #   level: DEBUG
+  #   formatter: json
+  #   filename: /home/captura/logs/captura.jsonl
+  #   maxBytes: 10000000
+  #   backupCount: 5
+  json_socket:
+    class: logging.handlers.SocketHandler
+    host: "0.0.0.0"
+    port: 8081
     formatter: json
-    filename: /home/captura/logs/captura.jsonl
-    maxBytes: 10000000
-    backupCount: 5
-  json:
-    class: logging.StreamHandler
+    level: INFO
+  json_human:
+    class: rich.logging.RichHandler
+    formatter: json
+    level: INFO
+  stdout_dev:
+    class: rich.logging.RichHandler
     level: DEBUG
-    # formatter: json
     
-# disable_existing_loggers: True
 loggers:
   root:
-    level: INFO
+    level: DEBUG
     handlers:
-      - json
-      - file_json
+      # - json_socket
+      - json_human
+      # - stdout_dev
 

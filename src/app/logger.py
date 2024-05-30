@@ -38,7 +38,6 @@ class JSONFormatter(logging.Formatter):
     def fmt_keys_default(self) -> Set[str]:
         return {
             "levelname",
-            "message",
             "timestamp",
             "name",
             "module",
@@ -54,9 +53,12 @@ class JSONFormatter(logging.Formatter):
             if fmt_keys is not None
             else self.fmt_keys_default
         )
+        if "message" in self.fmt_keys:
+            raise ValueError("Cannot specify `message` in format keys.")
 
     def format(self, record: logging.LogRecord) -> str:
-        line = {key: getattr(record, key) for key in self.fmt_keys}
+        line = {key: getattr(record, key, None) for key in self.fmt_keys}
+        line.update(msg=record.getMessage())
         if record.exc_info is not None:
             line.update(exc_info=self.formatException(record.exc_info))
         if record.stack_info is not None:

@@ -33,10 +33,11 @@ USER root
 RUN chown captura:captura -R /home/captura
 USER captura
 
-RUN mkdir /home/captura/.captura /home/captura/logs
+RUN mkdir /home/captura/.captura /home/captura/.captura/logs
 COPY logging.yaml /home/captura/.captura
 ENV CAPTURA_APP__ENVIRONMENT="production"
-ENV CAPTURA_CONFIG_LOG="/home/captura/.captura/logging.yaml"
+ENV CAPTURA_LOGS_CONFIG="/home/captura/.captura/logging.yaml"
+ENV CAPTURA_LOGS_PATH="/home/captura/.captura/logs"
 ENV CAPTURA_CONFIG_APP="/home/captura/.captura/app.yaml"
 ENV CAPTURA_CONFIG_CLIENT="/home/captura/.captura/client.yaml"
 ENV CAPTURA_STATIC="/home/captura/static"
