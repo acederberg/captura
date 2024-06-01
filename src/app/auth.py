@@ -1,8 +1,10 @@
 # =========================================================================== #
 import base64
 import enum
+import functools
 import json
 import re
+from hashlib import sha256
 from os import path, walk
 from typing import Annotated, Any, Dict, Iterable, List, Literal, Self, Set, Tuple
 
@@ -213,10 +215,11 @@ def try_decode(
         _msg = "Invalid bearer token audience."
     except jwt.InvalidIssuerError:
         _msg = "Invalid bearer token issuer."
-    except jwt.InvalidTokenError:
-        _msg = "Invalid bearer token."
+    except jwt.InvalidTokenError as err:
+        _msg = f"Invalid bearer token: {str(err)}"
     except ValueError as err:
         _msg = err.args[0]
+
     return None, HTTPException(401, detail="Invalid Token: " + _msg)
 
 
@@ -297,7 +300,7 @@ class Token(BaseModel):
     #
     # [1] https://www.rfc-editor.org/rfc/rfc7519#section-4.1
 
-    uuid: Annotated[str, Field()]
+    subject: Annotated[str, Field(alias="sub")]
     tier: Annotated[
         TokenPermissionTier,
         Field(default=TokenPermissionTier.free),
@@ -306,6 +309,10 @@ class Token(BaseModel):
         Set[TokenPermissionRead],
         Field(default_factory=lambda: set()),
     ]
+
+    @property
+    def subject_256(self) -> str:
+        return sha256(self.subject.encode()).hexdigest()
 
     @model_validator(mode="before")
     @classmethod
@@ -318,30 +325,6 @@ class Token(BaseModel):
 
         data.update(permission_parse(pp))
         return data
-
-    # NOTE: Change name, overwrites pydantic v1 ``validate``.
-    def validate_db(self, session: Session) -> User:
-        q_user = select(User).where(User.uuid == self.uuid)
-        user = session.execute(q_user).scalar()
-        if user is None:
-            raise HTTPException(
-                401,
-                detail=dict(
-                    msg="User with token uuid does not exist.",
-                    uuid=self.uuid,
-                ),
-            )
-        if user.admin and not self.tier == TokenPermissionTier.admin:
-            raise HTTPException(
-                401,
-                detail=dict(
-                    msg="Admin status inconsistent with database.",
-                    uuid=self.uuid,
-                    admin_user=user.admin,
-                ),
-            )
-
-        return user
 
     def encode(self, auth: Auth) -> str:
         payload = self.model_dump(exclude={"tier", "read"})
@@ -363,11 +346,38 @@ class Token(BaseModel):
 
     @classmethod
     def decode(cls, auth: Auth, data: str, *, header: bool = True) -> Self:
-        return cls.model_validate(auth.decode(data, header=header))
+        decoded = auth.decode(data, header=header)
+        return cls.model_validate(decoded)
 
     @classmethod
     def try_decode(cls, auth: Auth, data: str, *, header: bool = True) -> Self:
         decoded, err = try_decode(auth, data, header=header)
         if err is not None:
             raise err
+
         return cls.model_validate(decoded)
+
+    def validate_db(self, session: Session) -> User:
+        q_user = select(User).where(User.subject == self.subject_256)
+        user = session.execute(q_user).scalar()
+
+        if user is None:
+            raise HTTPException(
+                401,
+                detail=dict(
+                    msg="User does not exist.",
+                    uuid=self.subject_256,
+                ),
+            )
+
+        if user.admin and not self.tier == TokenPermissionTier.admin:
+            raise HTTPException(
+                401,
+                detail=dict(
+                    msg="Admin status inconsistent with database.",
+                    subject=self.subject,
+                    admin_user=user.admin,
+                ),
+            )
+
+        return user

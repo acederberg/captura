@@ -467,6 +467,7 @@ class Create(WithDelete, Generic[T_Create]):
         data_create.data.users = (user,)
         data_create.event = Event(
             **self.event_common,
+            uuid_user=uuid_user,
             kind_obj=KindObject.user,
             uuid_obj=uuid_user,
             detail="User created.",

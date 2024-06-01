@@ -1,0 +1,25 @@
+{# vi: set ft=htmldjango : #}
+
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="/static/nord.css">
+    <link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png">
+    <title>{% block title required %}{% endblock %}</title>
+  </head>
+  <body>
+    {% block top %}
+    <div class="navbar">
+      <a href="/">Home</a>
+      <a href="/demo">Request A Demo</a>
+      {% if request.session.get("access_token") %}
+        <a href="/logout">Logout</a>
+      {% else %}
+        <a href="/login">Login</a>
+      {% endif %}
+    </div>
+    {% endblock %}
+    {% block body required %}{% endblock %}
+  </body>
+</html>
+
+

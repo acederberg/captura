@@ -124,9 +124,7 @@ DependsAsyncSessionMaker: TypeAlias = Annotated[
 
 
 @cache
-def auth(
-    config: DependsConfig,
-) -> Auth:
+def auth(config: DependsConfig) -> Auth:
     """
     :param: Application configuration. Specifies ``auth0`` configuration.
     :returns: The authentication handler defined in :module:`.auth` for
@@ -139,11 +137,16 @@ def auth(
 
 DependsAuth: TypeAlias = Annotated[Auth, Depends(auth, use_cache=False)]
 
+HeaderAuthorization = Annotated[str, Header(description="Auth0 bearer token.")]
+HeaderAuthorizationOptional = Annotated[
+    str | None, Header(description="Optional auth0 bearer token.")
+]
+
 
 @cache
 def token(
     auth: DependsAuth,
-    authorization: Annotated[str, Header(description="Auth0 bearer token.")],
+    authorization: HeaderAuthorization,
 ) -> Token:
     """Decode and deserialize the bearer JWT specified in the ``Authorization``
     header.
@@ -164,9 +167,7 @@ def token(
 
 def token_optional(
     auth: DependsAuth,
-    authorization: Annotated[
-        str | None, Header(description="Optional auth0 bearer token.")
-    ] = None,
+    authorization: HeaderAuthorizationOptional,
 ) -> Token | None:
     if authorization is not None:
         return token(auth, authorization)

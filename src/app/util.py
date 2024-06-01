@@ -3,6 +3,7 @@ import enum
 import logging
 import logging.config
 import logging.handlers
+import secrets
 from os import environ, path
 from typing import Any, Type
 
@@ -92,6 +93,9 @@ PATH_CONFIG_LOG = from_env(f"LOGS_CONFIG", Path.base("logging.yaml"))
 
 VERBOSE = from_env("VERBOSE", "0") != "0"
 VERBOSE_HTTPEXCEPTIONS = from_env("VERBOSE_HTTPEXCEPTIONS", "0") != "0"
+
+# NOTE: Session secret ensures that middleware can reload the session properly.
+SESSION_SECRET = from_env("SESSION_SECRET", secrets.token_urlsafe())
 
 
 # =========================================================================== #

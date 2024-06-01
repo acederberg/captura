@@ -1399,12 +1399,13 @@ class WithAccess(BaseController, abc.ABC):
     @property
     def event_common(self) -> Dict[str, Any]:
         # TODO: Should use super.
-        return dict(
-            # detail=self.detail,
-            uuid_user=self.token.uuid,
+        data = dict(
             api_origin=self.api_origin,
             api_version=__version__,
         )
+        if self._token is not None:
+            data["uuid_user"]=self._token.uuid
+        return data
 
     # NOTE: Why `Resolved` kind names must correspond to their functions. At
     #       this point I am regretting not using a compiled language. This is

@@ -1,0 +1,73 @@
+{# vi: set ft=htmldjango : #}
+
+{% extends "base.j2"  %}
+
+{% block title %}Registration{% endblock %}
+{% block body %}
+  {# NOTE: Should be able to patch user too. Could replace profile with this
+           to make it easy to update. How to filter out unchanged?
+           #}
+  <div class="container">
+    <h3>Account Registration</h3>
+    <form action="/register" method="POST">
+      <label for="email">Email</label>
+      <input 
+        type="email" 
+        id="email" 
+        name="email"
+        value={{id_token.get("email")}}
+      ></input>
+      <br>
+
+      <label for="name">Name</label>
+      <input 
+        type="text" 
+        id="name" 
+        name="name"
+        value={{id_token.get("name")}}
+      ></input>
+      <br>
+
+      <label for="url_image">Image</label>
+      <input 
+        type="text" 
+        id="url_image" 
+        name="url_image"
+        value={{id_token.get("picture")}}
+      ></input>
+      <br>
+
+      <label for="url">URL</label>
+      <input 
+        type="text" 
+        id="url" 
+        name="url"
+      ></input>
+      <br>
+
+      <label for="description">Description</label>
+      <input 
+        type="text" 
+        id="description"
+        name="description"
+      ></input>
+      <br>
+
+      <label for="description">Description</label>
+      <input 
+        type="text" 
+        id="description"
+        name="description"
+      ></input>
+      <br>
+
+      <label for="code">Registration Code</label>
+      <input type="text" id="code" name="code">
+      <br>
+
+      <input type="submit" value="Register"></input>
+    </form>
+  <div>
+{% endblock %}
+
+

@@ -194,7 +194,7 @@ class AppConfig(BaseHashable):
         Literal["http://", "https://"],
         Field(default="https://"),
     ]
-    host_port: Annotated[int, Field(default=8080)]
+    host_port: Annotated[int | None, Field(default=8080)]
 
     environment: Annotated[
         Environment,
@@ -217,7 +217,10 @@ class AppConfig(BaseHashable):
     @computed_field
     @property
     def host_url(self) -> str:
-        return f"{self.host_scheme}{self.host_dns_name}:{self.host_port}"
+        host = f"{self.host_scheme}{self.host_dns_name}"
+        if self.host_port is not None:
+            host = f"{host}:{self.host_port}"
+        return host
 
 
 class Config(BaseHashable, BaseYamlSettings):

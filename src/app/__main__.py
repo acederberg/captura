@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 # --------------------------------------------------------------------------- #
 from app.config import Config
 from app.depends import session_maker
+from app.views.auth import AuthViewAuth0
 
 from . import util
 
@@ -69,6 +70,7 @@ class Cli:
                     path_config_log=util.PATH_CONFIG_LOG,
                     verbose=util.VERBOSE,
                     verbose_httpexceptions=util.VERBOSE_HTTPEXCEPTIONS,
+                    session_secret=util.SESSION_SECRET,
                 )
             )
         else:
@@ -115,17 +117,11 @@ class Cli:
         """
         reload = reload if reload is not None else self.config.app.is_dev
 
-        if reload:
-            util.CONSOLE_APP.print("[red]Reload is broken.")
-            raise typer.Exit(1)
-        # if not for_coverage:
+        # if reload:
+        #     util.CONSOLE_APP.print("[red]Reload is broken.")
+        #     raise typer.Exit(1)
+
         self._run(app="app:app", reload=reload)
-        return
-        # else:
-        #     util.CONSOLE_APP.print(
-        #         "[green]Use `gunicorn -c ./tests/gunicorn_coverage.py -k "
-        #         "uvicorn.workers.UvicornWorker` app:app."
-        #     )
 
     def _run(self, app, reload: bool):
         import uvicorn
@@ -143,6 +139,17 @@ class Cli:
 
         uvicorn.run(app, **kwargs)
 
+    def registration_code(self, email: str, validate: Optional[str] = None):
+        code = AuthViewAuth0.create_code(self.config, email)
+        if validate is None:
+            return print(code)
+
+        if code == validate:
+            CONSOLE.print("[green]Registration code is valid!")
+            return
+
+        CONSOLE.print("[red]Registration code is not valid!")
+
 
 def main() -> None:
     cli = Cli()
@@ -150,6 +157,7 @@ def main() -> None:
     tt = typer.Typer()
     tt.command("run")(cli.run)
     tt.command("config")(cli.show_config)
+    tt.command("registration-code")(cli.registration_code)
     tt()
 
 

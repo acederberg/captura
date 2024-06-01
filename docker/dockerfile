@@ -27,6 +27,7 @@ COPY ./docker-entrypoint.sh /home/captura/.bashrc
 
 FROM base AS production
 
+# NOTE: Assumes that build is occuring at the project root.
 COPY . /home/captura/app
 
 USER root
@@ -34,13 +35,17 @@ RUN chown captura:captura -R /home/captura
 USER captura
 
 RUN mkdir /home/captura/.captura /home/captura/.captura/logs
-COPY logging.yaml /home/captura/.captura
-ENV CAPTURA_APP__ENVIRONMENT="production"
-ENV CAPTURA_LOGS_CONFIG="/home/captura/.captura/logging.yaml"
-ENV CAPTURA_LOGS_PATH="/home/captura/.captura/logs"
-ENV CAPTURA_CONFIG_APP="/home/captura/.captura/app.yaml"
-ENV CAPTURA_CONFIG_CLIENT="/home/captura/.captura/client.yaml"
-ENV CAPTURA_STATIC="/home/captura/static"
+COPY ./docker/logging.yaml /home/captura/.captura
+
+# NOTE: Captura secret should be set explicitly when running containers in some
+#       sort of horrizontal scaling.
+ENV CAPTURA_APP__ENVIRONMENT="production" \
+  CAPTURA_LOGS_CONFIG="/home/captura/.captura/logging.yaml" \
+  CAPTURA_LOGS_PATH="/home/captura/.captura/logs" \
+  CAPTURA_CONFIG_APP="/home/captura/.captura/app.yaml" \
+  CAPTURA_CONFIG_CLIENT="/home/captura/.captura/client.yaml" \
+  CAPTURA_STATIC="/home/captura/static" \
+  CAPTURA_SECRET="changeme"
 
 RUN pip install /home/captura/app
 ENTRYPOINT ["python3", "-m", "app", "run"]
@@ -50,9 +55,9 @@ ENTRYPOINT ["python3", "-m", "app", "run"]
 
 FROM prod AS test
 
-ENV CAPTURA_CONFIG_LOG = "/home/captura/.captura/logging.yaml
-ENV CAPTURA_CONFIG_APP_TEST = "/home/captura/.captura/app.yaml
-ENV CAPTURA_CONFIG_CLIENT_TEST = "/home/captura/.captura/client.yaml
+ENV CAPTURA_CONFIG_LOG = "/home/captura/.captura/logging.yaml" \
+  CAPTURA_CONFIG_APP_TEST = "/home/captura/.captura/app.yaml" \
+  CAPTURA_CONFIG_CLIENT_TEST = "/home/captura/.captura/client.yaml"
 
 RUN pip install /home/captura/app[test]
 ENTRYPOINT ["python", "-m", "pytest"]

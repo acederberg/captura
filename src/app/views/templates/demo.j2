@@ -1,0 +1,39 @@
+{# vi: set ft=htmldjango : #}
+
+{% extends "base.j2"  %}
+
+{% block title %}Request A Demo Account{% endblock %}
+{% block body %}
+  <div class="container">
+    <h3>Request A Demo Account</h3>
+    {% if not logged_in %}
+      {% if exists %}
+        <p>Demo is already requested, an admin will reach out to you if you are 
+        accepted.</p>
+      {% elif uuid %}
+        <p>Demo requested! An admin will reach out to you if you are accepted.</p>
+      {% elif exists_user %}
+        <p>User with this email already exists, try
+          <a href="/login">logging in</a>.
+        </p>
+      {% else %}
+        <p>Currently Captura is in alpha, so accounts must be accepted. To request 
+        a demo enter your information bellow.
+        </p>
+        <form action="/demo" method="POST">
+          <label for="email">Email</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            required
+          ></input>
+          <input type="submit"></input>
+        </form>
+      {% endif %}
+    {% else %}
+      <p>You're already logged in! If you really want another demo account log 
+      out and come back here.</p>
+    {% endif %}
+  </div>
+{% endblock %}

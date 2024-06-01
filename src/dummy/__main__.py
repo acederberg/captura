@@ -529,7 +529,7 @@ class CmdDummy(BaseTyperizable):
 
         with context.dummy_handler.sessionmaker() as session:
             Base.metadata.create_all(session.bind)
-            DummyProviderYAML.merge(session)
+            # DummyProviderYAML.merge(session)
 
     @classmethod
     def destroy(

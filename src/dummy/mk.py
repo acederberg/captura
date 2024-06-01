@@ -2,7 +2,7 @@
 import secrets
 from datetime import datetime
 from random import choice, randint
-from typing import Any, Callable, Dict, Generic, List, Protocol, Type, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Protocol, Set, Type, TypeVar
 
 from faker import Faker
 from faker.providers import internet
@@ -112,12 +112,14 @@ class MkDummyProvider(Protocol, Generic[T_ResolvableContra]):
 
 
 def create_mk_dummy(
-    T_model: Type[T_ResolvableContra],
+    T_model: Type[T_ResolvableContra], exclude: Set[str] | None = None
 ) -> MkDummyProvider[T_ResolvableContra]:
+    exclude = exclude or set()
+
     cols = {
         col.name: mk
         for col in inspect(T_model).columns
-        if (mk := get_mk(col)) is not None
+        if col.name not in exclude and (mk := get_mk(col)) is not None
     }
 
     def wrapper(**kwargs) -> T_ResolvableContra:
@@ -129,7 +131,14 @@ def create_mk_dummy(
 
 
 class Mk:
-    user = staticmethod(create_mk_dummy(User))
+    _user = staticmethod(create_mk_dummy(User, {"subject"}))
+
+    @classmethod
+    def user(cls):
+        u = cls._user()
+        u.subject = u.uuid
+        return u
+
     collection = staticmethod(create_mk_dummy(Collection))
     document = staticmethod(create_mk_dummy(Document))
     grant = staticmethod(create_mk_dummy(Grant))

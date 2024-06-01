@@ -912,6 +912,10 @@ class User(SearchableTableMixins, Base):
         autoincrement=True,
     )
 
+    # NOTE: subject should be a sha256 of a token subject. For test tokens,
+    #       the subject should be the sha sum of their uuid.
+    subject: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+
     email: Mapped[str] = mapped_column(String(fields.LENGTH_NAME), unique=True)
     name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
     description: Mapped[str] = mapped_column(String(fields.LENGTH_DESCRIPTION))

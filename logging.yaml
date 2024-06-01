@@ -29,19 +29,19 @@ handlers:
     # level: WARNING
     # formatter: human
     stream: ext://sys.stderr
-  file_json:
-    class: logging.handlers.RotatingFileHandler
-    level: DEBUG
-    formatter: json
-    filename: logs/captura.jsonl
-    maxBytes: 10000000
-    backupCount: 5
+  # file_json:
+  #   class: logging.handlers.RotatingFileHandler
+  #   level: DEBUG
+  #   formatter: json
+  #   filename: logs/captura.jsonl
+  #   maxBytes: 10000000
+  #   backupCount: 5
 # disable_existing_loggers: True
 loggers:
   root:
     level: INFO
     handlers:
       - stdout_dev
-      - file_json
+      # - file_json
   app.controllers.delete:
     level: DEBUG

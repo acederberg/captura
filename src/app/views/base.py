@@ -9,6 +9,7 @@ from http import HTTPMethod
 from typing import Any, ClassVar, Dict, Literal
 
 from fastapi import APIRouter
+from fastapi.templating import Jinja2Templates
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -105,6 +106,9 @@ class ViewMixins:
     view_router: ClassVar[APIRouter]
     view_router_args: ClassVar[Dict[str, Any]] = dict()
     view_routes: ClassVar[Dict[str, str | Dict[str, Any]]] = dict()
+    view_templates: ClassVar[Jinja2Templates] = Jinja2Templates(
+        directory=util.Path.app("views/templates")
+    )
 
 
 class ViewMeta(type):

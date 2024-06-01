@@ -1,5 +1,6 @@
 # =========================================================================== #
 import json
+import secrets
 import traceback
 from typing import Annotated, Generator, List, Set
 
@@ -8,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Mount
 
@@ -87,6 +89,12 @@ class AppView(BaseView):
         openapi_tags=OpenApiTagMetadata,
         swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"},
         routes=routes,
+        middleware=[
+            Middleware(
+                SessionMiddleware,
+                secret_key=util.SESSION_SECRET,
+            )
+        ],
     )  # type: ignore
 
     view_routes = {
@@ -118,8 +126,8 @@ class AppView(BaseView):
     }
 
     @classmethod
-    def get_index(cls, config: DependsConfig) -> str:
-        return f"<a href='{config.app.host_url}/login'>Login</a>"
+    def get_index(cls, request: Request):
+        return cls.view_templates.TemplateResponse(request, "index.j2", {})
 
     @classmethod
     def get_routes(

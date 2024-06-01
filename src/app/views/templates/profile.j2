@@ -1,0 +1,49 @@
+{# vi: set ft=htmldjango : #}
+
+{% extends "base.j2" %}
+
+{% block title %}Profile{% endblock %}
+{% block body %}
+  <div class="container">
+    <h3>Profile</h3>
+    <table>
+      <img src={{ data.data.url_image }}></img>
+      <tr>
+        <td>Name</td>
+        <td>{{ data.data.name }}</td>
+      </tr>
+      <br>
+
+      <tr>
+        <td>Description</td>
+        <td>{{ data.data.description }}</td>
+      </tr>
+      <br>
+
+      <tr>
+        <td>Email</td>
+        <td>{{ data.data.email }}</td>
+      </tr>
+      <br> 
+
+      <tr>
+        <td>Url</td>
+        <td>{{ data.data.url }}</td>
+      </tr>
+
+      <tr>
+        <td>Token</td>
+        <td>{{ access_token }}</td>
+      </tr>
+    </table>
+  </div>
+  <div class="container">
+    <h3>Getting Started</h3>
+    <ul>
+      <li>API Documentation</li>
+      <li>Plans</li>
+      <li>Explorer</li>
+      <li>Profile</li>
+    </ul>
+  </div>
+{% endblock %}
