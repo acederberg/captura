@@ -283,6 +283,7 @@ def context(
 
 @pytest.fixture(scope="session")
 def app(client_config: PytestClientConfig, config: PytestConfig) -> FastAPI | None:
+    print(client_config.model_dump())
     if (host := client_config.host) is None or not host.remote:
         logger.info("Using httpx client with app instance.")
 
@@ -290,9 +291,6 @@ def app(client_config: PytestClientConfig, config: PytestConfig) -> FastAPI | No
         #       formed for remote hosts.
         app: FastAPI
         app = AppView.view_router  # type: ignore
-
-        # def config_callback():
-        #     return config
 
         # NOTE: Dependency overwrites.
         app.dependency_overrides[depends.config] = lambda: config
@@ -339,9 +337,6 @@ def dummy_handler(
     worker_id: str,
 ):
     name_module = f"(`module={request.node.name}`) "
-    with sessionmaker() as session:
-        uuid_user = list(session.scalars(select(User.uuid)))
-
     handler = DummyHandler(sessionmaker, config, auth=auth)
     if worker_id != "master":
         return handler
@@ -390,7 +385,7 @@ def dummy_new(request, dummy_handler: DummyHandler):
             dummy_handler.config,
             session,
             auth=dummy_handler.auth,
-            use_existing=None,
+            use_existing=False,
             client_config_cls=PytestClientConfig,
         )
         dummy.info_mark_used(request.node.name)

@@ -47,11 +47,13 @@ def check_auth0_data(auth0_data: Dict[str, Any]):
 
 
 def exclude_for(use_auth0: bool = True):
+    mode = "auth0" if use_auth0 else "pytest"
+
     def wrapper(config: DependsConfig):
         if config.auth0.use is use_auth0:
             raise HTTPException(
                 409,
-                detail="Not available in auth0 mode.",
+                detail=f"Not available in `{mode}` mode.",
             )
 
     return wrapper

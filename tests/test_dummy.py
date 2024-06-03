@@ -349,7 +349,7 @@ class TestDummyProvider:
 
     def test_token(self, dummy: DummyProvider, count: int):
         token = dummy.token
-        assert isinstance(token, Token) and token.uuid == dummy.user.uuid
+        assert isinstance(token, Token) and token.subject == dummy.user.uuid
         assert (token.tier == TokenPermissionTier.admin) == dummy.user.admin
 
         token_from_enc = Token.model_validate(

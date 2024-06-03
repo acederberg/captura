@@ -27,13 +27,13 @@ handlers:
     level: WARNING
     formatter: human
     stream: ext://sys.stderr
-  file_json:
-    class: logging.handlers.RotatingFileHandler
-    level: DEBUG
-    formatter: json
-    filename: logs/tests.jsonl
-    maxBytes: 10000000
-    backupCount: 5
+  # file_json:
+  #   class: logging.handlers.RotatingFileHandler
+  #   level: DEBUG
+  #   formatter: json
+  #   filename: logs/tests.jsonl
+  #   maxBytes: 10000000
+  #   backupCount: 5
   # queue_handler:
   #   class: logging.handlers.QueueHandler
   #   # handlers:
@@ -45,10 +45,10 @@ handlers:
   #   stream: ext://sys.stdout
 loggers:
   root:
-    level: WARNING
+    level: INFO
     handlers:
       - stdout_dev
-      - file_json
+      # - file_json
   # NOTE: DO NOT ADD HANDLERS HERE! HANDLED DATA IS PASSED UP THE TREE!
   # __main__:
   #   level: DEBUG

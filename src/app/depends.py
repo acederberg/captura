@@ -167,7 +167,7 @@ def token(
 
 def token_optional(
     auth: DependsAuth,
-    authorization: HeaderAuthorizationOptional,
+    authorization: HeaderAuthorizationOptional = None,
 ) -> Token | None:
     if authorization is not None:
         return token(auth, authorization)

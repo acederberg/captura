@@ -152,7 +152,8 @@ class BaseEndpointTest(abc.ABC):
         # async_client: httpx.AsyncClient,
     ) -> AsyncGenerator[Requests, Any]:
         async with httpx.AsyncClient(app=app) as client:
-            yield dummy.requests(client_config, client, handler_methodize=False)
+            requests = dummy.requests(client_config, client, handler_methodize=False)
+            yield requests
 
     def check_status(
         self,

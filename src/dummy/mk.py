@@ -1,4 +1,5 @@
 # =========================================================================== #
+import hashlib
 import secrets
 from datetime import datetime
 from random import choice, randint
@@ -136,7 +137,8 @@ class Mk:
     @classmethod
     def user(cls):
         u = cls._user()
-        u.subject = u.uuid
+        u.uuid = secrets.token_urlsafe(8)
+        u.subject = hashlib.sha256(u.uuid.encode()).hexdigest()
         return u
 
     collection = staticmethod(create_mk_dummy(Collection))

@@ -327,11 +327,11 @@ class Token(BaseModel):
         return data
 
     def encode(self, auth: Auth) -> str:
-        payload = self.model_dump(exclude={"tier", "read"})
+        payload = self.model_dump(exclude={"subject", "tier", "read"})
 
         permissions = [f"read:{item.name}" for item in self.read]
         permissions.append(f"tier:{self.tier.name}")
-        payload.update(permissions=permissions)
+        payload.update(permissions=permissions, sub=self.subject)
 
         return auth.encode(payload)
 
@@ -349,6 +349,7 @@ class Token(BaseModel):
         decoded = auth.decode(data, header=header)
         return cls.model_validate(decoded)
 
+    # NOTE: This function is also stupid.
     @classmethod
     def try_decode(cls, auth: Auth, data: str, *, header: bool = True) -> Self:
         decoded, err = try_decode(auth, data, header=header)
@@ -366,7 +367,7 @@ class Token(BaseModel):
                 401,
                 detail=dict(
                     msg="User does not exist.",
-                    uuid=self.subject_256,
+                    subject=self.subject_256,
                 ),
             )
 

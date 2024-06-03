@@ -1,4 +1,5 @@
 # =========================================================================== #
+import hashlib
 import secrets
 from http import HTTPMethod
 from random import choice, randint
@@ -456,7 +457,7 @@ class BaseDummyProvider:
                 user=self.user,
                 fn="Dummy.get_primary",
                 module="dummy.__init__",
-                tags=["pytest", "get_primary", "fail"]
+                tags=["pytest", "get_primary", "fail"],
             )
             if retry_callback is not None:
                 return retry_callback()
@@ -646,12 +647,13 @@ class BaseDummyProvider:
 
         # NOTE: Because ids must exist (for now, until only uuids).
         documents = self.get_documents(n=5, other=True)
-        assignments = self.mk_assignments(documents=documents, collections=(collection,))
+        assignments = self.mk_assignments(
+            documents=documents, collections=(collection,)
+        )
         session.add_all(assignments)
         session.commit()
 
         return (collection,)
-
 
     def get_collections(
         self,
@@ -942,21 +944,18 @@ class BaseDummyProvider:
             data=Resolved.model_validate(data),
         )
 
-    # # NOTE: `User` will always be the the same as
-    # def data(self, kind: KindData) -> Data:
-    #     logger.debug("Constructing dummy `Data` for kind `%s`.", kind.name)
-    #     ...
-
     @property
     def token(self) -> Token:
-        return Token(
-            uuid=self.user.uuid,
+        # NOTE: Probably follows 7519 section 4.1, 
+        #       https://www.rfc-editor.org/rfc/rfc7519#section-4.1
+        return mwargs(
+            Token,
+            sub=self.user.uuid, #hashlib.sha256(self.user.uuid.encode()).hexdigest(),
             tier=(
                 TokenPermissionTier.paid
                 if not self.user.admin
                 else TokenPermissionTier.admin
             ),
-            read=[],
         )
 
     @property
@@ -1013,13 +1012,14 @@ class BaseDummyProvider:
             ),
             console_handler=ConsoleHandler(client_config),  # type: ignore
         )
-        return Requests(context, client, **kwargs)
+        requests = Requests(context, client, **kwargs)
+        return requests
 
     def dispose(self):
         logger.debug("Disposing of dummy data for user `%s`.", self.user.uuid)
         session = self.session
 
-        session.execute(delete(User).where(User.uuid==self.user.uuid))
+        session.execute(delete(User).where(User.uuid == self.user.uuid))
         session.commit()
 
 
@@ -1158,9 +1158,7 @@ class DummyProvider(BaseDummyProvider):
     def q_select_suitable(self):
         conds = [
             func.JSON_VALUE(User.content, "$.dummy.tainted") == false(),
-            func.JSON_OVERLAPS(
-                '["YAML"]', func.JSON_VALUE(User.content, "$.tags")
-            )
+            func.JSON_OVERLAPS('["YAML"]', func.JSON_VALUE(User.content, "$.tags"))
             != 1,
             User.deleted == false(),
         ]
@@ -1171,9 +1169,7 @@ class DummyProvider(BaseDummyProvider):
                 < self.dummy.users.maximum_uses
             )
 
-        return select(User) .where(*conds) .order_by(func.random()) .limit(1)
-
-
+        return select(User).where(*conds).order_by(func.random()).limit(1)
 
     def __init__(
         self,
@@ -1195,21 +1191,21 @@ class DummyProvider(BaseDummyProvider):
             case bool() as use_existing_bool:
                 user = None
                 if use_existing_bool:
-                    logger.info("Searching for existing dummy.")
+                    logger.debug("Searching for existing dummy.")
                     user = session.scalar(self.q_select_suitable())
 
                 if user is None:
-                    logger.warning("Building a new dummy.")
+                    logger.debug("Building a new dummy.")
                     self.user = self.mk_user()
                     self.mk()
                     return
 
                 self.user = user
             case User() as user:
-                logger.info("Using existing dummy with uuid `%s`.", user.uuid)
+                logger.debug("Using existing dummy with uuid `%s`.", user.uuid)
                 self.user = user
             case _:
-                logger.info("Building a new dummy.")
+                logger.debug("Building a new dummy.")
                 self.user = self.mk_user()
                 self.mk()
 
@@ -1374,11 +1370,14 @@ class DummyHandler:
             if n_generate < 0:
                 return self
 
-            print(dummies.users.minimum)
-            print(n_generate)
             logger.info("Generating `%s` dummies.", n_generate)
             for count in range(n_generate):
-                dd = DummyProvider(self.config, session, auth=self.auth, use_existing=False,)
+                dd = DummyProvider(
+                    self.config,
+                    session,
+                    auth=self.auth,
+                    use_existing=False,
+                )
                 if callback is not None:
                     callback(dd, count, n_generate)
 

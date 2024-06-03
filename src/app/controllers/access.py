@@ -990,7 +990,7 @@ class Access(BaseController):
                     raise ErrAccessDocumentCannotRejectOwner.httpexception(
                         "_msg_cannot_reject_owner",
                         403,
-                        uuid_user_revoker=self.token.uuid,
+                        uuid_user_revoker=user_token.uuid,
                         uuid_user_revokees=uuid_bad,
                         uuid_document=Document.resolve_uuid(session, resolve_document),
                     )
@@ -1403,8 +1403,9 @@ class WithAccess(BaseController, abc.ABC):
             api_origin=self.api_origin,
             api_version=__version__,
         )
+        # NOTE: Depending on token user might be a mistake.
         if self._token is not None:
-            data["uuid_user"]=self._token.uuid
+            data["uuid_user"]=self.token_user.uuid
         return data
 
     # NOTE: Why `Resolved` kind names must correspond to their functions. At

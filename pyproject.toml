@@ -73,7 +73,7 @@ test = [
   "pytest-cov",
   "pytest-asyncio",
   "pytest-html",
-  # "pytest-xdist", # recommended with flakefinder
+  "pytest-xdist", 
   # "pytest-flakefinder",
   "faker",
 ]

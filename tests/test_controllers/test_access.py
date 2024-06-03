@@ -380,7 +380,7 @@ class TestAccessUser(BaseTestAccess):
         )
         for meth in httpcommon:
             access = dummy.access(method=meth)
-            assert access.token.uuid == dummy.user.uuid
+            assert access.token_user.uuid == dummy.user.uuid
             msg = (
                 ErrAccessUser._msg_private
                 if (exclude_public := (meth == HTTPMethod.GET))
@@ -439,7 +439,7 @@ class TestAccessUser(BaseTestAccess):
             user_res = access.user(user.uuid)
             assert (
                 user.uuid
-                == access.token.uuid
+                == access.token_user.uuid
                 == user_res.uuid
                 == access.token_user.uuid
             )
