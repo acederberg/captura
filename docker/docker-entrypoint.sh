@@ -34,3 +34,5 @@ else
 fi
 
 export PATH="$PATH:$(realpath ~/.local/bin)"
+
+export CAPTURA_SESSION_SECRET=$( python -c "import secrets; print(secrets.token_urlsafe())" )

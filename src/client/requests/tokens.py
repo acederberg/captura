@@ -14,7 +14,37 @@ class TokenRequests(BaseRequests):
     typer_commands = dict(
         read="req_read",
         create="req_create",
+        register="req_register",
     )
+
+    @classmethod
+    def req_register(
+        cls,
+        _context: typer.Context,
+        *,
+        email: flags.FlagEmail,
+        name: flags.FlagName,
+        description: flags.FlagDescription,
+        url: flags.FlagUrlOptional = None,
+        url_image: flags.FlagUrlImageOptional = None,
+        public: flags.FlagPublic = True,
+    ) -> httpx.Request:
+
+        context = ContextData.resolve(_context)
+
+        return httpx.Request(
+            "POST",
+            context.url("/auth/register"),
+            headers=context.headers,
+            params=params(
+                email=email,
+                name=name,
+                description=description,
+                url=url,
+                url_image=url_image,
+                public=public,
+            ),
+        )
 
     @classmethod
     def req_read(
@@ -67,8 +97,11 @@ class TokenRequests(BaseRequests):
             headers=context.headers,
         )
 
+    typer_check_verbage = False
+
     read = methodize(req_read, __func__=req_read.__func__)
     create = methodize(req_create, __func__=req_create.__func__)
+    register = methodize(req_register, __func__=req_register.__func__)  # type: ignore
 
 
 __all__ = ("TokenRequests",)

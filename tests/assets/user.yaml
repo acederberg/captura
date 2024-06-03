@@ -24,10 +24,10 @@
 
 - uuid: 777-777-777
   id: 3
-  name: Brian Cohen
-  description: Member of the \"People's Front of Judea\".
-  email: brian@foo.spam
-  url: https://en.wikipedia.org/wiki/Monty_Python's_Life_of_Brian
+  name: Demo User
+  description: Demo user
+  email: demo@example.io
+  url: null
   url_image: null
   content:
     tags:

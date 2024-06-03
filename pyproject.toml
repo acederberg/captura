@@ -38,6 +38,7 @@ dependencies = [
   "fastapi",
 	"pydantic>=2,<2.7",
   "pydantic-settings>=2",
+  "python-multipart",
   "sqlalchemy>=2",
   "yaml-settings-pydantic>=2",
   "PyMySQL",

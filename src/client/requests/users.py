@@ -89,34 +89,6 @@ class UserRequests(BaseRequests):
         )
 
     @classmethod
-    def req_create(
-        cls,
-        _context: typer.Context,
-        *,
-        email: flags.FlagEmail,
-        name: flags.FlagName,
-        description: flags.FlagDescription,
-        url: flags.FlagUrlOptional = None,
-        url_image: flags.FlagUrlImageOptional = None,
-        public: flags.FlagPublic = True,
-    ) -> httpx.Request:
-        context = ContextData.resolve(_context)
-
-        return httpx.Request(
-            "POST",
-            context.url("/users"),
-            headers=context.headers,
-            json=dict(
-                email=email,
-                name=name,
-                description=description,
-                url=url,
-                url_image=url_image,
-                public=public,
-            ),
-        )
-
-    @classmethod
     def req_delete(
         cls,
         _context: typer.Context,
@@ -134,22 +106,6 @@ class UserRequests(BaseRequests):
             ),
             headers=context.headers,
         )
-
-    typer_commands = dict(
-        read="req_read",
-        search="req_search",
-        update="req_update",
-        create="req_create",
-        delete="req_delete",
-    )
-    typer_children = {"grants": UserGrantRequests}
-
-    grants: UserGrantRequests
-    update = methodize(req_update, __func__=req_update.__func__)  # type: ignore
-    create = methodize(req_create, __func__=req_create.__func__)  # type: ignore
-    delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
-    search = methodize(req_search, __func__=req_search.__func__)  # type: ignore
-    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
 
     def __init__(
         self,
@@ -170,6 +126,20 @@ class UserRequests(BaseRequests):
     @property
     def g(self) -> UserGrantRequests:
         return self.grants
+
+    typer_commands = dict(
+        read="req_read",
+        search="req_search",
+        update="req_update",
+        delete="req_delete",
+    )
+    typer_children = {"grants": UserGrantRequests}
+
+    grants: UserGrantRequests
+    update = methodize(req_update, __func__=req_update.__func__)  # type: ignore
+    delete = methodize(req_delete, __func__=req_delete.__func__)  # type: ignore
+    search = methodize(req_search, __func__=req_search.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore
 
 
 __all__ = ("UserRequests",)

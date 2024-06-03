@@ -146,9 +146,7 @@ class Auth0Config(BaseHashable):
             )
         ),
     ]
-    registration_delay: Annotated[
-        int, Field(description="Maximum registration code delay.")
-    ]
+    # registration_delay: Annotated[int, Field(description="Maximum registration code delay.")]
     issuer: Annotated[
         str,
         Field(

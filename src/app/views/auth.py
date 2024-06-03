@@ -18,7 +18,7 @@ from starlette.types import Scope
 
 # --------------------------------------------------------------------------- #
 from app import fields
-from app.auth import Token, try_decode
+from app.auth import Token, TokenPermissionTier, try_decode
 from app.config import Config
 from app.controllers.base import Data, ResolvedUser
 from app.controllers.create import Create
@@ -91,6 +91,11 @@ class AuthViewPytest(BaseView):
     """This is where routes to handle login and getting tokens will be."""
 
     view_routes = dict(
+        post_register=dict(
+            url="/register",
+            name="",
+            dependencies=[Depends(exclude_for(use_auth0=True))],
+        ),
         post_token=dict(
             url="/token",
             name="Mint Test Token",
@@ -105,6 +110,62 @@ class AuthViewPytest(BaseView):
         tags=[OpenApiTags.auth0],
         responses=OpenApiResponseCommon,
     )
+
+    @classmethod
+    def post_register(
+        cls,
+        sessionmaker: DependsSessionMaker,
+        auth: DependsAuth,
+        email: str,
+        name: str,
+        description: str,
+        url_image: str | None = None,
+        url: str | None = None,
+    ) -> str:
+        """Create user, return token."""
+
+        try:
+            registration_data = UserCreateSchema(
+                name=name,
+                description=description,
+                url_image=url_image,
+                url=url,
+                email=email,
+            )
+        except ValidationError as err:
+            raise HTTPException(422, detail=err.json())
+
+        with sessionmaker() as session:
+            q = select(User.uuid).where(User.email == email)
+            email_exists = session.scalar(q) is not None
+            if email_exists:
+                raise HTTPException(400, detail="Account with email already exists.")
+
+            create = Create(
+                session,
+                token=None,
+                method="POST",
+                api_origin="POST /register",
+            )
+            create.create_data = registration_data
+            data: Data[ResolvedUser]
+            data = mwargs(
+                Data[ResolvedUser],
+                token_user=None,
+                data=ResolvedUser.empty(),
+            )
+            data_final = create.user(data)
+            (user,) = data_final.data.users
+            user.subject = hashlib.sha256(user.uuid.encode()).hexdigest()
+            data_final.commit(create.session)
+
+        token = data_final
+        token = mwargs(
+            Token,
+            sub=data_final.data.users[0].uuid,
+            tier=TokenPermissionTier.paid,
+        )
+        return token.encode(auth)
 
     @classmethod
     def post_token(cls, auth: DependsAuth, data: Token) -> str:
@@ -125,7 +186,7 @@ class AuthViewPytest(BaseView):
             raise err
 
         assert decoded is not None
-        decoded["uuid"] = "sub"
+        # decoded["uuid"] = "sub"
         return Token.model_validate(decoded)
 
 
