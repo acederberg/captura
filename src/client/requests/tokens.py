@@ -89,7 +89,7 @@ class TokenRequests(BaseRequests):
         if admin:
             permissions.append("tier:admin")
 
-        token_payload = dict(uuid=uuid, permissions=permissions)
+        token_payload = dict(sub=uuid, permissions=permissions)
         return httpx.Request(
             "POST",
             context.url("/auth/token"),

@@ -61,7 +61,7 @@ def create_validate_datetime(delta: timedelta) -> BeforeValidator:
         if v:
             return v
 
-        utcnow = datetime.utcnow()
+        utcnow = datetime.now()
         return utcnow - delta
 
     return BeforeValidator(validator)
@@ -225,6 +225,8 @@ class UserBaseSchema(BasePrimarySchema):
 class UserCreateSchema(UserBaseSchema):
     kind_schema = KindSchema.create
 
+    content: fields.FieldContent
+
 
 class UserUpdateSchema(BaseUpdateSchema):
     kind_mapped = fields.KindObject.user
@@ -236,11 +238,14 @@ class UserUpdateSchema(BaseUpdateSchema):
     url_image: fields.FieldUrl = None
     url: fields.FieldUrl = None
 
+    content: fields.FieldContent
+
 
 class UserSchema(UserBaseSchema):
     kind_schema = KindSchema.default
 
     uuid: fields.FieldUUID
+
     content: fields.FieldContent
 
 
@@ -269,6 +274,8 @@ class CollectionBaseSchema(BasePrimarySchema):
 class CollectionCreateSchema(CollectionBaseSchema):
     kind_schema = KindSchema.create
 
+    content: fields.FieldContent
+
 
 class CollectionUpdateSchema(BaseUpdateSchema):
     kind_mapped = fields.KindObject.collection
@@ -277,6 +284,8 @@ class CollectionUpdateSchema(BaseUpdateSchema):
     uuid_user: Optional[fields.FieldUUID] = None
     name: Optional[fields.FieldName] = None
     description: Optional[fields.FieldDescription] = None
+
+    content: fields.FieldContent
 
 
 class CollectionMetadataSchema(CollectionBaseSchema):
@@ -287,6 +296,7 @@ class CollectionMetadataSchema(CollectionBaseSchema):
 
 class CollectionSchema(CollectionMetadataSchema):
     kind_schema = KindSchema.default
+
     content: fields.FieldContent
 
 
@@ -351,25 +361,8 @@ class DocumentUpdateSchema(BaseUpdateSchema):
 
     name: Optional[fields.FieldName] = None
     description: Optional[fields.FieldDescription] = None
-    content: Optional[fields.FieldContent] = None
 
-    # @field_validator("content", mode="before")
-    # def check_message_only_when_content(
-    #     cls,
-    #     v: Any,
-    #     info: FieldValidationInfo,
-    # ) -> Any:
-    #     if v is None:
-    #         return v
-    #
-    #     match info.data:
-    #         case object(content=str(), message=str() | None):
-    #             pass
-    #         case object(content=None, message=str()):
-    #             msg = "`message` may only be specified when `content` is."
-    #             raise ValueError(msg)
-    #
-    #     return v
+    content: fields.FieldContent = None
 
 
 class DocumentMetadataSchema(DocumentBaseSchema):

@@ -199,6 +199,7 @@ class UserView(BaseView):
             uuid_user,
             resolve_user_token=update.token_user,
         )
+
         return mwargs(
             OutputWithEvents[UserSchema],
             data=UserSchema.model_validate(data.data.users[0]),

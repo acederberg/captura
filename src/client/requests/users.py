@@ -69,9 +69,10 @@ class UserRequests(BaseRequests):
         *,
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
+        content: flags.FlagContentOptional = None,
         url: flags.FlagUrlOptional = None,
         url_image: flags.FlagUrlImageOptional = None,
-        public: flags.FlagPublic = None,
+        public: flags.FlagPublicOptional = None,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         json = dict(
@@ -80,6 +81,7 @@ class UserRequests(BaseRequests):
             url=url,
             url_image=url_image,
             public=public,
+            content=content,
         )
         return httpx.Request(
             "PATCH",

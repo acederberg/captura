@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, Dict, List, Optional, TypeAlias
 
 import typer
+from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
 from app.fields import PendingFromStr
@@ -356,6 +357,7 @@ FlagContent: TypeAlias = Annotated[
         help="Content.",
         callback=check_content,
     ),
+    Doc("Ignore the string type hint! Should be a `dict`."),
 ]
 FlagContentOptional: TypeAlias = Annotated[
     Optional[str],
@@ -364,6 +366,7 @@ FlagContentOptional: TypeAlias = Annotated[
         help="Content.",
         callback=lambda v: check_content(v, allow_none=True),
     ),
+    Doc("Ignore the string type hint! Should be a `dict`."),
 ]
 FlagEmail: TypeAlias = Annotated[
     Optional[str], typer.Option("--email", help="Email address.")

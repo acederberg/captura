@@ -97,6 +97,7 @@ class DocumentRequests(BaseRequests):
             json=params(
                 name=name,
                 description=description,
+                content=content,
             ),
             headers=context.headers,
         )

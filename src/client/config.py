@@ -3,7 +3,7 @@ import enum
 from sys import flags
 from typing import Annotated, Any, Dict, Literal, Set
 
-from pydantic import BaseModel, Field, SecretStr, computed_field
+from pydantic import BaseModel, Extra, Field, SecretStr, computed_field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
@@ -59,6 +59,7 @@ class UseConfig(BaseModel):
 class Config(BaseYamlSettings):
     model_config = YamlSettingsConfigDict(  # type: ignore
         yaml_files=util.PATH_CONFIG_CLIENT,
+        extra="allow",
     )
 
     output: Annotated[OutputConfig, Field()]

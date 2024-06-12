@@ -23,7 +23,14 @@ from typing import (
 import httpx
 import typer
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 from rich import panel
 from rich.align import Align, AlignMethod, VerticalAlignMethod
 from rich.console import Console, Group, OverflowMethod
@@ -263,12 +270,6 @@ class RequestHandlerData(BaseHandlerData[T_HandlerData]):
     expect_status: int
     expect_err: ErrDetail | None
 
-    # @property
-    # def adapter(self) -> TypeAdapter[T_HandlerData]:
-    #     if self._adapter is None:
-    #         raise ValueError("No adapter set.")
-    #     return self._adapter
-
     def __init__(
         self,
         response: httpx.Response,
@@ -321,8 +322,10 @@ class RequestHandlerData(BaseHandlerData[T_HandlerData]):
                 if data is None:
                     try:
                         self.data = adptr.validate_json(response.content)
-                    except json.JSONDecodeError:
-                        self.data = None
+                    except ValidationError:
+                        msg = "Failed to handle response with adapter `%s`." % adptr
+                        CONSOLE.print(msg)
+                        self.data = response.json() if response.content else None
                 else:
                     self._data = adptr.validate_python(data)
                 self.adapter = adptr
@@ -425,6 +428,7 @@ def render_request(
     output_config: OutputConfig,
     request: httpx.Request,
     table: Table | None = None,
+    # max_content_length: int | None = 4096,
 ) -> Table:
 
     if table is None:

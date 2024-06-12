@@ -107,13 +107,19 @@ class CollectionRequests(BaseRequests):
         description: flags.FlagDescriptionOptional = None,
         public: flags.FlagPublicOptional = None,
         uuid_document: flags.FlagUUIDDocumentsOptional = list(),
+        content: flags.FlagContentOptional = None,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
         return httpx.Request(
             "POST",
             context.url("/collections"),
             params=dict(uuid_document=uuid_document),
-            json=dict(name=name, description=description, public=public),
+            json=dict(
+                name=name,
+                description=description,
+                public=public,
+                content=content,
+            ),
             headers=context.headers,
         )
 
@@ -123,6 +129,7 @@ class CollectionRequests(BaseRequests):
         _context: typer.Context,
         uuid_collection: flags.ArgUUIDCollection,
         *,
+        content: flags.FlagContentOptional = None,
         force: flags.FlagForce = False,
     ) -> httpx.Request:
         context = ContextData.resolve(_context)
@@ -131,6 +138,7 @@ class CollectionRequests(BaseRequests):
             context.url(f"/collections/{uuid_collection}"),
             params=dict(force=force),
             headers=context.headers,
+            content=content,
         )
 
     @classmethod
@@ -142,6 +150,7 @@ class CollectionRequests(BaseRequests):
         name: flags.FlagNameOptional = None,
         description: flags.FlagDescriptionOptional = None,
         public: flags.FlagPublicOptional = None,
+        content: flags.FlagContentOptional = None,
         uuid_user: flags.FlagUUIDUserOptional = None,
     ) -> httpx.Request:
         data = params(
@@ -149,6 +158,7 @@ class CollectionRequests(BaseRequests):
             description=description,
             public=public,
             uuid_user=uuid_user,
+            content=content,
         )
         context = ContextData.resolve(_context)
         return httpx.Request(
