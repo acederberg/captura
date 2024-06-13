@@ -22,3 +22,5 @@ test-results.html
 .jsonl
 temp.*
 flakey.yaml
+extensions
+plugins

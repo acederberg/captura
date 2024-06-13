@@ -123,7 +123,11 @@ class Cli:
 
         self._run(app="app:app", reload=reload)
 
-    def _run(self, app, reload: bool):
+    def _run(
+        self,
+        app,
+        reload: bool,
+    ):
         import uvicorn
 
         kwargs: Dict[str, Any] = dict(
