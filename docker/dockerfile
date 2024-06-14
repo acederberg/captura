@@ -22,6 +22,10 @@ FROM base AS dev
 
 COPY ./docker-entrypoint.sh /home/captura/.bashrc
 
+# NOTE: Running this script can help avoid installing all of the dependencies
+#       and virtual environment.
+# RUN bash /home/captura/.bashrc "setup" >> ~/.captura-setup.log
+
 
 # --------------------------------------------------------------------------- #
 

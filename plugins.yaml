@@ -1,0 +1,6 @@
+plugins:
+  text:
+    repository: ssh://git@github.com/acederberg/captura-text.git
+    exclude: true
+    tag: 0.0.0
+    branch: master

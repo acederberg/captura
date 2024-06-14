@@ -4,6 +4,7 @@ What Does This Do?
 The goals of captura are the following:
 
 A. As a Base for/Enhancement of other apps:
+
    1. Extensibility using plugins. For instance, setting a schema for the 
       ``content`` sections of any of the 'first class' tables or adding 
       additional granting functionality.
@@ -12,10 +13,12 @@ A. As a Base for/Enhancement of other apps:
       tables where users can choose how to shape their data.
 
 B. Control of Permissions and Visibility:
+
    1. Delegate various levels of permissions in sharing, e.g. ``view``, 
       ``modify``, or ``own``. ``documents`` can be public or private.
    2. Organize ``documents`` into ``collections`` and ``collections`` in 
       ``collections``.
+
 C. Emmit events for those who desire them.
 
 

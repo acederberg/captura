@@ -7,8 +7,6 @@ requires = ["setuptools >= 40.6.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 
-
-
 [project]
 authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
 name = "captura"
@@ -73,10 +71,11 @@ test = [
   # "pytest-flakefinder",
   "faker",
 ]
-
+plugin = ["GitPython"]
 
 [project.scripts]
 captura = "app.__main__:main"
+plugin = "plugin.__main__:main"
 legere = "client.__main__:main"
 simulatus = "dummy.__main__:main"
 

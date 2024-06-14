@@ -1,38 +1,89 @@
 # NOTE: This will be mounted as the bashrc for the default user.
 
-# Go to WORKDIR
-cd /app
+export CAPTURA_HOME="/home/captura"
+export PATH="$PATH:$CAPTURA_HOME/.local/bin"
+export CAPTURA_WORKDIR="$CAPTURA_HOME/app" 
+export CAPTURA_VENV="$CAPTURA_HOME/.venv" \
+  CAPTURA_PLUGINS_CONFIG="$CAPTURA_HOME/plugins.yaml" \
+  CAPTURA_PLUGINS_DIRECTORY="$CAPTURA_WORKDIR/plugins"  
 
 
-# Virtual environment
-if [[ ! -d .venv ]]; then
-  echo "Virtual environment does not exist. Creating under \`.venv\`."
-  python -m venv .venv
-else
-  echo "Virtual environment already exists.";
-fi
+function captura_venv (){
 
-source .venv/bin/activate
+  # Virtual environment
+  if [[ ! -d $CAPTURA_VENV ]]; then
+    echo "Virtual environment does not exist. Creating under \`.venv\`."
+    python -m venv $CAPTURA_VENV
+  else
+    echo "Virtual environment already exists.";
+  fi
 
-
-# Install app and test dependencies.
-EXISTS=$( pip list 2> /dev/null | grep articles-api )
-if [[ ! $EXISTS ]]; then
-  echo "Python project not installed in virtual environment. Installing."
-  python -m pip install --editable .
-else
-  echo "Python project already installed in virtual environment."
-fi
+  source .venv/bin/activate
+}
 
 
-EXISTS=$( pip list 2> /dev/null | grep pytest )
-if [[ ! $EXISTS ]]; then
-  echo "Python project test dependencies not installed. Installing."
-  python -m pip install .[test];
-else
-  echo "Python project test dependencies already installed."
-fi
+function captura_install_from_path(){
 
-export PATH="$PATH:$(realpath ~/.local/bin)"
+  # Install app and test dependencies.
+  echo "Installing dependencies for \`$1\`."
+  python -m pip install --editable $1
 
-export CAPTURA_SESSION_SECRET=$( python -c "import secrets; print(secrets.token_urlsafe())" )
+}
+
+
+function captura_install_plugins(){
+
+  if $( test -d $CAPTURA_PLUGINS ); then
+    echo "Found plugins in \`$CAPTURA_PLUGINS_DIRECTORY\`\!"
+    plugins=$( ls -d $CAPTURA_PLUGINS_DIRECTORY/[a-zA-Z-]*/ | xargs -i realpath {} )
+    for plugin in $plugins;
+    do
+      echo "Installing dependencies for \`$plugin\`."
+      captura_install_from_path $plugins
+    done
+  else
+    echo "No plugins found (in \`$CAPTURA_PLUGINS_DIRECTORY\`)."
+  fi
+
+}
+
+
+# Install captura and any existing plugins.
+function captura_install(){
+
+  captura_install_from_path "$CAPTURA_WORKDIR" 
+  captura_install_from_path "$CAPTURA_WORKDIR[test]" 
+  captura_install_from_path "$CAPTURA_WORKDIR[plugins]" 
+
+  if (test -d $CAPTURA_PLUGINS_DIRECTORY); then
+    python -m plugins up
+  fi
+
+  captura_install_plugins "$CAPTURA_WORKDIR" 
+}
+
+
+function captura_setup() {
+  captura_venv
+  captura_install
+}
+
+
+
+function main(){
+  cd $CAPTURA_WORKDIR
+
+  if [[ $1 = "install" ]]; then captura_install
+  elif [[ $1 = "setup" ]]; then captura_setup
+  elif [[ $1 = "plugins" ]]; then captura_install_plugins
+  else echo "Doing nothing."; fi
+
+  cd -
+}
+
+captura_venv
+
+if $( test ! $1 ); then main $1; fi
+
+
+# export CAPTURA_SESSION_SECRET=$( python -c "import secrets; print(secrets.token_urlsafe())" )

@@ -4,6 +4,7 @@ import importlib.util
 import logging
 import logging.config
 import logging.handlers
+import os
 import secrets
 import sys
 from os import environ, path
@@ -21,6 +22,16 @@ LOG_LEVEL = logging.INFO
 
 
 class Path:
+    @classmethod
+    def ensure(cls, dirpath: str) -> None:
+        if path.isfile(dirpath):
+            raise ValueError(f"`{dirpath}` should not be a file.")
+
+        if path.isdir(dirpath) or path.exists(dirpath):
+            return
+
+        os.mkdir(dirpath)
+
     @classmethod
     def base(cls, v: str) -> str:
         return path.join(PATH_BASE, v)
@@ -45,12 +56,17 @@ class Path:
     def config(cls, v: str) -> str:
         return path.join(PATH_CONFIG, v)
 
+    @classmethod
+    def plugins(cls, v: str) -> str:
+        return path.join(PATH_PLUGINS, v)
+
 
 PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
 PATH_APP: str = path.join(PATH_BASE, "src/app")
 PATH_CLIENT: str = path.join(PATH_BASE, "src/client")
 PATH_CONFIG: str = path.join(PATH_BASE, "configs")
 PATH_DOCKER: str = path.join(PATH_BASE, "docker")
+PATH_PLUGINS: str = path.join(PATH_BASE, "plugins")
 PATH_TESTS: str = path.join(PATH_BASE, "tests")
 PATH_TESTS_ASSETS: str = path.join(PATH_TESTS, "assets")
 
