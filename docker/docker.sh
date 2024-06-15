@@ -62,6 +62,9 @@ function captura_install(){
   captura_install_from_path "$CAPTURA_WORKDIR[test]" 
   captura_install_from_path "$CAPTURA_WORKDIR[plugins]" 
 
+}
+
+function captura_plugins() {
   if (test -d $CAPTURA_PLUGINS_DIRECTORY); then
     python -m plugins up
   fi
@@ -74,7 +77,7 @@ function main(){
   cd $CAPTURA_WORKDIR
 
   if [[ "$1" = "install" ]]; then captura_install
-  elif [[ "$1" = "plugins" ]]; then captura_install_plugins
+  elif [[ "$1" = "plugins" ]]; then captura_plugins
   else echo "Doing nothing."; fi
 
   cd -
@@ -82,10 +85,6 @@ function main(){
 
 
 if [[ $CAPTURA_APP__ENVIRONMENT != "production" ]]; then captura_venv; fi
-
-# [[ "$1" ]] && echo "1" || echo "9" 
-#
-#
 if [[ "$1" ]]; then main "$1"; fi
 
 

@@ -28,15 +28,11 @@ COPY ./docker.sh /home/captura/.bashrc
 FROM base AS production
 
 # NOTE: Assumes that build is occuring at the project root.
-COPY . /home/captura/app
-
-USER root
-RUN chown captura:captura -R /home/captura
-USER captura
+COPY --chown=captura:captura ./ /home/captura/app
 
 RUN mkdir /home/captura/.captura /home/captura/.captura/logs
 COPY ./docker/logging.yaml /home/captura/.captura
-COPY ./docker.sh /home/captura/docker.sh
+COPY ./docker/docker.sh /home/captura/docker.sh
 
 # NOTE: Captura secret should be set explicitly when running containers in some
 #       sort of horrizontal scaling.
@@ -48,9 +44,18 @@ ENV CAPTURA_APP__ENVIRONMENT="production" \
   CAPTURA_STATIC="/home/captura/static" \
   CAPTURA_SECRET="changeme"
 
-RUN pip install /home/captura/app \
-  && bash /home/captura/docker.sh install
+RUN bash /home/captura/docker.sh install
 ENTRYPOINT ["python3", "-m", "app", "run"]
+
+
+# --------------------------------------------------------------------------- #
+# NOTE: This its own step since it does not make sense to build all images dep
+#       ending on plugins as it can be very inconsistent. If using this, just
+#       ensure that all generated images are properly tagged.
+
+FROM production AS production_with_plugins
+
+RUN bash /home/captura/docker.sh plugins
 
 
 # --------------------------------------------------------------------------- #
