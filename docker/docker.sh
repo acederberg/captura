@@ -9,6 +9,9 @@ export CAPTURA_VENV="$CAPTURA_HOME/.venv" \
 
 
 function captura_venv (){
+  if [[ $CAPTURA_APP__ENVIRONMENT = "production" ]]; then
+    return
+  fi
 
   # Virtual environment
   if [[ ! -d $CAPTURA_VENV ]]; then
@@ -18,16 +21,20 @@ function captura_venv (){
     echo "Virtual environment already exists.";
   fi
 
-  source .venv/bin/activate
+  source $CAPTURA_VENV/bin/activate
 }
 
 
 function captura_install_from_path(){
 
   # Install app and test dependencies.
-  echo "Installing dependencies for \`$1\`."
-  python -m pip install --editable $1
-
+  if [[ $CAPTURA_APP__ENVIRONMENT != "production" ]]; then
+    echo "Installing dependencies for \`$1\` in editable mode."
+    python -m pip install --editable $1
+  else
+    echo "Installing dependencies for \`$1\`."
+    python -m pip install $1
+  fi
 }
 
 
@@ -63,27 +70,23 @@ function captura_install(){
 }
 
 
-function captura_setup() {
-  captura_venv
-  captura_install
-}
-
-
-
 function main(){
   cd $CAPTURA_WORKDIR
 
-  if [[ $1 = "install" ]]; then captura_install
-  elif [[ $1 = "setup" ]]; then captura_setup
-  elif [[ $1 = "plugins" ]]; then captura_install_plugins
+  if [[ "$1" = "install" ]]; then captura_install
+  elif [[ "$1" = "plugins" ]]; then captura_install_plugins
   else echo "Doing nothing."; fi
 
   cd -
 }
 
-captura_venv
 
-if $( test ! $1 ); then main $1; fi
+if [[ $CAPTURA_APP__ENVIRONMENT != "production" ]]; then captura_venv; fi
+
+# [[ "$1" ]] && echo "1" || echo "9" 
+#
+#
+if [[ "$1" ]]; then main "$1"; fi
 
 
 # export CAPTURA_SESSION_SECRET=$( python -c "import secrets; print(secrets.token_urlsafe())" )

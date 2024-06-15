@@ -18,13 +18,9 @@ ENTRYPOINT ["bash"]
 
 # --------------------------------------------------------------------------- #
 
-FROM base AS dev
+FROM base AS development
 
-COPY ./docker-entrypoint.sh /home/captura/.bashrc
-
-# NOTE: Running this script can help avoid installing all of the dependencies
-#       and virtual environment.
-# RUN bash /home/captura/.bashrc "setup" >> ~/.captura-setup.log
+COPY ./docker.sh /home/captura/.bashrc
 
 
 # --------------------------------------------------------------------------- #
@@ -40,6 +36,7 @@ USER captura
 
 RUN mkdir /home/captura/.captura /home/captura/.captura/logs
 COPY ./docker/logging.yaml /home/captura/.captura
+COPY ./docker.sh /home/captura/docker.sh
 
 # NOTE: Captura secret should be set explicitly when running containers in some
 #       sort of horrizontal scaling.
@@ -51,7 +48,8 @@ ENV CAPTURA_APP__ENVIRONMENT="production" \
   CAPTURA_STATIC="/home/captura/static" \
   CAPTURA_SECRET="changeme"
 
-RUN pip install /home/captura/app
+RUN pip install /home/captura/app \
+  && bash /home/captura/docker.sh install
 ENTRYPOINT ["python3", "-m", "app", "run"]
 
 

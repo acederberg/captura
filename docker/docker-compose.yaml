@@ -5,7 +5,8 @@ services:
     build:
       context: '.'
       dockerfile: './dockerfile'
-      target: dev
+      target: development
+    image: acederberg/captura/development:0.1.1
     container_name: captura-server
     ports: 
       - target: 8080
@@ -14,6 +15,7 @@ services:
       captura: {}
     tty: true
     volumes:
+      - 'venv:/home/adrian/.venv'
       - '..:/home/captura/app'
   db:
     image: mysql:8
@@ -25,6 +27,11 @@ services:
       MYSQL_PASSWORD: changeme
     networks:
       captura: {}
+    volumes:
+      - mysql-data:/var/lib/mysql
+volumes:
+  venv: null
+  mysql-data: null
 networks:
   captura:
     driver: bridge
