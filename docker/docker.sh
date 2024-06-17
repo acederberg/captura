@@ -56,11 +56,19 @@ function captura_install_plugins(){
 
 
 # Install captura and any existing plugins.
-function captura_install(){
+function captura_ci(){
 
   captura_install_from_path "$CAPTURA_WORKDIR" 
+  captura_install_from_path "$CAPTURA_WORKDIR[plugin]" 
+
+}
+
+
+function captura_install(){
+
   captura_install_from_path "$CAPTURA_WORKDIR[test]" 
-  captura_install_from_path "$CAPTURA_WORKDIR[plugins]" 
+  captura_install_from_path "$CAPTURA_WORKDIR[dev]" 
+  captura_install_from_path "$CAPTURA_WORKDIR[ci]" 
 
 }
 
@@ -77,6 +85,7 @@ function main(){
   cd $CAPTURA_WORKDIR
 
   if [[ "$1" = "install" ]]; then captura_install
+  elif [[ "$1" = "ci" ]]; then captura_ci
   elif [[ "$1" = "plugins" ]]; then captura_plugins
   else echo "Doing nothing."; fi
 

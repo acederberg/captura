@@ -44,7 +44,7 @@ ENV CAPTURA_APP__ENVIRONMENT="production" \
   CAPTURA_STATIC="/home/captura/static" \
   CAPTURA_SECRET="changeme"
 
-RUN bash /home/captura/docker.sh install
+RUN bash /home/captura/docker.sh ci >> ~/.captura/logs/ci.log
 ENTRYPOINT ["python3", "-m", "app", "run"]
 
 

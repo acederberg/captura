@@ -47,6 +47,7 @@ dependencies = [
 requires-python = ">=3.11" # because spm
 
 
+
 [project.optional-dependencies]
 ci = [
   "build",
@@ -78,6 +79,24 @@ captura = "app.__main__:main"
 plugin = "plugin.__main__:main"
 legere = "client.__main__:main"
 simulatus = "dummy.__main__:main"
+
+
+# NOTE: DO NOT TOUCH THIS! INCLUSION OF PACKAGE DATA IS A PAIN! See
+#
+# .. code:: text
+#
+#    https://stackoverflow.com/questions/76485082/package-and-find-non-python-files-in-a-python-package
+#
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["py.typed", "*.yaml", "*.rst", "*.j2"]
+
+
 
 
 [tool.black]
@@ -148,10 +167,6 @@ push            = false
 
 
 [tool.setuptools_scm]
-
-
-[tool.setuptools.package-data]
-"captura" = ["py.typed", "*.yaml", "*.rst"]
 
 
 # NOTE: Look at this later: https://docs.pytest.org/en/6.2.x/usage.html#dropping-to-pdb-python-debugger-on-failures
