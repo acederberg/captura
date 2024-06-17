@@ -575,3 +575,7 @@ logging.config.dictConfig
 def main():
     tt = typerize(CmdDummy, callback=ContextDataDummy.for_typer)
     tt()
+
+
+if __name__ == "__main__":
+    main()
