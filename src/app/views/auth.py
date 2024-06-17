@@ -381,7 +381,8 @@ class AuthViewAuth0(BaseView):
 
         id_token_decoded = "Failed to decode `id_token`."
         if len(id_token_split := id_token_raw.split(".")) == 3:
-            id_token_decoded = base64.b64decode(id_token_split[1])
+            print(id_token_split)
+            id_token_decoded = base64.b64decode(id_token_split[1] + "==")
 
         id_token_decoded = json.loads(id_token_decoded)
         # request.session["id_token_decoded"] = id_token_decoded
