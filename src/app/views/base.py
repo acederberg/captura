@@ -6,6 +6,7 @@ This includes a metaclass so that undecorated functions may be tested.
 # =========================================================================== #
 import enum
 from http import HTTPMethod
+from os import path
 from typing import Any, ClassVar, Dict, Literal
 
 from fastapi import APIRouter
@@ -107,7 +108,7 @@ class ViewMixins:
     view_router_args: ClassVar[Dict[str, Any]] = dict()
     view_routes: ClassVar[Dict[str, str | Dict[str, Any]]] = dict()
     view_templates: ClassVar[Jinja2Templates] = Jinja2Templates(
-        directory=util.Path.app("views/templates")
+        directory=path.join(path.dirname(__file__), "templates")
     )
 
 
