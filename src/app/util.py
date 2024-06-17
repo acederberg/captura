@@ -104,6 +104,10 @@ PATH_CONFIG_TEST_CLIENT = from_env(
     "CONFIG_CLIENT_TEST",
     Path.config("client.test.yaml"),
 )
+PATH_HOOKS: str = from_env(
+    "HOOKS",
+    path.join(PATH_BASE, "plugins/hooks.py"),
+)
 
 PATH_STATIC = from_env("STATIC", Path.app("static"))
 PATH_LOGS = from_env("LOGS", Path.base("logs"))

@@ -13,17 +13,18 @@ logger = util.get_logger(__name__)
 
 
 PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
-PATH_CAPTURA_HOOKS: str = path.join(PATH_BASE, "plugins/hooks.py")
 
 
 def get_hooks() -> None | ModuleType:
-    if not path.isfile(PATH_CAPTURA_HOOKS):
-        logger.info(f"No hooks found at `{PATH_CAPTURA_HOOKS}`.")
+    if not path.isfile(util.PATH_HOOKS):
+        logger.info(f"No hooks found at path `{util.PATH_HOOKS}`.")
         return
 
-    hooks_spec = importlib.util.spec_from_file_location("hooks", PATH_CAPTURA_HOOKS)
+    hooks_spec = importlib.util.spec_from_file_location(
+        "hooks", util.PATH_HOOKS
+    )
     if hooks_spec is None:
-        logger.info(f"No hooks found at `{PATH_CAPTURA_HOOKS}`.")
+        logger.info(f"No hooks found at path `{util.PATH_HOOKS}`.")
         return
 
     logger.info("Found hooks.")
