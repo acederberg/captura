@@ -7,7 +7,7 @@ services:
       context: '..'
       dockerfile: './docker/dockerfile'
       target: development
-    image: acederberg/captura-development:0.1.2
+    image: acederberg/captura-development:0.1.3
     container_name: captura-server
     ports: 
       - target: 8080
