@@ -1,12 +1,13 @@
 ---
 # version: '3.9'
+name: captura
 services:
   server:
     build:
-      context: '.'
-      dockerfile: './dockerfile'
+      context: '..'
+      dockerfile: './docker/dockerfile'
       target: development
-    image: acederberg/captura/development:0.1.1
+    image: acederberg/captura-development:0.1.2
     container_name: captura-server
     ports: 
       - target: 8080
@@ -15,8 +16,11 @@ services:
       captura: {}
     tty: true
     volumes:
-      - 'venv:/home/adrian/.venv'
+      - '.venv:/home/captura/.venv'
       - '..:/home/captura/app'
+      # NOTE: Overwrite the data volumes since they slow down refresh.
+      - /home/captura/app/docker/.data
+      - /home/captura/app/docker/.venv
   db:
     image: mysql:8
     container_name: captura-db
@@ -28,10 +32,7 @@ services:
     networks:
       captura: {}
     volumes:
-      - mysql-data:/var/lib/mysql
-volumes:
-  venv: null
-  mysql-data: null
+      - .data/mysql:/var/lib/mysql
 networks:
   captura:
     driver: bridge

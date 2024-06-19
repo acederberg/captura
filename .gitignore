@@ -26,3 +26,4 @@ extensions
 plugins
 plugins.yaml
 mysql-data
+.data

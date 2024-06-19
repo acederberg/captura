@@ -73,10 +73,7 @@ function captura_install(){
 }
 
 function captura_plugins() {
-  if (test -d $CAPTURA_PLUGINS_DIRECTORY); then
-    python -m plugins up
-  fi
-
+  if (test -d $CAPTURA_PLUGINS_DIRECTORY); then python -m plugins up; fi
   captura_install_plugins "$CAPTURA_WORKDIR" 
 }
 

@@ -12,6 +12,7 @@ RUN chown -R captura:captura /home/captura
 
 USER captura
 WORKDIR /home/captura/app
+# ENV PATH="$PATH:/home/captura/.local/bin"
 
 ENTRYPOINT ["bash"]
 
@@ -20,7 +21,8 @@ ENTRYPOINT ["bash"]
 
 FROM base AS development
 
-COPY ./docker.sh /home/captura/.bashrc
+# NOTE: Assumes that build is occuring at the project root.
+COPY ./docker/docker.sh /home/captura/.bashrc
 
 
 # --------------------------------------------------------------------------- #
