@@ -6,6 +6,7 @@ import typer
 import yaml
 
 # --------------------------------------------------------------------------- #
+from app import util
 from client import hooks
 from client.config import Config, HostConfig
 from client.handlers import CONSOLE, ConsoleHandler, HandlerData
@@ -18,7 +19,8 @@ from client.requests.grants import GrantRequests
 from client.requests.tokens import TokenRequests
 from client.requests.users import UserRequests
 
-hooks.do_hooks(Requests)
+if util.PATH_HOOKS_USE:
+    hooks.do_hooks(Requests)
 
 
 FlagConfigOut = Annotated[

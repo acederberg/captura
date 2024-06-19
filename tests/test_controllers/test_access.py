@@ -351,8 +351,12 @@ class TestAccessUser(BaseTestAccess):
         indirect=["dummy"],
     )
     def test_deleted(self, dummy: DummyProviderYAML, count):
-        kwargs = GetPrimaryKwargs(deleted=True, public=True)
+        kwargs = GetPrimaryKwargs(deleted=False, public=True)
         (user_other,) = dummy.get_users(1, kwargs)
+        user_other.deleted = True
+        dummy.session.add(user_other)
+        dummy.session.commit()
+
         access = dummy.access()
 
         if err := expect_exc(

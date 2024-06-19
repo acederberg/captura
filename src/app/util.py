@@ -108,6 +108,8 @@ PATH_HOOKS: str = from_env(
     "HOOKS",
     path.join(PATH_BASE, "plugins/hooks.py"),
 )
+PATH_HOOKS_USE: bool = from_env("HOOKS_USE", "1") == "1"
+
 
 PATH_STATIC = from_env("STATIC", Path.app("static"))
 PATH_LOGS = from_env("LOGS", Path.base("logs"))

@@ -46,37 +46,22 @@ class BaseHashable(BaseModel):
     This enables caching of the configuration dependency.
     """
 
-    hashable_fields_exclude: ClassVar[Set[str]]
+    hashable_fields_exclude: ClassVar[Set[str]] = set()
     model_config = ConfigDict(extra="allow")
 
-    def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
-        """Compute fields to exclude from hashing.
-
-        Only dictionary fields are excluded from hashing, so changes in any
-        such fields will no be considered by ``fastapi.Depends``.
-        """
-        super().__init_subclass__(**kwargs)
-        cls.model_fields
-        cls.hashable_fields_exclude = {
-            key
-            for key, value in cls.model_fields.items()
-            if cls.inspect_model_field(value)
-        }
-
-    @classmethod
-    def inspect_model_field(cls, value: FieldInfo) -> bool:
-        # NOTE: Do not hash dicts.
-        return typing.get_origin(value.annotation) != dict
-
     def __hash__(self):
-        return hash(
-            (type(self),)
-            + tuple(
-                value
-                for key, value in self.__dict__.items()
-                if self.inspect_model_field(self.model_fields[key])
+        try:
+            return hash(
+                (type(self),)
+                + tuple(
+                    value
+                    for key, value in self.__dict__.items()
+                    if key not in self.hashable_fields_exclude
+                )
             )
-        )
+        except TypeError as err:
+            msg = "Unhashable type encountered!"
+            raise TypeError(msg) from err
 
 
 class MySqlHostConfig(BaseHashable):
@@ -108,6 +93,8 @@ class MySqlHostConfig(BaseHashable):
 
 
 class MySqlConfig(BaseHashable):
+    hashable_fields_exclude = {"engine_kwargs"}
+
     host: MySqlHostConfig
     engine_kwargs: Annotated[
         Dict[str, Any],

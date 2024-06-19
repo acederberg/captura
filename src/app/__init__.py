@@ -1,6 +1,6 @@
 __version__ = "0.1.1"
 
-from . import hooks
+from . import hooks, util
 from .auth import Auth
 from .config import Config
 from .models import (
@@ -21,7 +21,9 @@ from .models import (
 from .views import AppView
 
 app = AppView.view_router
-hooks.do_hooks(AppView)
+
+if util.PATH_HOOKS_USE:
+    hooks.do_hooks(AppView)
 
 
 __all__ = (
