@@ -138,18 +138,24 @@ class AppView(BaseView):
         names_fragment: str | None = None,
         paths_fragment: str | None = None,
     ) -> List[AppRouteInfo]:
-        if not access.token.admin:
-            raise HTTPException(403, detail="Admins only.")
+        if not access.token:
+            raise HTTPException(403, detail="Token required.")
 
         # NOTE: Type ignored for metaclass considerations.
         items: Generator[APIRoute, None, None]
-        items = (item for item in cls.view_router.routes)  # type: ignore
+        items = (
+            item
+            for item in cls.view_router.routes  # type: ignore
+            if isinstance(item, APIRoute)
+        )
 
         if methods is not None:
             items = (
                 item
                 for item in items
                 if all(method in methods for method in item.method)
+                # hasattr(item, "methods")
+                # and
             )
 
         match (names, names_fragment):
