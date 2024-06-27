@@ -154,17 +154,128 @@ class ProfilesCommand(BaseTyperizable):
         return
 
 
+class DockerCommand(BaseTyperizable):
+    typer_check_verbage = False
+    typer_decorate = False
+    typer_commands = dict(server="server", db="db")
+
+    @classmethod
+    def server(
+        cls,
+        _context: typer.Context,
+        inspect: Annotated[
+            bool,
+            typer.Option(
+                "-i",
+                "--inspect",
+                help="Display docker inspect results. Has priority over `--ips`.",
+            ),
+        ] = False,
+        ips: Annotated[
+            bool,
+            typer.Option(
+                "--ips",
+                help="Display IPS from docker inspect results.",
+            ),
+        ] = False,
+        config_path: FlagConfig = None,
+        config_path_out: FlagConfigOut = None,
+    ) -> None:
+        import docker
+
+        context = ContextData.resolve(_context)
+        console = context.console_handler.console
+
+        client = docker.DockerClient()
+        if (container := client.containers.get("captura-server")) is None:
+            console.print("[red]Docker compose project is not running.")
+            raise typer.Exit(1)
+
+        res = client.api.inspect_container(container.name)
+
+        data: Dict[str, Any]
+        match (inspect, ips):
+            case (True, _):
+                data = res
+            case (_, True):
+                networks = res["NetworkSettings"]["Networks"]
+                data = {
+                    network_name: network_detail["IPAddress"]
+                    for network_name, network_detail in networks.items()
+                }
+            case _:
+                networks = res["NetworkSettings"]["Networks"]
+                hostconfs = {
+                    "docker": HostConfig(
+                        host="http://" + network_detail["IPAddress"] + ":8080",
+                        remote=True,
+                    )
+                    for network_detail in networks.values()
+                }
+                if config_path:
+                    with open(config_path, "r") as file:
+                        config = Config.model_validate(yaml.safe_load(file))
+                else:
+                    config = context.config
+
+                config.hosts.update(hostconfs)
+
+                if config_path_out:
+                    console.print("[green]Updating client config.")
+                    with open(config_path_out, "w") as file:
+                        data = config.model_dump_config()
+                        yaml.dump(data, file)
+
+                    raise typer.Exit()
+
+                data = config.model_dump(
+                    mode="json", exclude={"profile", "host", "token"}
+                )
+                context.console_handler.handle(
+                    handler_data=HandlerData(
+                        data=data,
+                        output_config=context.config.output,
+                    )
+                )
+                return
+
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=data,
+                output_config=context.config.output,
+            )
+        )
+
+    @classmethod
+    def db(cls, _context: typer.Context):
+        import docker
+
+        context = ContextData.resolve(_context)
+        console = context.console_handler.console
+
+        client = docker.DockerClient()
+        if (container := client.containers.get("captura-db")) is None:
+            console.print("[red]Docker compose project is not running.")
+            raise typer.Exit(1)
+
+        res = client.api.inspect_container(container.name)
+        networks = res["NetworkSettings"]["Networks"]
+        data = {
+            network_name: network_detail["IPAddress"]
+            for network_name, network_detail in networks.items()
+        }
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=data,
+                output_config=context.config.output,
+            )
+        )
+
+
 class ConfigCommands(BaseTyperizable):
     typer_check_verbage = False
     typer_decorate = False
-    typer_commands = dict(hosts="hosts", show="show")
-    typer_commands.update(
-        {
-            "docker-host": "docker_host",
-            "docker-db": "docker_mysql",
-            "use": "use",
-        }
-    )
+    typer_commands = dict(hosts="hosts", show="show", use="use")
     typer_children = dict(profiles=ProfilesCommand)
 
     @classmethod
@@ -260,118 +371,6 @@ class ConfigCommands(BaseTyperizable):
             host={config.use.host: host},
             output=config.output.model_dump(mode="json"),
         )
-        context.console_handler.handle(
-            handler_data=HandlerData(
-                data=data,
-                output_config=context.config.output,
-            )
-        )
-
-    @classmethod
-    def docker_host(
-        cls,
-        _context: typer.Context,
-        inspect: Annotated[
-            bool,
-            typer.Option(
-                "-i",
-                "--inspect",
-                help="Display docker inspect results. Has priority over `--ips`.",
-            ),
-        ] = False,
-        ips: Annotated[
-            bool,
-            typer.Option(
-                "--ips",
-                help="Display IPS from docker inspect results.",
-            ),
-        ] = False,
-        config_path: FlagConfig = None,
-        config_path_out: FlagConfigOut = None,
-    ) -> None:
-        import docker
-
-        context = ContextData.resolve(_context)
-        console = context.console_handler.console
-
-        client = docker.DockerClient()
-        if (container := client.containers.get("captura-server")) is None:
-            console.print("[red]Docker compose project is not running.")
-            raise typer.Exit(1)
-
-        res = client.api.inspect_container(container.name)
-
-        data: Dict[str, Any]
-        match (inspect, ips):
-            case (True, _):
-                data = res
-            case (_, True):
-                networks = res["NetworkSettings"]["Networks"]
-                data = {
-                    network_name: network_detail["IPAddress"]
-                    for network_name, network_detail in networks.items()
-                }
-            case _:
-                networks = res["NetworkSettings"]["Networks"]
-                hostconfs = {
-                    "docker": HostConfig(
-                        host="http://" + network_detail["IPAddress"] + ":8080",
-                        remote=True,
-                    )
-                    for network_detail in networks.values()
-                }
-                if config_path:
-                    with open(config_path, "r") as file:
-                        config = Config.model_validate(yaml.safe_load(file))
-                else:
-                    config = context.config
-
-                config.hosts.update(hostconfs)
-
-                if config_path_out:
-                    console.print("[green]Updating client config.")
-                    with open(config_path_out, "w") as file:
-                        data = config.model_dump_config()
-                        yaml.dump(data, file)
-
-                    raise typer.Exit()
-
-                data = config.model_dump(
-                    mode="json", exclude={"profile", "host", "token"}
-                )
-                context.console_handler.handle(
-                    handler_data=HandlerData(
-                        data=data,
-                        output_config=context.config.output,
-                    )
-                )
-                return
-
-        context.console_handler.handle(
-            handler_data=HandlerData(
-                data=data,
-                output_config=context.config.output,
-            )
-        )
-
-    @classmethod
-    def docker_mysql(cls, _context: typer.Context):
-        import docker
-
-        context = ContextData.resolve(_context)
-        console = context.console_handler.console
-
-        client = docker.DockerClient()
-        if (container := client.containers.get("captura-db")) is None:
-            console.print("[red]Docker compose project is not running.")
-            raise typer.Exit(1)
-
-        res = client.api.inspect_container(container.name)
-        networks = res["NetworkSettings"]["Networks"]
-        data = {
-            network_name: network_detail["IPAddress"]
-            for network_name, network_detail in networks.items()
-        }
         context.console_handler.handle(
             handler_data=HandlerData(
                 data=data,

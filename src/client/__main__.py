@@ -1,7 +1,7 @@
 # =========================================================================== #
 
 # --------------------------------------------------------------------------- #
-from client import ConfigCommands
+from client import ConfigCommands, DockerCommand
 from client.requests import Requests
 
 
@@ -11,6 +11,7 @@ def main():
 
     client = typerize(Requests)
     client.add_typer(typerize(ConfigCommands, exclude_callback=True), name="config")
+    client.add_typer(typerize(DockerCommand, exclude_callback=True), name="docker")
     client()
 
 
