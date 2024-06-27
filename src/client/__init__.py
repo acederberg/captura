@@ -8,6 +8,7 @@ from pydantic import SecretStr
 
 # --------------------------------------------------------------------------- #
 from app import util
+from app.schemas import mwargs
 from client import flags, hooks
 from client.config import Config, HostConfig, ProfileConfig
 from client.handlers import CONSOLE, ConsoleHandler, HandlerData
@@ -56,13 +57,28 @@ FlagProfileNames = Annotated[
     Optional[List[str]],
     typer.Option("--name", help="Names to filter by."),
 ]
+FlagHostCurrent = Annotated[
+    bool,
+    typer.Option(
+        "--current/--all",
+        help="Show the current host.",
+    ),
+]
+FlagHostNames = Annotated[
+    Optional[List[str]],
+    typer.Option("--name", help="Names to filter by."),
+]
+FlagTokenRequired = Annotated[str, typer.Option()]
+FlagUUIDUser = Annotated[str, typer.Option()]
 
 
 class ProfilesCommand(BaseTyperizable):
 
     typer_check_verbage = False
     typer_decorate = False
-    typer_commands = dict(list="list", set="set")
+    typer_commands = dict(
+        list="list", remove="remove", set="set", add="add", ls="list", rm="remove"
+    )
 
     @classmethod
     def require_profile(
@@ -76,6 +92,51 @@ class ProfilesCommand(BaseTyperizable):
             raise typer.Exit(1)
 
         return config.profile
+
+    @classmethod
+    def handle_out(
+        cls,
+        context: ContextData,
+        config: Config,
+        *,
+        show: bool = True,
+        config_path_out: FlagConfigOut = None,
+    ):
+        if config_path_out is not None:
+            context.console_handler.console.print("[green]Updating profile...")
+            config.dump(config_path_out)
+        elif not show:
+            return
+        else:
+            context.console_handler.handle(
+                handler_data=HandlerData(
+                    data=config.model_dump_minimal(),
+                    output_config=context.config.output,
+                )
+            )
+
+    @classmethod
+    def add(
+        cls,
+        _context: typer.Context,
+        name: ArgumentProfileName,
+        *,
+        token: FlagTokenRequired,
+        uuid: FlagUUIDUser,
+        config_path: FlagConfig = None,
+        config_path_out: FlagConfigOut = None,
+    ):
+        context = ContextData.resolve(_context)
+
+        config = context.get_config(config_path)
+        if name in config.profiles:
+            context.console_handler.console.print(
+                f"[red]Profile with name {name} already exists."
+            )
+            raise typer.Exit(0)
+
+        config.profiles[name] = mwargs(ProfileConfig, uuid_user=uuid, token=token)
+        cls.handle_out(context, config, config_path_out=config_path_out)
 
     @classmethod
     def set(
@@ -98,19 +159,27 @@ class ProfilesCommand(BaseTyperizable):
         if uuid is not None:
             profile.uuid_user = uuid
 
-        if config_path_out is not None:
-            context.console_handler.console.print("[green]Updating profile...")
-            config.profiles[name] = profile
-            config.dump(config_path_out)
-        else:
-            context.console_handler.handle(
-                handler_data=HandlerData(
-                    data=config.model_dump_minimal(),
-                    output_config=context.config.output,
-                )
-            )
+        config.profiles[name] = profile
+        cls.handle_out(context, config, show=False, config_path_out=config_path_out)
 
-        return
+    @classmethod
+    def remove(
+        cls,
+        _context: typer.Context,
+        name: ArgumentProfileName,
+        *,
+        config_path: FlagConfig = None,
+        config_path_out: FlagConfigOut = None,
+    ):
+        context = ContextData.resolve(_context)
+        config = context.get_config(config_path)
+
+        if name not in config.profiles:
+            context.console_handler.console.print(f"[red]No such profile `{name}`.")
+            raise typer.Exit(0)
+
+        config.profiles.pop(name)
+        cls.handle_out(context, config, config_path_out=config_path_out)
 
     @classmethod
     def list(
@@ -151,6 +220,44 @@ class ProfilesCommand(BaseTyperizable):
             )
         )
 
+        return
+
+
+class HostCommand(BaseTyperizable):
+    typer_check_verbage = False
+    typer_decorate = False
+    typer_commands = dict(list="list")
+
+    @classmethod
+    def list(
+        cls,
+        _context: typer.Context,
+        current: FlagHostCurrent = False,
+        names: FlagHostNames = None,
+    ) -> None:
+        """To set a ``host``, see the ``use`` subcommand."""
+        context = ContextData.resolve(_context)
+
+        hosts = context.config.hosts
+        if current and names is None:
+            host = context.config.host
+            data = (
+                (
+                    context.config.use.host,
+                    host.model_dump(mode="json") if host is not None else host,
+                ),
+            )
+        else:
+            data = ((pp, qq.model_dump(mode="json")) for pp, qq in hosts.items())
+            if names is not None:
+                data = ((pp, qq) for pp, qq in data if pp in names)
+
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=dict(data),
+                output_config=context.config.output,
+            )
+        )
         return
 
 
@@ -275,8 +382,8 @@ class DockerCommand(BaseTyperizable):
 class ConfigCommands(BaseTyperizable):
     typer_check_verbage = False
     typer_decorate = False
-    typer_commands = dict(hosts="hosts", show="show", use="use")
-    typer_children = dict(profiles=ProfilesCommand)
+    typer_commands = dict(show="show", use="use")
+    typer_children = dict(hosts=HostCommand, profiles=ProfilesCommand)
 
     @classmethod
     def use(
@@ -316,47 +423,6 @@ class ConfigCommands(BaseTyperizable):
 
         context.console_handler.console.print("[green]Updating client config.")
         config.dump(config_path_out)
-
-    @classmethod
-    def hosts(
-        cls,
-        _context: typer.Context,
-        current: Annotated[
-            bool,
-            typer.Option(
-                "--current/--all",
-                help="Show the current host.",
-            ),
-        ] = True,
-        names: Annotated[
-            Optional[List[str]],
-            typer.Option("--name", help="Names to filter by."),
-        ] = None,
-    ) -> None:
-        """To set a ``host``, see the ``use`` subcommand."""
-        context = ContextData.resolve(_context)
-
-        hosts = context.config.hosts
-        if current and names is None:
-            host = context.config.host
-            data = (
-                (
-                    context.config.use.host,
-                    host.model_dump(mode="json") if host is not None else host,
-                ),
-            )
-        else:
-            data = ((pp, qq.model_dump(mode="json")) for pp, qq in hosts.items())
-            if names is not None:
-                data = ((pp, qq) for pp, qq in data if pp in names)
-
-        context.console_handler.handle(
-            handler_data=HandlerData(
-                data=dict(data),
-                output_config=context.config.output,
-            )
-        )
-        return
 
     @classmethod
     def show(cls, _context: typer.Context) -> None:

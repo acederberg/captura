@@ -78,7 +78,7 @@ class Config(BaseYamlSettings):
     @classmethod
     def load(cls, config_path: str) -> Self:
         with open(config_path, "r") as file:
-            config = Config.model_validate(yaml.safe_load(file))
+            config = cls.model_validate(yaml.safe_load(file))
         return config
 
     @computed_field
@@ -89,7 +89,8 @@ class Config(BaseYamlSettings):
     @computed_field
     @property
     def profile(self) -> ProfileConfig | None:
-        return self.profiles.get(self.use.profile)
+        value = self.profiles.get(self.use.profile)
+        return value
 
     @computed_field
     @property
