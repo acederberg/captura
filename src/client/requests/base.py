@@ -151,6 +151,18 @@ class ContextData(BaseModel):
             case bad:
                 raise ValueError(f"Cannot resolve context from `{bad}`.")
 
+    def get_config(self, config_path: str | None = None) -> Config:
+        """When provided an additional ``config_path``, use said config
+        instead. This is included since some commands overwrite the global
+        ``--config`` flag.
+        """
+        if config_path is not None:
+            config = Config.load(config_path)
+        else:
+            config = self.config
+
+        return config
+
     def url(self, rest: str) -> str:
         if not self.config.host:
             raise ValueError("Host missing.")

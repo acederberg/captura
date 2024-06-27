@@ -1,8 +1,9 @@
 # =========================================================================== #
 import enum
 from sys import flags
-from typing import Annotated, Any, Dict, Literal, Set
+from typing import Annotated, Any, Dict, Literal, Self, Set
 
+import yaml
 from pydantic import BaseModel, Extra, Field, SecretStr, computed_field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
@@ -67,6 +68,19 @@ class Config(BaseYamlSettings):
     hosts: Annotated[Dict[str, HostConfig], Field()]
     use: Annotated[UseConfig, Field()]
 
+    # NOTE: See https://github.com/acederberg/pydantic-settings-yaml/issues/22.
+    def dump(self, config_path: str) -> None:
+        data = self.model_dump_config()
+        with open(config_path, "w") as file:
+            yaml.dump(data, file)
+
+    # NOTE: See https://github.com/acederberg/pydantic-settings-yaml/issues/22.
+    @classmethod
+    def load(cls, config_path: str) -> Self:
+        with open(config_path, "r") as file:
+            config = Config.model_validate(yaml.safe_load(file))
+        return config
+
     @computed_field
     @property
     def host(self) -> HostConfig | None:
@@ -84,6 +98,13 @@ class Config(BaseYamlSettings):
             return None
 
         return pp.token
+
+    def model_dump_minimal(self) -> Dict[str, Any]:
+        data = self.model_dump(
+            mode="json",
+            include={"profile", "host", "out"},
+        )
+        return data
 
     def model_dump_config(self) -> Dict[str, Any]:
         data = self.model_dump(

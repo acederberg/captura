@@ -4,11 +4,12 @@ from typing import Annotated, Any, Dict, List, Optional
 
 import typer
 import yaml
+from pydantic import SecretStr
 
 # --------------------------------------------------------------------------- #
 from app import util
-from client import hooks
-from client.config import Config, HostConfig
+from client import flags, hooks
+from client.config import Config, HostConfig, ProfileConfig
 from client.handlers import CONSOLE, ConsoleHandler, HandlerData
 from client.requests import Requests
 from client.requests.assignments import AssignmentRequests
@@ -45,85 +46,79 @@ FlagConfig = Annotated[
         ),
     ),
 ]
+ArgumentProfileName = Annotated[
+    str, typer.Argument(help="Name of the profile to update.")
+]
+FlagProfileCurrent = Annotated[
+    bool, typer.Option("--current/--all", help="Show the current profile.")
+]
+FlagProfileNames = Annotated[
+    Optional[List[str]],
+    typer.Option("--name", help="Names to filter by."),
+]
 
 
-class ConfigCommands(BaseTyperizable):
+class ProfilesCommand(BaseTyperizable):
+
     typer_check_verbage = False
     typer_decorate = False
-    typer_commands = dict(profiles="profiles", hosts="hosts", show="show")
-    typer_commands.update(
-        {
-            "docker-host": "docker_host",
-            "docker-db": "docker_mysql",
-            "use": "use",
-        }
-    )
-    typer_children = dict()
+    typer_commands = dict(list="list", set="set")
 
     @classmethod
-    def use(
+    def require_profile(
+        cls,
+        context: ContextData,
+        config: Config | None = None,
+    ) -> ProfileConfig:
+        config = config if config is not None else context.config
+        if config.profile is None:
+            context.console_handler.console.print("[red]No profile to update.")
+            raise typer.Exit(1)
+
+        return config.profile
+
+    @classmethod
+    def set(
         cls,
         _context: typer.Context,
-        host: Annotated[
-            Optional[str],
-            typer.Option("--host", "-h"),
-        ] = None,
-        profile: Annotated[
-            Optional[str],
-            typer.Option("--profile", "-p"),
-        ] = None,
+        name: ArgumentProfileName,
+        *,
+        token: flags.FlagTokenOptional = None,
+        uuid: flags.FlagUUIDUserOptional = None,
         config_path: FlagConfig = None,
         config_path_out: FlagConfigOut = None,
     ):
         context = ContextData.resolve(_context)
 
-        if config_path is not None:
-            with open(config_path, "r") as file:
-                config = Config.model_validate(yaml.safe_load(file))
+        config = context.get_config(config_path)
+        profile = cls.require_profile(context, config)
+
+        if token is not None:
+            profile.token = SecretStr(token)
+        if uuid is not None:
+            profile.uuid_user = uuid
+
+        if config_path_out is not None:
+            context.console_handler.console.print("[green]Updating profile...")
+            config.profiles[name] = profile
+            config.dump(config_path_out)
         else:
-            config = context.config
-
-        if host is not None:
-            if host not in config.hosts:
-                msg = f"[red]No such host `{host}` in client config."
-                CONSOLE.print(msg.format(host))
-                raise typer.Exit(1)
-            config.use.host = host
-
-        if profile is not None:
-            if profile not in config.profiles:
-                msg = f"[red]No such profile `{profile}` in client config."
-                CONSOLE.print(msg.format(host))
-                raise typer.Exit(1)
-            config.use.profile = profile
-
-        if config_path_out is None:
             context.console_handler.handle(
-                data=config.model_dump(
-                    mode="json",
-                    exclude={"profile", "host", "token"},
+                handler_data=HandlerData(
+                    data=config.model_dump_minimal(),
+                    output_config=context.config.output,
                 )
             )
-            raise typer.Exit(0)
 
-        context.console_handler.console.print("[green]Updating client config.")
-        data = config.model_dump_config()
-        with open(config_path_out, "w") as file:
-            yaml.dump(data, file)
-
-            raise typer.Exit(0)
+        return
 
     @classmethod
-    def profiles(
+    def list(
         cls,
         _context: typer.Context,
-        current: Annotated[
-            bool, typer.Option("--current/--all", help="Show the current host.")
-        ] = True,
-        names: Annotated[
-            Optional[List[str]],
-            typer.Option("--name", help="Names to filter by."),
-        ] = None,
+        *,
+        current: FlagProfileCurrent = False,
+        names: FlagProfileNames = None,
     ) -> None:
         """To set a ``profile``, see the ``use`` subcommand."""
 
@@ -137,7 +132,7 @@ class ConfigCommands(BaseTyperizable):
                 CONSOLE.print("[red]Names cannot be specified when `--current` is.")
                 raise typer.Exit(1)
 
-            profile = context.config.profile
+            profile = cls.require_profile(context)
             data = (
                 (
                     context.config.use.profile,
@@ -157,6 +152,59 @@ class ConfigCommands(BaseTyperizable):
         )
 
         return
+
+
+class ConfigCommands(BaseTyperizable):
+    typer_check_verbage = False
+    typer_decorate = False
+    typer_commands = dict(hosts="hosts", show="show")
+    typer_commands.update(
+        {
+            "docker-host": "docker_host",
+            "docker-db": "docker_mysql",
+            "use": "use",
+        }
+    )
+    typer_children = dict(profiles=ProfilesCommand)
+
+    @classmethod
+    def use(
+        cls,
+        _context: typer.Context,
+        host: Annotated[
+            Optional[str],
+            typer.Option("--host", "-h"),
+        ] = None,
+        profile: Annotated[
+            Optional[str],
+            typer.Option("--profile", "-p"),
+        ] = None,
+        config_path: FlagConfig = None,
+        config_path_out: FlagConfigOut = None,
+    ):
+        context = ContextData.resolve(_context)
+        config = context.get_config(config_path)
+
+        if host is not None:
+            if host not in config.hosts:
+                msg = f"[red]No such host `{host}` in client config."
+                CONSOLE.print(msg.format(host))
+                raise typer.Exit(1)
+            config.use.host = host
+
+        if profile is not None:
+            if profile not in config.profiles:
+                msg = f"[red]No such profile `{profile}` in client config."
+                CONSOLE.print(msg.format(host))
+                raise typer.Exit(1)
+            config.use.profile = profile
+
+        if config_path_out is None:
+            context.console_handler.handle(data=config.model_dump_minimal())
+            raise typer.Exit(0)
+
+        context.console_handler.console.print("[green]Updating client config.")
+        config.dump(config_path_out)
 
     @classmethod
     def hosts(
