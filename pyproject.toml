@@ -33,7 +33,7 @@ dependencies = [
   "pydantic-settings>=2",
   "python-multipart",
   "sqlalchemy>=2",
-  "yaml-settings-pydantic>=2",
+  "yaml-settings-pydantic>=2.2.0",
   "PyMySQL",
   "PyMySQL[rsa]",
   "typer",

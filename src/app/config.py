@@ -34,7 +34,11 @@ from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from starlette.config import Config as StarletteConfig
 from typing_extensions import Doc
-from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
+from yaml_settings_pydantic import (
+    BaseYamlSettings,
+    YamlFileConfigDict,
+    YamlSettingsConfigDict,
+)
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -210,7 +214,15 @@ class AppConfig(BaseHashable):
 
 class Config(BaseHashable, BaseYamlSettings):
     model_config = YamlSettingsConfigDict(
-        yaml_files=util.PATH_CONFIG_APP,
+        # NOTE: Yes, this field is labeled by the constant value computed at
+        #       the initial runtime. This can be overwritten with environment
+        #       changes (e.g. mocks in tests) where getting this value from the
+        #       environment.
+        yaml_files={
+            util.PATH_CONFIG_APP: YamlFileConfigDict(
+                envvar=util.prefix_env("CONFIG_APP")
+            )
+        },
         yaml_reload=False,
         env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",

@@ -2,6 +2,7 @@
 import asyncio
 import functools
 from collections.abc import Awaitable
+from os import environ
 from typing import (
     Annotated,
     Any,
@@ -190,8 +191,12 @@ class ContextData(BaseModel):
         if path_config is None:
             config = mwargs(Config)
         else:
+            # print(-10, path_config)
             with open(path_config, "r") as file:
                 config = Config.model_validate(yaml.safe_load(file))
+
+        # print(-5, environ.get("CAPTURA_CONFIG_CLIENT"))
+        # print(-1, config)
         assert config is not None
 
         if host is not None:

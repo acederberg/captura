@@ -1,5 +1,6 @@
 # =========================================================================== #
 import importlib
+from os import environ
 from typing import Annotated, Any, Dict, List, Optional
 
 import typer
@@ -77,7 +78,12 @@ class ProfilesCommand(BaseTyperizable):
     typer_check_verbage = False
     typer_decorate = False
     typer_commands = dict(
-        list="list", remove="remove", set="set", add="add", ls="list", rm="remove"
+        list="list",
+        remove="remove",
+        set="set",
+        add="add",
+        ls="list",
+        rm="remove",
     )
 
     @classmethod
@@ -86,12 +92,7 @@ class ProfilesCommand(BaseTyperizable):
         context: ContextData,
         config: Config | None = None,
     ) -> ProfileConfig:
-        config = config if config is not None else context.config
-        if config.profile is None:
-            context.console_handler.console.print("[red]No profile to update.")
-            raise typer.Exit(1)
-
-        return config.profile
+        return (config if config is not None else context.config).profile
 
     @classmethod
     def handle_out(
@@ -226,7 +227,7 @@ class ProfilesCommand(BaseTyperizable):
 class HostCommand(BaseTyperizable):
     typer_check_verbage = False
     typer_decorate = False
-    typer_commands = dict(list="list")
+    typer_commands = dict(list="list", ls="list")
 
     @classmethod
     def list(
@@ -261,6 +262,81 @@ class HostCommand(BaseTyperizable):
         return
 
 
+class ConfigCommands(BaseTyperizable):
+    typer_check_verbage = False
+    typer_decorate = False
+    typer_commands = dict(origin="origin", show="show", use="use")
+    typer_children = dict(hosts=HostCommand, profiles=ProfilesCommand)
+
+    @classmethod
+    def use(
+        cls,
+        _context: typer.Context,
+        host: Annotated[
+            Optional[str],
+            typer.Option("--host", "-h"),
+        ] = None,
+        profile: Annotated[
+            Optional[str],
+            typer.Option("--profile", "-p"),
+        ] = None,
+        config_path: FlagConfig = None,
+        config_path_out: FlagConfigOut = None,
+    ):
+        context = ContextData.resolve(_context)
+        config = context.get_config(config_path)
+
+        if host is not None:
+            if host not in config.hosts:
+                msg = f"[red]No such host `{host}` in client config."
+                CONSOLE.print(msg.format(host))
+                raise typer.Exit(1)
+            config.use.host = host
+
+        if profile is not None:
+            if profile not in config.profiles:
+                msg = f"[red]No such profile `{profile}` in client config."
+                CONSOLE.print(msg.format(host))
+                raise typer.Exit(1)
+            config.use.profile = profile
+
+        if config_path_out is None:
+            context.console_handler.handle(data=config.model_dump_minimal())
+            raise typer.Exit(0)
+
+        context.console_handler.console.print("[green]Updating client config.")
+        config.dump(config_path_out)
+
+    @classmethod
+    def origin(cls, _context: typer.Context) -> str | None:
+        context = ContextData.resolve(_context)
+        yaml_datas = context.config.model_config["yaml_files"]
+        assert isinstance(yaml_datas, dict)
+
+        envvar = yaml_datas[util.PATH_CONFIG_CLIENT].get("envvar")
+        assert envvar is not None
+
+        print(environ.get(envvar, util.PATH_CONFIG_CLIENT))
+
+    @classmethod
+    def show(
+        cls,
+        _context: typer.Context,
+        all_: Annotated[bool, typer.Option("--all/--minimal")] = False,
+    ) -> None:
+        context = ContextData.resolve(_context)
+        config = context.config
+        data = config.model_dump(mode="json") if all_ else config.model_dump_minimal()
+        context.console_handler.handle(
+            handler_data=HandlerData(
+                data=data,
+                output_config=context.config.output,
+            )
+        )
+
+
+# NOTE: Should the docker stuff be optional? It could be added to the ``legere``
+#       command as a plugin.
 class DockerCommand(BaseTyperizable):
     typer_check_verbage = False
     typer_decorate = False
@@ -371,72 +447,6 @@ class DockerCommand(BaseTyperizable):
             network_name: network_detail["IPAddress"]
             for network_name, network_detail in networks.items()
         }
-        context.console_handler.handle(
-            handler_data=HandlerData(
-                data=data,
-                output_config=context.config.output,
-            )
-        )
-
-
-class ConfigCommands(BaseTyperizable):
-    typer_check_verbage = False
-    typer_decorate = False
-    typer_commands = dict(show="show", use="use")
-    typer_children = dict(hosts=HostCommand, profiles=ProfilesCommand)
-
-    @classmethod
-    def use(
-        cls,
-        _context: typer.Context,
-        host: Annotated[
-            Optional[str],
-            typer.Option("--host", "-h"),
-        ] = None,
-        profile: Annotated[
-            Optional[str],
-            typer.Option("--profile", "-p"),
-        ] = None,
-        config_path: FlagConfig = None,
-        config_path_out: FlagConfigOut = None,
-    ):
-        context = ContextData.resolve(_context)
-        config = context.get_config(config_path)
-
-        if host is not None:
-            if host not in config.hosts:
-                msg = f"[red]No such host `{host}` in client config."
-                CONSOLE.print(msg.format(host))
-                raise typer.Exit(1)
-            config.use.host = host
-
-        if profile is not None:
-            if profile not in config.profiles:
-                msg = f"[red]No such profile `{profile}` in client config."
-                CONSOLE.print(msg.format(host))
-                raise typer.Exit(1)
-            config.use.profile = profile
-
-        if config_path_out is None:
-            context.console_handler.handle(data=config.model_dump_minimal())
-            raise typer.Exit(0)
-
-        context.console_handler.console.print("[green]Updating client config.")
-        config.dump(config_path_out)
-
-    @classmethod
-    def show(cls, _context: typer.Context) -> None:
-        context = ContextData.resolve(_context)
-        config = context.config
-        profile = (
-            None if config.profile is None else config.profile.model_dump(mode="json")
-        )
-        host = None if config.host is None else config.host.model_dump(mode="json")
-        data = dict(
-            profile={config.use.profile: profile},
-            host={config.use.host: host},
-            output=config.output.model_dump(mode="json"),
-        )
         context.console_handler.handle(
             handler_data=HandlerData(
                 data=data,

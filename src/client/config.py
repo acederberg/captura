@@ -4,8 +4,21 @@ from sys import flags
 from typing import Annotated, Any, Dict, Literal, Self, Set
 
 import yaml
-from pydantic import BaseModel, Extra, Field, SecretStr, computed_field
-from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Extra,
+    Field,
+    SecretStr,
+    computed_field,
+    model_validator,
+)
+from yaml_settings_pydantic import (
+    BaseYamlSettings,
+    CreateYamlSettings,
+    YamlFileConfigDict,
+    YamlSettingsConfigDict,
+)
 
 # --------------------------------------------------------------------------- #
 from app import util
@@ -24,7 +37,6 @@ class Output(str, enum.Enum):
 class OutputConfig(BaseModel):
 
     decorate: Annotated[bool, Field(default=True)]
-    # output_exclude: Annotated[Set[str], Field(default_factory=set)]
     output: Annotated[Output, Field(default=Output.yaml)]
     output_fallback: Annotated[
         Literal[Output.yaml, Output.json],
@@ -35,6 +47,7 @@ class OutputConfig(BaseModel):
     ]
     rich_theme: str = "fruity"
 
+    # output_exclude: Annotated[Set[str], Field(default_factory=set)]
     # table_columns: Annotated[FlagColumns, Field(default_factory=list)]
     # table_column_configs: Annotated[
     #     Dict[str, Dict[str, Any]], Field(default_factory=dict)
@@ -58,8 +71,13 @@ class UseConfig(BaseModel):
 
 
 class Config(BaseYamlSettings):
+    # NOTE
     model_config = YamlSettingsConfigDict(  # type: ignore
-        yaml_files=util.PATH_CONFIG_CLIENT,
+        yaml_files={
+            util.PATH_CONFIG_CLIENT: YamlFileConfigDict(
+                envvar=util.prefix_env("CONFIG_CLIENT"),
+            )
+        },
         extra="allow",
     )
 
@@ -71,8 +89,23 @@ class Config(BaseYamlSettings):
     # NOTE: See https://github.com/acederberg/pydantic-settings-yaml/issues/22.
     def dump(self, config_path: str) -> None:
         data = self.model_dump_config()
+        # print()
+        # print("dump", data["output"])
+        # print("dump", config_path)
+        # print()
         with open(config_path, "w") as file:
             yaml.dump(data, file)
+
+    @model_validator(mode="after")
+    def check_use_valid(self):
+        fmt = f"Invalid %s config `%s`, should be any of `%s`."
+        if (uu := self.use.host) not in (vv := self.hosts):
+            raise ValueError(fmt % ("host", uu, vv))
+
+        if (uu := self.use.profile) not in (vv := self.profiles):
+            raise ValueError(fmt % ("profile", uu, vv))
+
+        return self
 
     # NOTE: See https://github.com/acederberg/pydantic-settings-yaml/issues/22.
     @classmethod
@@ -83,14 +116,19 @@ class Config(BaseYamlSettings):
 
     @computed_field
     @property
-    def host(self) -> HostConfig | None:
-        return self.hosts.get(self.use.host)
+    def host(self) -> HostConfig:
+        if (hh := self.hosts.get(self.use.host)) is None:
+            raise ValueError()
+
+        return hh
 
     @computed_field
     @property
-    def profile(self) -> ProfileConfig | None:
-        value = self.profiles.get(self.use.profile)
-        return value
+    def profile(self) -> ProfileConfig:
+        if (pp := self.profiles.get(self.use.profile)) is None:
+            raise ValueError()
+
+        return pp
 
     @computed_field
     @property
@@ -101,16 +139,20 @@ class Config(BaseYamlSettings):
         return pp.token
 
     def model_dump_minimal(self) -> Dict[str, Any]:
+        "Create minimal output for display."
+
         data = self.model_dump(
             mode="json",
-            include={"profile", "host", "out"},
+            include={"profile", "host", "output"},
         )
         return data
 
     def model_dump_config(self) -> Dict[str, Any]:
+        "Create file output as a python dictionary."
+
         data = self.model_dump(
             mode="json",
-            exclude={"profile", "host", "token"},
+            include={"profiles", "hosts", "output", "use"},
         )
         for profile_name, profile in data["profiles"].items():
             token = self.profiles[profile_name].token

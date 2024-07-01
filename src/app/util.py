@@ -78,9 +78,14 @@ PATH_TESTS_ASSETS: str = path.join(PATH_TESTS, "assets")
 # ENV_DATA = []
 
 
-def from_env(v: str, default: str | None = None):
-    envvar = f"{ENV_PREFIX}{v}"
+def prefix_env(v: str) -> str:
+    return f"{ENV_PREFIX}{v}"
+
+
+def from_env(v: str, default: str | None = None, *, prefix: bool = True):
+    envvar = prefix_env(v) if prefix else v
     w = environ.get(envvar, default)
+
     if w is None:
         msg = f"Could not determine value for environment variable `{w}`."
         raise ValueError(msg)
