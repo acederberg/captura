@@ -16,13 +16,14 @@ PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
 
 
 def get_hooks() -> None | ModuleType:
+    if not util.PLUGINS_USE:
+        return
+
     if not path.isfile(util.PATH_HOOKS):
         logger.info(f"No hooks found at path `{util.PATH_HOOKS}`.")
         return
 
-    hooks_spec = importlib.util.spec_from_file_location(
-        "hooks", util.PATH_HOOKS
-    )
+    hooks_spec = importlib.util.spec_from_file_location("hooks", util.PATH_HOOKS)
     if hooks_spec is None:
         logger.info(f"No hooks found at path `{util.PATH_HOOKS}`.")
         return
@@ -36,6 +37,9 @@ def get_hooks() -> None | ModuleType:
 
 
 def do_hooks(app_view: Type[AppView]):
+    if not util.PLUGINS_USE:
+        return
+
     if (module := get_hooks()) is None:
         return None
 

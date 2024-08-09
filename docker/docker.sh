@@ -26,15 +26,7 @@ function captura_venv (){
 
 
 function captura_install_from_path(){
-
-  # Install app and test dependencies.
-  if [[ $CAPTURA_APP__ENVIRONMENT != "production" ]]; then
-    echo "Installing dependencies for \`$1\` in editable mode."
-    python -m pip install --editable $1
-  else
-    echo "Installing dependencies for \`$1\`."
-    python -m pip install $1
-  fi
+  python -m poetry install
 }
 
 

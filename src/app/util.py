@@ -120,6 +120,7 @@ PATH_STATIC = from_env("STATIC", Path.app("static"))
 PATH_LOGS = from_env("LOGS", Path.base("logs"))
 PATH_CONFIG_LOG = from_env(f"LOGS_CONFIG", Path.base("logging.yaml"))
 
+PLUGINS_USE = from_env("PLUGINS_USE", "1") == "1"
 VERBOSE = from_env("VERBOSE", "0") != "0"
 VERBOSE_HTTPEXCEPTIONS = from_env("VERBOSE_HTTPEXCEPTIONS", "0") != "0"
 
