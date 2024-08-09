@@ -7,26 +7,26 @@ from pydantic import TypeAdapter
 from sqlalchemy import delete, false, func, select
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.controllers.access import H
-from app.err import (
+from captura import util
+from captura.controllers.access import H
+from captura.err import (
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
     ErrDetail,
     ErrObjMinSchema,
 )
-from app.fields import KindObject, Level
-from app.models import Assignment, Collection, uuids
-from app.schemas import (
+from captura.fields import KindObject, Level
+from captura.models import Assignment, Collection, uuids
+from captura.schemas import (
     AsOutput,
     AssignmentSchema,
     KindNesting,
     OutputWithEvents,
     mwargs,
 )
-from client.handlers import RequestHandlerData
-from client.requests import Requests
-from dummy import DummyProvider, GetPrimaryKwargs
+from legere.handlers import RequestHandlerData
+from legere.requests import Requests
+from simulatus import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import COUNT, BaseEndpointTest
 
 
@@ -202,7 +202,7 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
                 Collection.deleted == false(),
             )
         )
-        # from app import util
+        # from captura import util
         # util.sql(dummy.session, q_assignment_uuids)
         assignment_uuids: Set[str]
         assignment_uuids = set(session.scalars(q_assignment_uuids))

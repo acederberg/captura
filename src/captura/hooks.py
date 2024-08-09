@@ -6,8 +6,8 @@ from types import ModuleType
 from typing import Type
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.views import AppView
+from captura import util
+from captura.views import AppView
 
 logger = util.get_logger(__name__)
 

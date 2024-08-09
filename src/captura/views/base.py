@@ -13,8 +13,8 @@ from fastapi import APIRouter
 from fastapi.templating import Jinja2Templates
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.err import AnyErrDetailAccessDocumentGrant, ErrDetail, ErrObjMinSchema
+from captura import util
+from captura.err import AnyErrDetailAccessDocumentGrant, ErrDetail, ErrObjMinSchema
 
 logger = util.get_logger(__name__)
 # logger.level = logging.INFO

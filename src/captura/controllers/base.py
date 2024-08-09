@@ -40,10 +40,10 @@ from pydantic import (
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Token
-from app.fields import LevelHTTP, Singular
-from app.models import (
+from captura import util
+from captura.auth import Token
+from captura.fields import LevelHTTP, Singular
+from captura.models import (
     AnyModel,
     Assignment,
     Base,

@@ -15,9 +15,9 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app.config import Config
-from app.depends import session_maker
-from app.views.auth import AuthViewAuth0
+from captura.config import Config
+from captura.depends import session_maker
+from captura.views.auth import AuthViewAuth0
 
 from . import util
 
@@ -32,7 +32,7 @@ FlagForCoverage = Annotated[
         help=(
             "To run with coverage collection use this flag in the "
             "coverage subcommand, for instance "
-            "`coverage run --include ./src/app app run --for-coverage`."
+            "`coverage run --include ./src/captura captura run --for-coverage`."
         ),
     ),
 ]
@@ -122,7 +122,7 @@ class Cli:
         #     util.CONSOLE_APP.print("[red]Reload is broken.")
         #     raise typer.Exit(1)
 
-        self._run(app="app:app", reload=reload)
+        self._run(app="captura:app", reload=reload)
 
     def _run(
         self,

@@ -9,9 +9,9 @@ from sqlalchemy import BaseDDLElement, delete, false, func, select, update
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Token, TokenPermissionTier
-from app.controllers.base import (
+from captura import util
+from captura.auth import Token, TokenPermissionTier
+from captura.controllers.base import (
     Data,
     ResolvedAssignmentCollection,
     ResolvedAssignmentDocument,
@@ -21,11 +21,11 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from app.fields import KindObject, Level, PendingFrom
-from app.models import Collection, Document, Event, Grant, User, resolve_model, uuids
-from app.schemas import AsOutput, DocumentSchema, OutputWithEvents
-from client.config import ProfileConfig
-from dummy import DummyHandler, DummyProvider, GetPrimaryKwargs
+from captura.fields import KindObject, Level, PendingFrom
+from captura.models import Collection, Document, Event, Grant, User, resolve_model, uuids
+from captura.schemas import AsOutput, DocumentSchema, OutputWithEvents
+from legere.config import ProfileConfig
+from simulatus import DummyHandler, DummyProvider, GetPrimaryKwargs
 from tests.config import PytestClientConfig
 from tests.conftest import COUNT, client_config
 

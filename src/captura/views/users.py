@@ -10,11 +10,11 @@ from pydantic import TypeAdapter
 from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.auth import TokenPermissionTier
-from app.config import Config
-from app.controllers.base import Data, ResolvedUser
-from app.depends import (
+from captura import __version__, util
+from captura.auth import TokenPermissionTier
+from captura.config import Config
+from captura.controllers.base import Data, ResolvedUser
+from captura.depends import (
     DependsAccess,
     DependsConfig,
     DependsCreate,
@@ -24,9 +24,9 @@ from app.depends import (
     DependsTokenOptional,
     DependsUpdate,
 )
-from app.err import ErrAccessUser, ErrDetail
-from app.models import Collection, Document, Event, KindEvent, KindObject, User
-from app.schemas import (
+from captura.err import ErrAccessUser, ErrDetail
+from captura.models import Collection, Document, Event, KindEvent, KindObject, User
+from captura.schemas import (
     AsOutput,
     CollectionMetadataSchema,
     CollectionSearchSchema,
@@ -41,8 +41,8 @@ from app.schemas import (
     UserUpdateSchema,
     mwargs,
 )
-from app.views import args
-from app.views.base import (
+from captura.views import args
+from captura.views.base import (
     BaseView,
     OpenApiResponseCommon,
     OpenApiResponseUnauthorized,

@@ -21,7 +21,7 @@ from yaml_settings_pydantic import (
 )
 
 # --------------------------------------------------------------------------- #
-from app import util
+from captura import util
 
 # NOTE: Previously this was part of the console handler. However the same
 #       data is necessary in a number of places and is therefore factored out.

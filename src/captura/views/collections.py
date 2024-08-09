@@ -5,11 +5,11 @@ from fastapi import Body, Depends
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app.controllers.base import Data, ResolvedCollection
-from app.depends import DependsCreate, DependsDelete, DependsRead, DependsUpdate
-from app.err import ErrAccessCollection, ErrDetail
-from app.models import Collection
-from app.schemas import (
+from captura.controllers.base import Data, ResolvedCollection
+from captura.depends import DependsCreate, DependsDelete, DependsRead, DependsUpdate
+from captura.err import ErrAccessCollection, ErrDetail
+from captura.models import Collection
+from captura.schemas import (
     AsOutput,
     CollectionCreateSchema,
     CollectionSchema,
@@ -20,8 +20,8 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from app.views import args
-from app.views.base import (
+from captura.views import args
+from captura.views.base import (
     BaseView,
     OpenApiResponseCommon,
     OpenApiResponseUnauthorized,

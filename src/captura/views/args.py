@@ -6,8 +6,8 @@ from fastapi import Depends, HTTPException, Path, Query
 from sqlalchemy import Values
 
 # --------------------------------------------------------------------------- #
-# from app.fields import FieldLevel, KindEvent, KindObject, KindRecurse, LevelStr
-from app import fields
+# from captura.fields import FieldLevel, KindEvent, KindObject, KindRecurse, LevelStr
+from captura import fields
 
 PathUUIDUser: TypeAlias = Annotated[str, Path(description="User uuids.")]
 PathUUIDCollection: TypeAlias = Annotated[str, Path(description="Collection uuid.")]

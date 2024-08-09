@@ -6,7 +6,7 @@ in controllers by dependency injection. For example, do not do
 
 .. code:: python
 
-    from app.config import config
+    from captura.config import config
 
     def is_local() -> bool:
         return config.mysql.host.host
@@ -16,7 +16,7 @@ Instead do
 
 .. code:: python
 
-    from app import depends
+    from captura import depends
 
     def is_local(config: Annotated[Config, Depends(Config)]) -> bool:
         return config.m
@@ -41,7 +41,7 @@ from yaml_settings_pydantic import (
 )
 
 # --------------------------------------------------------------------------- #
-from app import util
+from captura import util
 
 
 class BaseHashable(BaseModel):

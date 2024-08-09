@@ -7,8 +7,8 @@ from pydantic import Field, model_validator
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.config import BaseHashable
+from captura import util
+from captura.config import BaseHashable
 
 PATTERN_GITHUB = re.compile(
     "(?P<scheme>https|ssh)://(?P<auth>(?P<auth_username>[a-zA-Z0-9]+):?(?P<auth_password>.+)?@)?github.com/(?P<slug>(?P<username>[a-zA-Z0-9_-]+)/(?P<repository>[a-zA-Z0-9_-]+))(?P<dotgit>\\.git)?(?P<path>/.*)?"

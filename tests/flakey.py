@@ -11,8 +11,8 @@ from pytest import CallInfo, StashKey
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.schemas import mwargs
+from captura import util
+from captura.schemas import mwargs
 
 FLAKEY_PATH = util.Path.config("flakey.yaml")
 

@@ -37,10 +37,10 @@ from sqlalchemy.orm import sessionmaker as _sessionmaker
 from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Auth, Token, TokenPermissionTier
-from app.controllers.access import Access
-from app.controllers.base import (
+from captura import util
+from captura.auth import Auth, Token, TokenPermissionTier
+from captura.controllers.access import Access
+from captura.controllers.base import (
     BaseResolved,
     BaseResolvedPrimary,
     BaseResolvedSecondary,
@@ -50,10 +50,10 @@ from app.controllers.base import (
     ResolvedUser,
     T_ResolvedPrimary,
 )
-from app.controllers.create import Create
-from app.controllers.delete import Delete
-from app.fields import KindEvent, KindObject, Level
-from app.models import (
+from captura.controllers.create import Create
+from captura.controllers.delete import Delete
+from captura.fields import KindEvent, KindObject, Level
+from captura.models import (
     Assignment,
     AssocCollectionDocument,
     AssocUserDocument,
@@ -72,17 +72,17 @@ from app.models import (
     resolve_model,
     uuids,
 )
-from app.schemas import mwargs
-from client import ConsoleHandler, ContextData, Requests
-from client.config import Config as ClientConfig
-from client.config import ProfileConfig, UseConfig
-from client.flags import Output
-from client.handlers import ConsoleHandler
-from client.requests import Requests
-from client.requests.base import ContextData
-from dummy.config import ConfigSimulatus, DummyConfig
-from dummy.mk import Mk, combos
-from dummy.reports import Report, ReportController
+from captura.schemas import mwargs
+from legere import ConsoleHandler, ContextData, Requests
+from legere.config import Config as ClientConfig
+from legere.config import ProfileConfig, UseConfig
+from legere.flags import Output
+from legere.handlers import ConsoleHandler
+from legere.requests import Requests
+from legere.requests.base import ContextData
+from simulatus.config import ConfigSimulatus, DummyConfig
+from simulatus.mk import Mk, combos
+from simulatus.reports import Report, ReportController
 
 util.setup_logging(util.Path.base("logging.test.yaml"))
 logger = util.get_logger(__name__)

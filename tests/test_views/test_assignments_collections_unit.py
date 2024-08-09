@@ -10,20 +10,20 @@ from pydantic import TypeAdapter
 from sqlalchemy import delete, false, select, update
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.controllers.access import H
-from app.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
-from app.fields import KindObject, Level
-from app.models import Assignment, Collection, Document
-from app.schemas import (
+from captura import util
+from captura.controllers.access import H
+from captura.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
+from captura.fields import KindObject, Level
+from captura.models import Assignment, Collection, Document
+from captura.schemas import (
     AsOutput,
     AssignmentSchema,
     GrantSchema,
     OutputWithEvents,
     mwargs,
 )
-from client.requests import Requests
-from dummy import DummyProvider, GetPrimaryKwargs
+from legere.requests import Requests
+from simulatus import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import COUNT, BaseEndpointTest
 
 

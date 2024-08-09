@@ -2,11 +2,11 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from client import flags
-from client.handlers import AssertionHandler
-from client.requests.assignments import DocumentAssignmentRequests
-from client.requests.base import BaseRequests, ContextData, methodize, params
-from client.requests.grants import DocumentGrantRequests
+from legere import flags
+from legere.handlers import AssertionHandler
+from legere.requests.assignments import DocumentAssignmentRequests
+from legere.requests.base import BaseRequests, ContextData, methodize, params
+from legere.requests.grants import DocumentGrantRequests
 
 
 class DocumentRequests(BaseRequests):
@@ -142,7 +142,7 @@ __all__ = ("DocumentRequests",)
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
+    from legere.requests.base import typerize
 
     documents = typerize(DocumentRequests)
     documents()

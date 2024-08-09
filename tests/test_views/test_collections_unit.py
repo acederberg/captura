@@ -11,11 +11,11 @@ from pydantic import TypeAdapter
 from sqlalchemy import false, func, select, true
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import H
-from app.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
-from app.fields import KindObject
-from app.models import Assignment, Collection, Document, uuids
-from app.schemas import (
+from captura.controllers.access import H
+from captura.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
+from captura.fields import KindObject
+from captura.models import Assignment, Collection, Document, uuids
+from captura.schemas import (
     AsOutput,
     AssignmentExtraSchema,
     AssignmentSchema,
@@ -24,9 +24,9 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from client.requests import Requests
-from client.requests.base import P_Wrapped
-from dummy import DummyProvider
+from legere.requests import Requests
+from legere.requests.base import P_Wrapped
+from simulatus import DummyProvider
 from tests.test_views.util import (
     COUNT,
     BaseEndpointTest,

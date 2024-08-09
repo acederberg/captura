@@ -6,10 +6,10 @@ from fastapi import Depends, HTTPException
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import Access, WithAccess
-from app.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
-from app.depends import DependsAccess, DependsDelete, DependsRead
-from app.models import (
+from captura.controllers.access import Access, WithAccess
+from captura.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
+from captura.depends import DependsAccess, DependsDelete, DependsRead
+from captura.models import (
     Assignment,
     Collection,
     Document,
@@ -19,7 +19,7 @@ from app.models import (
     KindObject,
     User,
 )
-from app.schemas import (
+from captura.schemas import (
     AsOutput,
     AssignmentExtraSchema,
     CollectionExtraSchema,
@@ -34,8 +34,8 @@ from app.schemas import (
     UserExtraSchema,
     mwargs,
 )
-from app.views import args
-from app.views.base import (
+from captura.views import args
+from captura.views.base import (
     BaseView,
     OpenApiResponseCommon,
     OpenApiResponseUnauthorized,

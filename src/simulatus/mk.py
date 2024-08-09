@@ -10,9 +10,9 @@ from faker.providers import internet
 from sqlalchemy import Column, inspect
 
 # --------------------------------------------------------------------------- #
-from app import __version__
-from app.fields import LENGTH_DESCRIPTION, LENGTH_NAME, LENGTH_URL
-from app.models import (
+from captura import __version__
+from captura.fields import LENGTH_DESCRIPTION, LENGTH_NAME, LENGTH_URL
+from captura.models import (
     Collection,
     Document,
     Event,

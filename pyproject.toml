@@ -6,9 +6,9 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry]
 name="captura"
 packages = [
-  {include="app", from="src"},
-  {include="client", from="src"},
-  {include="dummy", from="src"}
+  {include="captura", from="src"},
+  {include="legere", from="src"},
+  {include="simulatus", from="src"}
 ]
 version = "0.1.5"
 description = "A framework for adding sharing and collections to existing API projects."
@@ -18,10 +18,10 @@ readme = "README.rst"
 
 
 [tool.poetry.scripts]
-captura = "app.__main__:main"
+captura = "captura.__main__:main"
 plugin = "plugin.__main__:main"
-legere = "client.__main__:main"
-simulatus = "dummy.__main__:main"
+legere = "legere.__main__:main"
+simulatus = "simulatus.__main__:main"
 
 
 [tool.poetry.dependencies]

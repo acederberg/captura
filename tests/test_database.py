@@ -3,7 +3,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.sql import text
 
 # --------------------------------------------------------------------------- #
-from app.models import User
+from captura.models import User
 
 
 def test_fixture_works(engine: Engine, sessionmaker):

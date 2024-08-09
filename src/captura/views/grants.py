@@ -4,12 +4,12 @@ from typing import List
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app import fields
-from app.controllers.base import Data, ResolvedGrantDocument, ResolvedGrantUser
-from app.depends import DependsAccess, DependsCreate, DependsDelete, DependsUpdate
-from app.err import ErrAccessDocumentCannotRejectOwner, ErrAccessUser, ErrDetail
-from app.models import Level, LevelStr
-from app.schemas import (
+from captura import fields
+from captura.controllers.base import Data, ResolvedGrantDocument, ResolvedGrantUser
+from captura.depends import DependsAccess, DependsCreate, DependsDelete, DependsUpdate
+from captura.err import ErrAccessDocumentCannotRejectOwner, ErrAccessUser, ErrDetail
+from captura.models import Level, LevelStr
+from captura.schemas import (
     AsOutput,
     EventSchema,
     GrantCreateSchema,
@@ -17,8 +17,8 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from app.views import args
-from app.views.base import (
+from captura.views import args
+from captura.views.base import (
     BaseView,
     OpenApiResponseCommon,
     OpenApiResponseDocumentForbidden,

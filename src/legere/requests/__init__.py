@@ -6,7 +6,7 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from client.handlers import AssertionHandler
+from legere.handlers import AssertionHandler
 
 from .assignments import AssignmentRequests
 

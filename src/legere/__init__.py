@@ -8,19 +8,19 @@ import yaml
 from pydantic import SecretStr
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.schemas import mwargs
-from client import flags, hooks
-from client.config import Config, HostConfig, ProfileConfig
-from client.handlers import CONSOLE, ConsoleHandler, HandlerData
-from client.requests import Requests
-from client.requests.assignments import AssignmentRequests
-from client.requests.base import BaseRequests, BaseTyperizable, ContextData, params
-from client.requests.collections import CollectionRequests
-from client.requests.documents import DocumentRequests
-from client.requests.grants import GrantRequests
-from client.requests.tokens import TokenRequests
-from client.requests.users import UserRequests
+from captura import util
+from captura.schemas import mwargs
+from legere import flags, hooks
+from legere.config import Config, HostConfig, ProfileConfig
+from legere.handlers import CONSOLE, ConsoleHandler, HandlerData
+from legere.requests import Requests
+from legere.requests.assignments import AssignmentRequests
+from legere.requests.base import BaseRequests, BaseTyperizable, ContextData, params
+from legere.requests.collections import CollectionRequests
+from legere.requests.documents import DocumentRequests
+from legere.requests.grants import GrantRequests
+from legere.requests.tokens import TokenRequests
+from legere.requests.users import UserRequests
 
 if util.PATH_HOOKS_USE:
     hooks.do_hooks(Requests)

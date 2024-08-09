@@ -17,16 +17,16 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker as _sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import User
-from app.fields import KindObject
-from app.models import Base, Document
-from app.schemas import TimespanLimitParams, UserExtraSchema, mwargs
-from client.config import Output, OutputConfig
-from client.handlers import HandlerData
-from client.requests.base import BaseTyperizable, typerize
-from dummy import DummyHandler, DummyProvider, DummyProviderYAML
-from dummy.config import ConfigSimulatus, DummyConfig
-from dummy.reports import Report, ReportController, ReportView, row2dict
+from captura import User
+from captura.fields import KindObject
+from captura.models import Base, Document
+from captura.schemas import TimespanLimitParams, UserExtraSchema, mwargs
+from legere.config import Output, OutputConfig
+from legere.handlers import HandlerData
+from legere.requests.base import BaseTyperizable, typerize
+from simulatus import DummyHandler, DummyProvider, DummyProviderYAML
+from simulatus.config import ConfigSimulatus, DummyConfig
+from simulatus.reports import Report, ReportController, ReportView, row2dict
 
 CONSOLE = Console()
 

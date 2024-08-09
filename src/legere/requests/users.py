@@ -8,10 +8,10 @@ import rich
 import typer
 
 # --------------------------------------------------------------------------- #
-from client import flags
-from client.handlers import AssertionHandler
-from client.requests.base import BaseRequests, ContextData, methodize, params, typerize
-from client.requests.grants import UserGrantRequests
+from legere import flags
+from legere.handlers import AssertionHandler
+from legere.requests.base import BaseRequests, ContextData, methodize, params, typerize
+from legere.requests.grants import UserGrantRequests
 
 
 class UserRequests(BaseRequests):

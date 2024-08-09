@@ -1,7 +1,7 @@
 from dash import Dash, Input, Output, callback, ctx, dcc, html
 
 # --------------------------------------------------------------------------- #
-from client.requests.base import BaseTyperizable
+from legere.requests.base import BaseTyperizable
 
 # class BaseDashView:
 #     ...

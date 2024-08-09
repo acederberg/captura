@@ -34,12 +34,12 @@ from typer.cli import Command
 from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
-from app.fields import Singular
-from app.schemas import mwargs
-from client import flags
-from client.config import Config
-from client.flags import Output, Verbage
-from client.handlers import (
+from captura.fields import Singular
+from captura.schemas import mwargs
+from legere import flags
+from legere.config import Config
+from legere.flags import Output, Verbage
+from legere.handlers import (
     CONSOLE,
     AssertionHandler,
     BaseHandlerData,

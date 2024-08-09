@@ -4,8 +4,8 @@ from typing import Annotated, Any, Dict, List, Tuple
 from pydantic import Field
 
 # --------------------------------------------------------------------------- #
-from app.config import BaseHashable
-from app.schemas import mwargs
+from captura.config import BaseHashable
+from captura.schemas import mwargs
 
 
 def test_hash():

@@ -5,11 +5,11 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from app.models import ChildrenCollection
-from client import flags
-from client.handlers import CONSOLE, AssertionHandler
-from client.requests.assignments import CollectionAssignmentRequests
-from client.requests.base import BaseRequests, ContextData, methodize, params
+from captura.models import ChildrenCollection
+from legere import flags
+from legere.handlers import CONSOLE, AssertionHandler
+from legere.requests.assignments import CollectionAssignmentRequests
+from legere.requests.base import BaseRequests, ContextData, methodize, params
 
 
 class CollectionRequests(BaseRequests):
@@ -179,7 +179,7 @@ __all__ = ("CollectionRequests",)
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
+    from legere.requests.base import typerize
 
     collections = typerize(CollectionRequests)
     collections()

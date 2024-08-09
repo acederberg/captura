@@ -10,15 +10,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 # --------------------------------------------------------------------------- #
-from app import util
+from captura import util
 
-# from app import util
-from app.auth import Token
-from app.controllers.access import Access
-from app.controllers.base import BaseController
-from app.fields import Singular
-from app.models import Collection, Document, Tables, User
-from app.schemas import CollectionSearchSchema, DocumentSearchSchema, UserSearchSchema
+# from captura import util
+from captura.auth import Token
+from captura.controllers.access import Access
+from captura.controllers.base import BaseController
+from captura.fields import Singular
+from captura.models import Collection, Document, Tables, User
+from captura.schemas import CollectionSearchSchema, DocumentSearchSchema, UserSearchSchema
 
 T_ReadParam = TypeVar(
     "T_ReadParam",

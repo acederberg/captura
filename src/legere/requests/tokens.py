@@ -2,10 +2,10 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from app.auth import TokenPermissionTier
-from client import flags
-from client.handlers import CONSOLE
-from client.requests.base import typerize
+from captura.auth import TokenPermissionTier
+from legere import flags
+from legere.handlers import CONSOLE
+from legere.requests.base import typerize
 
 from .base import BaseRequests, ContextData, methodize, params
 

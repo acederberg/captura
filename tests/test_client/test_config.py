@@ -14,13 +14,13 @@ from sqlalchemy import false, func, select
 from typer.testing import CliRunner
 
 # --------------------------------------------------------------------------- #
-from app.auth import Auth
-from app.models import User
-from app.schemas import mwargs
-from client import ConfigCommands, ProfilesCommand
-from client.config import Config, HostConfig, Output, OutputConfig, ProfileConfig
-from client.requests.base import BaseTyperizable, typerize
-from dummy import DummyHandler, DummyProvider
+from captura.auth import Auth
+from captura.models import User
+from captura.schemas import mwargs
+from legere import ConfigCommands, ProfilesCommand
+from legere.config import Config, HostConfig, Output, OutputConfig, ProfileConfig
+from legere.requests.base import BaseTyperizable, typerize
+from simulatus import DummyHandler, DummyProvider
 from tests.config import PytestClientConfig
 
 

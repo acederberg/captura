@@ -42,11 +42,11 @@ from rich.table import Table
 from rich.text import Text
 
 # --------------------------------------------------------------------------- #
-from app.err import ErrDetail
-from app.schemas import AsOutput, OutputWithEvents, mwargs
-from client import flags
-from client.config import Config, OutputConfig
-from client.flags import Output
+from captura.err import ErrDetail
+from captura.schemas import AsOutput, OutputWithEvents, mwargs
+from legere import flags
+from legere.config import Config, OutputConfig
+from legere.flags import Output
 
 # Types and Constants
 # About `CONSOLE_THEME`: https://pygments.org/docs/styles/#getting-a-list-of-available-styles

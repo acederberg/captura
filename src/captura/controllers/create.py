@@ -10,10 +10,10 @@ from sqlalchemy import Update as sqaUpdate
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Token
-from app.controllers.access import Access, H, with_access
-from app.controllers.base import (
+from captura import util
+from captura.auth import Token
+from captura.controllers.access import Access, H, with_access
+from captura.controllers.base import (
     BaseResolvedPrimary,
     Data,
     DataResolvedGrant,
@@ -27,10 +27,10 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from app.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
-from app.err import ErrAssocRequestMustForce
-from app.fields import Singular
-from app.models import (
+from captura.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
+from captura.err import ErrAssocRequestMustForce
+from captura.fields import Singular
+from captura.models import (
     Assignment,
     Collection,
     Document,
@@ -42,7 +42,7 @@ from app.models import (
     PendingFrom,
     User,
 )
-from app.schemas import (
+from captura.schemas import (
     CollectionCreateSchema,
     CollectionUpdateSchema,
     DocumentCreateSchema,
@@ -53,7 +53,7 @@ from app.schemas import (
     UserUpdateSchema,
     mwargs,
 )
-from app.util import CONSOLE_APP
+from captura.util import CONSOLE_APP
 
 # Typehints for assoc callback.
 # NOTE: Tried protocol, too much of a pain in the ass.
@@ -264,7 +264,7 @@ class Create(WithDelete, Generic[T_Create]):
         # import json
         # from pydantic import TypeAdapter
         # from rich.table import Table
-        # from app.schemas import AssignmentSchema, GrantSchema
+        # from captura.schemas import AssignmentSchema, GrantSchema
         #
         # table = Table(show_lines=False, show_header=False)
         # table.add_column()

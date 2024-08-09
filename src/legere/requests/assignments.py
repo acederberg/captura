@@ -4,8 +4,8 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from client import flags
-from client.requests.base import BaseRequests, ContextData, methodize, params
+from legere import flags
+from legere.requests.base import BaseRequests, ContextData, methodize, params
 
 
 class CollectionAssignmentRequests(BaseRequests):
@@ -176,7 +176,7 @@ __all__ = (
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
+    from legere.requests.base import typerize
 
     assignments = typerize(AssignmentRequests)
     assignments()

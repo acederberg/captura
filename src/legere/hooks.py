@@ -2,8 +2,8 @@
 from typing import Type
 
 # --------------------------------------------------------------------------- #
-from app import hooks, util
-from client.requests import Requests
+from captura import hooks, util
+from legere.requests import Requests
 
 logger = util.get_logger(__name__)
 

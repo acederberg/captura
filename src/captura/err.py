@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from rich.table import Table
 
 # --------------------------------------------------------------------------- #
-from app import fields
+from captura import fields
 
 # Error Message Schemas.
 #

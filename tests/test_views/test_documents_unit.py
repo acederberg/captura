@@ -8,20 +8,20 @@ from pydantic import TypeAdapter
 from sqlalchemy import join, select
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import H
-from app.err import (
+from captura.controllers.access import H
+from captura.err import (
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
     ErrAccessDocumentPending,
     ErrDetail,
     ErrObjMinSchema,
 )
-from app.fields import KindObject, Level, LevelHTTP, PendingFrom
-from app.models import Document
-from app.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, mwargs
-from client.requests import Requests
-from client.requests.base import params
-from dummy import DummyProvider, GetPrimaryKwargs
+from captura.fields import KindObject, Level, LevelHTTP, PendingFrom
+from captura.models import Document
+from captura.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, mwargs
+from legere.requests import Requests
+from legere.requests.base import params
+from simulatus import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import (
     COUNT,
     BaseEndpointTest,

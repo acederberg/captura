@@ -8,15 +8,15 @@
 # import httpx
 # import typer
 # import yaml
-# from app import __version__
-# from app.models import ChildrenAssignment, ChildrenGrant, Plural
-# from app.schemas import CollectionPostSchema, DocumentPostSchema, UserSchema
-# from app.views import AppView
+# from captura import __version__
+# from captura.models import ChildrenAssignment, ChildrenGrant, Plural
+# from captura.schemas import CollectionPostSchema, DocumentPostSchema, UserSchema
+# from captura.views import AppView
 # from pydantic import BaseModel, ConfigDict, Field, model_validator
 #
-# from client import flags
-# from client.handlers import Handler
-# from client.requests import Requests
+# from legere import flags
+# from legere.handlers import Handler
+# from legere.requests import Requests
 #
 # from .requests import Requests
 #

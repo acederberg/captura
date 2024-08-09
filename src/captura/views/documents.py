@@ -6,16 +6,16 @@ from fastapi.responses import FileResponse
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
-from app.controllers.base import Data, ResolvedDocument
-from app.depends import (
+from captura.controllers.base import Data, ResolvedDocument
+from captura.depends import (
     DependsAccess,
     DependsCreate,
     DependsDelete,
     DependsRead,
     DependsUpdate,
 )
-from app.models import Document, Level
-from app.schemas import (
+from captura.models import Document, Level
+from captura.schemas import (
     AsOutput,
     DocumentCreateSchema,
     DocumentMetadataSchema,
@@ -26,8 +26,8 @@ from app.schemas import (
     TimespanLimitParams,
     mwargs,
 )
-from app.views import args
-from app.views.base import (
+from captura.views import args
+from captura.views.base import (
     BaseView,
     OpenApiResponseCommon,
     OpenApiResponseDocumentForbidden,

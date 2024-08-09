@@ -11,11 +11,11 @@ from sqlalchemy import func, select
 from sqlalchemy.sql.operators import op
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import H
-from app.err import ErrAccessUser, ErrDetail, ErrObjMinSchema
-from app.fields import ChildrenUser, KindObject
-from app.models import Tables, User
-from app.schemas import (
+from captura.controllers.access import H
+from captura.err import ErrAccessUser, ErrDetail, ErrObjMinSchema
+from captura.fields import ChildrenUser, KindObject
+from captura.models import Tables, User
+from captura.schemas import (
     AsOutput,
     CollectionMetadataSchema,
     CollectionSchema,
@@ -25,10 +25,10 @@ from app.schemas import (
     UserSchema,
     mwargs,
 )
-from client.requests import Requests
-from dummy import DummyProvider
-from dummy.mk import fkit
-from dummy.reports import ReportController
+from legere.requests import Requests
+from simulatus import DummyProvider
+from simulatus.mk import fkit
+from simulatus.reports import ReportController
 from tests.test_views.util import COUNT, BaseEndpointTest
 
 

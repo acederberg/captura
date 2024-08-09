@@ -54,8 +54,8 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql import false
 
 # --------------------------------------------------------------------------- #
-from app import __version__, fields, util
-from app.err import (
+from captura import __version__, fields, util
+from captura.err import (
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
     ErrAccessDocumentPending,
@@ -65,7 +65,7 @@ from app.err import (
     ErrEventUndone,
     ErrObjMinSchema,
 )
-from app.fields import (
+from captura.fields import (
     ChildrenAssignment,
     ChildrenCollection,
     ChildrenDocument,

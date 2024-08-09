@@ -8,8 +8,8 @@ from pydantic import TypeAdapter
 from sqlalchemy import false, select
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import H
-from app.err import (
+from captura.controllers.access import H
+from captura.err import (
     ErrAccessDocumentCannotRejectOwner,
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
@@ -17,7 +17,7 @@ from app.err import (
     ErrDetail,
     ErrObjMinSchema,
 )
-from app.fields import (
+from captura.fields import (
     KindObject,
     Level,
     LevelHTTP,
@@ -25,8 +25,8 @@ from app.fields import (
     PendingFrom,
     PendingFromStr,
 )
-from app.models import Assignment, Document, Grant, User, uuids
-from app.schemas import (
+from captura.models import Assignment, Document, Grant, User, uuids
+from captura.schemas import (
     AsOutput,
     DocumentSchema,
     GrantSchema,
@@ -34,9 +34,9 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from client.handlers import CONSOLE
-from client.requests import Requests
-from dummy import DummyProvider, GetPrimaryKwargs
+from legere.handlers import CONSOLE
+from legere.requests import Requests
+from simulatus import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import COUNT, BaseEndpointTest
 
 N_CASES: int = 1

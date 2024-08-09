@@ -14,9 +14,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Mount
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.controllers.access import H
-from app.depends import DependsAccess, DependsConfig
+from captura import __version__, util
+from captura.controllers.access import H
+from captura.depends import DependsAccess, DependsConfig
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
 from .auth import AuthViewAuth0, AuthViewPytest

@@ -18,13 +18,13 @@ from sqlalchemy.orm import sessionmaker as _sessionmaker
 from yaml_settings_pydantic import BaseYamlSettings, YamlFileConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import depends, util
-from app.auth import Auth
-from app.config import AppConfig
-from app.models import Base, User
-from app.schemas import mwargs
-from app.views import AppView
-from dummy import DummyHandler, DummyProvider, DummyProviderYAML
+from captura import depends, util
+from captura.auth import Auth
+from captura.config import AppConfig
+from captura.models import Base, User
+from captura.schemas import mwargs
+from captura.views import AppView
+from simulatus import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
 from tests.flakey import FLAKEY_PATH, Flake, Flakey
 
@@ -310,13 +310,13 @@ def auth(config: PytestConfig) -> Auth:
 
 @pytest.fixture(scope="session")
 def engine(config: PytestConfig) -> Engine:
-    logger.debug("Creating engine from application configuration.")
+    logger.debug("Creating engine from capturalication configuration.")
     return config.engine()
 
 
 @pytest.fixture(scope="session")
 def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
-    logger.debug("Creating sessionmaker from application configuration.")
+    logger.debug("Creating sessionmaker from capturalication configuration.")
     return _sessionmaker(engine)
 
 

@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------- #
-from client.requests.base import typerize
+from legere.requests.base import typerize
 from plugin import PluginCommands
 
 

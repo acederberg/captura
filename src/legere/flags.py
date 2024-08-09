@@ -10,8 +10,8 @@ import typer
 from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
-from app.fields import PendingFromStr
-from app.models import (
+from captura.fields import PendingFromStr
+from captura.models import (
     ChildrenCollection,
     ChildrenDocument,
     ChildrenUser,

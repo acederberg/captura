@@ -37,9 +37,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 # --------------------------------------------------------------------------- #
-from app import fields
-from app.depends import DependsSessionMaker
-from app.models import (
+from captura import fields
+from captura.depends import DependsSessionMaker
+from captura.models import (
     Assignment,
     Base,
     Collection,
@@ -49,8 +49,8 @@ from app.models import (
     MappedColumnUUID,
     User,
 )
-from app.schemas import BaseSchema, TimespanLimitParams
-from app.views.base import BaseView
+from captura.schemas import BaseSchema, TimespanLimitParams
+from captura.views.base import BaseView
 
 
 # NOTE: Schemas.
@@ -456,7 +456,7 @@ class ReportController:
             q = q.order_by(f.asc() if kind_count_desc else f.desc())
 
         # --------------------------------------------------------------------------- #
-        from app import util
+        from captura import util
 
         util.sql(self.session, q)
 

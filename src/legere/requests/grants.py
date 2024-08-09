@@ -5,10 +5,10 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from app.models import LevelStr
-from client import flags
-from client.handlers import AssertionHandler
-from client.requests.base import BaseRequests, ContextData, methodize, params
+from captura.models import LevelStr
+from legere import flags
+from legere.handlers import AssertionHandler
+from legere.requests.base import BaseRequests, ContextData, methodize, params
 
 
 # NOTE: For management of document grants. Notice the duality between the
@@ -248,7 +248,7 @@ __all__ = (
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
+    from legere.requests.base import typerize
 
     grants = typerize(GrantRequests)
     grants()

@@ -4,8 +4,8 @@ import secrets
 from unittest import mock
 
 # --------------------------------------------------------------------------- #
-from app import util
-from client.config import Config
+from captura import util
+from legere.config import Config
 
 
 class TestEnv:

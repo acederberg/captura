@@ -20,9 +20,9 @@ from sqlalchemy import false, select
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import __version__
-from app.auth import Token
-from app.controllers.base import (
+from captura import __version__
+from captura.auth import Token
+from captura.controllers.base import (
     BaseController,
     Data,
     DataResolvedAssignment,
@@ -39,14 +39,14 @@ from app.controllers.base import (
     ResolvedUser,
     T_Data,
 )
-from app.err import (
+from captura.err import (
     ErrAccessCollection,
     ErrAccessDocumentCannotRejectOwner,
     ErrAccessUser,
     ErrUpdateGrantPendingFrom,
 )
-from app.fields import PendingFrom, Singular
-from app.models import (
+from captura.fields import PendingFrom, Singular
+from captura.models import (
     Base,
     Collection,
     Document,
@@ -62,7 +62,7 @@ from app.models import (
     Tables,
     User,
 )
-from app.schemas import EventParams, EventSearchSchema, mwargs
+from captura.schemas import EventParams, EventSearchSchema, mwargs
 
 H = HTTPMethod
 AccessAssignmentResult = (

@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.config import BaseHashable
-from app.config import Config as ConfigCaptura
-from app.schemas import mwargs
+from captura import util
+from captura.config import BaseHashable
+from captura.config import Config as ConfigCaptura
+from captura.schemas import mwargs
 
 
 class DummyItemConfig(BaseHashable):

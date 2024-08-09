@@ -6,10 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.sql.expression import false
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.depends import DependsAccess, DependsCreate, DependsDelete
-from app.models import Assignment, Collection, Document, Level
-from app.schemas import (
+from captura import util
+from captura.depends import DependsAccess, DependsCreate, DependsDelete
+from captura.models import Assignment, Collection, Document, Level
+from captura.schemas import (
     AsOutput,
     AssignmentCreateSchema,
     AssignmentSchema,
@@ -17,8 +17,8 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from app.views import args
-from app.views.base import BaseView, OpenApiResponseUnauthorized, OpenApiTags
+from captura.views import args
+from captura.views.base import BaseView, OpenApiResponseUnauthorized, OpenApiTags
 
 OpenApiResponseAssignment = {
     **OpenApiResponseUnauthorized,

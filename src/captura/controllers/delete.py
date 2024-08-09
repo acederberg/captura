@@ -10,10 +10,10 @@ from sqlalchemy import Select, Update, and_, delete, false, or_, select, true, u
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Token
-from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
+from captura import util
+from captura.auth import Token
+from captura.controllers.access import Access, WithAccess, with_access
+from captura.controllers.base import (
     Data,
     DataResolvedAssignment,
     DataResolvedGrant,
@@ -27,8 +27,8 @@ from app.controllers.base import (
     ResolvedObjectEvents,
     ResolvedUser,
 )
-from app.fields import Singular
-from app.models import (
+from captura.fields import Singular
+from captura.models import (
     Assignment,
     Collection,
     Document,
@@ -40,7 +40,7 @@ from app.models import (
     User,
     uuids,
 )
-from app.schemas import mwargs
+from captura.schemas import mwargs
 
 logger = util.get_logger(__name__)
 

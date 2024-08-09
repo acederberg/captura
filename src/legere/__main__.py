@@ -1,13 +1,13 @@
 # =========================================================================== #
 
 # --------------------------------------------------------------------------- #
-from client import ConfigCommands, DockerCommand
-from client.requests import Requests
+from legere import ConfigCommands, DockerCommand
+from legere.requests import Requests
 
 
 def main():
     # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
+    from legere.requests.base import typerize
 
     client = typerize(Requests)
     client.add_typer(typerize(ConfigCommands, exclude_callback=True), name="config")

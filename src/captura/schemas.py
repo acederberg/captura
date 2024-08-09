@@ -51,8 +51,8 @@ from rich.json import JSON
 from rich.panel import Panel
 
 # --------------------------------------------------------------------------- #
-from app import fields
-from app.util import check_enum_opt_attr
+from captura import fields
+from captura.util import check_enum_opt_attr
 
 
 # NOTE: Could use partials but I like this pattern more.

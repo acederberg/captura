@@ -14,11 +14,11 @@ from sqlalchemy import update
 from sqlalchemy.orm import sessionmaker as sessionmaker_
 
 # --------------------------------------------------------------------------- #
-from app.auth import Auth, Token, TokenPermissionTier
-from app.err import ErrAssocRequestMustForce, ErrDetail
-from app.fields import ChildrenUser, KindObject, Level, LevelStr
-from app.models import Grant, User
-from app.schemas import (
+from captura.auth import Auth, Token, TokenPermissionTier
+from captura.err import ErrAssocRequestMustForce, ErrDetail
+from captura.fields import ChildrenUser, KindObject, Level, LevelStr
+from captura.models import Grant, User
+from captura.schemas import (
     AsOutput,
     AssignmentSchema,
     DocumentSchema,
@@ -27,10 +27,10 @@ from app.schemas import (
     UserSchema,
     mwargs,
 )
-from client import Requests
-from client.config import ProfileConfig
-from client.handlers import AssertionHandler, ConsoleHandler
-from client.requests.base import ContextData
+from legere import Requests
+from legere.config import ProfileConfig
+from legere.handlers import AssertionHandler, ConsoleHandler
+from legere.requests.base import ContextData
 from tests.config import PytestClientConfig
 
 

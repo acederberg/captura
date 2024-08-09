@@ -25,14 +25,14 @@ from pydantic import TypeAdapter
 from sqlalchemy import func
 
 # --------------------------------------------------------------------------- #
-from app.auth import Auth
-from app.err import ErrDetail
-from app.fields import Level
-from app.models import Document, Grant, User
-from app.schemas import EventSchema
-from client.handlers import CONSOLE, AssertionHandler
-from client.requests import Requests
-from dummy import DummyHandler, DummyProvider
+from captura.auth import Auth
+from captura.err import ErrDetail
+from captura.fields import Level
+from captura.models import Document, Grant, User
+from captura.schemas import EventSchema
+from legere.handlers import CONSOLE, AssertionHandler
+from legere.requests import Requests
+from simulatus import DummyHandler, DummyProvider
 
 from ..conftest import COUNT, PytestClientConfig
 

@@ -19,15 +19,15 @@ from sqlalchemy.ext.asyncio.session import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Auth, Token, TokenPermissionTier, try_decode
-from app.config import Config
-from app.controllers.access import Access
-from app.controllers.create import Create, Update
-from app.controllers.delete import Delete
-from app.controllers.read import Read
-from app.models import User
-from app.views.args import QueryForce
+from captura import util
+from captura.auth import Auth, Token, TokenPermissionTier, try_decode
+from captura.config import Config
+from captura.controllers.access import Access
+from captura.controllers.create import Create, Update
+from captura.controllers.delete import Delete
+from captura.controllers.read import Read
+from captura.models import User
+from captura.views.args import QueryForce
 
 # NOTE: `cache` is used instead of using the `use_cache` keyword argument of
 #       `Depends` because it will result in identical object ids. For instance

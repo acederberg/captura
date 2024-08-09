@@ -11,10 +11,10 @@ from sqlalchemy import false, func, select, update
 from sqlalchemy.orm import Session, make_transient
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Auth, Token
-from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
+from captura import util
+from captura.auth import Auth, Token
+from captura.controllers.access import Access, WithAccess, with_access
+from captura.controllers.base import (
     Data,
     KindData,
     ResolvedAssignmentCollection,
@@ -26,7 +26,7 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from app.err import (
+from captura.err import (
     ErrAccessCollection,
     ErrAccessDocumentCannotRejectOwner,
     ErrAccessDocumentGrantBase,
@@ -36,8 +36,8 @@ from app.err import (
     ErrAccessUser,
     ErrObjMinSchema,
 )
-from app.fields import LevelHTTP
-from app.models import (
+from captura.fields import LevelHTTP
+from captura.models import (
     Assignment,
     Collection,
     Document,
@@ -51,7 +51,7 @@ from app.models import (
     UUIDSplit,
     uuids,
 )
-from dummy import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
+from simulatus import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
 from tests.test_controllers.util import check_exc, expect_exc, stringify
 
 from ..conftest import COUNT

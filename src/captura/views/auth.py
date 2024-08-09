@@ -17,13 +17,13 @@ from starlette.datastructures import URL
 from starlette.types import Scope
 
 # --------------------------------------------------------------------------- #
-from app import fields
-from app.auth import Token, TokenPermissionTier, try_decode
-from app.config import Config
-from app.controllers.base import Data, ResolvedUser
-from app.controllers.create import Create
-from app.controllers.read import Read
-from app.depends import (
+from captura import fields
+from captura.auth import Token, TokenPermissionTier, try_decode
+from captura.config import Config
+from captura.controllers.base import Data, ResolvedUser
+from captura.controllers.create import Create
+from captura.controllers.read import Read
+from captura.depends import (
     DependsAuth,
     DependsConfig,
     DependsCreate,
@@ -32,11 +32,11 @@ from app.depends import (
     DependsToken,
     HeaderAuthorization,
 )
-from app.models import Base, MappedColumnUUID, User
-from app.schemas import UserCreateSchema, mwargs
-from app.views import args
-from app.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
-from app.views.users import UserView
+from captura.models import Base, MappedColumnUUID, User
+from captura.schemas import UserCreateSchema, mwargs
+from captura.views import args
+from captura.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
+from captura.views.users import UserView
 
 
 def check_auth0_data(auth0_data: Dict[str, Any]):

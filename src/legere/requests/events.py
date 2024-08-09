@@ -5,11 +5,11 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from app.fields import KindObject, Singular
-from client import flags
-from client.flags import Output
-from client.handlers import CONSOLE, ConsoleHandler
-from client.requests.base import BaseRequests, ContextData, params
+from captura.fields import KindObject, Singular
+from legere import flags
+from legere.flags import Output
+from legere.handlers import CONSOLE, ConsoleHandler
+from legere.requests.base import BaseRequests, ContextData, params
 
 __all__ = ("EventsRequests",)
 
@@ -173,7 +173,7 @@ class EventsRequests(BaseRequests):
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
-    from client.requests.base import typerize
+    from legere.requests.base import typerize
 
     events = typerize(EventsRequests)
     events()

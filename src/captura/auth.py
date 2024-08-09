@@ -23,9 +23,9 @@ from sqlalchemy.orm import Session
 from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.config import Config
-from app.models import User
+from captura import util
+from captura.config import Config
+from captura.models import User
 
 # NOTE: Do not touch this! This pattern will have to run against many requests.
 # TODO: Appearently fastapi has this pattern somewhere. Replace this with that.
