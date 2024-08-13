@@ -69,9 +69,9 @@ Configuration
 ===============================================================================
 
 Captura is built with configurability in mind. All configuration can be written
-using ``YAML`` or ``JSON`` because of `acederberg/yaml-settings-pydantic<https://github.com/acederberg/pydantic-settings-yaml>`_.
-Configuration is by default contained in the ``./configs`` directory, but the 
-locations (paths of) of these configurations can be set using 
+using ``YAML`` or ``JSON``. Configuration is by default contained in the 
+``./configs`` directory, but the locations (paths of) of these configurations 
+can be set using 
 
 - ``CAPTURA_CONFIG_APP``
 - ``CAPTURA_CONFIG_CLIENT``
@@ -249,8 +249,8 @@ You probably won't need dummies. If you do, add
          minimum: 75
          maximum_uses: 100
 
-to your application configuration and configure it to your liking. This 
-configuration may be validated like ````
+to your application configuration and configure it to your liking. This
+configuration may be validated like
 
 .. code:: bash
 

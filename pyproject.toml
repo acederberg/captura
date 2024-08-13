@@ -39,6 +39,7 @@ rich = "^13.7.1"
 pyjwt = "^2.9.0"
 itsdangerous = "^2.2.0"
 httpx = "^0.27.0"
+types-pyyaml = "^6.0.12.20240808"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -50,6 +51,8 @@ autoflake = "^2.3.1"
 jedi-language-server = "^0.41.4"
 docker = "^7.1.0"
 yamllint = "^1.35.1"
+pylsp-mypy = "^0.6.8"
+python-lsp-server = "^1.11.0"
 
 
 
@@ -176,4 +179,3 @@ sort = "-cover" # NOTE: Sort from least to greatest coverage.
 [tool.coverage.html]
 directory = "./src/app/static/cov"
 title = "Captura PyTest Coverage Report"
-

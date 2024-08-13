@@ -1,16 +1,16 @@
-"""Note: None of these schemas should include ``id`` fields. Instead they 
-should return err.UUID fields. This is done because, by design, the err.UUIDS of 
+"""Note: None of these schemas should include ``id`` fields. Instead they
+should return err.UUID fields. This is done because, by design, the err.UUIDS of
 objects must known if they are to be got. Take for instance the following flow:
 
-1. The ``GET /user`` endpoint gets a users err.UUID from their JWT. The uuid is 
+1. The ``GET /user`` endpoint gets a users err.UUID from their JWT. The uuid is
     sent in the response.
-2. The ``GET /user/collections`` endpoint returns the collections for the user 
+2. The ``GET /user/collections`` endpoint returns the collections for the user
    returned from the above request.
-3. The ``GET /collections/<collection_id>/documents`` endpoint can be used to 
+3. The ``GET /collections/<collection_id>/documents`` endpoint can be used to
    get some err.UUIDs to make queries to the document collection.
 
 From a mathmatical standpoint, this is 'good enough' because err.UUIDs should map
-uniquely to a corresponding database row (further, for tables with multiple 
+uniquely to a corresponding database row (further, for tables with multiple
 foreign keys it is not necessary to specify multiple values).
 """
 
@@ -391,14 +391,14 @@ class TimespanLimitParams(BaseModel):
     before: fields.FieldUnixTimestampOptional
     after: fields.FieldUnixTimestampOptional
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def before_timestamp(self) -> int | None:
         if self.before is None:
             return None
         return int(datetime.timestamp(self.before))
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def after_timestamp(self) -> int | None:
         if self.after is None:
@@ -488,7 +488,7 @@ class EventBaseSchema(BaseSchema):
     timestamp: fields.FieldUnixTimestamp
     detail: fields.FieldDetail
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def timestamp_string(self) -> datetime:
         return datetime.fromtimestamp(self.timestamp)  # type: ignore
@@ -505,7 +505,7 @@ class EventBaseSchema(BaseSchema):
             try:
                 w = fields.KindObject[v]
             except KeyError:
-                w = fields.KindObject._value2member_map_.get(v)
+                w = fields.KindObject._value2member_map_.get(v)  # type: ignore
                 if w is None:
                     msg = f"Could not find enum value associated with `{v}`."
                     raise ValueError(msg)
@@ -625,20 +625,21 @@ class AsOutput(BaseModel, Generic[T_Output]):
     # : Annotated[fields.FieldKindObject, BeforeValidator(kind), Field()]
     data: Annotated[T_Output, Field(desciption="Wrapped data.")]
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def kind(self) -> fields.FieldKindObject | None:
         if (ff := self.first()) is not None:
             return ff.kind_mapped
+        return None
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def kind_schema(self) -> KindSchema | None:
         if (ff := self.first()) is not None:
             return ff.kind_schema
         return None
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def kind_nesting(self) -> KindNesting | None:
         match self.data:
@@ -649,7 +650,7 @@ class AsOutput(BaseModel, Generic[T_Output]):
             case _:
                 return None
 
-    @computed_field
+    # noqa: prop-decorator
     @property
     def name_schema(self) -> str:
         return self.first().__class__.__name__
@@ -692,4 +693,4 @@ T_mwargs = TypeVar("T_mwargs", bound=BaseModel | TMwargs)
 # NOTE: Cause I hate wrapping kwargs in dict and pydantic constructor hints are
 #       often annoying. This can be applied anything with a kwargs constructor.
 def mwargs(M: Type[T_mwargs], **kwargs) -> T_mwargs:
-    return M(**kwargs)
+    return M(**kwargs)  # type: ignore

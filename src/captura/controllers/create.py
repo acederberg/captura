@@ -27,7 +27,12 @@ from captura.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from captura.controllers.delete import AssocData, DataResolvedAssignment, Delete, WithDelete
+from captura.controllers.delete import (
+    AssocData,
+    DataResolvedAssignment,
+    Delete,
+    WithDelete,
+)
 from captura.err import ErrAssocRequestMustForce
 from captura.fields import Singular
 from captura.models import (
@@ -125,6 +130,8 @@ class Create(WithDelete, Generic[T_Create]):
     # NOTE: `PUT` will only be supported on assignments and grants for now
     #       (force overwriting of existing). This is because `PATCH` will be
     #       used to accept grants by grant uuid.
+
+    _create_data: T_Create | None
 
     def __init__(
         self,
@@ -351,7 +358,7 @@ class Create(WithDelete, Generic[T_Create]):
         self,
         data: Data[ResolvedAssignmentDocument],
     ) -> Data[ResolvedAssignmentDocument]:
-        data, *_ = self.assoc(data, self.create_assignment)
+        data, *_ = self.assoc(data, self.create_assignment)  # type: ignore[assignment]
         assert data.event
         return data
 
@@ -359,7 +366,7 @@ class Create(WithDelete, Generic[T_Create]):
         self,
         data: Data[ResolvedAssignmentCollection],
     ) -> Data[ResolvedAssignmentCollection]:
-        data, *_ = self.assoc(data, self.create_assignment)
+        data, *_ = self.assoc(data, self.create_assignment)  # type: ignore[assignment]
         return data
 
     # @overload
@@ -382,6 +389,7 @@ class Create(WithDelete, Generic[T_Create]):
         target: Document | User,
     ) -> Grant:
         # NOTE: Grants should be indexed by uuids of documents.
+        grant_parent_uuid: str | None
         match data.data.kind_source:
             case KindObject.document:
                 # NOTE: Permission of granter since they are inviting a user in
@@ -432,14 +440,14 @@ class Create(WithDelete, Generic[T_Create]):
         self,
         data: Data[ResolvedGrantUser],
     ) -> Data[ResolvedGrantUser]:
-        data, *_ = self.assoc(data, self.create_grant)
+        data, *_ = self.assoc(data, self.create_grant)  # type: ignore[assignment]
         return data
 
     def grant_document(
         self,
         data: Data[ResolvedGrantDocument],
     ) -> Data[ResolvedGrantDocument]:
-        data, *_ = self.assoc(data, self.create_grant)
+        data, *_ = self.assoc(data, self.create_grant)  # type: ignore[assignment]
         return data
 
     a_assignment_document = with_access(Access.assignment_document)(assignment_document)
@@ -648,11 +656,11 @@ class Update(WithDelete, Generic[T_Update]):
 
         item: User | Collection | Document
         match data.data:
-            case object(users=(User() as item,)):
+            case object(users=(User() as item,)):  # type: ignore[misc]
                 pass
-            case object(collections=(Collection() as item,)):
+            case object(collections=(Collection() as item,)):  # type: ignore[misc]
                 pass
-            case object(documents=(Document() as item,)):
+            case object(documents=(Document() as item,)):  # type: ignore[misc]
                 pass
             case _:
                 raise ValueError("Updating many is not supported.")
@@ -920,48 +928,7 @@ class Update(WithDelete, Generic[T_Update]):
         event_undo = Event(
             **self.event_common,
             detail="Deletion event reverted.",
-            uuid_user=token_user.uuid,
-            kind_obj=KindObject.event,
-            uuid_obj=event.uuid,
-        )
-        event.uuid_undo = event_undo.uuid
-
-        session = self.session
-        session.add(event_undo)
-        session.add(event)
-
-        for item in event.flattened():
-            object_ = item.object_
-            if object_ is None or not hasattr(object_, "deleted"):
-                continue
-            object_.deleted = False
-
-            item.uuid_undo = event_undo.uuid
-            session.add(object_)
-            session.add(item)
-
-        session.commit()
-        session.refresh(event)
-
-        data.event = event_undo
-        return data
-
-    def assignment_collection(
-        self,
-        data: Data[ResolvedAssignmentCollection],
-    ) -> Data[ResolvedAssignmentCollection]:
-        raise HTTPException(400, detail="Not implemented.")
-
-    # ----------------------------------------------------------------------- #
-
-    def event(self, data: Data[ResolvedEvent]) -> Data[ResolvedEvent]:
-        token_user = self.token_user or data.token_user
-        (event,) = data.data.events
-
-        event_undo = Event(
-            **self.event_common,
-            detail="Deletion event reverted.",
-            uuid_user=token_user.uuid,
+            uuid_user=token_user.uuid,  # type: ignore[union-attr]
             kind_obj=KindObject.event,
             uuid_obj=event.uuid,
         )

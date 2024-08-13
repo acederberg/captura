@@ -172,7 +172,7 @@ class ErrDetail(BaseModel, Generic[T_ErrDetail]):
     def from_response(cls, res: httpx.Response) -> Self:
         TT = cls.model_fields["detail"].annotation
         assert TT is not None
-        if TT == str:
+        if TT is str:
             return cls(detail=json.loads(res.content))
         return cls(detail=TT.model_validate_json(res.content))
 
@@ -183,12 +183,12 @@ class ErrDetail(BaseModel, Generic[T_ErrDetail]):
         diff: Dict[str, Tuple[Any, Any]]
         self_from_res = self.from_response(res)
         if self.detail == self_from_res.detail:
-            return
+            return None
         elif isinstance(detail := self.detail, str):
             diff = {"detail": (detail, self_from_res.detail)}
         else:
-            detail_self = detail.model_dump(mode="json")
-            detail_res = self_from_res.detail.model_dump(mode="json")  # type: ignore
+            detail_self = detail.model_dump(mode="json")  # type: ignore[union-attr]
+            detail_res = self_from_res.detail.model_dump(mode="json")  # type: ignore[union-attr]
             diff = {
                 exp_k: (exp_v, have_v)
                 for exp_k, exp_v in detail_self.items()

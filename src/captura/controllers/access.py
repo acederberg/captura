@@ -94,15 +94,16 @@ class Access(BaseController):
     # ----------------------------------------------------------------------- #
     # Events
 
+    # NOTE: Order of overloads matters.
     @overload
     def event(
         self,
-        resolvable_uuid: ResolvableSingular[Event],
+        resolvable_uuid: Resolvable[Event],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[False] = False,
-    ) -> Event: ...
+        return_data: Literal[True] = True,
+    ) -> Data[ResolvedEvent]: ...
 
     @overload
     def event(
@@ -117,12 +118,12 @@ class Access(BaseController):
     @overload
     def event(
         self,
-        resolvable_uuid: Resolvable[Event],
+        resolvable_uuid: ResolvableSingular[Event],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[True] = True,
-    ) -> Data[ResolvedEvent]: ...
+        return_data: Literal[False] = False,
+    ) -> Event: ...
 
     def event(
         self,
@@ -182,8 +183,8 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[True] = True,
-    ) -> Data[ResolvedObjectEvents]: ...
+        return_data: Literal[False] = False,
+    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]: ...
 
     @overload
     def object_events(
@@ -194,8 +195,8 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[False] = False,
-    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]: ...
+        return_data: Literal[True] = True,
+    ) -> Data[ResolvedObjectEvents]: ...
 
     def object_events(
         self,
@@ -277,16 +278,16 @@ class Access(BaseController):
     @overload
     def user(
         self,
-        resolve_user: ResolvableSingular[User],
+        resolve_user: Resolvable[User],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         exclude_public: bool = False,
-        return_data: Literal[False] = False,
-    ) -> User: ...
+        return_data: Literal[True] = True,
+    ) -> Data[ResolvedUser]: ...
 
     @overload
-    def user(  # type: ignore[overload-overlap]
+    def user(  
         self,
         resolve_user: ResolvableMultiple[User],
         *,
@@ -299,13 +300,13 @@ class Access(BaseController):
     @overload
     def user(
         self,
-        resolve_user: Resolvable[User],
+        resolve_user: ResolvableSingular[User],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
         exclude_public: bool = False,
-        return_data: Literal[True] = True,
-    ) -> Data[ResolvedUser]: ...
+        return_data: Literal[False] = False,
+    ) -> User: ...
 
     def user(  # type: ignore
         self,
@@ -437,17 +438,6 @@ class Access(BaseController):
     # Collection
 
     @overload
-    def collection(
-        self,
-        resolve_collection: ResolvableSingular[Collection],
-        *,
-        exclude_deleted: bool = True,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        return_data: Literal[False] = False,
-        allow_public: bool = True,
-    ) -> Collection: ...
-
-    @overload
     def collection(  # type: ignore[overload-overlap]
         self,
         resolve_collection: ResolvableMultiple[Collection],
@@ -468,6 +458,17 @@ class Access(BaseController):
         return_data: Literal[True] = True,
         allow_public: bool = True,
     ) -> Data[ResolvedCollection]: ...
+
+    @overload
+    def collection(
+        self,
+        resolve_collection: ResolvableSingular[Collection],
+        *,
+        exclude_deleted: bool = True,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        return_data: Literal[False] = False,
+        allow_public: bool = True,
+    ) -> Collection: ...
 
     def collection(
         self,
@@ -559,6 +560,23 @@ class Access(BaseController):
     @overload
     def document(
         self,
+        resolve_document: Resolvable[Document],
+        *,
+        resolve_user_token: ResolvableSingular[User] | None = None,
+        exclude_deleted: bool = True,
+        return_data: Literal[True] = True,
+        level: ResolvableLevel | None = None,
+        grants: Dict[str, Grant] | None = None,
+        grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
+        pending: bool = False,
+        validate: bool = True,
+        allow_public: bool = False,
+        # pending_from: PendingFrom | None = None,
+    ) -> Data[ResolvedDocument]: ...
+
+    @overload
+    def document(
+        self,
         resolve_document: ResolvableSingular[Document],
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
@@ -574,7 +592,7 @@ class Access(BaseController):
     ) -> Document: ...
 
     @overload
-    def document(  # type: ignore[overload-overlap]
+    def document(  
         self,
         resolve_document: ResolvableMultiple[Document],
         *,
@@ -589,23 +607,6 @@ class Access(BaseController):
         allow_public: bool = False,
         # pending_from: PendingFrom | None = None,
     ) -> Tuple[Document, ...]: ...
-
-    @overload
-    def document(
-        self,
-        resolve_document: Resolvable[Document],
-        *,
-        resolve_user_token: ResolvableSingular[User] | None = None,
-        exclude_deleted: bool = True,
-        return_data: Literal[True] = True,
-        level: ResolvableLevel | None = None,
-        grants: Dict[str, Grant] | None = None,
-        grants_index: Literal["uuid_document", "uuid_user"] = "uuid_document",
-        pending: bool = False,
-        validate: bool = True,
-        allow_public: bool = False,
-        # pending_from: PendingFrom | None = None,
-    ) -> Data[ResolvedDocument]: ...
 
     def document(
         self,

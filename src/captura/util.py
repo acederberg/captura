@@ -1,12 +1,10 @@
 # =========================================================================== #
 import enum
-import importlib.util
 import logging
 import logging.config
 import logging.handlers
 import os
 import secrets
-import sys
 from os import environ, path
 from typing import Any, Type
 
@@ -142,7 +140,7 @@ def check_enum_opt_attr(
         raise AttributeError(msg)
 
     match getattr(cls, field, None):
-        case T_enum() | None:
+        case T_enum() | None:  # type: ignore
             pass
         case bad:
             raise ValueError(

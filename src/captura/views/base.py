@@ -1,4 +1,4 @@
-"""Api routers and functions. 
+"""Api routers and functions.
 This includes a metaclass so that undecorated functions may be tested.
 
 """
@@ -105,8 +105,8 @@ class ViewMixins:
     # view_children: ClassVar[Dict[str, Type]] = dict()
     view_children: ClassVar[Dict[str, "ViewMeta"]] = dict()
     view_router: ClassVar[APIRouter]
-    view_router_args: ClassVar[Dict[str, Any]] = dict()
-    view_routes: ClassVar[Dict[str, str | Dict[str, Any]]] = dict()
+    view_router_args: ClassVar[Dict[str, Any]] = dict()  # type: ignore
+    view_routes: ClassVar[Dict[str, str | Dict[str, Any]]] = dict()  # type: ignore
     view_templates: ClassVar[Jinja2Templates] = Jinja2Templates(
         directory=path.join(path.dirname(__file__), "templates")
     )
@@ -122,8 +122,9 @@ class ViewMeta(type):
     def add_route(cls, T, fn_name: str, fn_info_raw: str | Dict[str, Any]):
         name = T.__name__
 
-        # Build info
-        info: Dict[str, Any]
+        # NOTE: Annotation is stange bc of the following mypy error:
+        #       Incompatible types in capture pattern (pattern captures type "dict[object, object]", variable has type "dict[str, Any]")  [misc]
+        info: Dict[Any, Any]
         url: str
         match fn_info_raw:
             case str() as url:

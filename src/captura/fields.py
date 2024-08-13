@@ -210,10 +210,10 @@ FieldPending = Annotated[
     bool,
     Field(description="Grant awaiting approval (or not)."),
 ]
-FieldPendingFrom = Annotated[
-    PendingFrom,
-    Field(description="Grant initiator."),
-]
+# FieldPendingFrom = Annotated[
+#     PendingFrom,
+#     Field(description="Grant initiator."),
+# ]
 FieldDeleted = Annotated[
     bool,
     Field(description="Object pending deletion or not."),
@@ -246,7 +246,7 @@ def int_enum_from_name(
 ) -> Callable[[Any], Any]:
     def wrapper(v: Any) -> Any:
         match v:
-            case EnumSubclass():
+            case EnumSubclass():  # type: ignore
                 return v
             case str() as v_str:
                 return EnumSubclass[v_str]
@@ -272,7 +272,7 @@ FieldLevel = Annotated[
     BeforeValidator(int_enum_from_name(Level, int_enum_from_name_callback)),
 ]
 
-FieldPendingFrom: TypeAlias = Annotated[
+FieldPendingFrom = Annotated[
     PendingFrom,
     Field(description="Grant pending origin."),
     BeforeValidator(int_enum_from_name(PendingFrom)),
@@ -304,7 +304,6 @@ FieldEmail = Annotated[
 ]
 
 
-FieldPending: TypeAlias = Annotated[bool, Field(description="Grant pending status.")]
 FieldContent: TypeAlias = Annotated[
     Dict[str, Any] | None,
     Field(description="Document content.", default=None),

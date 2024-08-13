@@ -1,6 +1,6 @@
 """Module for application configuration.
 
-The main class defined here is `Config`. This should not `import` any internal 
+The main class defined here is `Config`. This should not `import` any internal
 modules because it will result in circular imports. `Config` will be included
 in controllers by dependency injection. For example, do not do
 
@@ -198,12 +198,12 @@ class AppConfig(BaseHashable):
         Field(default=util.PATH_CONFIG_LOG),
     ]
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_dev(self) -> bool:
         return self.environment == Environment.development
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def host_url(self) -> str:
         host = f"{self.host_scheme}{self.host_dns_name}"

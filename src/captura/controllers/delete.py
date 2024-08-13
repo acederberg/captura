@@ -107,8 +107,9 @@ class AssocData(BaseModel):
         return table
 
     def q_del(self, model_assoc: Type, force: bool, *, rm_active: bool = True):
-
         uuid_assoc_rm = self.uuid_assoc_active.copy() if rm_active else set()
+
+        q_del: Update | sqaDelete
         if force:
             uuid_assoc_rm |= self.uuid_assoc_deleted
             q_del = delete(model_assoc).where(model_assoc.uuid.in_(uuid_assoc_rm))
@@ -139,7 +140,7 @@ class Delete(WithAccess):
             else lambda child: setattr(child, "deleted", True)
         )
         _ = tuple(
-            (meth(child), info.add((child.kind_obj, child.uuid_obj)))
+            (meth(child), info.add((child.kind_obj, child.uuid_obj)))  # type: ignore[func-returns-value]
             for child in item.flattened()
         )
 
@@ -209,8 +210,8 @@ class Delete(WithAccess):
         data: Data[ResolvedEvent] | Data[ResolvedObjectEvents],
         # commit: bool = False,
     ) -> Data[ResolvedEvent] | Data[ResolvedObjectEvents]:
-        obj_info = set()
-        n = sum(self._event(item, obj_info) for item in data.data.events)
+        obj_info = set()  # type: ignore[var-annotated]
+        n = sum(self._event(item, obj_info) for item in data.data.events)  # type: ignore[misc]
         data.event = self.event_event(data, n, obj_info)
         data.data.delete = True
         return data
@@ -231,7 +232,6 @@ class Delete(WithAccess):
         self,
         data: DataResolvedGrant | DataResolvedAssignment,
     ) -> Tuple[AssocData, Type]:
-
         model_assoc = data.data.get_model("assoc")
         model_target = data.data.get_model("target")
         q_assoc = (
@@ -262,7 +262,7 @@ class Delete(WithAccess):
             )
             if not items:
                 return (set(), set())
-            return tuple(set(item) for item in zip(*items))
+            return tuple(set(item) for item in zip(*items))  # type: ignore[return-value]
 
         deleted, active = (one(true), one(false))
         return (
@@ -380,7 +380,9 @@ class Delete(WithAccess):
     # ----------------------------------------------------------------------- #
 
     def _user(
-        self, data: Data[ResolvedUser], user: User  # , commit: bool = False
+        self,
+        data: Data[ResolvedUser],
+        user: User,  # , commit: bool = False
     ) -> Data[ResolvedUser]:
         logger.debug("Deleting user `%s`.", user.uuid)
         session = self.session
@@ -474,7 +476,7 @@ class Delete(WithAccess):
             select(Assignment)
             .join(Document)
             .where(
-                Document.uuid.in_(uuids(documents)),
+                Document.uuid.in_(uuids(documents)),  # type: ignore[type-var]
                 Assignment.id_collection == collection.id,
             )
         )

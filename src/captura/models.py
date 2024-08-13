@@ -16,7 +16,6 @@ from typing import (
     Tuple,
     Type,
     TypeAlias,
-    TypedDict,
     TypeVar,
     overload,
 )
@@ -54,7 +53,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql import false
 
 # --------------------------------------------------------------------------- #
-from captura import __version__, fields, util
+from captura import __version__, fields
 from captura.err import (
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
@@ -114,7 +113,7 @@ MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 
 
 class KindSelect(str, enum.Enum):
-    count = "count"
+    count = "count"  # type: ignore
     uuids = "uuids"
 
 
@@ -160,29 +159,27 @@ class Base(DeclarativeBase):
     ) -> Tuple[Self, ...]:
         res = session.execute(select(cls).where(cls.uuid.in_(uuid))).scalars()
         if callback is not None:
-            res = (callback(item) for item in res)
+            return tuple(callback(item) for item in res)
 
         return tuple(res)
 
     # ----------------------------------------------------------------------- #
     # Resolvers
 
-    ResolvableSelfSingular: TypeAlias = Self | str
-    ResolvableSelfMultiple: TypeAlias = Tuple[Self, ...] | Set[str]
-    ResolvableSelf: TypeAlias = ResolvableSelfSingular | ResolvableSelfMultiple
-
     @overload
     @classmethod
-    def resolve(cls, session: Session, that: ResolvableSelfSingular) -> Self: ...
+    def resolve(cls, session: Session, that: Self | str) -> Self: ...
 
     @overload
     @classmethod
     def resolve(
-        cls, session: Session, that: ResolvableSelfMultiple
+        cls, session: Session, that: Tuple[Self, ...] | Set[str]
     ) -> Tuple[Self, ...]: ...
 
     @classmethod
-    def resolve(cls, session: Session, that: ResolvableSelf) -> Self | Tuple[Self, ...]:
+    def resolve(
+        cls, session: Session, that: Self | str | Tuple[Self, ...] | Set[str]
+    ) -> Self | Tuple[Self, ...]:
         """Provided :param:`that` which is any reasonable representation of
         a(n) instance(s), return the associated instance(s).
         """
@@ -205,7 +202,7 @@ class Base(DeclarativeBase):
     def resolve_uuid(
         cls,
         session: Session,
-        that: ResolvableSelfMultiple,
+        that: Set[str] | Tuple[Self, ...],
     ) -> Set[str]: ...
 
     @overload
@@ -213,18 +210,18 @@ class Base(DeclarativeBase):
     def resolve_uuid(
         cls,
         session: Session,
-        that: ResolvableSelfSingular,
+        that: str | Self,
     ) -> str: ...
 
     @classmethod
     def resolve_uuid(
         cls,
         session: Session,
-        that: ResolvableSelf,
+        that: str | Self | Set[str] | Tuple[Self, ...],
     ) -> str | Set[str]:
         data: Self | Tuple[Self, ...]
         match data := cls.resolve(session, that):
-            case cls():
+            case cls():  # type: ignore
                 return data.uuid
             case tuple():
                 return set(item.uuid for item in data)
@@ -297,9 +294,9 @@ class PrimaryTableMixins:
 
     @classmethod
     def q_select_ids(cls, uuids: Set[str]) -> Select:
-        match (id := getattr(cls, "id", None)):
+        match id := getattr(cls, "id", None):
             case Column() | InstrumentedAttribute():
-                return select(id).where(cls.uuid.in_(uuids))
+                return select(id).where(cls.uuid.in_(uuids))  # type: ignore[attr-defined]
             case None:
                 raise AttributeError(
                     f"Table `{cls.__name__}` must have an `id` `column` to use"
@@ -316,12 +313,12 @@ class PrimaryTableMixins:
         exclude_deleted: bool = True,
         *,
         conds: BooleanClauseList | ColumnElement[bool] | None = None,
-    ) -> ColumnElement[bool] | None:
+    ):
         items = [conds] if conds is not None else []
         if exclude_deleted:
-            items.append(cls.deleted == false())
+            items.append(cls.deleted == false())  # type: ignore[attr-defined]
         if uuids is not None:
-            items.append(cls.uuid.in_(uuids))
+            items.append(cls.uuid.in_(uuids))  # type: ignore[attr-defined]
 
         # NOTE: ``true`` is added here because of the following warning:
         #
@@ -385,8 +382,11 @@ class SearchableTableMixins(PrimaryTableMixins):
         if not all_ and user_uuid is None:
             msg = "`all_` must be true when a user is not provided."
             raise ValueError(msg)
+
+        # TODO: Implement this once it is needed.
         q = None
         if user_uuid:
+            # raise ValueError("Not implemented!")
             q = cls.q_select_for_user(
                 user_uuid,
                 uuids,
@@ -534,6 +534,7 @@ class Event(Base):
     @classmethod
     def cte_recursive(cls, uuid_event: str) -> CTE:
         rand = secrets.token_urlsafe(4)
+        uuid_root: Any
         q = (
             select(
                 Event,
@@ -588,7 +589,7 @@ class Event(Base):
         uuid_obj: str | None = None,
         before: int | None = None,
         after: int | None = None,
-    ) -> ...:
+    ):
         conds = []
         if uuid_user is not None:
             conds.append(cls.uuid_user == uuid_user)
@@ -886,6 +887,7 @@ class AssocUserDocument(Base):
 
         # NOTE: These queries should also have joins such that warning are not
         #       raised by sqlalchemy.
+        s: Any
         match source:
             case _ if not select_parent_uuids:
                 q = source.q_select_grants(target_uuids, exclude_deleted=False)
@@ -947,28 +949,28 @@ class User(SearchableTableMixins, Base):
     # ----------------------------------------------------------------------- #
     # Queries
 
-    @classmethod
-    def _q_prototype_activation_pending_approval(
-        cls,
-        invitation_uuid: Set[str] | None = None,
-        invitation_email: Set[str] | None = None,
-        invitation_code: Set[str] | None = None,
-    ) -> Select:
-        q = select(cls).where(
-            cls.deleted == true(), cls._prototype_activation_pending_approval == true()
-        )
-        if invitation_uuid is not None:
-            q = q.where(cls.uuid.in_(invitation_uuid))
-
-        if invitation_code is not None:
-            q = q.where(cls._prototype_activation_invitation_code.in_(invitation_code))
-
-        if invitation_email is not None:
-            q = q.where(
-                cls._prototype_activation_invitation_email.in_(invitation_email)
-            )
-
-        return q
+    # @classmethod
+    # def _q_prototype_activation_pending_approval(
+    #     cls,
+    #     invitation_uuid: Set[str] | None = None,
+    #     invitation_email: Set[str] | None = None,
+    #     invitation_code: Set[str] | None = None,
+    # ) -> Select:
+    #     q = select(cls).where(
+    #         cls.deleted == true(), cls._prototype_activation_pending_approval == true()
+    #     )
+    #     if invitation_uuid is not None:
+    #         q = q.where(cls.uuid.in_(invitation_uuid))
+    #
+    #     if invitation_code is not None:
+    #         q = q.where(cls._prototype_activation_invitation_code.in_(invitation_code))
+    #
+    #     if invitation_email is not None:
+    #         q = q.where(
+    #             cls._prototype_activation_invitation_email.in_(invitation_email)
+    #         )
+    #
+    #     return q
 
     def q_conds_grants(
         self,
@@ -980,7 +982,7 @@ class User(SearchableTableMixins, Base):
         pending_from: PendingFrom | None = None,
         exclude_pending: bool = True,
         n_owners: int | None = None,
-    ) -> ColumnElement[bool]:
+    ):
         cond = list()
         if n_owners is None:
             cond.append(AssocUserDocument.id_user == self.id)
@@ -1135,7 +1137,7 @@ class User(SearchableTableMixins, Base):
         self,
         uuid_collection: Set[str] | None = None,
         exclude_deleted: bool = True,
-    ) -> ...:
+    ):
         conds = and_(Collection.id_user == User.id)
         if uuid_collection is not None:
             conds = and_(conds, Collection.uuid.in_(uuid_collection))
@@ -1207,9 +1209,9 @@ class User(SearchableTableMixins, Base):
                     level=level.name,
                     **detail,
                 )
-            case Grant(
-                deleted=False, pending=True, pending_from=pending_from
-            ) as grant if not pending:
+            case (
+                Grant(deleted=False, pending=True, pending_from=pending_from) as grant
+            ) if not pending:
                 status, msg = 403, "_msg_grant_pending"
                 if pending_from == PendingFrom.created:
                     status, msg = 500, "_msg_grant_pending_created"
@@ -1251,8 +1253,6 @@ class User(SearchableTableMixins, Base):
                     **detail,
                     level_grant_required=Level.own,
                 )
-
-    def check_sole_owner_document(self, document: "Document") -> Self: ...
 
     def check_can_access_event(
         self,
@@ -1587,7 +1587,7 @@ class Document(SearchableTableMixins, Base):
             q = q.where(cls.uuid.in_(uuid_documents))
 
         conds = user.q_conds_grants(uuid_documents)
-        q = q.join(Grant).join(User).where(conds)
+        q = q.join(Grant).join(User).where(*conds)
 
         return q
 
