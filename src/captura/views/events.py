@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException
 from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
+from captura.auth import TokenPermissionTier
 from captura.controllers.access import Access, WithAccess
 from captura.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
 from captura.depends import DependsAccess, DependsDelete, DependsRead
@@ -74,10 +75,10 @@ def admin_only(
         *args: P_admin_only.args,
         **kwargs: P_admin_only.kwargs,
     ):
-        if not access.token.admin:
+        if not access.token.tier == TokenPermissionTier.admin:
             detail = "This endpoint is for admins only."
             raise HTTPException(403, detail=detail)
-        return fn(cls, access, *args, **kwargs)
+        return fn(cls, access, *args, **kwargs)  # type: ignore
 
     return wrapper
 
@@ -95,26 +96,26 @@ class EventSearchView(BaseView):
             name="Get Events for User",
             tags=[OpenApiTags.users],
         ),
-        get_document_events=dict(
-            url="/documents/{uuid_document}/events",
-            name="Get Events for Document",
-            tags=[OpenApiTags.documents],
-        ),
-        get_collection_events=dict(
-            url="/collections/{uuid_collection}/events",
-            name="Get Events for Collection",
-            tags=[OpenApiTags.collections],
-        ),
-        get_grant_events=dict(
-            url="/grants/documents/{uuid_document}/users/{uuid_user}/events",
-            name="Get Events for Grant",
-            tags=[OpenApiTags.grants],
-        ),
-        get_assignment_events=dict(
-            url="/assignments/documents/{uuid_document}/collections/{uuid_collection}/events",
-            name="Get Events for Assignment",
-            tags=[OpenApiTags.assignments],
-        ),
+        # get_document_events=dict(
+        #     url="/documents/{uuid_document}/events",
+        #     name="Get Events for Document",
+        #     tags=[OpenApiTags.documents],
+        # ),
+        # get_collection_events=dict(
+        #     url="/collections/{uuid_collection}/events",
+        #     name="Get Events for Collection",
+        #     tags=[OpenApiTags.collections],
+        # ),
+        # get_grant_events=dict(
+        #     url="/grants/documents/{uuid_document}/users/{uuid_user}/events",
+        #     name="Get Events for Grant",
+        #     tags=[OpenApiTags.grants],
+        # ),
+        # get_assignment_events=dict(
+        #     url="/assignments/documents/{uuid_document}/collections/{uuid_collection}/events",
+        #     name="Get Events for Assignment",
+        #     tags=[OpenApiTags.assignments],
+        # ),
     )
 
     view_router_args = dict(
@@ -161,88 +162,88 @@ class EventSearchView(BaseView):
             data=UserExtraSchema.model_validate(data.data.obj),
         )
 
-    @classmethod
-    @admin_only
-    def get_document_events(
-        cls,
-        access: DependsAccess,
-        read: DependsRead,
-        uuid_document: args.PathUUIDUser,
-        param: EventParams = Depends(),
-    ) -> OutputWithEvents[DocumentExtraSchema]:
-        item, events = read.object_events(uuid_document, KindObject.document, param)
-        return mwargs(
-            OutputWithEvents[DocumentExtraSchema],
-            events=events,
-            data=DocumentExtraSchema.model_validate(item),
-        )
-
-    @classmethod
-    @admin_only
-    def get_collection_events(
-        cls,
-        access: DependsAccess,
-        read: DependsRead,
-        uuid_collection: args.PathUUIDUser,
-        param: EventParams = Depends(),
-    ) -> OutputWithEvents[CollectionExtraSchema]:
-        item, events = read.object_events(uuid_collection, KindObject.collection, param)
-        return mwargs(
-            OutputWithEvents[CollectionExtraSchema],
-            events=events,
-            data=CollectionExtraSchema.model_validate(item),
-        )
-
-    @classmethod
-    @admin_only
-    def get_grant_events(
-        cls,
-        access: DependsAccess,
-        read: DependsRead,
-        uuid_document: args.PathUUIDDocument,
-        uuid_user: args.PathUUIDUser,
-        param: EventParams = Depends(),
-    ) -> OutputWithEvents[GrantExtraSchema]:
-        session = access.session
-        document = Document.resolve(session, uuid_document)
-        user = User.resolve(session, uuid_user)
-        grants = Grant.resolve_from_target(session, user, {document.uuid})
-        if len(grants) != 1:
-            raise HTTPException(500)
-        (grant,) = grants
-
-        item, events = read.object_events(grant, KindObject.grant, param)
-        return mwargs(
-            OutputWithEvents[GrantExtraSchema],
-            events=events,
-            data=GrantExtraSchema.model_validate(item),
-        )
-
-    @classmethod
-    @admin_only
-    def get_assignment_events(
-        cls,
-        access: DependsAccess,
-        read: DependsRead,
-        uuid_document: args.PathUUIDCollection,
-        uuid_collection: args.PathUUIDDocument,
-        param: EventParams = Depends(),
-    ) -> OutputWithEvents[AssignmentExtraSchema]:
-        session = access.session
-        document = Document.resolve(session, uuid_document)
-        collection = Collection.resolve(session, uuid_collection)
-        grants = Assignment.resolve_from_target(session, collection, {document.uuid})
-
-        if len(grants) != 1:
-            raise HTTPException(500)
-        (grant,) = grants
-
-        item, events = read.object_events(grant, KindObject.grant, param)
-        return mwargs(
-            OutputWithEvents[AssignmentExtraSchema],
-            events=events,
-            data=AssignmentExtraSchema.model_validate(item),
-        )
+    # @classmethod
+    # @admin_only
+    # def get_document_events(
+    #     cls,
+    #     access: DependsAccess,
+    #     read: DependsRead,
+    #     uuid_document: args.PathUUIDUser,
+    #     param: EventParams = Depends(),
+    # ) -> OutputWithEvents[DocumentExtraSchema]:
+    #     item, events = read.object_events(uuid_document, KindObject.document, param)
+    #     return mwargs(
+    #         OutputWithEvents[DocumentExtraSchema],
+    #         events=events,
+    #         data=DocumentExtraSchema.model_validate(item),
+    #     )
+    #
+    # @classmethod
+    # @admin_only
+    # def get_collection_events(
+    #     cls,
+    #     access: DependsAccess,
+    #     read: DependsRead,
+    #     uuid_collection: args.PathUUIDUser,
+    #     param: EventParams = Depends(),
+    # ) -> OutputWithEvents[CollectionExtraSchema]:
+    #     item, events = read.object_events(uuid_collection, KindObject.collection, param)
+    #     return mwargs(
+    #         OutputWithEvents[CollectionExtraSchema],
+    #         events=events,
+    #         data=CollectionExtraSchema.model_validate(item),
+    #     )
+    #
+    # @classmethod
+    # @admin_only
+    # def get_grant_events(
+    #     cls,
+    #     access: DependsAccess,
+    #     read: DependsRead,
+    #     uuid_document: args.PathUUIDDocument,
+    #     uuid_user: args.PathUUIDUser,
+    #     param: EventParams = Depends(),
+    # ) -> OutputWithEvents[GrantExtraSchema]:
+    #     session = access.session
+    #     document = Document.resolve(session, uuid_document)
+    #     user = User.resolve(session, uuid_user)
+    #     grants = Grant.resolve_from_target(session, user, {document.uuid})
+    #     if len(grants) != 1:
+    #         raise HTTPException(500)
+    #     (grant,) = grants
+    #
+    #     item, events = read.object_events(grant, KindObject.grant, param)
+    #     return mwargs(
+    #         OutputWithEvents[GrantExtraSchema],
+    #         events=events,
+    #         data=GrantExtraSchema.model_validate(item),
+    #     )
+    #
+    # @classmethod
+    # @admin_only
+    # def get_assignment_events(
+    #     cls,
+    #     access: DependsAccess,
+    #     read: DependsRead,
+    #     uuid_document: args.PathUUIDCollection,
+    #     uuid_collection: args.PathUUIDDocument,
+    #     param: EventParams = Depends(),
+    # ) -> OutputWithEvents[AssignmentExtraSchema]:
+    #     session = access.session
+    #     document = Document.resolve(session, uuid_document)
+    #     collection = Collection.resolve(session, uuid_collection)
+    #     grants = Assignment.resolve_from_target(session, collection, {document.uuid})
+    #
+    #     if len(grants) != 1:
+    #         raise HTTPException(500)
+    #     (grant,) = grants
+    #
+    #     item, events = read.object_events(grant, KindObject.grant, param)
+    #     return mwargs(
+    #         OutputWithEvents[AssignmentExtraSchema],
+    #         events=events,
+    #         data=AssignmentExtraSchema.model_validate(item),
+    #     )
 
 
 class EventView(BaseView):
@@ -364,7 +365,7 @@ class EventView(BaseView):
     ) -> AsOutput[List[EventMetadataSchema]]:
         # NOTE: Build the search.
         kwargs_search = param_search.model_dump(exclude={"before", "after"})
-        if not access.token.admin:
+        if access.token.tier != TokenPermissionTier.admin:
             kwargs_search.update(uuid_user=access.token_user.uuid)
 
         session = access.session
@@ -395,14 +396,14 @@ class EventView(BaseView):
         """
 
         event = (
-            delete.access.event(uuid_event)
+            delete.access.event(uuid_event, return_data=False)
             .check_kind(KindEvent.delete)
             .check_not_undone()
         )
         delete.access.token_user.check_can_access_event(event)
 
         event = (
-            delete.access.event(event.find_root())
+            delete.access.event(event.find_root(), return_data=False)
             .check_kind(KindEvent.delete)
             .check_not_undone()
         )

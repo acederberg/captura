@@ -1,40 +1,22 @@
 # =========================================================================== #
-import hashlib
-import secrets
-from datetime import datetime
-from typing import Annotated, List, Set, Tuple
-from uuid import uuid4
+from typing import Annotated, List
 
-from fastapi import Body, Depends, HTTPException, Query
+from fastapi import Body, Depends, HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
-from captura import __version__, util
-from captura.auth import TokenPermissionTier
-from captura.config import Config
+from captura import util
 from captura.controllers.base import Data, ResolvedUser
-from captura.depends import (
-    DependsAccess,
-    DependsConfig,
-    DependsCreate,
-    DependsDelete,
-    DependsRead,
-    DependsToken,
-    DependsTokenOptional,
-    DependsUpdate,
-)
+from captura.depends import DependsAccess, DependsDelete, DependsRead, DependsUpdate
 from captura.err import ErrAccessUser, ErrDetail
-from captura.models import Collection, Document, Event, KindEvent, KindObject, User
+from captura.models import Collection, Document, User
 from captura.schemas import (
     AsOutput,
     CollectionMetadataSchema,
     CollectionSearchSchema,
     DocumentMetadataSchema,
     DocumentSearchSchema,
-    EventSchema,
     OutputWithEvents,
-    UserCreateSchema,
     UserExtraSchema,
     UserSchema,
     UserSearchSchema,
@@ -64,7 +46,7 @@ OpenApiResponseUser = {
 
 
 def user(access: DependsAccess, uuid_user: args.PathUUIDUser) -> User:
-    return access.user(uuid_user, exclude_public=True)
+    return access.user(uuid_user, exclude_public=True, return_data=False)
 
 
 DependsUser = Annotated[User, Depends(user)]
@@ -138,7 +120,7 @@ class UserSearchView(BaseView):
         read: DependsRead,
         param: CollectionSearchSchema = Depends(),
     ) -> AsOutput[List[CollectionMetadataSchema]]:
-        user: User = read.access.user(uuid_user)
+        user: User = read.access.user(uuid_user, return_data=False)
         res: List[Collection] = read.search_user(user, param)
         return mwargs(
             AsOutput[List[CollectionMetadataSchema]],

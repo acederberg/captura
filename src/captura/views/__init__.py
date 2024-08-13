@@ -88,7 +88,7 @@ class AppView(BaseView):
         ),
         openapi_tags=OpenApiTagMetadata,
         swagger_ui_parameters={"syntaxHighlight.theme": "obsidian"},
-        routes=routes,
+        routes=routes,  # type: ignore
         middleware=[
             Middleware(
                 SessionMiddleware,
@@ -153,14 +153,14 @@ class AppView(BaseView):
             items = (
                 item
                 for item in items
-                if all(method in methods for method in item.method)
+                if all(method in methods for method in item.method)  # type: ignore
                 # hasattr(item, "methods")
                 # and
             )
 
         match (names, names_fragment):
             case (set(), None):
-                items = (item for item in items if item.name in names)
+                items = (item for item in items if item.name in names)  # type: ignore
             case (None, str()):
                 items = (item for item in items if names_fragment in item.name)
             case (None, None):

@@ -1,29 +1,19 @@
 # =========================================================================== #
-from typing import Annotated, List
+from typing import Annotated
 
-from fastapi import Body, Depends, HTTPException
-from fastapi.responses import FileResponse
-from pydantic import TypeAdapter
+from fastapi import Body
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.base import Data, ResolvedDocument
-from captura.depends import (
-    DependsAccess,
-    DependsCreate,
-    DependsDelete,
-    DependsRead,
-    DependsUpdate,
-)
+from captura.depends import DependsAccess, DependsCreate, DependsDelete, DependsUpdate
 from captura.models import Document, Level
 from captura.schemas import (
     AsOutput,
     DocumentCreateSchema,
-    DocumentMetadataSchema,
     DocumentSchema,
     DocumentUpdateSchema,
     EventSchema,
     OutputWithEvents,
-    TimespanLimitParams,
     mwargs,
 )
 from captura.views import args
@@ -81,6 +71,7 @@ class DocumentView(BaseView):
             uuid_document,
             level=Level.view,
             allow_public=True,
+            return_data=False,
         )
         return mwargs(
             AsOutput[DocumentSchema], data=DocumentSchema.model_validate(document)

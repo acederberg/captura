@@ -143,6 +143,7 @@ class Access(BaseController):
                 event.check_not_deleted()
             return event
 
+        res: Tuple[Event, ...] | Event
         match events:
             case tuple() as items:
                 res = tuple(map(check_one, items))
@@ -175,7 +176,7 @@ class Access(BaseController):
         )
 
     @overload
-    def object_events(
+    def object_events(  # type: ignore[overload-overlap]
         self,
         object_resolvable: ResolvableSingular[T_Resolvable],
         object_kind: KindObject,
@@ -183,8 +184,8 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[False] = False,
-    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]: ...
+        return_data: Literal[True] = True,
+    ) -> Data[ResolvedObjectEvents]: ...
 
     @overload
     def object_events(
@@ -195,8 +196,8 @@ class Access(BaseController):
         *,
         resolve_user_token: ResolvableSingular[User] | None = None,
         exclude_deleted: bool = True,
-        return_data: Literal[True] = True,
-    ) -> Data[ResolvedObjectEvents]: ...
+        return_data: Literal[False] = False,
+    ) -> Tuple[T_Resolvable, Tuple[Event, ...]]: ...
 
     def object_events(
         self,
@@ -212,10 +213,10 @@ class Access(BaseController):
         resolve_user_token = self.token_user_or(resolve_user_token)
         T_Mapped: Type[Base]  # [T_Resolvable]
         T_Mapped = Tables[Singular(object_kind.name).name].value
-        object_: T_Resolvable = T_Mapped.resolve(
+        object_: T_Resolvable = T_Mapped.resolve(  # type: ignore
             self.session,
             object_resolvable,
-        )  # type: ignore
+        )
 
         # NOTE: Check access to the object.
         _ = self(
@@ -287,7 +288,7 @@ class Access(BaseController):
     ) -> Data[ResolvedUser]: ...
 
     @overload
-    def user(  
+    def user(
         self,
         resolve_user: ResolvableMultiple[User],
         *,
@@ -592,7 +593,7 @@ class Access(BaseController):
     ) -> Document: ...
 
     @overload
-    def document(  
+    def document(
         self,
         resolve_document: ResolvableMultiple[Document],
         *,
@@ -791,6 +792,7 @@ class Access(BaseController):
 
         # NOTE: In the case of post, a document just has to not be deleted.
         #       It is easier (for now) to just write out the query here.
+        q: Any
         if self.method == H.POST:
             if uuid_documents is None:
                 raise ValueError("`uuid_documents` is `None`.")
@@ -1114,6 +1116,7 @@ class Access(BaseController):
             exclude_deleted=exclude_deleted,
             resolve_user_token=token_user,
             allow_public=allow_public_collection,
+            return_data=False,
         )
         documents = self.document(
             resolve_documents,
@@ -1122,6 +1125,7 @@ class Access(BaseController):
             resolve_user_token=token_user,
             allow_public=allow_public,
             validate=validate_documents,
+            return_data=False,
         )
 
         uuid_documents = Document.resolve_uuid(self.session, resolve_documents)
@@ -1225,6 +1229,7 @@ class Access(BaseController):
             resolve_user_token=token_user,
             allow_public=allow_public,
             validate=validate_document,
+            return_data=False,
         )
         if validate_collections:
             collections = self.collection(
@@ -1406,7 +1411,7 @@ class WithAccess(BaseController, abc.ABC):
         )
         # NOTE: Depending on token user might be a mistake.
         if self._token is not None:
-            data["uuid_user"]=self.token_user.uuid
+            data["uuid_user"] = self.token_user.uuid
         return data
 
     # NOTE: Why `Resolved` kind names must correspond to their functions. At

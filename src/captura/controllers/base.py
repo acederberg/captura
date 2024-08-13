@@ -165,9 +165,9 @@ def _uuid_set_from_model(
         case None if optional:
             return None
         case tuple() as resolved:
-            return uuids(resolved)
+            return uuids(resolved) # type: ignore[type-var]
         case dict() as resovled:
-            return uuids(tuple(resovled.values()))
+            return uuids(tuple(resovled.values())) # type: ignore[type-var]
         case Base() as other:
             return {other.uuid}
         case bad:
@@ -404,32 +404,32 @@ class BaseResolvedSecondary(BaseResolved):
         kind = getattr(cls, f"kind_{for_}")
         return resolve_model(kind)
 
-    @computed_field
+    @computed_field # type: ignore[prop-decorator]
     @property
     def source(self) -> Document | User | Collection:
         return getattr(self, self._attr_name_source)
 
-    @computed_field
+    @computed_field # type: ignore[prop-decorator] 
     @property
     def target(self) -> Tuple[Collection, ...]:
         return getattr(self, self._attr_name_target)
 
-    @computed_field
+    @computed_field# type: ignore[prop-decorator] 
     @property
     def assoc(self) -> Dict[str, Any]:
         return getattr(self, self._attr_name_assoc)
 
-    @computed_field
+    @computed_field# type: ignore[prop-decorator] 
     @property
     def uuid_source(self) -> str:
         return getattr(self, "uuid_" + self._attr_name_source)
 
-    @computed_field
+    @computed_field# type: ignore[prop-decorator] 
     @property
     def uuid_target(self) -> Set[str]:
         return getattr(self, "uuid_" + self._attr_name_target)
 
-    @computed_field
+    @computed_field# type: ignore[prop-decorator] 
     @property
     def uuid_assoc(self) -> Set[str]:
         return getattr(self, "uuid_" + self._attr_name_assoc)
@@ -649,7 +649,7 @@ class Data(BaseModel, Generic[T_Data]):
     def validate_raw(cls, v):
         return v
 
-    @computed_field
+    @computed_field # type: ignore[prop-decorator]
     @property
     def kind(self) -> KindData:
         return self.data.kind

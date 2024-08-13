@@ -196,7 +196,7 @@ def uuid(token: DependsToken, uuid: str | None = None) -> str:
 
     Be careful when using this on endpoints that specific to one user.
     """
-    return uuid if uuid is not None else token["uuid"]
+    return uuid if uuid is not None else token.subject
 
 
 DependsUUID: TypeAlias = Annotated[str, Depends(uuid)]
@@ -219,7 +219,7 @@ def user(
     token: DependsToken,
 ) -> User:
     """ """
-    uuid = token.get("uuid_user")
+    uuid = token.subject
     if uuid is None:
         raise HTTPException(
             401,

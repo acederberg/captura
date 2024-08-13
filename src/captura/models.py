@@ -428,9 +428,9 @@ class SearchableTableMixins(PrimaryTableMixins):
         return q
 
     @classmethod
-    def q_select_for_user(
+    def q_select_for_user(  # type: ignore[empty-body]
         cls,
-        user_uuid,
+        user_uuid: str,
         uuids: Set[str] | None = None,
         *,
         exclude_deleted: bool = True,
@@ -850,7 +850,7 @@ class AssocUserDocument(Base):
     def uuid_user_granter(self) -> str:
         session = self.get_session()
         res = session.execute(
-            select(User.uuid).where(User.id == self.id_user_granter)
+            select(User.uuid).where(User.id == self.id_user_granter) # type: ignore
         ).scalar()
         if res is None:
             raise ValueError("Inconcievable!")
@@ -1126,8 +1126,9 @@ class User(SearchableTableMixins, Base):
     @classmethod
     def q_select_for_user(
         cls,
-        _: str | None,
-        uuids: Set[str] | None,
+        user_uuid: str,
+        uuids: Set[str] | None = None,
+        *,
         exclude_deleted: bool = True,
     ) -> Select:
         # NOTE: This should get collaborators, etc. in the future.
@@ -1209,9 +1210,9 @@ class User(SearchableTableMixins, Base):
                     level=level.name,
                     **detail,
                 )
-            case (
-                Grant(deleted=False, pending=True, pending_from=pending_from) as grant
-            ) if not pending:
+            case Grant(
+                deleted=False, pending=True, pending_from=pending_from
+            ) as grant if not pending:
                 status, msg = 403, "_msg_grant_pending"
                 if pending_from == PendingFrom.created:
                     status, msg = 500, "_msg_grant_pending_created"
@@ -1359,8 +1360,9 @@ class Collection(SearchableTableMixins, Base):
     @classmethod
     def q_select_for_user(
         cls,
-        user_uuid: str,
-        uuids: Set[str] | None,
+        user_uuid,
+        uuids: Set[str] | None = None,
+        *,
         exclude_deleted: bool = True,
     ) -> Select:
         return (
@@ -1595,7 +1597,8 @@ class Document(SearchableTableMixins, Base):
     def q_select_for_user(
         cls,
         user_uuid: str,
-        uuids: Set[str] | None,
+        uuids: Set[str] | None = None,
+        *,
         exclude_deleted: bool = True,
     ) -> Select:
         return (

@@ -13,6 +13,7 @@ from captura.schemas import (
     AsOutput,
     CollectionCreateSchema,
     CollectionSchema,
+    CollectionSearchSchema,
     CollectionUpdateSchema,
     DocumentMetadataSchema,
     DocumentSearchSchema,
@@ -35,7 +36,7 @@ def collection(
     uuid_collection: args.PathUUIDCollection,
     read: DependsRead,
 ) -> Collection:
-    collection: Collection = read.access.collection(uuid_collection)
+    collection: Collection = read.access.collection(uuid_collection, return_data=False)
     return collection
 
 
@@ -63,10 +64,10 @@ OpenApiResponseCollection = {
 
 class CollectionSearchView(BaseView):
     view_routes = dict(
-        get_search_documents=dict(
-            url="/{uuid_collection}/documents",
-            name="Search Collection Documents",
-        ),
+        # get_search_documents=dict(
+        #     url="/{uuid_collection}/documents",
+        #     # name="Search Collection Documents",
+        # ),
         # get_search_collections="",
     )
     view_router_args = dict(
@@ -74,23 +75,23 @@ class CollectionSearchView(BaseView):
         responses=OpenApiResponseCollection,
     )
 
-    @classmethod
-    def get_search_documents(
-        cls,
-        collection: DependsCollection,
-        read: DependsRead,
-        param: Annotated[DocumentSearchSchema, Depends()],
-    ) -> AsOutput[List[DocumentMetadataSchema]]:
-        """Return metadata for `documents` (document `JSON` without `content`)
-        in the `collection` specified by **uuid_collection** matching search
-        params.
-        """
-
-        res: Tuple[Collection, ...] = read.search_collection(collection, param)
-        return mwargs(
-            AsOutput[List[DocumentMetadataSchema]],
-            data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(res),
-        )
+    # @classmethod
+    # def get_search_documents(
+    #     cls,
+    #     collection: DependsCollection,
+    #     read: DependsRead,
+    #     param: Annotated[DocumentSearchSchema, Depends()],
+    # ) -> AsOutput[List[DocumentMetadataSchema]]:
+    #     """Return metadata for `documents` (document `JSON` without `content`)
+    #     in the `collection` specified by **uuid_collection** matching search
+    #     params.
+    #     """
+    #
+    #     res: Tuple[Collection, ...] = read.search_collection(collection, param)
+    #     return mwargs(
+    #         AsOutput[List[DocumentMetadataSchema]],
+    #         data=TypeAdapter(List[DocumentMetadataSchema]).validate_python(res),
+    #     )
 
     # @classmethod
     # def get_search_collections(
@@ -99,7 +100,7 @@ class CollectionSearchView(BaseView):
     #     read: DependsRead,
     #     param: Annotated[CollectionSearchSchema, Depends()],
     # ) -> AsOutput[List[CollectionSchema]]:
-    #     res: Tuple[Collection, ...] = read.search_collection(collection, param)
+    #     res: Tuple[Collection, ...] = read.search_user(collection, param)
     #     return mwargs(
     #         AsOutput[List[CollectionSchema]],
     #         data=TypeAdapter(List[CollectionSchema]).validate_python(

@@ -128,7 +128,7 @@ class DocumentGrantView(BaseView):
             pending=pending,
             exclude_pending=False,
         )
-        grants = data.data.grants.values()
+        grants = list(data.data.grants.values())
         if pending_from:
             pending_from_ = fields.PendingFrom[pending_from.name]
             grants = list(v for v in grants if v.pending_from == pending_from_)

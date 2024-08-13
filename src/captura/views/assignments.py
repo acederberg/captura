@@ -6,7 +6,6 @@ from sqlalchemy import func, select
 from sqlalchemy.sql.expression import false
 
 # --------------------------------------------------------------------------- #
-from captura import util
 from captura.depends import DependsAccess, DependsCreate, DependsDelete
 from captura.models import Assignment, Collection, Document, Level
 from captura.schemas import (
@@ -79,7 +78,7 @@ class DocumentAssignmentView(BaseView):
         """
         data = delete.access.d_assignment_document(
             uuid_document,
-            uuid_collection,
+            uuid_collection,  # type: ignore
             allow_public=False,
             validate_collections=False,
             level=Level.own,
@@ -153,7 +152,12 @@ class DocumentAssignmentView(BaseView):
         # NOTE: Check document access first. Then data is constructed later.
         #       This is done because get the collections can be expensive due
         #       to `ORDER BY RANDOM()`.
-        document = access.document(uuid_document, allow_public=True, level=Level.view)
+        document = access.document(
+            uuid_document,
+            allow_public=True,
+            level=Level.view,
+            return_data=False,
+        )
 
         q = (
             select(Collection)
@@ -224,7 +228,7 @@ class CollectionAssignmentView(BaseView):
     ) -> OutputWithEvents[List[AssignmentSchema]]:
         data = delete.access.d_assignment_collection(
             uuid_collection,
-            uuid_document,
+            uuid_document,  # type: ignore
             allow_public=False,
             level=Level.own,
             validate_documents=False,
@@ -252,7 +256,7 @@ class CollectionAssignmentView(BaseView):
     ) -> OutputWithEvents[List[AssignmentSchema]]:
         data = create.access.d_assignment_collection(
             uuid_collection,
-            uuid_document,
+            uuid_document,  # type: ignore
             level=Level.view,
             allow_public=False,
             validate_documents=False,
@@ -277,7 +281,7 @@ class CollectionAssignmentView(BaseView):
         limit: int | None = None,
         randomize: bool = False,
     ) -> AsOutput[List[AssignmentSchema]]:
-        collection = access.collection(uuid_collection)
+        collection = access.collection(uuid_collection, return_data=False)
         q = (
             select(Document)
             .join(Assignment)

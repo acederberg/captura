@@ -7,14 +7,11 @@ from datetime import datetime
 from typing import Annotated, Any, Dict
 
 import httpx
-from fastapi import Depends, Form, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.routing import APIRouter
+from fastapi import Depends, Form, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy import String, func, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
-from starlette.datastructures import URL
-from starlette.types import Scope
+from sqlalchemy.orm import Mapped, mapped_column
 
 # --------------------------------------------------------------------------- #
 from captura import fields
@@ -23,18 +20,9 @@ from captura.config import Config
 from captura.controllers.base import Data, ResolvedUser
 from captura.controllers.create import Create
 from captura.controllers.read import Read
-from captura.depends import (
-    DependsAuth,
-    DependsConfig,
-    DependsCreate,
-    DependsRead,
-    DependsSessionMaker,
-    DependsToken,
-    HeaderAuthorization,
-)
+from captura.depends import DependsAuth, DependsConfig, DependsSessionMaker
 from captura.models import Base, MappedColumnUUID, User
 from captura.schemas import UserCreateSchema, mwargs
-from captura.views import args
 from captura.views.base import BaseView, OpenApiResponseCommon, OpenApiTags
 from captura.views.users import UserView
 
@@ -125,7 +113,8 @@ class AuthViewPytest(BaseView):
         """Create user, return token."""
 
         try:
-            registration_data = UserCreateSchema(
+            registration_data = mwargs(
+                UserCreateSchema,
                 name=name,
                 description=description,
                 url_image=url_image,
@@ -141,7 +130,7 @@ class AuthViewPytest(BaseView):
             if email_exists:
                 raise HTTPException(400, detail="Account with email already exists.")
 
-            create = Create(
+            create = Create[UserCreateSchema](
                 session,
                 token=None,
                 method="POST",
@@ -159,13 +148,12 @@ class AuthViewPytest(BaseView):
             user.subject = hashlib.sha256(user.uuid.encode()).hexdigest()
             data_final.commit(create.session)
 
-        token = data_final
-        token = mwargs(
+        token_final = mwargs(
             Token,
             sub=data_final.data.users[0].uuid,
             tier=TokenPermissionTier.paid,
         )
-        return token.encode(auth)
+        return token_final.encode(auth)
 
     @classmethod
     def post_token(cls, auth: DependsAuth, data: Token) -> str:
@@ -316,9 +304,9 @@ class AuthViewAuth0(BaseView):
         # NOTE: Ensure that the auth0 response is as expected.
         try:
             auth0_data = response.json()
-        except json.JSONDecodeError as err:
+        except json.JSONDecodeError as err_json:
             detail = "Failed to decode Auth0 response."
-            raise HTTPException(500, detail=detail) from err
+            raise HTTPException(500, detail=detail) from err_json
 
         # NOTE: Check the browser cookie and decode the token to get the
         #       subject.
@@ -376,15 +364,17 @@ class AuthViewAuth0(BaseView):
         """
 
         check_auth0_data(request.session)
-        access_token_raw = request.session[AUTH0_KEY_TOKEN_ACCESS]
+        # access_token_raw = request.session[AUTH0_KEY_TOKEN_ACCESS]
+        if AUTH0_KEY_TOKEN_ACCESS not in request.session:
+            raise HTTPException(403, "Session missing `access_token`.")
+
         id_token_raw = request.session[AUTH0_KEY_TOKEN_ID]
 
-        id_token_decoded = "Failed to decode `id_token`."
         if len(id_token_split := id_token_raw.split(".")) == 3:
-            id_token_decoded = base64.b64decode(id_token_split[1] + "==")
-
-        id_token_decoded = json.loads(id_token_decoded)
-        # request.session["id_token_decoded"] = id_token_decoded
+            _deco = base64.b64decode(id_token_split[1] + "==")
+            id_token_decoded = json.loads(_deco)
+        else:
+            id_token_decoded = "Failed to decode `id_token`."
 
         # NOTE: Populate defaults from the id token.
         return cls.view_templates.TemplateResponse(
@@ -435,7 +425,7 @@ class AuthViewAuth0(BaseView):
             if email_exists:
                 raise HTTPException(400, detail="Account with email already exists.")
 
-            create = Create(
+            create = Create[UserCreateSchema](
                 session,
                 token=None,
                 method="POST",
