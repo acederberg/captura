@@ -11,14 +11,39 @@ on:
   push:
 
 jobs:
-  build:
+  check-commit:
     name: Commit Validation
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-      - uses: webiny/action-conventional-commits@v1.3.0
+        with:
+          fetch-depth: 0
 
+      - name: Install required dependencies
+        run: |
+          apt update
+          apt install -y sudo
+          sudo apt install -y git curl
+          curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y nodejs
+          npm install conventional-changelog-conventionalcommits
+          npm install commitlint@latest @commitlint/config-conventional
+
+      - name: Print versions
+        run: |
+          echo "git version: $(git --version)" >> $GITHUB_STEP_SUMMARY
+          echo "node version: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "npm version: $(npm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "commitlint version: $(npx commitlint --version)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Validate current commit (last commit) with commitlint
+        if: github.event_name == 'push'
+        run: npx commitlint --last --verbose
+
+  lint:
+    name: Check Code
+    runs-on: ubuntu-latest
+    steps:
       - name: Install poetry
         run: pipx install poetry
 
