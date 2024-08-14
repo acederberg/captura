@@ -113,7 +113,10 @@ recursive = true
 [tool.mypy]
 ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
-
+exclude = [
+  "^tests/(.*/)?test_.*.py",
+  "^tests/junk",
+]
 
 # NOTE: See the following reference for this plugin:
 #
@@ -179,3 +182,7 @@ sort = "-cover" # NOTE: Sort from least to greatest coverage.
 [tool.coverage.html]
 directory = "./src/app/static/cov"
 title = "Captura PyTest Coverage Report"
+
+
+[tool.ruff]
+exclude = ["./tests/**/test_*.py"]

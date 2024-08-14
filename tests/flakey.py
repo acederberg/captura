@@ -46,7 +46,7 @@ class Flakey(BaseYamlSettings):
 
     def register(self, node: pytest.Item, call: pytest.CallInfo) -> None | Flake:
         if self.is_ignored_call(call) or self.is_ignored_node(node):
-            return
+            return None
 
         self.flakes.append(
             flake := mwargs(

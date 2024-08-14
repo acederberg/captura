@@ -29,10 +29,16 @@ jobs:
       - run:
           poetry install -q
 
-      - name: MyPy static check
+      - name: MyPy static check source
         id: mypy
         run: |
-          poetry run mypy --config-file pyproject.toml --pretty . >> $GITHUB_STEP_SUMMARY
+          poetry run mypy --config-file pyproject.toml --pretty ./src >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: MyPy static check tests
+        id: mypy
+        run: |
+          poetry run mypy --config-file pyproject.toml --pretty ./tests >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: Ruff Linting

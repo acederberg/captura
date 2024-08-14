@@ -291,6 +291,7 @@ def app(client_config: PytestClientConfig, config: PytestConfig) -> FastAPI | No
         return app
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
+        return None
 
 
 @pytest.fixture(scope="session")
