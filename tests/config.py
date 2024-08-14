@@ -1,21 +1,19 @@
 # =========================================================================== #
-import json
-from typing import Annotated, ClassVar, Dict
+from typing import Annotated, ClassVar
 
 import pytest
 import typer
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import Field
 from rich.console import Console
 from typing_extensions import Doc
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
 from captura import util
-from captura.config import BaseHashable, Config
+from captura.config import BaseHashable
 from captura.schemas import mwargs
 from legere import Config as ClientConfig
 from legere import flags
-from legere.config import ProfileConfig
 from legere.handlers import ConsoleHandler
 from legere.requests.base import BaseTyperizable, typerize
 from simulatus import ConfigSimulatus

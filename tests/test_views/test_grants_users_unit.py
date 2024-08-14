@@ -3,7 +3,7 @@ import asyncio
 import json
 import secrets
 from http import HTTPMethod
-from typing import ClassVar, Dict, List
+from typing import ClassVar, List
 
 import pytest
 from pydantic import TypeAdapter

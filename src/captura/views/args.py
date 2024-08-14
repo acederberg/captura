@@ -1,9 +1,7 @@
 # =========================================================================== #
-from os import walk
-from typing import Annotated, List, Optional, Set, TypeAlias
+from typing import Annotated, Optional, Set, TypeAlias
 
 from fastapi import Depends, HTTPException, Path, Query
-from sqlalchemy import Values
 
 # --------------------------------------------------------------------------- #
 # from captura.fields import FieldLevel, KindEvent, KindObject, KindRecurse, LevelStr

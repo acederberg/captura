@@ -443,7 +443,7 @@ class AuthViewAuth0(BaseView):
             user.subject = subject_256
             data_final.commit(create.session)
 
-        return RedirectResponse(f"/profile", 302)
+        return RedirectResponse("/profile", 302)
 
     # ----------------------------------------------------------------------- #
     @classmethod
@@ -484,7 +484,7 @@ class AuthViewAuth0(BaseView):
             if user is not None:
                 request.session[DEMO_KEY_EXISTS_USER] = True
                 return RedirectResponse(
-                    f"/demo",
+                    "/demo",
                     status_code=302,
                 )
 
@@ -502,7 +502,7 @@ class AuthViewAuth0(BaseView):
         request.session[DEMO_KEY_EXISTS_USER] = False
 
         return RedirectResponse(
-            f"/demo",
+            "/demo",
             status_code=302,
         )
 

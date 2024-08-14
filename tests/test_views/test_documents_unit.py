@@ -5,7 +5,7 @@ from typing import ClassVar
 
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import join, select
+from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.access import H
@@ -18,9 +18,8 @@ from captura.err import (
 )
 from captura.fields import KindObject, Level, LevelHTTP, PendingFrom
 from captura.models import Document
-from captura.schemas import AsOutput, DocumentSchema, OutputWithEvents, UserSchema, mwargs
+from captura.schemas import AsOutput, DocumentSchema, OutputWithEvents, mwargs
 from legere.requests import Requests
-from legere.requests.base import params
 from simulatus import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import (
     COUNT,

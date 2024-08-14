@@ -9,28 +9,19 @@ from pydantic import TypeAdapter
 from captura.auth import TokenPermissionTier
 from captura.controllers.access import Access, WithAccess
 from captura.controllers.base import Data, ResolvedEvent, ResolvedObjectEvents
-from captura.depends import DependsAccess, DependsDelete, DependsRead
+from captura.depends import DependsAccess, DependsDelete
 from captura.models import (
-    Assignment,
-    Collection,
-    Document,
     Event,
-    Grant,
     KindEvent,
     KindObject,
-    User,
 )
 from captura.schemas import (
     AsOutput,
-    AssignmentExtraSchema,
-    CollectionExtraSchema,
-    DocumentExtraSchema,
     EventExtraSchema,
     EventMetadataSchema,
     EventParams,
     EventSchema,
     EventSearchSchema,
-    GrantExtraSchema,
     OutputWithEvents,
     UserExtraSchema,
     mwargs,

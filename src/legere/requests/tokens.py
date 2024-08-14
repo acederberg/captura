@@ -2,7 +2,6 @@ import httpx
 import typer
 
 # --------------------------------------------------------------------------- #
-from captura.auth import TokenPermissionTier
 from legere import flags
 from legere.handlers import CONSOLE
 from legere.requests.base import typerize

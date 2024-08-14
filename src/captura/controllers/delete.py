@@ -1,12 +1,11 @@
 # =========================================================================== #
 from http import HTTPMethod
-from typing import Any, Dict, Literal, Self, Set, Tuple, Type, overload
+from typing import Any, Dict, Self, Set, Tuple, Type, overload
 
-from fastapi import HTTPException
 from pydantic import BaseModel, model_validator
 from rich.table import Table
 from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import Select, Update, and_, delete, false, or_, select, true, update
+from sqlalchemy import Update, and_, delete, false, or_, select, true, update
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
@@ -27,7 +26,6 @@ from captura.controllers.base import (
     ResolvedObjectEvents,
     ResolvedUser,
 )
-from captura.fields import Singular
 from captura.models import (
     Assignment,
     Collection,
@@ -36,7 +34,6 @@ from captura.models import (
     Grant,
     KindEvent,
     KindObject,
-    Level,
     User,
     uuids,
 )

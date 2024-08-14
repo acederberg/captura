@@ -9,7 +9,7 @@ be wrapped in ``Depends``.
 
 # =========================================================================== #
 from functools import cache
-from typing import Annotated, Dict, TypeAlias
+from typing import Annotated, TypeAlias
 
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select

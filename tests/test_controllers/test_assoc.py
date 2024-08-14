@@ -1,13 +1,11 @@
 # =========================================================================== #
 from http import HTTPMethod
-from typing import Any, Dict
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import false, func, select, true
 
 # --------------------------------------------------------------------------- #
-from captura import util
 from captura.controllers.base import Data, ResolvedGrantDocument
 from captura.err import ErrAssocRequestMustForce
 from captura.fields import Level

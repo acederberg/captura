@@ -3,32 +3,28 @@ import asyncio
 import functools
 import re
 import secrets
-from typing import Callable, ClassVar, List, Self
+from typing import ClassVar, List
 
 import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import func, select
-from sqlalchemy.sql.operators import op
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.access import H
 from captura.err import ErrAccessUser, ErrDetail, ErrObjMinSchema
 from captura.fields import ChildrenUser, KindObject
-from captura.models import Tables, User
+from captura.models import User
 from captura.schemas import (
     AsOutput,
     CollectionMetadataSchema,
-    CollectionSchema,
     DocumentMetadataSchema,
     OutputWithEvents,
-    UserExtraSchema,
     UserSchema,
     mwargs,
 )
 from legere.requests import Requests
 from simulatus import DummyProvider
 from simulatus.mk import fkit
-from simulatus.reports import ReportController
 from tests.test_views.util import COUNT, BaseEndpointTest
 
 

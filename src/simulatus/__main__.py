@@ -2,7 +2,7 @@
 import json
 from datetime import datetime
 from functools import cached_property
-from typing import Annotated, List, Optional, Self
+from typing import Annotated, List, Optional
 
 import typer
 import yaml

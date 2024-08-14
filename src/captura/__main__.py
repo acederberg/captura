@@ -1,14 +1,9 @@
 # =========================================================================== #
-import atexit
-import importlib
-import json
-from contextlib import asynccontextmanager
 from typing import Annotated, Any, Dict, Optional
 
 import typer
 import uvicorn.config
 import yaml
-from fastapi import FastAPI
 from rich.console import Console
 from rich.syntax import Syntax
 from sqlalchemy import Engine

@@ -5,11 +5,10 @@ from typing import Set
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import BaseDDLElement, delete, false, func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from captura import util
 from captura.auth import Token, TokenPermissionTier
 from captura.controllers.base import (
     Data,
@@ -22,12 +21,12 @@ from captura.controllers.base import (
     ResolvedUser,
 )
 from captura.fields import KindObject, Level, PendingFrom
-from captura.models import Collection, Document, Event, Grant, User, resolve_model, uuids
-from captura.schemas import AsOutput, DocumentSchema, OutputWithEvents
+from captura.models import Collection, Document, Event, Grant, User, uuids
+from captura.schemas import DocumentSchema, OutputWithEvents
 from legere.config import ProfileConfig
 from simulatus import DummyHandler, DummyProvider, GetPrimaryKwargs
 from tests.config import PytestClientConfig
-from tests.conftest import COUNT, client_config
+from tests.conftest import COUNT
 
 
 @pytest.mark.parametrize(

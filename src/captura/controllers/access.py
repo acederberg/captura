@@ -496,7 +496,7 @@ class Access(BaseController):
                             uuid_collection=collection.uuid,
                         )
                     return collection
-                case H.GET | H.POST | H.DELETE | H.PUT | H.PATCH as method:
+                case H.GET | H.POST | H.DELETE | H.PUT | H.PATCH :
                     if token_user.id != collection.id_user:
                         raise ErrAccessCollection.httpexception(
                             "_msg_modify",

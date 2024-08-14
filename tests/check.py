@@ -1,11 +1,11 @@
 # =========================================================================== #
-from typing import Any, Dict, List, Self, Tuple
+from typing import Self, Tuple
 
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from captura.fields import KindObject
-from captura.models import AnyModel, Document, Resolvable, resolve_model
+from captura.models import AnyModel, Resolvable, resolve_model
 
 
 class Check:

@@ -1,12 +1,11 @@
 # =========================================================================== #
 import base64
 import enum
-import functools
 import json
 import re
 from hashlib import sha256
-from os import path, walk
-from typing import Annotated, Any, Dict, Iterable, List, Literal, Self, Set, Tuple
+from os import path
+from typing import Annotated, Any, Dict, Iterable, Self, Set, Tuple
 
 import httpx
 import jwt
@@ -16,8 +15,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
-from pydantic_core.core_schema import FieldValidationInfo
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing_extensions import Doc
@@ -124,16 +122,18 @@ class Auth:
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo,
             )
-            with open(PATH_PYTEST_PUBLIC_KEY, "wb") as public_io, open(
-                PATH_PYTEST_PRIVATE_KEY, "wb"
-            ) as private_io:
+            with (
+                open(PATH_PYTEST_PUBLIC_KEY, "wb") as public_io,
+                open(PATH_PYTEST_PRIVATE_KEY, "wb") as private_io,
+            ):
                 public_io.write(public_pem)
                 private_io.write(private_pem)
 
         logger.debug("Loading pytest keypair.")
-        with open(PATH_PYTEST_PUBLIC_KEY, "rb") as public_io, open(
-            PATH_PYTEST_PRIVATE_KEY, "rb"
-        ) as private_io:
+        with (
+            open(PATH_PYTEST_PUBLIC_KEY, "rb") as public_io,
+            open(PATH_PYTEST_PRIVATE_KEY, "rb") as private_io,
+        ):
             public_key = serialization.load_pem_public_key(
                 public_io.read(), backend=default_backend()
             )

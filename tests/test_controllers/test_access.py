@@ -2,18 +2,16 @@
 import inspect
 import secrets
 from http import HTTPMethod  # type: ignore[attr-defined]
-from typing import Any, ClassVar, Dict, Generator, NamedTuple, Set, Tuple, Type
+from typing import ClassVar, Dict, Generator, NamedTuple, Set, Tuple, Type
 
 import pytest
-from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import false, func, select, update
-from sqlalchemy.orm import Session, make_transient
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from captura import util
-from captura.auth import Auth, Token
-from captura.controllers.access import Access, WithAccess, with_access
+from captura.controllers.access import Access
 from captura.controllers.base import (
     Data,
     KindData,
@@ -28,7 +26,6 @@ from captura.controllers.base import (
 )
 from captura.err import (
     ErrAccessCollection,
-    ErrAccessDocumentCannotRejectOwner,
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
     ErrAccessDocumentPending,
@@ -38,21 +35,18 @@ from captura.err import (
 )
 from captura.fields import LevelHTTP
 from captura.models import (
-    Assignment,
     Collection,
     Document,
     Event,
     Grant,
-    KindEvent,
     KindObject,
     Level,
     PendingFrom,
     User,
     UUIDSplit,
-    uuids,
 )
 from simulatus import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
-from tests.test_controllers.util import check_exc, expect_exc, stringify
+from tests.test_controllers.util import expect_exc
 
 from ..conftest import COUNT
 

@@ -1,13 +1,10 @@
 # =========================================================================== #
 import enum
-from sys import flags
-from typing import Annotated, Any, Dict, Literal, Self, Set
+from typing import Annotated, Any, Dict, Literal, Self
 
 import yaml
 from pydantic import (
-    AfterValidator,
     BaseModel,
-    Extra,
     Field,
     SecretStr,
     computed_field,
@@ -15,7 +12,6 @@ from pydantic import (
 )
 from yaml_settings_pydantic import (
     BaseYamlSettings,
-    CreateYamlSettings,
     YamlFileConfigDict,
     YamlSettingsConfigDict,
 )
@@ -98,7 +94,7 @@ class Config(BaseYamlSettings):
 
     @model_validator(mode="after")
     def check_use_valid(self):
-        fmt = f"Invalid %s config `%s`, should be any of `%s`."
+        fmt = "Invalid %s config `%s`, should be any of `%s`."
         if (uu := self.use.host) not in (vv := self.hosts):
             raise ValueError(fmt % ("host", uu, vv))
 

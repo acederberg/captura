@@ -1,32 +1,26 @@
 # =========================================================================== #
 import argparse
-from datetime import datetime
-from os import path
-from typing import Annotated, Any, AsyncGenerator, Dict, Iterable, List, Self, Set
 
-import httpx
 import pytest
-import pytest_asyncio
 import yaml
 from _pytest.stash import StashKey
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from pydantic import BaseModel
-from sqlalchemy import delete, select, text, true
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
-from yaml_settings_pydantic import BaseYamlSettings, YamlFileConfigDict
 
 # --------------------------------------------------------------------------- #
 from captura import depends, util
 from captura.auth import Auth
 from captura.config import AppConfig
-from captura.models import Base, User
+from captura.models import Base
 from captura.schemas import mwargs
 from captura.views import AppView
 from simulatus import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
-from tests.flakey import FLAKEY_PATH, Flake, Flakey
+from tests.flakey import FLAKEY_PATH, Flakey
 
 logger = util.get_logger(__name__)
 

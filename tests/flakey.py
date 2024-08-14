@@ -2,12 +2,12 @@
 import os
 import re
 from datetime import datetime
-from typing import Annotated, Any, Dict, List
+from typing import Annotated, List
 
 import pytest
 import yaml
 from pydantic import BaseModel, Field
-from pytest import CallInfo, StashKey
+from pytest import StashKey
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #

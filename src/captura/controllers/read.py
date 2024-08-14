@@ -1,24 +1,24 @@
 # =========================================================================== #
-import json
-import secrets
 from http import HTTPMethod
 from random import shuffle
-from typing import Any, Dict, List, Tuple, Type, TypeVar, overload
+from typing import Any, Dict, List, Type, TypeVar, overload
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from captura import util
-
 # from captura import util
 from captura.auth import Token
 from captura.controllers.access import Access
 from captura.controllers.base import BaseController
 from captura.fields import Singular
 from captura.models import Collection, Document, Tables, User
-from captura.schemas import CollectionSearchSchema, DocumentSearchSchema, UserSearchSchema
+from captura.schemas import (
+    CollectionSearchSchema,
+    DocumentSearchSchema,
+    UserSearchSchema,
+)
 
 T_ReadParam = TypeVar(
     "T_ReadParam",

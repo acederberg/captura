@@ -1,6 +1,5 @@
 # =========================================================================== #
 import asyncio
-import json
 import secrets
 from random import choice, randint
 from typing import ClassVar, List, Set, Tuple
@@ -10,7 +9,6 @@ from pydantic import TypeAdapter
 from sqlalchemy import delete, false, select, update
 
 # --------------------------------------------------------------------------- #
-from captura import util
 from captura.controllers.access import H
 from captura.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
 from captura.fields import KindObject, Level
@@ -18,7 +16,6 @@ from captura.models import Assignment, Collection, Document
 from captura.schemas import (
     AsOutput,
     AssignmentSchema,
-    GrantSchema,
     OutputWithEvents,
     mwargs,
 )

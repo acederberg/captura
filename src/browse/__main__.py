@@ -1,4 +1,3 @@
-import uvicorn
 
 # --------------------------------------------------------------------------- #
 from browse import app as app_browse

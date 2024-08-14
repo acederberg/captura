@@ -5,7 +5,6 @@ from unittest import mock
 
 # --------------------------------------------------------------------------- #
 from captura import util
-from legere.config import Config
 
 
 class TestEnv:

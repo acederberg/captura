@@ -25,14 +25,11 @@ Instead do
 # =========================================================================== #
 import enum
 import secrets
-import typing
-from typing import Annotated, Any, ClassVar, Dict, Literal, Set, Tuple, Unpack
+from typing import Annotated, Any, ClassVar, Dict, Literal, Set, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, computed_field
-from pydantic.fields import FieldInfo
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from starlette.config import Config as StarletteConfig
 from typing_extensions import Doc
 from yaml_settings_pydantic import (
     BaseYamlSettings,

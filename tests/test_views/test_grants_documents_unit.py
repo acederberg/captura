@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Dict, List
 import httpx
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import false, select
+from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.access import H
@@ -20,12 +20,11 @@ from captura.err import (
 from captura.fields import (
     KindObject,
     Level,
-    LevelHTTP,
     LevelStr,
     PendingFrom,
     PendingFromStr,
 )
-from captura.models import Assignment, Document, Grant, User, uuids
+from captura.models import Document, Grant, uuids
 from captura.schemas import (
     AsOutput,
     DocumentSchema,
@@ -34,9 +33,8 @@ from captura.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from legere.handlers import CONSOLE
 from legere.requests import Requests
-from simulatus import DummyProvider, GetPrimaryKwargs
+from simulatus import DummyProvider
 from tests.test_views.util import COUNT, BaseEndpointTest
 
 N_CASES: int = 1

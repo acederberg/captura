@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from captura import __version__, util
-from captura.auth import Auth
 from captura.fields import Level, PendingFrom
 from captura.models import (
     Assignment,
@@ -20,7 +19,6 @@ from captura.models import (
     KindObject,
     KindSelect,
     Resolvable,
-    resolve_model,
 )
 from simulatus import DummyHandler, DummyProvider
 from tests.check import Check

@@ -3,7 +3,6 @@ from http import HTTPMethod
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.orm import sessionmaker
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.base import (
@@ -12,10 +11,9 @@ from captura.controllers.base import (
     KindData,
     ResolvedAssignmentDocument,
     ResolvedDocument,
-    ResolvedGrantUser,
     ResolvedUser,
 )
-from captura.models import Collection, Document, uuids
+from captura.models import uuids
 from captura.schemas import mwargs
 from simulatus import DummyProvider
 

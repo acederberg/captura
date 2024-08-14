@@ -1,8 +1,7 @@
 # =========================================================================== #
-from typing import Annotated, List, Tuple
+from typing import Annotated
 
 from fastapi import Body, Depends
-from pydantic import TypeAdapter
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.base import Data, ResolvedCollection
@@ -13,10 +12,7 @@ from captura.schemas import (
     AsOutput,
     CollectionCreateSchema,
     CollectionSchema,
-    CollectionSearchSchema,
     CollectionUpdateSchema,
-    DocumentMetadataSchema,
-    DocumentSearchSchema,
     EventSchema,
     OutputWithEvents,
     mwargs,

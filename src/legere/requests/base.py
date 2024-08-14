@@ -2,7 +2,6 @@
 import asyncio
 import functools
 from collections.abc import Awaitable
-from os import environ
 from typing import (
     Annotated,
     Any,
@@ -12,8 +11,6 @@ from typing import (
     Concatenate,
     Dict,
     Generator,
-    List,
-    Optional,
     ParamSpec,
     Self,
     Tuple,
@@ -27,8 +24,7 @@ import typer
 import yaml
 from click.core import Context as ClickContext
 from fastapi.openapi.models import OpenAPI, PathItem
-from pydantic import BaseModel, ConfigDict, SecretStr, TypeAdapter, computed_field
-from rich.console import Console
+from pydantic import BaseModel, ConfigDict, SecretStr, computed_field
 from rich.table import Table
 from typer.cli import Command
 from typing_extensions import Doc
@@ -38,12 +34,10 @@ from captura.fields import Singular
 from captura.schemas import mwargs
 from legere import flags
 from legere.config import Config
-from legere.flags import Output, Verbage
+from legere.flags import Verbage
 from legere.handlers import (
     CONSOLE,
     AssertionHandler,
-    BaseHandlerData,
-    BaseRequestHandler,
     ConsoleHandler,
     RequestHandlerData,
     render_request,

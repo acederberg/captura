@@ -7,7 +7,6 @@ from pydantic import TypeAdapter
 from sqlalchemy import delete, false, func, select
 
 # --------------------------------------------------------------------------- #
-from captura import util
 from captura.controllers.access import H
 from captura.err import (
     ErrAccessDocumentGrantBase,
@@ -24,7 +23,6 @@ from captura.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from legere.handlers import RequestHandlerData
 from legere.requests import Requests
 from simulatus import DummyProvider, GetPrimaryKwargs
 from tests.test_views.util import COUNT, BaseEndpointTest

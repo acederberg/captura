@@ -1,13 +1,11 @@
 # =========================================================================== #
-import asyncio
 import secrets
-from random import choice, choices, randint, random
+from random import choices, randint
 from typing import Any, Dict, List
 
 import httpx
 import pytest
 import pytest_asyncio
-import typer
 from fastapi import FastAPI
 from pydantic import TypeAdapter
 from sqlalchemy import update
@@ -16,8 +14,8 @@ from sqlalchemy.orm import sessionmaker as sessionmaker_
 # --------------------------------------------------------------------------- #
 from captura.auth import Auth, Token, TokenPermissionTier
 from captura.err import ErrAssocRequestMustForce, ErrDetail
-from captura.fields import ChildrenUser, KindObject, Level, LevelStr
-from captura.models import Grant, User
+from captura.fields import ChildrenUser, KindObject, LevelStr
+from captura.models import Grant
 from captura.schemas import (
     AsOutput,
     AssignmentSchema,

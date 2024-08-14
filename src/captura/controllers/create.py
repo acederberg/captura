@@ -1,20 +1,15 @@
 # =========================================================================== #
 import secrets
 from http import HTTPMethod
-from typing import Any, Callable, Dict, Generic, Set, Tuple, Type, TypeVar, overload
+from typing import Any, Callable, Dict, Generic, Set, Tuple, TypeVar, overload
 
 from fastapi import HTTPException
-from rich.json import JSON
-from sqlalchemy import Delete as sqaDelete
-from sqlalchemy import Update as sqaUpdate
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from captura import util
 from captura.auth import Token
 from captura.controllers.access import Access, H, with_access
 from captura.controllers.base import (
-    BaseResolvedPrimary,
     Data,
     DataResolvedGrant,
     KindData,
@@ -34,7 +29,6 @@ from captura.controllers.delete import (
     WithDelete,
 )
 from captura.err import ErrAssocRequestMustForce
-from captura.fields import Singular
 from captura.models import (
     Assignment,
     Collection,
@@ -53,12 +47,10 @@ from captura.schemas import (
     DocumentCreateSchema,
     DocumentUpdateSchema,
     GrantCreateSchema,
-    GrantSchema,
     UserCreateSchema,
     UserUpdateSchema,
     mwargs,
 )
-from captura.util import CONSOLE_APP
 
 # Typehints for assoc callback.
 # NOTE: Tried protocol, too much of a pain in the ass.
@@ -519,7 +511,7 @@ class Create(WithDelete, Generic[T_Create]):
 
         data.data.token_user_grants = {
             user.uuid: (
-                grant := Grant(
+                Grant(
                     id_user=user.id,
                     id_document=document.id,
                     level=Level.own,
@@ -774,7 +766,7 @@ class Update(WithDelete, Generic[T_Update]):
 
     def document(self, data: Data[ResolvedDocument]) -> Data[ResolvedDocument]:
         session = self.session
-        token_user = data.token_user or self.token_user
+        # token_user = data.token_user or self.token_user
 
         param: DocumentUpdateSchema
         data, param = self.generic_update(data, {"content"}, commit=False)

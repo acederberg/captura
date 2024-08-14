@@ -1,10 +1,8 @@
 # =========================================================================== #
-import json
 import os
 import pathlib
 import secrets
-from os import path
-from typing import Dict, Generic, Tuple, Type, TypeAlias, TypeVar
+from typing import Dict, Tuple, Type, TypeAlias
 from unittest import mock
 
 import pytest
@@ -20,8 +18,6 @@ from captura.schemas import mwargs
 from legere import ConfigCommands, ProfilesCommand
 from legere.config import Config, HostConfig, Output, OutputConfig, ProfileConfig
 from legere.requests.base import BaseTyperizable, typerize
-from simulatus import DummyHandler, DummyProvider
-from tests.config import PytestClientConfig
 
 
 @pytest.fixture

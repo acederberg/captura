@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, ClassVar, Concatenate, Dict, List
 import httpx
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import false, func, select, true
+from sqlalchemy import false, select
 
 # --------------------------------------------------------------------------- #
 from captura.controllers.access import H
@@ -17,10 +17,8 @@ from captura.fields import KindObject
 from captura.models import Assignment, Collection, Document, uuids
 from captura.schemas import (
     AsOutput,
-    AssignmentExtraSchema,
     AssignmentSchema,
     CollectionSchema,
-    EventSchema,
     OutputWithEvents,
     mwargs,
 )

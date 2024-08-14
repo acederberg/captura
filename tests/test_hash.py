@@ -1,11 +1,9 @@
 # =========================================================================== #
-from typing import Annotated, Any, Dict, List, Tuple
+from typing import Tuple
 
-from pydantic import Field
 
 # --------------------------------------------------------------------------- #
 from captura.config import BaseHashable
-from captura.schemas import mwargs
 
 
 def test_hash():
