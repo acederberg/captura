@@ -1,8 +1,4 @@
-# SPDX-License-Identifier: MIT
-# SPDX-FileCopyrightText: 2024 Helio Chissini de Castro
-
-name: Commit Validation
-
+name: Validation
 on:
   workflow_dispatch:
   pull_request:
@@ -11,8 +7,9 @@ on:
   push:
 
 jobs:
-  check-commit:
-    name: Commit Validation
+  # NOTE: https://commitlint.js.org/guides/ci-setup.html
+  lint-commit:
+    name: Lint Commit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,28 +37,35 @@ jobs:
         if: github.event_name == 'push'
         run: npx commitlint --last --verbose
 
-  lint:
-    name: Check Code
+  lint-code:
+    name: Lint Code
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Install poetry
-        run: pipx install poetry
+        run: |
+          pipx install poetry
+          echo "/root/.local/bin" >> $GITHUB_PATH
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11'
           cache: 'poetry'
+
       - run:
           poetry install -q
 
       - name: MyPy static check source
-        id: mypy
+        id: mypy_check_src
         run: |
           poetry run mypy --config-file pyproject.toml --pretty ./src >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: MyPy static check tests
-        id: mypy
+        id: mypy_check_tests
         run: |
           poetry run mypy --config-file pyproject.toml --pretty ./tests >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
@@ -74,8 +78,12 @@ jobs:
         continue-on-error: true
 
       - run: |
-          if [ ${{ steps.mypy.outcome }} != 'success' ] || [ ${{ steps.ruff.outcome }} != 'success' ]; then
-            echo "One or more checks failed"
+          if ( \
+            [ ${{ steps.mypy_check_src.outcome }} != 'success' ] \
+            || [ ${{ steps.mypy_check_tests.outcome }} != 'success' ] \
+            || [ ${{ steps.ruff.outcome }} != 'success' ]
+          ); then
+            echo "One or more checks failed. See the summary for details."
             exit 1
           fi
 
