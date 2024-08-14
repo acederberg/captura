@@ -114,7 +114,7 @@ class Config(BaseYamlSettings):
             config = cls.model_validate(yaml.safe_load(file))
         return config
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def host(self) -> HostConfig:
         if (hh := self.hosts.get(self.use.host)) is None:
@@ -122,7 +122,7 @@ class Config(BaseYamlSettings):
 
         return hh
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def profile(self) -> ProfileConfig:
         if (pp := self.profiles.get(self.use.profile)) is None:
@@ -130,7 +130,7 @@ class Config(BaseYamlSettings):
 
         return pp
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def token(self) -> SecretStr | None:
         if (pp := self.profile) is None:
@@ -155,8 +155,10 @@ class Config(BaseYamlSettings):
             include={"profiles", "hosts", "output", "use"},
         )
         for profile_name, profile in data["profiles"].items():
-            token = self.profiles[profile_name].token
-            token = token.get_secret_value() if token is not None else None
+            token_secret = self.profiles[profile_name].token
+            token = (
+                token_secret.get_secret_value() if token_secret is not None else None
+            )
             profile["token"] = token
 
         return data

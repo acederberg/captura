@@ -91,7 +91,7 @@ def openapi_find(openapi: OpenAPI, req: httpx.Request) -> PathItem:
     httpmethod = req.method
     try:
         for_path = openapi.paths[fpath]
-        for_method = for_path.get(httpmethod.lower())
+        for_method = for_path.get(httpmethod.lower)  # type: ignore
         return for_method
     except KeyError as err:
         CONSOLE.print(
@@ -127,12 +127,12 @@ class ContextData(BaseModel):
         )
         return res
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def token(self) -> SecretStr | None:
         return self.token_from_global or self.config.token
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def headers(self) -> Dict[str, str]:
         h = dict(content_type="application/json")
@@ -182,7 +182,6 @@ class ContextData(BaseModel):
         # For output
         output: flags.FlagOutput | None = None,
         decorate: flags.FlagDecorate = None,
-        # exclude: flags.FlagExclude = list(),
         # For rest.
         openapi: flags.FlagOpenApi = False,
         show_request: flags.FlagShowRequest = False,
@@ -191,20 +190,19 @@ class ContextData(BaseModel):
         if path_config is None:
             config = mwargs(Config)
         else:
-            # print(-10, path_config)
             with open(path_config, "r") as file:
                 config = Config.model_validate(yaml.safe_load(file))
 
-        # print(-5, environ.get("CAPTURA_CONFIG_CLIENT"))
-        # print(-1, config)
         assert config is not None
 
         if host is not None:
             config.use.host = host
         if profile is not None:
             config.use.profile = profile
+
         if output is not None:
-            config.output.output = output
+            # TODO: Figure out why this type hint problem occurs.
+            config.output.output = output  # type: ignore
         if decorate is not None:
             config.output.decorate = decorate
 
@@ -230,7 +228,7 @@ MkRequest = Callable[Concatenate[typer.Context | ContextData, P_Wrapped], httpx.
 MkRequestTyperized = Callable[Concatenate[typer.Context, P_Wrapped], httpx.Response]
 
 
-T_Wrapped = TypeVar("T_Wrapped", bound="Base")
+T_Wrapped = TypeVar("T_Wrapped", bound="BaseRequests")
 MkRequestCls = (
     Callable[
         Concatenate[Type[T_Wrapped], typer.Context | ContextData, P_Wrapped],

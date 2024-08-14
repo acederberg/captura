@@ -1,40 +1,13 @@
 # =========================================================================== #
-import collections
 import json
 from http import HTTPMethod
-from re import L
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Iterable,
-    Literal,
-    Protocol,
-    Self,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    overload,
-)
+from typing import Any, ClassVar, Generic, Iterable, Protocol, Tuple, Type, TypeVar
 
 import httpx
-import typer
 import yaml
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-)
-from rich import panel
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from rich.align import Align, AlignMethod, VerticalAlignMethod
-from rich.console import Console, Group, OverflowMethod
-from rich.json import JSON
+from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -43,8 +16,7 @@ from rich.text import Text
 
 # --------------------------------------------------------------------------- #
 from captura.err import ErrDetail
-from captura.schemas import AsOutput, OutputWithEvents, mwargs
-from legere import flags
+from captura.schemas import mwargs
 from legere.config import Config, OutputConfig
 from legere.flags import Output
 
@@ -199,11 +171,13 @@ class BaseHandlerData(Generic[T_HandlerData]):
         return rendered, 0
 
     def render_raw(
-        self, *, data: Any | None = None, output: Output | None = None, **kwargs
+        self,
+        *,
+        data: Any | None = None,
+        output: Output | None = None,
+        **kwargs,
     ) -> str:
-        if output is None:
-            output = self.output_config.output
-        match output:
+        match (output if output is not None else self.output_config.output):
             case Output.yaml:
                 return "---\n" + yaml.dump(self.data_jsonable(data=data), **kwargs)
             case Output.json:
@@ -318,7 +292,7 @@ class RequestHandlerData(BaseHandlerData[T_HandlerData]):
                     self.data = None
 
                 self.adapter = None
-            case [TypeAdapter() as adptr, data]:
+            case [TypeAdapter() as adptr, dd]:
                 if data is None:
                     try:
                         self.data = adptr.validate_json(response.content)
@@ -327,10 +301,10 @@ class RequestHandlerData(BaseHandlerData[T_HandlerData]):
                         CONSOLE.print(msg)
                         self.data = response.json() if response.content else None
                 else:
-                    self._data = adptr.validate_python(data)
+                    self._data = adptr.validate_python(dd)
                 self.adapter = adptr
-            case [None, data] if data is not None:
-                self.data = data
+            case [None, dd] if dd is not None:
+                self.data = dd
                 self.adapter = None
             case _:
                 raise ValueError("Cannot set from data.")
@@ -361,8 +335,7 @@ class RequestHandlerData(BaseHandlerData[T_HandlerData]):
         if self.expect_err is None:
             return None
 
-        table = self.expect_err.compare(self.response)
-        return table
+        return self.expect_err.compare(self.response)
 
     def render_response(self) -> Table:
         """Does not necessarily have to render an error."""
@@ -388,7 +361,7 @@ class RequestHandlerData(BaseHandlerData[T_HandlerData]):
         else:
             response_data = None
 
-        response_data_handler = HandlerData(
+        response_data_handler: HandlerData = HandlerData(
             output_config=self.output_config,
             data=response_data,
         )
@@ -446,7 +419,7 @@ def render_request(
     )
 
     response_data = json.loads(request.content) if request.content else None
-    response_data_handler = HandlerData(
+    response_data_handler: HandlerData = HandlerData(
         output_config=output_config,
         data=response_data,
     )

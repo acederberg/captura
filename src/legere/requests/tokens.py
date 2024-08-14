@@ -99,9 +99,9 @@ class TokenRequests(BaseRequests):
 
     typer_check_verbage = False
 
-    read = methodize(req_read, __func__=req_read.__func__)
-    create = methodize(req_create, __func__=req_create.__func__)
-    register = methodize(req_register, __func__=req_register.__func__)  # type: ignore
+    read = methodize(req_read, __func__=req_read.__func__)  # type: ignore[attr-defined]
+    create = methodize(req_create, __func__=req_create.__func__)  # type: ignore[attr-defined]
+    register = methodize(req_register, __func__=req_register.__func__)  # type: ignore[attr-defined]
 
 
 __all__ = ("TokenRequests",)

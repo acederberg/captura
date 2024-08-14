@@ -75,7 +75,7 @@ class CollectionRequests(BaseRequests):
         uuid_child: flags.FlagUUIDs = list(),
     ) -> httpx.Request:
         params: Dict[str, Any] = dict()
-        match [child, not len(uuid_child)]:
+        match [child, not len(uuid_child)]:  # type: ignore[arg-type]
             case [None, True]:
                 pass
             case [ChildrenCollection.documents, _]:

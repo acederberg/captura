@@ -37,7 +37,8 @@ class EventsRequests(BaseRequests):
             columns += ["uuid_obj", "detail"]
             cls.columns = columns
 
-        cls.handler = ConsoleHandler(output=output, columns=columns, data=None)
+        # TODO: Fix this. Looks like events cli is probably broken.
+        cls.handler = ConsoleHandler(output=output, columns=columns, data=None)  # type: ignore
 
     @classmethod
     def req_prune(

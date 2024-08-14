@@ -195,8 +195,7 @@ class ProfilesCommand(BaseTyperizable):
         context = ContextData.resolve(_context)
 
         profiles = context.config.profiles
-        data = tuple()
-
+        data: Any
         if current:
             if names:
                 CONSOLE.print("[red]Names cannot be specified when `--current` is.")
@@ -240,6 +239,8 @@ class HostCommand(BaseTyperizable):
         context = ContextData.resolve(_context)
 
         hosts = context.config.hosts
+
+        data: Any
         if current and names is None:
             host = context.config.host
             data = (
@@ -308,7 +309,7 @@ class ConfigCommands(BaseTyperizable):
         config.dump(config_path_out)
 
     @classmethod
-    def origin(cls, _context: typer.Context) -> str | None:
+    def origin(cls, _context: typer.Context) -> None:
         context = ContextData.resolve(_context)
         yaml_datas = context.config.model_config["yaml_files"]
         assert isinstance(yaml_datas, dict)
@@ -369,7 +370,7 @@ class DockerCommand(BaseTyperizable):
         context = ContextData.resolve(_context)
         console = context.console_handler.console
 
-        client = docker.DockerClient()
+        client = docker.DockerClient() # type: ignore[attr-defined]
         if (container := client.containers.get("captura-server")) is None:
             console.print("[red]Docker compose project is not running.")
             raise typer.Exit(1)
@@ -436,7 +437,7 @@ class DockerCommand(BaseTyperizable):
         context = ContextData.resolve(_context)
         console = context.console_handler.console
 
-        client = docker.DockerClient()
+        client = docker.DockerClient() # type: ignore
         if (container := client.containers.get("captura-db")) is None:
             console.print("[red]Docker compose project is not running.")
             raise typer.Exit(1)
