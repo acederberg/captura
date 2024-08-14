@@ -430,7 +430,7 @@ class BaseDummyProvider:
         conds = list()
         if public is not None and hasattr(Model, "public"):
             bool_ = true() if public else false()
-            conds.append(Model.public == bool_) 
+            conds.append(Model.public == bool_)
         if deleted is not None:
             bool_ = true() if deleted else false()
             conds.append(Model.deleted == bool_)
@@ -467,7 +467,7 @@ class BaseDummyProvider:
 
         if public is not None:
             logger.debug("Checking public.")
-            assert all(getattr(mm,"public", None) is public for mm in models)
+            assert all(getattr(mm, "public", None) is public for mm in models)
         return models  # type: ignore
 
     def get_users(
@@ -479,7 +479,7 @@ class BaseDummyProvider:
     ) -> Tuple[User, ...]:
         callback = None
         if other:
-            callback = lambda q: q.where(User.id != self.user.id) # noqa: E731
+            callback = lambda q: q.where(User.id != self.user.id)  # noqa: E731
 
         return self.get_primary(
             User,
@@ -737,11 +737,16 @@ class BaseDummyProvider:
             return q
 
         if "retry" not in get_primary_kwargs:
-            get_primary_kwargs["retry"]=False
+            get_primary_kwargs["retry"] = False
         if "allow_empty" not in get_primary_kwargs:
-            get_primary_kwargs["allow_empty"]=True
+            get_primary_kwargs["allow_empty"] = True
 
-        return self.get_primary(Event, n, callback=callback, **get_primary_kwargs,) # type: ignore
+        return self.get_primary(
+            Event,
+            n,
+            callback=callback,
+            **get_primary_kwargs,
+        )  # type: ignore
 
     def get(
         self,
@@ -940,11 +945,11 @@ class BaseDummyProvider:
 
     @property
     def token(self) -> Token:
-        # NOTE: Probably follows 7519 section 4.1, 
+        # NOTE: Probably follows 7519 section 4.1,
         #       https://www.rfc-editor.org/rfc/rfc7519#section-4.1
         return mwargs(
             Token,
-            sub=self.user.uuid, #hashlib.sha256(self.user.uuid.encode()).hexdigest(),
+            sub=self.user.uuid,  # hashlib.sha256(self.user.uuid.encode()).hexdigest(),
             tier=(
                 TokenPermissionTier.paid
                 if not self.user.admin

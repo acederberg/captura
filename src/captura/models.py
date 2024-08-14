@@ -850,7 +850,7 @@ class AssocUserDocument(Base):
     def uuid_user_granter(self) -> str:
         session = self.get_session()
         res = session.execute(
-            select(User.uuid).where(User.id == self.id_user_granter) # type: ignore
+            select(User.uuid).where(User.id == self.id_user_granter)  # type: ignore
         ).scalar()
         if res is None:
             raise ValueError("Inconcievable!")
