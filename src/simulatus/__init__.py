@@ -435,9 +435,9 @@ class BaseDummyProvider:
 
         logger.debug("Getting data of kind `%s`.", Model.__tablename__)
         conds = list()
-        if public is not None:
+        if public is not None and hasattr(Model, "public"):
             bool_ = true() if public else false()
-            conds.append(Model.public == bool_)
+            conds.append(Model.public == bool_) 
         if deleted is not None:
             bool_ = true() if deleted else false()
             conds.append(Model.deleted == bool_)
@@ -474,7 +474,7 @@ class BaseDummyProvider:
 
         if public is not None:
             logger.debug("Checking public.")
-            assert all(mm.public is public for mm in models)
+            assert all(getattr(mm,"public", None) is public for mm in models)
         return models  # type: ignore
 
     def get_users(
@@ -744,11 +744,11 @@ class BaseDummyProvider:
             return q
 
         if "retry" not in get_primary_kwargs:
-            get_primary_kwargs.update(retry=False)
+            get_primary_kwargs["retry"]=False
         if "allow_empty" not in get_primary_kwargs:
-            get_primary_kwargs.update(allow_empty=True)
+            get_primary_kwargs["allow_empty"]=True
 
-        return self.get_primary(Event, n, callback=callback, **get_primary_kwargs)
+        return self.get_primary(Event, n, callback=callback, **get_primary_kwargs,) # type: ignore
 
     def get(
         self,
@@ -764,6 +764,7 @@ class BaseDummyProvider:
 
         Intended for generic cases, like :meth:`data_primary`.
         """
+        meth: Callable
         match (resolve_model(Model)).__kind__:
             case KindObject.user:
                 meth = self.get_users
@@ -1321,8 +1322,8 @@ class DummyHandler:
     # SELECT COUNT(uuid), JSON_LENGTH(users.content, "$.dummy.used_by") AS used_by_count FROM users GROUP BY used_by_count HAVING used_by_count >= 0;
     @classmethod
     def q_select_taintedness(cls, limit: int = 10):
-        used_by_count = func.JSON_LENGTH(User.content, "$.dummy.used_by")
-        used_by_count = used_by_count.label("used_by_count")
+        _used_by_count = func.JSON_LENGTH(User.content, "$.dummy.used_by")
+        used_by_count = _used_by_count.label("used_by_count")
         return (
             select(func.count(User.uuid).label("count_users"), used_by_count)
             .group_by(used_by_count)

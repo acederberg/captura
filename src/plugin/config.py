@@ -58,14 +58,14 @@ class RepoConfig(BaseHashable):
     def ensure(cls, repository: str, path: str) -> git.Repo:
         repo = (
             git.Repo.clone_from(repository, to_path=path)
-            if path is None or not util.Path.exists(path)
+            if path is None or not util.path.exists(path)
             else git.Repo(path)
         )
         return repo
 
-    def configure(self):
+    def configure(self) -> None:
         path = self.path
-        if util.p.exists(path) and not util.p.isdir(path):
+        if util.path.exists(path) and not util.path.isdir(path):
             raise ValueError(f"Clone path `{path}` must be a directory.")
 
         repo = self.ensure(self.repository, path)

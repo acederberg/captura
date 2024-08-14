@@ -90,7 +90,7 @@ class ContextDataDummy(BaseModel):
 
     def register_manifest(self, manifest_path: str | None) -> DummyConfig | None:
         if manifest_path is None:
-            return
+            return None
 
         manifest = DummyConfig.load(manifest_path)
         self.config.dummy = manifest
@@ -204,7 +204,7 @@ class CmdReport(BaseTyperizable):
                     ReportController(session),
                     uuid_report,
                     note,
-                    tags,
+                    tags,  # type: ignore
                 )
             except HTTPException as err:
                 print(err)
@@ -304,7 +304,7 @@ class CmdReport(BaseTyperizable):
                 dummy_provider = DummyProvider(
                     context.dummy_handler.config,
                     session,
-                    use_existing=None,
+                    use_existing=False,
                 )
                 user = dummy_provider.user
 
@@ -354,7 +354,7 @@ class CmdUser(BaseTyperizable):
         handler = context.dummy_handler
         with handler.sessionmaker() as session:
             for _ in range(count):
-                DummyProvider(handler.config, session, use_existing=None)
+                DummyProvider(handler.config, session, use_existing=False)
 
     @classmethod
     def get(cls, _context: typer.Context, count: FlagCount = 1):
@@ -528,7 +528,7 @@ class CmdDummy(BaseTyperizable):
         context: ContextDataDummy = _context.obj
 
         with context.dummy_handler.sessionmaker() as session:
-            Base.metadata.create_all(session.bind)
+            Base.metadata.create_all(session.bind)  # type: ignore[arg-type]
             # DummyProviderYAML.merge(session)
 
     @classmethod

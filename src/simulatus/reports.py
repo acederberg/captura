@@ -133,6 +133,7 @@ class BaseReportSchema(BaseSchema):
         )
 
     def render_reports_grants(self) -> Panel:
+        tt: Any
         if (reports_grants := getattr(self, "reports_grants", None)) is not None:
             tt = Table(title="Dummy Grants Report")
             cls = reports_grants[0].__class__
@@ -159,7 +160,7 @@ class BaseReportSchema(BaseSchema):
             ),
         )
 
-    def __rich__(self) -> Layout:
+    def __rich__(self):
         if hasattr(self, "reports_grants"):
             panel_grants = self.render_reports_grants()
         else:
@@ -336,8 +337,8 @@ class ReportGrant(Base):
         if user is not None:
             q_reports_grants = q_reports_grants.where(Grant.id_user == user.id)
 
-        count_per_user = literal_column("count_per_user")
-        res_columns = (
+        count_per_user: Any = literal_column("count_per_user")
+        res_columns: Tuple[Any, ...] = (
             literal_column("level"),
             literal_column("pending_from"),
             literal_column("deleted"),
@@ -451,8 +452,8 @@ class ReportController:
         q = select(Report).where(and_(*conds, true())).limit(params.limit)
         q = q.order_by(Report.timestamp.desc())
         if kind_count:
-            f = f"$.data.count.{kind_count.value}"
-            f = func.JSON_EXTRACT(Report._content, f)
+            _f = f"$.data.count.{kind_count.value}"
+            f = func.JSON_EXTRACT(Report._content, _f)
             q = q.order_by(f.asc() if kind_count_desc else f.desc())
 
         # --------------------------------------------------------------------------- #
@@ -592,8 +593,8 @@ class ReportView(BaseView):
             report.note = note
         if tags is not None:
 
-            tags_args = (("$.tags", tag) for tag in tags)
-            tags_args = itertools.chain(*tags_args)
+            _tags_args = (("$.tags", tag) for tag in tags)
+            tags_args = itertools.chain(*_tags_args)
             content = func.JSON_ARRAY_APPEND(Report._content, *tags_args)
             q = update(Report).values(_content=content)
             q = q.where(Report.uuid == uuid_report)
