@@ -5,7 +5,6 @@ from collections.abc import Awaitable
 from typing import (
     Annotated,
     Any,
-    Awaitable,
     Callable,
     ClassVar,
     Concatenate,

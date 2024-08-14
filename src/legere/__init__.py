@@ -1,5 +1,4 @@
 # =========================================================================== #
-import importlib
 from os import environ
 from typing import Annotated, Any, Dict, List, Optional
 
@@ -370,7 +369,7 @@ class DockerCommand(BaseTyperizable):
         context = ContextData.resolve(_context)
         console = context.console_handler.console
 
-        client = docker.DockerClient() # type: ignore[attr-defined]
+        client = docker.DockerClient()  # type: ignore[attr-defined]
         if (container := client.containers.get("captura-server")) is None:
             console.print("[red]Docker compose project is not running.")
             raise typer.Exit(1)
@@ -437,7 +436,7 @@ class DockerCommand(BaseTyperizable):
         context = ContextData.resolve(_context)
         console = context.console_handler.console
 
-        client = docker.DockerClient() # type: ignore
+        client = docker.DockerClient()  # type: ignore
         if (container := client.containers.get("captura-db")) is None:
             console.print("[red]Docker compose project is not running.")
             raise typer.Exit(1)

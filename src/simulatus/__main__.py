@@ -566,8 +566,8 @@ class CmdDummy(BaseTyperizable):
 
 
 # =========================================================================== #
-import logging
-import logging.config
+import logging  # noqa: E402
+import logging.config  # noqa: E402
 
 logging.config.dictConfig
 

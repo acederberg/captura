@@ -1,6 +1,5 @@
 # =========================================================================== #
 import json
-import secrets
 import traceback
 from typing import Annotated, Generator, List, Set
 
@@ -16,14 +15,14 @@ from starlette.routing import Mount
 # --------------------------------------------------------------------------- #
 from captura import __version__, util
 from captura.controllers.access import H
-from captura.depends import DependsAccess, DependsConfig
+from captura.depends import DependsAccess
 
 from .assignments import CollectionAssignmentView, DocumentAssignmentView
 from .auth import AuthViewAuth0, AuthViewPytest
 from .base import BaseView, OpenApiTagMetadata, OpenApiTags
 from .collections import CollectionView
 from .documents import DocumentView
-from .events import EventSearchView, EventView
+from .events import EventView
 from .grants import DocumentGrantView, UserGrantView
 from .users import UserView
 

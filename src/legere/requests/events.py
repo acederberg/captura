@@ -109,7 +109,7 @@ class EventsRequests(BaseRequests):
             context.url("/events"),
             headers=context.headers,
             params=(
-                p := params(
+                params(
                     # flatten=flatten,
                     # recurse=recurse.value if recurse is not None else None,
                     before=datetime.timestamp(before) if before is not None else before,

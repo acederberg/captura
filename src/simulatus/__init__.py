@@ -1,5 +1,4 @@
 # =========================================================================== #
-import hashlib
 import secrets
 from http import HTTPMethod
 from random import choice, randint
@@ -20,7 +19,6 @@ from typing import (
 
 import httpx
 import yaml
-from cryptography.utils import cached_property
 from sqlalchemy import (
     delete,
     desc,
@@ -32,8 +30,10 @@ from sqlalchemy import (
     true,
     update,
 )
-from sqlalchemy.orm import Session, session
-from sqlalchemy.orm import sessionmaker as _sessionmaker
+
+# from sqlalchemy.orm import session as sqa_session
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker as sqa_sessionmaker
 from typing_extensions import Doc
 
 # --------------------------------------------------------------------------- #
@@ -45,7 +45,6 @@ from captura.controllers.base import (
     BaseResolvedPrimary,
     BaseResolvedSecondary,
     Data,
-    KindData,
     ResolvedDocument,
     ResolvedUser,
     T_ResolvedPrimary,
@@ -62,8 +61,6 @@ from captura.models import (
     Document,
     Event,
     Grant,
-    KindObject,
-    Level,
     PendingFrom,
     ResolvableModel,
     ResolvedRawCollection,
@@ -76,13 +73,9 @@ from captura.schemas import mwargs
 from legere import ConsoleHandler, ContextData, Requests
 from legere.config import Config as ClientConfig
 from legere.config import ProfileConfig, UseConfig
-from legere.flags import Output
-from legere.handlers import ConsoleHandler
-from legere.requests import Requests
-from legere.requests.base import ContextData
 from simulatus.config import ConfigSimulatus, DummyConfig
 from simulatus.mk import Mk, combos
-from simulatus.reports import Report, ReportController
+from simulatus.reports import ReportController
 
 util.setup_logging(util.Path.base("logging.test.yaml"))
 logger = util.get_logger(__name__)
@@ -486,7 +479,7 @@ class BaseDummyProvider:
     ) -> Tuple[User, ...]:
         callback = None
         if other:
-            callback = lambda q: q.where(User.id != self.user.id)
+            callback = lambda q: q.where(User.id != self.user.id) # noqa: E731
 
         return self.get_primary(
             User,
@@ -1261,13 +1254,13 @@ class DummyProvider(BaseDummyProvider):
 class DummyHandler:
     dummy: DummyConfig
     config: ConfigSimulatus
-    sessionmaker: _sessionmaker[Session]
+    sessionmaker: sqa_sessionmaker[Session]
     auth: Auth
     # user_uuids: List[str]
 
     def __init__(
         self,
-        sessionmaker: _sessionmaker,
+        sessionmaker: sqa_sessionmaker,
         config: ConfigSimulatus,
         # user_uuids: List[str],
         *,
