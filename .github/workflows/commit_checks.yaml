@@ -45,43 +45,57 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install poetry
-        run: |
-          pipx install poetry
-          echo "/root/.local/bin" >> $GITHUB_PATH
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'poetry'
 
-      - run:
-          poetry install -q
+      - name: Venv and Setup 
+        run: |
+          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
+          echo "Python Version: $( python --version )" >> $GITHUB_STEP_SUMMARY
+          echo "Python Binary: $( which python )" >> $GITHUB_STEP_SUMMARY
+
+          python -m venv .venv
+          source .venv/bin/activate
+
+          python -m pip install poetry mypy ruff
+          poetry install
 
       - name: MyPy static check source
         id: mypy_check_src
         run: |
+          source .venv/bin/activate
+
+          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
+          echo "MyPy ./src" >> $GITHUB_STEP_SUMMARY
           poetry run mypy --config-file pyproject.toml --pretty ./src >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: MyPy static check tests
         id: mypy_check_tests
         run: |
+          source .venv/bin/activate
+
+          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
+          echo "MyPy ./tests" >> $GITHUB_STEP_SUMMARY
           poetry run mypy --config-file pyproject.toml --pretty ./tests >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: Ruff Linting
         id: ruff
         run: |
-          poetry install
-          poetry run ruff check --config pyproject.toml --output-format github .
+          source .venv/bin/activate
+
+          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
+          echo "Ruff" >> $GITHUB_STEP_SUMMARY
+          poetry run ruff check --config pyproject.toml --output-format github .>> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - run: |
           if ( \
-            [ ${{ steps.mypy_check_src.outcome }} != 'success' ] \
-            || [ ${{ steps.mypy_check_tests.outcome }} != 'success' ] \
-            || [ ${{ steps.ruff.outcome }} != 'success' ]
+            [ "${{ steps.mypy_check_src.outcome }}" != "success" ] \
+            || [ "${{ steps.mypy_check_tests.outcome }}" != "success" ] \
+            || [ "${{ steps.ruff.outcome }}" != 'success' ]
           ); then
             echo "One or more checks failed. See the summary for details."
             exit 1
