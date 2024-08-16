@@ -21,11 +21,8 @@ from captura.models import Document
 from captura.schemas import AsOutput, DocumentSchema, OutputWithEvents, mwargs
 from legere.requests import Requests
 from simulatus import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import (
-    COUNT,
-    BaseEndpointTest,
-    BaseEndpointTestPrimaryCreateMixins,
-)
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
 
 class CommonDocumentTests(BaseEndpointTest):

@@ -25,11 +25,8 @@ from captura.schemas import (
 from legere.requests import Requests
 from legere.requests.base import P_Wrapped
 from simulatus import DummyProvider
-from tests.test_views.util import (
-    COUNT,
-    BaseEndpointTest,
-    BaseEndpointTestPrimaryCreateMixins,
-)
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest, BaseEndpointTestPrimaryCreateMixins
 
 
 class CommonCollectionsTests(BaseEndpointTest):

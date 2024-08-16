@@ -13,15 +13,11 @@ from captura.controllers.access import H
 from captura.err import ErrAccessCollection, ErrDetail, ErrObjMinSchema
 from captura.fields import KindObject, Level
 from captura.models import Assignment, Collection, Document
-from captura.schemas import (
-    AsOutput,
-    AssignmentSchema,
-    OutputWithEvents,
-    mwargs,
-)
+from captura.schemas import AsOutput, AssignmentSchema, OutputWithEvents, mwargs
 from legere.requests import Requests
 from simulatus import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import COUNT, BaseEndpointTest
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest
 
 
 class CommonAssignmentsCollectionsTests(BaseEndpointTest):

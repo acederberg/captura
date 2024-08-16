@@ -1,5 +1,6 @@
 # =========================================================================== #
 import argparse
+import os
 
 import pytest
 import yaml
@@ -38,6 +39,7 @@ FLAKEY = True
 #
 #          https://docs.pytest.org/en/7.1.x/reference/reference.html
 #
+STASHKEY_FLAKEY = StashKey[bool]()
 STASHKEY_CONFIG_FLAKEY = StashKey[Flakey]()
 STASHKEY_CONFIG_CAPTRUA = StashKey[PytestConfig]()
 STASHKEY_CONFIG_LEGERE = StashKey[PytestClientConfig]()
@@ -48,7 +50,7 @@ def pytest_exception_interact(
     call: pytest.CallInfo,
     report: pytest.CollectReport | pytest.TestReport,
 ):
-    if FLAKEY:
+    if node.config.stash[STASHKEY_FLAKEY]:
         return
 
     logger.debug("Check exception from `%s` for flakeyness.", node.name)
@@ -178,14 +180,19 @@ def pytest_configure(config: pytest.Config):
 
     flakey = config.getoption("--flakey")
     flakey_clear = config.getoption("--flakey-clear")
+    if flakey_clear and os.path.exists(FLAKEY_PATH):
+        os.remove(FLAKEY_PATH)
+
     flakey_ignore_ini = config.getini("flakey_ignore") or list()
     flakey_ignore_ini_err = config.getini("flakey_ignore_err") or list()
-    Flakey.yaml_ensure(bool(flakey_clear))
-    global FLAKEY
-    FLAKEY = flakey
+    config.stash[STASHKEY_FLAKEY] = bool(flakey)
 
-    flakey = mwargs(Flakey, ignore=flakey_ignore_ini, ignore_err=flakey_ignore_ini_err)
-    config.stash[STASHKEY_CONFIG_FLAKEY] = flakey
+    config_flakey = mwargs(
+        Flakey,
+        ignore=flakey_ignore_ini,
+        ignore_err=flakey_ignore_ini_err,
+    )
+    config.stash[STASHKEY_CONFIG_FLAKEY] = config_flakey
 
     config_captura = resolve_config_captura(config)
     if generate_dummies := config.getoption("--generate-dummies"):

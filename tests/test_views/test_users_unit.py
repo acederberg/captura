@@ -25,7 +25,8 @@ from captura.schemas import (
 from legere.requests import Requests
 from simulatus import DummyProvider
 from simulatus.mk import fkit
-from tests.test_views.util import COUNT, BaseEndpointTest
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest
 
 
 class CommonUserTests(BaseEndpointTest):

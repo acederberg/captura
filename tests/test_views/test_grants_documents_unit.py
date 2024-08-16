@@ -17,13 +17,7 @@ from captura.err import (
     ErrDetail,
     ErrObjMinSchema,
 )
-from captura.fields import (
-    KindObject,
-    Level,
-    LevelStr,
-    PendingFrom,
-    PendingFromStr,
-)
+from captura.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
 from captura.models import Document, Grant, uuids
 from captura.schemas import (
     AsOutput,
@@ -35,7 +29,8 @@ from captura.schemas import (
 )
 from legere.requests import Requests
 from simulatus import DummyProvider
-from tests.test_views.util import COUNT, BaseEndpointTest
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest
 
 N_CASES: int = 1
 

@@ -1,11 +1,9 @@
 # =========================================================================== #
-import os
 import re
 from datetime import datetime
 from typing import Annotated, List
 
 import pytest
-import yaml
 from pydantic import BaseModel, Field
 from pytest import StashKey
 from yaml_settings_pydantic import (
@@ -89,13 +87,6 @@ class Flakey(BaseYamlSettings):
         ),
     ]
     flakes: Annotated[List[Flake], Field(default_factory=list)]
-
-    @classmethod
-    def yaml_ensure(cls, clear: bool = False):
-
-        if not os.path.exists(FLAKEY_PATH) or clear:
-            with open(FLAKEY_PATH, "w") as file:
-                yaml.dump(dict(flakes=list()), file)
 
 
 FLAKEY_STASHKEY = StashKey[Flakey]()
