@@ -8,7 +8,11 @@ import pytest
 import yaml
 from pydantic import BaseModel, Field
 from pytest import StashKey
-from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
+from yaml_settings_pydantic import (
+    BaseYamlSettings,
+    YamlFileConfigDict,
+    YamlSettingsConfigDict,
+)
 
 # --------------------------------------------------------------------------- #
 from captura import util
@@ -30,7 +34,9 @@ class Flake(BaseModel):
 
 # NOTE: Instance is loaded in hook ``pytest_configure``.
 class Flakey(BaseYamlSettings):
-    model_config = YamlSettingsConfigDict(yaml_files=FLAKEY_PATH)
+    model_config = YamlSettingsConfigDict(
+        yaml_files={FLAKEY_PATH: YamlFileConfigDict(required=False)}
+    )
 
     def is_ignored_node(self, node: pytest.Item) -> bool:
         matches_ignored = any(exp.match(node.name) for exp in self.ignore)
