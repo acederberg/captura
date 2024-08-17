@@ -1,0 +1,54 @@
+---
+# NOTE: Server configuration.
+app:
+  environment: development
+  host_schema: http://
+auth0:
+  api:
+    audience: captura-dev
+  app:
+    client_id: fake
+    client_secret: fake
+    secret_key: fake
+  issuer: fake.us.auth0.com
+  registration_code_salt: register12345register
+  use: false
+dummy:
+  collections:
+    maximum: 8
+    minimum: 4
+  documents:
+    maximum: 16
+    minimum: 9
+  grants:
+    maximum_other: 36
+    maximum_self: 36
+    minimum_other: 25
+    minimum_self: 25
+  users:
+    maximum_uses: 100
+    minimum: 35
+mysql:
+  host:
+    password: changeme
+    username: captura
+tests:
+  generate_dummies: false
+  generate_reports: true
+
+# NOTE: Client configuration.
+output:
+  output: yaml
+hosts:
+  app:
+    host: http://localhost:8080
+    remote: false
+profiles:
+  nobody:
+    token: null
+    uuid_user: urmomisurmom
+use:
+  host: app
+  profile: nobody
+
+

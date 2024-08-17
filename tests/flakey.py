@@ -16,10 +16,15 @@ from yaml_settings_pydantic import (
 from captura import util
 from captura.schemas import mwargs
 
-FLAKEY_PATH = util.Path.config("flakey.yaml")
+FLAKEY_PATH = util.path.realpath(
+    util.from_env(
+        "FLAKEY",
+        util.Path.config("flakey.yaml"),
+    )
+)
 
 
-# NOTE: See `pytest_exception_interact` for details.
+# NOTE: See ``pytest_exception_interact`` for details.
 class Flake(BaseModel):
     id: str
     name_parent: str | None

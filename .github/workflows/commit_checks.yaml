@@ -51,9 +51,9 @@ jobs:
 
       - name: Venv and Setup 
         run: |
-          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
-          echo "Python Version: $( python --version )" >> $GITHUB_STEP_SUMMARY
-          echo "Python Binary: $( which python )" >> $GITHUB_STEP_SUMMARY
+          echo "## Python Info\n" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Version: $( python --version )" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Binary: $( which python )" >> $GITHUB_STEP_SUMMARY
 
           python -m venv .venv
           source .venv/bin/activate
@@ -61,34 +61,33 @@ jobs:
           python -m pip install poetry mypy ruff
           poetry install
 
-      - name: MyPy static check source
+      - name: MyPy Check Source.
         id: mypy_check_src
         run: |
           source .venv/bin/activate
 
-          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
-          echo "MyPy ./src" >> $GITHUB_STEP_SUMMARY
+          echo "## MyPy \`./src\`" >> $GITHUB_STEP_SUMMARY
           poetry run mypy --config-file pyproject.toml --pretty ./src >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
-      - name: MyPy static check tests
+      - name: MyPy Check Tests.
         id: mypy_check_tests
         run: |
           source .venv/bin/activate
 
-          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
-          echo "MyPy ./tests" >> $GITHUB_STEP_SUMMARY
+          echo "## MyPy \`./tests\`\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           poetry run mypy --config-file pyproject.toml --pretty ./tests >> $GITHUB_STEP_SUMMARY
+          echo "~~~\n" >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
-      - name: Ruff Linting
+      - name: Ruff Linting.
         id: ruff
         run: |
           source .venv/bin/activate
 
-          echo "===============================================================" >> $GITHUB_STEP_SUMMARY
-          echo "Ruff" >> $GITHUB_STEP_SUMMARY
+          echo "## Ruff\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           poetry run ruff check --config pyproject.toml --output-format github .>> $GITHUB_STEP_SUMMARY
+          echo "~~~" >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - run: |
@@ -100,4 +99,49 @@ jobs:
             echo "One or more checks failed. See the summary for details."
             exit 1
           fi
+
+
+  pytest:
+    name: PyTest
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Checkout.
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # NOTE: ``mkdir`` step is required for propper permissions on ~/.venv
+      - name: Start Docker Compose Project.
+        run: |
+          mkdir docker/.venv
+          docker compose --file docker/compose.yaml up --detach
+          docker compose --file docker/compose.yaml exec \
+            bash -c "python -m venv .venv"
+
+      - name: Install Dependencies In Server.
+        run: |
+          docker compose --file docker/compose.yaml exec server \
+            bash -c 'source ~/.bashrc && pip install poetry && poetry install --with test'
+ 
+      - name: Generate Dummy Data In Server.
+        run: |
+          docker compose --file docker/compose.yaml exec server \
+            bash -c 'source ~/.bashrc && pip install poetry && poetry run captura config'
+
+      - name: Run Tests.
+        run: |
+          docker compose --file docker/compose.yaml exec server \
+            bash -c 'source ~/.bashrc \
+            && pip install poetry \
+            && CAPTURA_CONFIG_APP_TEST=/home/captura/app/tests/assets/act.yaml \
+               CAPTURA_CONFIG_CLIENT_TEST=/home/captura/app/tests/assets/act.yaml \
+               CAPTURA_FLAKEY=FLAKEY=/home/captura/flakey.yaml \
+               poetry run pytest --count 1'
+
+
+
+
+
 
