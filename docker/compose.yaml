@@ -14,6 +14,7 @@ services:
       CAPTURA_CONFIG_APP: "${CAPTURA_CONFIG_APP-/home/captura/app/config/app.yaml}"
       CAPTURA_CONFIG_APP_TEST: "${CAPTURA_CONFIG_APP_TEST-/home/captura/app/config/app.test.yaml}"
       CAPTURA_FLAKEY: "${CAPTURA_FLAKEY-/home/captura/app/config/flakey.yaml}"
+      CAPTURA_PLUGINS_USE: "${CAPTURA_PLUGINS_USE-0}"
     image: acederberg/captura-development:0.1.5
     container_name: captura-server
     ports: 

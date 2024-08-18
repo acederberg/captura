@@ -5,7 +5,8 @@ app:
   host_schema: http://
 auth0:
   api:
-    audience: captura-dev
+    audience: 
+      - captura-dev
   app:
     client_id: fake
     client_secret: fake

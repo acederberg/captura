@@ -68,6 +68,7 @@ class PytestConfig(ConfigSimulatus):
         env_nested_delimiter="__",
         extra="allow",
     )
+
     tests: PytestSubConfig
 
 

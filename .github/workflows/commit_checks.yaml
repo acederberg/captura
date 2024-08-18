@@ -115,21 +115,21 @@ jobs:
         #       More about interpolation: https://docs.docker.com/compose/environment-variables/variable-interpolation/
       - name: Setup.
         run: |
-          mkdir docker/.venv
+          mkdir --parent docker/.venv
           docker_config_path='/home/captura/app/tests/assets/act.yaml'
 
           echo "CAPTURA_CONFIG_CLIENT_TEST=$docker_config_path" > .env
           echo "CAPTURA_CONFIG_CLIENT=$docker_config_path" >> .env
+          echo "CAPTURA_CONFIG_APP_TEST=$docker_config_path" >> .env
           echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
-          echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
-          echo "CAPTURA_FLAKEY=FLAKEY=/home/captura/flakey.yaml" >> .env
+          echo "CAPTURA_FLAKEY=/home/captura/flakey.yaml" >> .env
 
       - name: Start Docker Compose Project.
         run: |
           docker compose \
             --file docker/compose.yaml \
             --env-file .env \
-            up --detach --quite-pull
+            up --detach --quiet-pull
 
           docker compose \
             --file docker/compose.yaml \
@@ -154,8 +154,17 @@ jobs:
             exec server \
             bash -c ' \
               source ~/.venv/bin/activate \
-              && pip install poetry \
               && poetry run simulatus apply'
+
+          echo -e "# Dummy Data Report\n\n~~~" >> $GITHUB_STEP_SUMMARY
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
+            bash -c ' \
+              source ~/.venv/bin/activate \
+              && poetry run simulatus --loud reports aggregate' \
+            >> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
 
       - name: Run Tests.
         run: |
@@ -163,12 +172,6 @@ jobs:
             --file docker/compose.yaml \
             exec server \
             bash -c ' \
-              source ~/.bashrc \
+              source ~/.venv/bin/activate \
               && pip install poetry \
               && poetry run pytest --count 1'
-
-
-
-
-
-
