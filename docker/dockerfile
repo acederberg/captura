@@ -19,6 +19,8 @@ ENTRYPOINT ["bash"]
 
 # --------------------------------------------------------------------------- #
 
+# NOTE: Do not add environment variables here! They should be defined in the
+#       compose file.
 FROM base AS development
 
 # NOTE: Assumes that build is occuring at the project root.

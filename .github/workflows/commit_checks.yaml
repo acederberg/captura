@@ -51,9 +51,9 @@ jobs:
 
       - name: Venv and Setup 
         run: |
-          echo "## Python Info\n" >> $GITHUB_STEP_SUMMARY
-          echo "- Python Version: $( python --version )" >> $GITHUB_STEP_SUMMARY
-          echo "- Python Binary: $( which python )" >> $GITHUB_STEP_SUMMARY
+          echo -e "## Python Info\n" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Version: \`$( python --version )\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Binary: \`$( which python )\`" >> $GITHUB_STEP_SUMMARY
 
           python -m venv .venv
           source .venv/bin/activate
@@ -66,8 +66,9 @@ jobs:
         run: |
           source .venv/bin/activate
 
-          echo "## MyPy \`./src\`" >> $GITHUB_STEP_SUMMARY
+          echo -e "## MyPy \`./src\`\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           poetry run mypy --config-file pyproject.toml --pretty ./src >> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: MyPy Check Tests.
@@ -75,9 +76,9 @@ jobs:
         run: |
           source .venv/bin/activate
 
-          echo "## MyPy \`./tests\`\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          echo -e "## MyPy \`./tests\`\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           poetry run mypy --config-file pyproject.toml --pretty ./tests >> $GITHUB_STEP_SUMMARY
-          echo "~~~\n" >> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: Ruff Linting.
@@ -85,9 +86,9 @@ jobs:
         run: |
           source .venv/bin/activate
 
-          echo "## Ruff\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          echo -e "## Ruff\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           poetry run ruff check --config pyproject.toml --output-format github .>> $GITHUB_STEP_SUMMARY
-          echo "~~~" >> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - run: |
@@ -108,37 +109,63 @@ jobs:
       - name: Checkout.
         uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # NOTE: ``mkdir`` step is required for propper permissions on ~/.venv
-      - name: Start Docker Compose Project.
+      # NOTE: ``mkdir`` step is required for propper permissions on ~/.venv.
+      #       Use ``docker compose --file docker/compose.yaml config | less``
+      #       to see the config with interpolated variables from ``.env``.
+        #       More about interpolation: https://docs.docker.com/compose/environment-variables/variable-interpolation/
+      - name: Setup.
         run: |
           mkdir docker/.venv
-          docker compose --file docker/compose.yaml up --detach
-          docker compose --file docker/compose.yaml exec \
+          docker_config_path='/home/captura/app/tests/assets/act.yaml'
+
+          echo "CAPTURA_CONFIG_CLIENT_TEST=$docker_config_path" > .env
+          echo "CAPTURA_CONFIG_CLIENT=$docker_config_path" >> .env
+          echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
+          echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
+          echo "CAPTURA_FLAKEY=FLAKEY=/home/captura/flakey.yaml" >> .env
+
+      - name: Start Docker Compose Project.
+        run: |
+          docker compose \
+            --file docker/compose.yaml \
+            --env-file .env \
+            up --detach --quite-pull
+
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
             bash -c "python -m venv .venv"
 
+      # NOTE: ``act.yaml`` defined everything necessary for the client and server.
       - name: Install Dependencies In Server.
         run: |
-          docker compose --file docker/compose.yaml exec server \
-            bash -c 'source ~/.bashrc && pip install poetry && poetry install --with test'
- 
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
+            bash -c ' \
+              source ~/.venv/bin/activate \
+              && pip install --quiet poetry \
+              && poetry install --with test'
+
       - name: Generate Dummy Data In Server.
         run: |
-          docker compose --file docker/compose.yaml exec server \
-            bash -c 'source ~/.bashrc && pip install poetry && poetry run captura config'
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
+            bash -c ' \
+              source ~/.venv/bin/activate \
+              && pip install poetry \
+              && poetry run simulatus apply'
 
       - name: Run Tests.
         run: |
-          docker compose --file docker/compose.yaml exec server \
-            bash -c 'source ~/.bashrc \
-            && pip install poetry \
-            && CAPTURA_CONFIG_APP_TEST=/home/captura/app/tests/assets/act.yaml \
-               CAPTURA_CONFIG_CLIENT_TEST=/home/captura/app/tests/assets/act.yaml \
-               CAPTURA_FLAKEY=FLAKEY=/home/captura/flakey.yaml \
-               poetry run pytest --count 1'
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
+            bash -c ' \
+              source ~/.bashrc \
+              && pip install poetry \
+              && poetry run pytest --count 1'
 
 
 

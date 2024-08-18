@@ -7,6 +7,13 @@ services:
       context: '..'
       dockerfile: './docker/dockerfile'
       target: development
+    # NOTE: Should not include shell variables.
+    environment:
+      CAPTURA_CONFIG_CLIENT_TEST: "${CAPTURA_CONFIG_CLIENT_TEST-/home/captura/app/config/client.test.yaml}"
+      CAPTURA_CONFIG_CLIENT: "${CAPTURA_CONFIG_CLIENT-/home/captura/app/config/client.yaml}"
+      CAPTURA_CONFIG_APP: "${CAPTURA_CONFIG_APP-/home/captura/app/config/app.yaml}"
+      CAPTURA_CONFIG_APP_TEST: "${CAPTURA_CONFIG_APP_TEST-/home/captura/app/config/app.test.yaml}"
+      CAPTURA_FLAKEY: "${CAPTURA_FLAKEY-/home/captura/app/config/flakey.yaml}"
     image: acederberg/captura-development:0.1.5
     container_name: captura-server
     ports: 
