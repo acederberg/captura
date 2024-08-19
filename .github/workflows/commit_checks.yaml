@@ -109,10 +109,12 @@ jobs:
       - name: Checkout.
         uses: actions/checkout@v4
 
-      # NOTE: ``mkdir`` step is required for propper permissions on ~/.venv.
+      # NOTE: ``mkdir`` step is required for propper permissions on ``~/.venv`` 
+      #       (not used here).
+      #       
       #       Use ``docker compose --file docker/compose.yaml config | less``
       #       to see the config with interpolated variables from ``.env``.
-        #       More about interpolation: https://docs.docker.com/compose/environment-variables/variable-interpolation/
+      #       More about interpolation: https://docs.docker.com/compose/environment-variables/variable-interpolation/
       - name: Setup.
         run: |
           mkdir --parent docker/.venv
@@ -131,10 +133,29 @@ jobs:
             --env-file .env \
             up --detach --quiet-pull
 
+
+          echo -e "## Permissions on \`.venv\`.\n\n" >> $GITHUB_STEP_SUMMARY
+
+          echo -e "In container:\n\n~~~"
           docker compose \
             --file docker/compose.yaml \
             exec server \
-            bash -c "python -m venv .venv"
+            bash -c "ls -lah ~" >> $GITHUB_STEP_SUMMARY
+
+          echo -e "~~~\n\nWithin container venv~~~\n\n" >> $GITHUB_STEP_SUMMARY 
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
+            bash -c "ls -lah ~/.venv" >> $GITHUB_STEP_SUMMARY
+
+          echo -e "~~~\n\nOn host\n\n~~~" >> $GITHUB_STEP_SUMMARY
+          ls -lah docker  >> $GITHUB_STEP_SUMMARY
+          echo "~~~" >> $GITHUB_STEP_SUMMARY
+
+          docker compose \
+            --file docker/compose.yaml \
+            exec server \
+            bash -c "python -m venv ~/.venv"
 
       # NOTE: ``act.yaml`` defined everything necessary for the client and server.
       - name: Install Dependencies In Server.
