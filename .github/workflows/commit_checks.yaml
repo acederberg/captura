@@ -152,6 +152,12 @@ jobs:
 
       - name: Generate Dummy Data In Server.
         run: |
+          version=$( \
+            docker compose \
+            --file docker/compose.ci.yaml \
+            exec db mysql --version \
+          )
+          echo "MySQL Version: $version" >> $GITHUB_STEP_SUMMARY
           docker compose \
             --file docker/compose.ci.yaml \
             exec server \
