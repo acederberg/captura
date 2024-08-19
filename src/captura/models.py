@@ -1,6 +1,7 @@
 # =========================================================================== #
 import enum
 import secrets
+import uuid
 from datetime import datetime
 from typing import (
     Annotated,
@@ -97,8 +98,20 @@ UUIDSplit = Tuple[Set[str], Set[str]]
 #
 
 
-uuid = mapped_column(String(16), default=lambda: secrets.token_urlsafe(8), index=True, unique=True)
-MappedColumnUUID = Annotated[str, uuid]
+_uuid = mapped_column(
+    String(36),
+    default=lambda: str(uuid.uuid4()),
+    index=True,
+)
+_uuid_unique = mapped_column(
+    String(36),
+    default=lambda: str(uuid.uuid4()),
+    index=True,
+    unique=True,
+)
+MappedColumnUUID = Annotated[str, _uuid]
+MappedColumnUUIDUnique = Annotated[str, _uuid_unique]
+
 MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 
 
@@ -112,7 +125,7 @@ class KindSelect(str, enum.Enum):
 
 
 class Base(DeclarativeBase):
-    uuid: Mapped[MappedColumnUUID]
+    uuid: Mapped[MappedColumnUUIDUnique]
     deleted: Mapped[MappedColumnDeleted]
     __kind__: ClassVar[KindObject]
 
@@ -446,7 +459,7 @@ class Event(Base):
     )
 
     # id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
+    uuid: Mapped[MappedColumnUUIDUnique] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
         ForeignKey("events.uuid", ondelete="CASCADE"),
         nullable=True,
@@ -470,7 +483,7 @@ class Event(Base):
     user: Mapped["User"] = relationship()
 
     uuid_obj: Mapped[MappedColumnUUID | None]
-    api_origin: Mapped[str] = mapped_column(String(64))
+    api_origin: Mapped[str] = mapped_column(String(128))
     api_version: Mapped[str] = mapped_column(String(16), default=__version__)
     kind: Mapped[KindEvent] = mapped_column(Enum(KindEvent))
     kind_obj: Mapped[KindObject] = mapped_column(Enum(KindObject))
@@ -782,7 +795,7 @@ class AssocUserDocument(Base):
     __kind__ = KindObject.grant
 
     # https://stackoverflow.com/questions/28843254/deleting-from-self-referential-inherited-objects-does-not-cascade-in-sqlalchemy
-    uuid: Mapped[MappedColumnUUID] = mapped_column(primary_key=True)
+    uuid: Mapped[MappedColumnUUIDUnique] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
         ForeignKey(
             "grants.uuid",

@@ -1,6 +1,7 @@
 # =========================================================================== #
 import hashlib
 import secrets
+import uuid
 from datetime import datetime
 from random import choice, randint
 from typing import Any, Callable, Dict, Generic, List, Protocol, Set, Type, TypeVar
@@ -137,7 +138,7 @@ class Mk:
     @classmethod
     def user(cls):
         u = cls._user()
-        u.uuid = secrets.token_urlsafe(8)
+        u.uuid = str(uuid.uuid4())
         u.subject = hashlib.sha256(u.uuid.encode()).hexdigest()
         return u
 

@@ -1,6 +1,7 @@
 # =========================================================================== #
 import enum
 import secrets
+import uuid
 from datetime import datetime
 from typing import Annotated, Any, Callable, Dict, Set, Type, TypeAlias
 
@@ -134,10 +135,11 @@ class ChildrenGrant(str, enum.Enum):
 FieldUUID = Annotated[
     str,
     _FieldUUID := Field(
-        min_length=4,
-        max_length=16,
+        length=32,
+        # min_length=32,
+        # max_length=32,
         description="Universally unique identifier for an object.",
-        examples=[secrets.token_urlsafe(8) for _ in range(10)],
+        examples=[uuid.uuid4()],
     ),
 ]
 FieldUUIDOptional = Annotated[str | None, _FieldUUID]
