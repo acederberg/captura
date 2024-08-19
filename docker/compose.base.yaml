@@ -1,0 +1,30 @@
+---
+# version: '3.9'
+name: captura
+services:
+  server:
+    build:
+      context: '..'
+      dockerfile: './docker/dockerfile'
+      target: development
+    # NOTE: Should not include shell variables, only those from ``.env``.
+    environment:
+      CAPTURA_CONFIG_CLIENT_TEST: "${CAPTURA_CONFIG_CLIENT_TEST-/home/captura/app/configs/client.test.yaml}"
+      CAPTURA_CONFIG_CLIENT: "${CAPTURA_CONFIG_CLIENT-/home/captura/app/configs/client.yaml}"
+      CAPTURA_CONFIG_APP: "${CAPTURA_CONFIG_APP-/home/captura/app/configs/app.yaml}"
+      CAPTURA_CONFIG_APP_TEST: "${CAPTURA_CONFIG_APP_TEST-/home/captura/app/configs/app.test.yaml}"
+      CAPTURA_FLAKEY: "${CAPTURA_FLAKEY-/home/captura/app/configs/flakey.yaml}"
+      CAPTURA_PLUGINS_USE: "${CAPTURA_PLUGINS_USE-0}"
+    ports: 
+      - target: 8080
+        published: 8080
+    tty: true
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: 1
+      MYSQL_DATABASE: captura
+      MYSQL_USER: captura
+      MYSQL_PASSWORD: changeme
+
+

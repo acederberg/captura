@@ -1,0 +1,24 @@
+---
+name: captura-ci
+services:
+  server:
+    # Base should give compose minus volumes and networks (and any references to
+    # outside). 
+    build:
+      context: '..'
+      target: ci
+    extends:
+      file: ./compose.base.yaml
+      service: server
+    networks:
+      captura: {}
+  db:
+    extends:
+      file: ./compose.base.yaml
+      service: db
+    networks:
+      captura: {}
+networks:
+  captura:
+    driver: bridge
+

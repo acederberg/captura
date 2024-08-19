@@ -3,26 +3,12 @@
 name: captura
 services:
   server:
-    build:
-      context: '..'
-      dockerfile: './docker/dockerfile'
-      target: development
-    # NOTE: Should not include shell variables.
-    environment:
-      CAPTURA_CONFIG_CLIENT_TEST: "${CAPTURA_CONFIG_CLIENT_TEST-/home/captura/app/config/client.test.yaml}"
-      CAPTURA_CONFIG_CLIENT: "${CAPTURA_CONFIG_CLIENT-/home/captura/app/config/client.yaml}"
-      CAPTURA_CONFIG_APP: "${CAPTURA_CONFIG_APP-/home/captura/app/config/app.yaml}"
-      CAPTURA_CONFIG_APP_TEST: "${CAPTURA_CONFIG_APP_TEST-/home/captura/app/config/app.test.yaml}"
-      CAPTURA_FLAKEY: "${CAPTURA_FLAKEY-/home/captura/app/config/flakey.yaml}"
-      CAPTURA_PLUGINS_USE: "${CAPTURA_PLUGINS_USE-0}"
-    image: acederberg/captura-development:0.1.5
-    # container_name: captura-server
-    ports: 
-      - target: 8080
-        published: 8080
+    extends:
+      file: ./compose.base.yaml
+      service: server
+    image: acederberg/captura-ci:0.1.5
     networks:
       captura: {}
-    tty: true
     volumes:
       - '.venv:/home/captura/.venv'
       - '..:/home/captura/app'
@@ -30,13 +16,9 @@ services:
       - /home/captura/app/docker/.data
       - /home/captura/app/docker/.venv
   db:
-    image: mysql:8
-    # container_name: captura-db
-    environment:
-      MYSQL_RANDOM_ROOT_PASSWORD: 1
-      MYSQL_DATABASE: captura
-      MYSQL_USER: captura
-      MYSQL_PASSWORD: changeme
+    extends:
+      file: ./compose.base.yaml
+      service: db
     networks:
       captura: {}
     volumes:

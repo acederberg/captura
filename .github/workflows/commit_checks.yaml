@@ -117,7 +117,6 @@ jobs:
       #       More about interpolation: https://docs.docker.com/compose/environment-variables/variable-interpolation/
       - name: Setup.
         run: |
-          mkdir --parent docker/.venv
           docker_config_path='/home/captura/app/tests/assets/act.yaml'
 
           echo "CAPTURA_CONFIG_CLIENT_TEST=$docker_config_path" > .env
@@ -129,39 +128,22 @@ jobs:
       - name: Start Docker Compose Project.
         run: |
           docker compose \
-            --file docker/compose.yaml \
+            --file docker/compose.ci.yaml \
             --env-file .env \
             up --detach --quiet-pull
 
-
-          # echo -e "## Permissions on \`.venv\`.\n\n" >> $GITHUB_STEP_SUMMARY
-          #
-          # echo -e "In container:\n\n~~~" >> $GITHUB_STEP_SUMMARY
-          # docker compose \
-          #   --file docker/compose.yaml \
-          #   exec server \
-          #   bash -c "ls -lah ~" >> $GITHUB_STEP_SUMMARY
-          #
-          # echo -e "~~~\n\nWithin container venv~~~\n\n" >> $GITHUB_STEP_SUMMARY 
-          # docker compose \
-          #   --file docker/compose.yaml \
-          #   exec server \
-          #   bash -c "ls -lah ~/.venv" >> $GITHUB_STEP_SUMMARY
-          #
-          # echo -e "~~~\n\nOn host\n\n~~~" >> $GITHUB_STEP_SUMMARY
-          # ls -lah docker  >> $GITHUB_STEP_SUMMARY
-          # echo "~~~" >> $GITHUB_STEP_SUMMARY
-
           docker compose \
-            --file docker/compose.yaml \
+            --file docker/compose.ci.yaml \
             exec server \
-            bash -c 'mkdir ~/app/.venv && python -m venv ~/app/.venv'
+            bash -c ' \
+              mkdir --parents ~/app/.venv \
+              && python -m venv ~/app/.venv'
 
       # NOTE: ``act.yaml`` defined everything necessary for the client and server.
       - name: Install Dependencies In Server.
         run: |
           docker compose \
-            --file docker/compose.yaml \
+            --file docker/compose.ci.yaml \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
@@ -171,15 +153,16 @@ jobs:
       - name: Generate Dummy Data In Server.
         run: |
           docker compose \
-            --file docker/compose.yaml \
+            --file docker/compose.ci.yaml \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
+              && poetry run simulatus initialize \
               && poetry run simulatus apply'
 
           echo -e "# Dummy Data Report\n\n~~~" >> $GITHUB_STEP_SUMMARY
           docker compose \
-            --file docker/compose.yaml \
+            --file docker/compose.ci.yaml \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
@@ -190,9 +173,25 @@ jobs:
       - name: Run Tests.
         run: |
           docker compose \
-            --file docker/compose.yaml \
+            --file docker/compose.ci.yaml \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
               && pip install poetry \
-              && poetry run pytest --count 1'
+              && poetry run coverage run -m pytest --count 1'
+        continue-on-error: true
+
+      - name: Create Coverage Report.
+        run: |
+          docker compose \
+            --file docker/compose.ci.yaml \
+            exec server \
+            bash -c ' \
+              source ~/app/.venv/bin/activate \
+              && poetry run coverage html'
+
+      - name: Stop Compose Project.
+        if: always()
+        run: docker compose --file docker/compose.ci.yaml down
+
+

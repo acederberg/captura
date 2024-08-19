@@ -29,10 +29,15 @@ COPY ./docker/docker.sh /home/captura/.bashrc
 
 # --------------------------------------------------------------------------- #
 
-FROM base AS production
+FROM base AS ci
 
 # NOTE: Assumes that build is occuring at the project root.
 COPY --chown=captura:captura ./ /home/captura/app
+
+
+# --------------------------------------------------------------------------- #
+
+FROM ci AS production
 
 RUN mkdir /home/captura/.captura /home/captura/.captura/logs
 COPY ./docker/logging.yaml /home/captura/.captura
