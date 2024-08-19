@@ -97,18 +97,8 @@ UUIDSplit = Tuple[Set[str], Set[str]]
 #
 
 
-MappedColumnUUID = Annotated[
-    str,
-    mapped_column(
-        String(16),
-        default=lambda: secrets.token_urlsafe(8),
-        index=True,
-    ),
-]
-
-uuid = (
-    mapped_column(String(16), default=lambda: secrets.token_urlsafe(8), index=True),
-)
+uuid = mapped_column(String(16), default=lambda: secrets.token_urlsafe(8), index=True, unique=True)
+MappedColumnUUID = Annotated[str, uuid]
 MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 
 

@@ -20,11 +20,11 @@ services:
         published: 8080
     tty: true
   db:
-    image: mysql:8
     environment:
       MYSQL_RANDOM_ROOT_PASSWORD: 1
       MYSQL_DATABASE: captura
       MYSQL_USER: captura
       MYSQL_PASSWORD: changeme
+    image: mysql:8
 
 
