@@ -6,7 +6,7 @@ services:
     extends:
       file: ./compose.base.yaml
       service: server
-    image: acederberg/captura-ci:0.1.5
+    image: acederberg/captura-development:0.1.5
     networks:
       captura: {}
     volumes:

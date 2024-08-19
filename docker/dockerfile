@@ -29,7 +29,7 @@ COPY ./docker/docker.sh /home/captura/.bashrc
 
 # --------------------------------------------------------------------------- #
 
-FROM base AS ci
+FROM base AS base_w_repo
 
 # NOTE: Assumes that build is occuring at the project root.
 COPY --chown=captura:captura ./ /home/captura/app
@@ -37,7 +37,17 @@ COPY --chown=captura:captura ./ /home/captura/app
 
 # --------------------------------------------------------------------------- #
 
-FROM ci AS production
+FROM base_w_repo AS ci
+
+RUN mkdir --parents /home/captura/app/.venv \
+  && python -m venv /home/captura/app/.venv \
+  && .venv/bin/python3 -m pip install --quiet poetry \
+  && .venv/bin/python3 -m poetry install --with test
+
+
+# --------------------------------------------------------------------------- #
+
+FROM base_w_repo AS production
 
 RUN mkdir /home/captura/.captura /home/captura/.captura/logs
 COPY ./docker/logging.yaml /home/captura/.captura

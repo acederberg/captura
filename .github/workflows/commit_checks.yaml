@@ -49,6 +49,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache Pip
+        uses: actions/cache@v3
+        id: venv
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('poetry.lock') }}
+
       - name: Venv and Setup 
         run: |
           echo -e "## Python Info\n" >> $GITHUB_STEP_SUMMARY
@@ -125,31 +132,29 @@ jobs:
           echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
           echo "CAPTURA_FLAKEY=/home/captura/flakey.yaml" >> .env
 
+      # https://github.com/docker/build-push-action?tab=readme-ov-file#usage
+      - name: Build Server Image.
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/dockerfile
+          target: ci
+          tags: acederberg/captura-ci # should match tags in `./docker/compose.ci.yaml`. 
+
+          pull: false
+          push: false
+
+          cache-from: type=gha,ref=acederberg/captura-ci
+          cache-to: type=gha,mode=max
+
       - name: Start Docker Compose Project.
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
             --env-file .env \
-            up --detach --quiet-pull
-
-          docker compose \
-            --file docker/compose.ci.yaml \
-            exec server \
-            bash -c ' \
-              mkdir --parents ~/app/.venv \
-              && python -m venv ~/app/.venv'
+            up --detach --build --quiet-pull
 
       # NOTE: ``act.yaml`` defined everything necessary for the client and server.
-      - name: Install Dependencies In Server.
-        run: |
-          docker compose \
-            --file docker/compose.ci.yaml \
-            exec server \
-            bash -c ' \
-              source ~/app/.venv/bin/activate \
-              && pip install --quiet poetry \
-              && poetry install --with test'
-
       - name: Generate Dummy Data In Server.
         run: |
           version=$( \
@@ -166,15 +171,15 @@ jobs:
               && poetry run simulatus initialize \
               && poetry run simulatus apply'
 
-          echo -e "# Dummy Data Report\n\n~~~" >> $GITHUB_STEP_SUMMARY
-          docker compose \
-            --file docker/compose.ci.yaml \
-            exec server \
-            bash -c ' \
-              source ~/app/.venv/bin/activate \
-              && poetry run simulatus --loud reports aggregate' \
-            >> $GITHUB_STEP_SUMMARY
-          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
+          # echo -e "# Dummy Data Report\n\n~~~" >> $GITHUB_STEP_SUMMARY
+          # docker compose \
+          #   --file docker/compose.ci.yaml \
+          #   exec server \
+          #   bash -c ' \
+          #     source ~/app/.venv/bin/activate \
+          #     && poetry run simulatus --loud reports aggregate' \
+          #   >> $GITHUB_STEP_SUMMARY
+          # echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
 
       - name: Run Tests.
         run: |
@@ -195,6 +200,7 @@ jobs:
             bash -c ' \
               source ~/app/.venv/bin/activate \
               && poetry run coverage html'
+        continue-on-error: true
 
       - name: Stop Compose Project.
         if: always()
