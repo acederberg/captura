@@ -7,6 +7,9 @@ services:
       context: '..'
       dockerfile: './docker/dockerfile'
       target: development
+    depends_on:
+      db:
+        condition: service_healthy 
     # NOTE: Should not include shell variables, only those from ``.env``.
     environment:
       CAPTURA_CONFIG_CLIENT_TEST: "${CAPTURA_CONFIG_CLIENT_TEST-/home/captura/app/configs/client.test.yaml}"
@@ -25,6 +28,11 @@ services:
       MYSQL_DATABASE: captura
       MYSQL_USER: captura
       MYSQL_PASSWORD: changeme
+    healthcheck:
+      test: "mysqladmin ping --user captura --password=changeme"
+      interval: 1s
+      retries: 120
     image: mysql:8
+
 
 
