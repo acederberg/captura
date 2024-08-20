@@ -1,0 +1,110 @@
+name: Commit Checks.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths-ignore:
+      - '**.rst'
+  push:
+
+jobs:
+  # NOTE: https://commitlint.js.org/guides/ci-setup.html
+  lint-commit:
+    name: Lint Commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install required dependencies
+        run: |
+          sudo apt update && sudo apt install -y git curl
+
+          curl -sL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y nodejs
+
+          npm install conventional-changelog-conventionalcommits
+          npm install commitlint@latest @commitlint/config-conventional
+
+      - name: Print versions
+        run: |
+          echo "git version: $(git --version)" >> $GITHUB_STEP_SUMMARY
+          echo "node version: $(node --version)" >> $GITHUB_STEP_SUMMARY
+          echo "npm version: $(npm --version)" >> $GITHUB_STEP_SUMMARY
+          echo "commitlint version: $(npx commitlint --version)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Validate current commit (last commit) with commitlint
+        if: github.event_name == 'push'
+        run: npx commitlint --last --verbose
+
+  lint-code:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Pip
+        uses: actions/cache@v3
+        id: venv
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('poetry.lock') }}
+
+      - name: Venv and Setup 
+        run: |
+          echo -e "## Python Info\n" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Version: \`$( python --version )\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Python Binary: \`$( which python )\`" >> $GITHUB_STEP_SUMMARY
+
+          python -m venv .venv
+          source .venv/bin/activate
+
+          python -m pip install poetry mypy ruff
+          poetry install
+
+      - name: MyPy Check Source.
+        id: mypy_check_src
+        run: |
+          source .venv/bin/activate
+
+          echo -e "## MyPy \`./src\`\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          poetry run mypy --config-file pyproject.toml --pretty ./src >> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: MyPy Check Tests.
+        id: mypy_check_tests
+        run: |
+          source .venv/bin/activate
+
+          echo -e "## MyPy \`./tests\`\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          poetry run mypy --config-file pyproject.toml --pretty ./tests >> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Ruff Linting.
+        id: ruff
+        run: |
+          source .venv/bin/activate
+
+          echo -e "## Ruff\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          poetry run ruff check --config pyproject.toml --output-format github .>> $GITHUB_STEP_SUMMARY
+          echo -e "~~~\n" >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - run: |
+          if ( \
+            [ "${{ steps.mypy_check_src.outcome }}" != "success" ] \
+            || [ "${{ steps.mypy_check_tests.outcome }}" != "success" ] \
+            || [ "${{ steps.ruff.outcome }}" != 'success' ]
+          ); then
+            echo "One or more checks failed. See the summary for details."
+            exit 1
+          fi
+

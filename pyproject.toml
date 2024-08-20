@@ -1,102 +1,77 @@
-
-# vi: set ft=toml:
-# Read `this <https://snarky.ca/what-the-heck-is-pyproject-toml/>`.
-
 [build-system]
-requires = ["setuptools >= 40.6.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
 
-[project]
-authors = [{name = "Adrian Cederberg", email = "adrn.cederberg123@gmail.com"}, ]
-name = "captura"
+[tool.poetry]
+name="captura"
+packages = [
+  {include="captura", from="src"},
+  {include="legere", from="src"},
+  {include="simulatus", from="src"}
+]
 version = "0.1.5"
-description = "An api to serve markdown and reStructured text as json or rendered HTML."
+description = "A framework for adding sharing and collections to existing API projects."
+authors = ["Adrian Cederberg <adrn.cederberg123@gmail.com>"]
+license = "MIT"
 readme = "README.rst"
-keywords = ["api", "rst", "markdown"]
-#liscense = "Lisense :: OSI Approved :: MIT License"
-
-# NOTE: Requires structural pattern matching.
-classifiers = [
-    'Programming Language :: Python',
-    'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3 :: Only',
-    'Programming Language :: Python :: 3.11',
-    'Intended Audience :: Developers',
-    'Topic :: Internet',
-]
-dependencies = [
-  "uvicorn",
-  "cryptography",
-  "fastapi",
-	"pydantic>=2,<2.7",
-  "pydantic-settings>=2",
-  "python-multipart",
-  "sqlalchemy>=2",
-  "yaml-settings-pydantic>=2.2.0",
-  "PyMySQL",
-  "PyMySQL[rsa]",
-  "typer",
-  "rich",
-  "pyjwt[crypto]",
-	"httpx",
-  "websockets",
-  "itsdangerous",
-]
-
-requires-python = ">=3.11" # because spm
 
 
-
-[project.optional-dependencies]
-ci = [
-  "build",
-  "twine",
-]
-dev = [
-	"black",
-	"flake8",
-	"mypy",
-	"isort",
-  "autoflake",
-  "jedi-language-server",
-  "docker",
-  "yamllint",
-]
-test = [
-	"pytest",
-  "pytest-cov",
-  "pytest-asyncio",
-  "pytest-html",
-  "pytest-xdist", 
-  # "pytest-flakefinder",
-  "faker",
-]
-plugin = ["GitPython"]
-
-[project.scripts]
-captura = "app.__main__:main"
+[tool.poetry.scripts]
+captura = "captura.__main__:main"
 plugin = "plugin.__main__:main"
-legere = "client.__main__:main"
-simulatus = "dummy.__main__:main"
+legere = "legere.__main__:main"
+simulatus = "simulatus.__main__:main"
 
 
-# NOTE: DO NOT TOUCH THIS! INCLUSION OF PACKAGE DATA IS A PAIN! See
-#
-# .. code:: text
-#
-#    https://stackoverflow.com/questions/76485082/package-and-find-non-python-files-in-a-python-package
-#
-[tool.setuptools]
-include-package-data = true
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.112.0"
+pydantic = "^2.8.2"
+pydantic-settings = "^2.4.0"
+SQLAlchemy = "^2.0.32"
+yaml-settings-pydantic = "^2.3.2"
+PyMySQL = {extras = ["rsa"], version = "^1.1.1"}
+uvicorn = "^0.30.5"
+typer = "^0.12.3"
+python-multipart = "^0.0.9"
+rich = "^13.7.1"
+pyjwt = "^2.9.0"
+itsdangerous = "^2.2.0"
+httpx = "^0.27.0"
+types-pyyaml = "^6.0.12.20240808"
 
-[tool.setuptools.packages.find]
-where = ["src"]
 
-[tool.setuptools.package-data]
-"*" = ["py.typed", "*.yaml", "*.rst", "*.j2"]
+[tool.poetry.group.dev.dependencies]
+black = "^24.8.0"
+flake8 = "^7.1.1"
+mypy = "^1.11.1"
+isort = "^5.13.2"
+autoflake = "^2.3.1"
+jedi-language-server = "^0.41.4"
+docker = "^7.1.0"
+yamllint = "^1.35.1"
+pylsp-mypy = "^0.6.8"
+python-lsp-server = "^1.11.0"
 
 
+
+[tool.poetry.group.ci.dependencies]
+build = "^1.2.1"
+twine = "^5.1.1"
+
+
+[tool.poetry.group.plugin.dependencies]
+gitpython = "^3.1.43"
+
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.3.2"
+pytest-cov = "^5.0.0"
+pytest-asyncio = "^0.23.8"
+pytest-html = "^4.1.1"
+pytest-xdist = "^3.6.1"
+faker = "^26.3.0"
 
 
 [tool.black]
@@ -138,7 +113,10 @@ recursive = true
 [tool.mypy]
 ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
-
+exclude = [
+  "^tests/(.*/)?test_.*.py",
+  "^tests/junk",
+]
 
 # NOTE: See the following reference for this plugin:
 #
@@ -154,8 +132,8 @@ warn_required_dynamic_aliases = true
 
 [tool.bumpver]
 current_version = "0.1.5"
-version_pattern = "MAJOR.MINOR.PATCH"
-commit_message  = "Bump version {old_version} -> {new_version}"
+version_pattern = "MAJOR.MINOR.PATCH[-TAG]"
+commit_message  = "chore(version): Bump version {old_version} -> {new_version}"
 commit          = true
 tag             = true
 push            = false
@@ -163,8 +141,10 @@ push            = false
 
 [tool.bumpver.file_patterns]
 "pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
-"src/app/__init__.py" = ["{version}"]
-"docker/docker-compose.yaml" = ["image: acederberg/captura-development:{version}"]
+"src/captura/__init__.py" = ["{version}"]
+"docker/compose.yaml" = ["image: acederberg/captura-development:{version}"]
+"docker/compose.ci.yaml" = ["image: acederberg/captura-ci:{version}"]
+".github/workflows/pr_checks.yaml" = ["tags: acederberg/captura-ci:{version}"]
 
 
 [tool.setuptools_scm]
@@ -186,14 +166,14 @@ flakey_ignore_err = [
 # NOTE: Reference https://coverage.readthedocs.io/en/latest/config.html#sample-file
 [tool.coverage.run]
 branch = true
-include = ["./src/app/**/*.py"]
+include = ["./src/captura/**/*.py", "./src/legere/**/*.py"]
 omit = ["./tests/**/*.py"]
 
 
 [tool.coverage.report]
 fail_under = 75
-format = "html"
-include = ["./src/app/**/*.py"]
+# format = "html"
+include = ["./src/captura/**/*.py", "./src/legere/**/*.py"]
 omit = ["./tests/**/*.py"]
 skip_covered = true
 skip_empty = true
@@ -204,3 +184,7 @@ sort = "-cover" # NOTE: Sort from least to greatest coverage.
 [tool.coverage.html]
 directory = "./src/app/static/cov"
 title = "Captura PyTest Coverage Report"
+
+
+[tool.ruff]
+exclude = ["./tests/**/test_*.py"]

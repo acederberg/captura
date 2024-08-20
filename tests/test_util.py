@@ -4,8 +4,7 @@ import secrets
 from unittest import mock
 
 # --------------------------------------------------------------------------- #
-from app import util
-from client.config import Config
+from captura import util
 
 
 class TestEnv:

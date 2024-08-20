@@ -1,16 +1,15 @@
-import pytest
 from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
-from app.controllers.base import (
+from captura.controllers.base import (
     Data,
     KindData,
     ResolvedCollection,
     ResolvedDocument,
     ResolvedEvent,
 )
-from app.models import Assignment, Collection, Document, Event, Grant, KindObject
-from dummy import DummyProvider
+from captura.models import Assignment, Collection, Document, Event, Grant, KindObject
+from simulatus import DummyProvider
 
 
 class TestDelete:

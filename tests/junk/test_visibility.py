@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 # --------------------------------------------------------------------------- #
-from client.requests import Requests
+from legere.requests import Requests
 
 from . import util
 

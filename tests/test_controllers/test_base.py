@@ -3,21 +3,19 @@ from http import HTTPMethod
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.orm import sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app.controllers.base import (
+from captura.controllers.base import (
     BaseController,
     BaseResolved,
     KindData,
     ResolvedAssignmentDocument,
     ResolvedDocument,
-    ResolvedGrantUser,
     ResolvedUser,
 )
-from app.models import Collection, Document, uuids
-from app.schemas import mwargs
-from dummy import DummyProvider
+from captura.models import uuids
+from captura.schemas import mwargs
+from simulatus import DummyProvider
 
 
 def test_UuidSetFromModel(dummy: DummyProvider):

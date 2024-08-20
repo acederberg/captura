@@ -8,12 +8,12 @@ from sqlalchemy import Update, select
 from sqlalchemy.orm import Session, make_transient
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import H
-from app.controllers.base import Data
-from app.controllers.create import Create
-from app.controllers.delete import AssocData, Delete
-from app.models import Document, Grant, KindEvent, KindObject, Level, User
-from app.schemas import AssignmentCreateSchema, GrantCreateSchema
+from captura.controllers.access import H
+from captura.controllers.base import Data
+from captura.controllers.create import Create
+from captura.controllers.delete import AssocData, Delete
+from captura.models import Document, Grant, KindEvent, KindObject, Level, User
+from captura.schemas import AssignmentCreateSchema, GrantCreateSchema
 from tests.test_controllers.test_delete_assoc import (
     CASES_ASSOCS,
     BaseTestAssoc,

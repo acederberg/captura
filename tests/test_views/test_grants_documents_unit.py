@@ -5,11 +5,11 @@ from typing import Any, ClassVar, Dict, List
 import httpx
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import false, select
+from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
-from app.controllers.access import H
-from app.err import (
+from captura.controllers.access import H
+from captura.err import (
     ErrAccessDocumentCannotRejectOwner,
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
@@ -17,16 +17,9 @@ from app.err import (
     ErrDetail,
     ErrObjMinSchema,
 )
-from app.fields import (
-    KindObject,
-    Level,
-    LevelHTTP,
-    LevelStr,
-    PendingFrom,
-    PendingFromStr,
-)
-from app.models import Assignment, Document, Grant, User, uuids
-from app.schemas import (
+from captura.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
+from captura.models import Document, Grant, uuids
+from captura.schemas import (
     AsOutput,
     DocumentSchema,
     GrantSchema,
@@ -34,10 +27,10 @@ from app.schemas import (
     OutputWithEvents,
     mwargs,
 )
-from client.handlers import CONSOLE
-from client.requests import Requests
-from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import COUNT, BaseEndpointTest
+from legere.requests import Requests
+from simulatus import DummyProvider
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest
 
 N_CASES: int = 1
 

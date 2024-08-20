@@ -7,8 +7,8 @@ from pydantic import Field, model_validator
 from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.config import BaseHashable
+from captura import util
+from captura.config import BaseHashable
 
 PATTERN_GITHUB = re.compile(
     "(?P<scheme>https|ssh)://(?P<auth>(?P<auth_username>[a-zA-Z0-9]+):?(?P<auth_password>.+)?@)?github.com/(?P<slug>(?P<username>[a-zA-Z0-9_-]+)/(?P<repository>[a-zA-Z0-9_-]+))(?P<dotgit>\\.git)?(?P<path>/.*)?"
@@ -58,14 +58,14 @@ class RepoConfig(BaseHashable):
     def ensure(cls, repository: str, path: str) -> git.Repo:
         repo = (
             git.Repo.clone_from(repository, to_path=path)
-            if path is None or not util.Path.exists(path)
+            if path is None or not util.path.exists(path)
             else git.Repo(path)
         )
         return repo
 
-    def configure(self):
+    def configure(self) -> None:
         path = self.path
-        if util.p.exists(path) and not util.p.isdir(path):
+        if util.path.exists(path) and not util.path.isdir(path):
             raise ValueError(f"Clone path `{path}` must be a directory.")
 
         repo = self.ensure(self.repository, path)

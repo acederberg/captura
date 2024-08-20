@@ -1,8 +1,8 @@
 import yaml
 
 # --------------------------------------------------------------------------- #
-from client.handlers import CONSOLE
-from client.requests.base import BaseTyperizable
+from legere.handlers import CONSOLE
+from legere.requests.base import BaseTyperizable
 from plugin.config import PluginsConfig
 
 

@@ -2,19 +2,17 @@
 import inspect
 import secrets
 from http import HTTPMethod  # type: ignore[attr-defined]
-from typing import Any, ClassVar, Dict, Generator, NamedTuple, Set, Tuple, Type
+from typing import ClassVar, Dict, Generator, NamedTuple, Set, Tuple, Type
 
 import pytest
-from fastapi import HTTPException
 from pydantic import TypeAdapter
-from sqlalchemy import false, func, select, update
-from sqlalchemy.orm import Session, make_transient
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.auth import Auth, Token
-from app.controllers.access import Access, WithAccess, with_access
-from app.controllers.base import (
+from captura import util
+from captura.controllers.access import Access
+from captura.controllers.base import (
     Data,
     KindData,
     ResolvedAssignmentCollection,
@@ -26,9 +24,8 @@ from app.controllers.base import (
     ResolvedGrantUser,
     ResolvedUser,
 )
-from app.err import (
+from captura.err import (
     ErrAccessCollection,
-    ErrAccessDocumentCannotRejectOwner,
     ErrAccessDocumentGrantBase,
     ErrAccessDocumentGrantInsufficient,
     ErrAccessDocumentPending,
@@ -36,23 +33,20 @@ from app.err import (
     ErrAccessUser,
     ErrObjMinSchema,
 )
-from app.fields import LevelHTTP
-from app.models import (
-    Assignment,
+from captura.fields import LevelHTTP
+from captura.models import (
     Collection,
     Document,
     Event,
     Grant,
-    KindEvent,
     KindObject,
     Level,
     PendingFrom,
     User,
     UUIDSplit,
-    uuids,
 )
-from dummy import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
-from tests.test_controllers.util import check_exc, expect_exc, stringify
+from simulatus import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
+from tests.test_controllers.util import expect_exc
 
 from ..conftest import COUNT
 

@@ -1,32 +1,27 @@
 # =========================================================================== #
 import argparse
-from datetime import datetime
-from os import path
-from typing import Annotated, Any, AsyncGenerator, Dict, Iterable, List, Self, Set
+import os
 
-import httpx
 import pytest
-import pytest_asyncio
 import yaml
 from _pytest.stash import StashKey
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from pydantic import BaseModel
-from sqlalchemy import delete, select, text, true
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker as _sessionmaker
-from yaml_settings_pydantic import BaseYamlSettings, YamlFileConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import depends, util
-from app.auth import Auth
-from app.config import AppConfig
-from app.models import Base, User
-from app.schemas import mwargs
-from app.views import AppView
-from dummy import DummyHandler, DummyProvider, DummyProviderYAML
+from captura import depends, util
+from captura.auth import Auth
+from captura.config import AppConfig
+from captura.models import Base
+from captura.schemas import mwargs
+from captura.views import AppView
+from simulatus import DummyHandler, DummyProvider, DummyProviderYAML
 from tests.config import PytestClientConfig, PytestConfig
-from tests.flakey import FLAKEY_PATH, Flake, Flakey
+from tests.flakey import FLAKEY_PATH, Flakey
 
 logger = util.get_logger(__name__)
 
@@ -44,6 +39,7 @@ FLAKEY = True
 #
 #          https://docs.pytest.org/en/7.1.x/reference/reference.html
 #
+STASHKEY_FLAKEY = StashKey[bool]()
 STASHKEY_CONFIG_FLAKEY = StashKey[Flakey]()
 STASHKEY_CONFIG_CAPTRUA = StashKey[PytestConfig]()
 STASHKEY_CONFIG_LEGERE = StashKey[PytestClientConfig]()
@@ -54,7 +50,7 @@ def pytest_exception_interact(
     call: pytest.CallInfo,
     report: pytest.CollectReport | pytest.TestReport,
 ):
-    if FLAKEY:
+    if node.config.stash[STASHKEY_FLAKEY]:
         return
 
     logger.debug("Check exception from `%s` for flakeyness.", node.name)
@@ -184,14 +180,19 @@ def pytest_configure(config: pytest.Config):
 
     flakey = config.getoption("--flakey")
     flakey_clear = config.getoption("--flakey-clear")
+    if flakey_clear and os.path.exists(FLAKEY_PATH):
+        os.remove(FLAKEY_PATH)
+
     flakey_ignore_ini = config.getini("flakey_ignore") or list()
     flakey_ignore_ini_err = config.getini("flakey_ignore_err") or list()
-    Flakey.yaml_ensure(bool(flakey_clear))
-    global FLAKEY
-    FLAKEY = flakey
+    config.stash[STASHKEY_FLAKEY] = bool(flakey)
 
-    flakey = mwargs(Flakey, ignore=flakey_ignore_ini, ignore_err=flakey_ignore_ini_err)
-    config.stash[STASHKEY_CONFIG_FLAKEY] = flakey
+    config_flakey = mwargs(
+        Flakey,
+        ignore=flakey_ignore_ini,
+        ignore_err=flakey_ignore_ini_err,
+    )
+    config.stash[STASHKEY_CONFIG_FLAKEY] = config_flakey
 
     config_captura = resolve_config_captura(config)
     if generate_dummies := config.getoption("--generate-dummies"):
@@ -297,6 +298,7 @@ def app(client_config: PytestClientConfig, config: PytestConfig) -> FastAPI | No
         return app
     else:
         logger.warning("Using remote host for testing. Not recommended in CI!")
+        return None
 
 
 @pytest.fixture(scope="session")
@@ -310,13 +312,13 @@ def auth(config: PytestConfig) -> Auth:
 
 @pytest.fixture(scope="session")
 def engine(config: PytestConfig) -> Engine:
-    logger.debug("Creating engine from application configuration.")
+    logger.debug("Creating engine from capturalication configuration.")
     return config.engine()
 
 
 @pytest.fixture(scope="session")
 def sessionmaker(engine: Engine) -> _sessionmaker[Session]:
-    logger.debug("Creating sessionmaker from application configuration.")
+    logger.debug("Creating sessionmaker from capturalication configuration.")
     return _sessionmaker(engine)
 
 

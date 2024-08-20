@@ -10,9 +10,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.auth import Auth
-from app.models import (
+from captura import __version__, util
+from captura.auth import Auth
+from captura.models import (
     AssocCollectionDocument,
     AssocUserDocument,
     ChildrenCollection,
@@ -23,8 +23,8 @@ from app.models import (
     KindObject,
     User,
 )
-from app.schemas import CollectionMetadataSchema, CollectionSchema, EventSchema
-from client.requests import CollectionRequests, Requests, UserRequests
+from captura.schemas import CollectionMetadataSchema, CollectionSchema, EventSchema
+from legere.requests import CollectionRequests, Requests, UserRequests
 
 from . import util
 from .test_assignments import TestAssignmentView

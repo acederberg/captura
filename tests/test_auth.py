@@ -1,7 +1,7 @@
 import pytest
 
 # --------------------------------------------------------------------------- #
-from app.auth import PATTERN_BEARER, Auth, TokenPermissionPattern, permission_parse
+from captura.auth import PATTERN_BEARER, Auth, TokenPermissionPattern, permission_parse
 
 
 @pytest.fixture(scope="session")

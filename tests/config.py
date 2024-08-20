@@ -1,24 +1,22 @@
 # =========================================================================== #
-import json
-from typing import Annotated, ClassVar, Dict
+from typing import Annotated, ClassVar
 
 import pytest
 import typer
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import Field
 from rich.console import Console
 from typing_extensions import Doc
 from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.config import BaseHashable, Config
-from app.schemas import mwargs
-from client import Config as ClientConfig
-from client import flags
-from client.config import ProfileConfig
-from client.handlers import ConsoleHandler
-from client.requests.base import BaseTyperizable, typerize
-from dummy import ConfigSimulatus
+from captura import util
+from captura.config import BaseHashable
+from captura.schemas import mwargs
+from legere import Config as ClientConfig
+from legere import flags
+from legere.handlers import ConsoleHandler
+from legere.requests.base import BaseTyperizable, typerize
+from simulatus import ConfigSimulatus
 
 
 class PytestSubConfig(BaseHashable):
@@ -70,6 +68,7 @@ class PytestConfig(ConfigSimulatus):
         env_nested_delimiter="__",
         extra="allow",
     )
+
     tests: PytestSubConfig
 
 

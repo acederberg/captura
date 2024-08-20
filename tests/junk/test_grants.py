@@ -10,9 +10,9 @@ from sqlalchemy import delete, literal_column, select
 from sqlalchemy.orm import Session, make_transient, sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.auth import Auth
-from app.models import (
+from captura import __version__, util
+from captura.auth import Auth
+from captura.models import (
     AssocUserDocument,
     ChildrenUser,
     Document,
@@ -21,8 +21,8 @@ from app.models import (
     Level,
     User,
 )
-from app.schemas import DocumentSchema, EventSchema, GrantSchema
-from client.requests import GrantRequests, Requests
+from captura.schemas import DocumentSchema, EventSchema, GrantSchema
+from legere.requests import GrantRequests, Requests
 
 from . import util
 

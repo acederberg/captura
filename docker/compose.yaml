@@ -1,0 +1,30 @@
+---
+# version: '3.9'
+name: captura
+services:
+  server:
+    extends:
+      file: ./compose.base.yaml
+      service: server
+    image: acederberg/captura-development:0.1.5
+    networks:
+      captura: {}
+    volumes:
+      - '.venv:/home/captura/.venv'
+      - '..:/home/captura/app'
+      # NOTE: Overwrite the data volumes since they slow down refresh.
+      - /home/captura/app/docker/.data
+      - /home/captura/app/docker/.venv
+  db:
+    extends:
+      file: ./compose.base.yaml
+      service: db
+    networks:
+      captura: {}
+    volumes:
+      - .data/mysql:/var/lib/mysql
+networks:
+  captura:
+    driver: bridge
+
+

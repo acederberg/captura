@@ -3,26 +3,27 @@ import asyncio
 import json
 import secrets
 from http import HTTPMethod
-from typing import ClassVar, Dict, List
+from typing import ClassVar, List
 
 import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
-from app.err import (
+from captura.err import (
     ErrAccessUser,
     ErrAssocRequestMustForce,
     ErrDetail,
     ErrObjMinSchema,
     ErrUpdateGrantPendingFrom,
 )
-from app.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
-from app.models import Document, Grant, User
-from app.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
-from client.requests import Requests
-from dummy import DummyProvider, GetPrimaryKwargs
-from tests.test_views.util import COUNT, BaseEndpointTest
+from captura.fields import KindObject, Level, LevelStr, PendingFrom, PendingFromStr
+from captura.models import Document, Grant, User
+from captura.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
+from legere.requests import Requests
+from simulatus import DummyProvider, GetPrimaryKwargs
+from tests.conftest import COUNT
+from tests.test_views.util import BaseEndpointTest
 
 
 class CommonUsersGrantsTests(BaseEndpointTest):

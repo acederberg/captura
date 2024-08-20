@@ -27,3 +27,7 @@ plugins
 plugins.yaml
 mysql-data
 .data
+dist
+test.md
+*.log
+.env

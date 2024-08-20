@@ -2,7 +2,6 @@
 import abc
 import functools
 import json
-from http import HTTPMethod
 from typing import (
     Any,
     AsyncGenerator,
@@ -25,16 +24,14 @@ from pydantic import TypeAdapter
 from sqlalchemy import func
 
 # --------------------------------------------------------------------------- #
-from app.auth import Auth
-from app.err import ErrDetail
-from app.fields import Level
-from app.models import Document, Grant, User
-from app.schemas import EventSchema
-from client.handlers import CONSOLE, AssertionHandler
-from client.requests import Requests
-from dummy import DummyHandler, DummyProvider
+from captura.err import ErrDetail
+from captura.fields import Level
+from captura.models import Document, Grant, User
+from captura.schemas import EventSchema
+from legere.requests import Requests
+from simulatus import DummyProvider
 
-from ..conftest import COUNT, PytestClientConfig
+from ..conftest import PytestClientConfig
 
 DEFAULT_UUID_COLLECTION: str = "foo-ooo-ool"
 DEFAULT_UUID_DOCS: str = "aaa-aaa-aaa"

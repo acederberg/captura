@@ -10,8 +10,8 @@ from sqlalchemy import and_, delete, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.models import (
+from captura import __version__, util
+from captura.models import (
     AssocCollectionDocument,
     ChildrenCollection,
     ChildrenUser,
@@ -20,8 +20,8 @@ from app.models import (
     KindObject,
     User,
 )
-from app.schemas import AssignmentSchema, EventSchema
-from client.requests import AssignmentRequests, Requests
+from captura.schemas import AssignmentSchema, EventSchema
+from legere.requests import AssignmentRequests, Requests
 
 from . import util
 

@@ -1,23 +1,30 @@
 # =========================================================================== #
-import os
 import re
 from datetime import datetime
-from typing import Annotated, Any, Dict, List
+from typing import Annotated, List
 
 import pytest
-import yaml
 from pydantic import BaseModel, Field
-from pytest import CallInfo, StashKey
-from yaml_settings_pydantic import BaseYamlSettings, YamlSettingsConfigDict
+from pytest import StashKey
+from yaml_settings_pydantic import (
+    BaseYamlSettings,
+    YamlFileConfigDict,
+    YamlSettingsConfigDict,
+)
 
 # --------------------------------------------------------------------------- #
-from app import util
-from app.schemas import mwargs
+from captura import util
+from captura.schemas import mwargs
 
-FLAKEY_PATH = util.Path.config("flakey.yaml")
+FLAKEY_PATH = util.path.realpath(
+    util.from_env(
+        "FLAKEY",
+        util.Path.config("flakey.yaml"),
+    )
+)
 
 
-# NOTE: See `pytest_exception_interact` for details.
+# NOTE: See ``pytest_exception_interact`` for details.
 class Flake(BaseModel):
     id: str
     name_parent: str | None
@@ -30,7 +37,9 @@ class Flake(BaseModel):
 
 # NOTE: Instance is loaded in hook ``pytest_configure``.
 class Flakey(BaseYamlSettings):
-    model_config = YamlSettingsConfigDict(yaml_files=FLAKEY_PATH)
+    model_config = YamlSettingsConfigDict(
+        yaml_files={FLAKEY_PATH: YamlFileConfigDict(required=False)}
+    )
 
     def is_ignored_node(self, node: pytest.Item) -> bool:
         matches_ignored = any(exp.match(node.name) for exp in self.ignore)
@@ -46,7 +55,7 @@ class Flakey(BaseYamlSettings):
 
     def register(self, node: pytest.Item, call: pytest.CallInfo) -> None | Flake:
         if self.is_ignored_call(call) or self.is_ignored_node(node):
-            return
+            return None
 
         self.flakes.append(
             flake := mwargs(
@@ -83,13 +92,6 @@ class Flakey(BaseYamlSettings):
         ),
     ]
     flakes: Annotated[List[Flake], Field(default_factory=list)]
-
-    @classmethod
-    def yaml_ensure(cls, clear: bool = False):
-
-        if not os.path.exists(FLAKEY_PATH) or clear:
-            with open(FLAKEY_PATH, "w") as file:
-                yaml.dump(dict(flakes=list()), file)
 
 
 FLAKEY_STASHKEY = StashKey[Flakey]()

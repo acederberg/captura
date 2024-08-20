@@ -7,10 +7,9 @@ from sqlalchemy import func, literal_column, select
 from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.auth import Auth
-from app.fields import Level, PendingFrom
-from app.models import (
+from captura import __version__, util
+from captura.fields import Level, PendingFrom
+from captura.models import (
     Assignment,
     Collection,
     Document,
@@ -20,9 +19,8 @@ from app.models import (
     KindObject,
     KindSelect,
     Resolvable,
-    resolve_model,
 )
-from dummy import DummyHandler, DummyProvider
+from simulatus import DummyHandler, DummyProvider
 from tests.check import Check
 from tests.conftest import COUNT
 

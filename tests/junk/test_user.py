@@ -9,11 +9,11 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
 # --------------------------------------------------------------------------- #
-from app import __version__, util
-from app.auth import Auth
-from app.models import ChildrenUser, Collection, Document, KindEvent, KindObject
-from app.schemas import EventSchema, UserSchema
-from client.requests import UserRequests
+from captura import __version__, util
+from captura.auth import Auth
+from captura.models import ChildrenUser, Collection, Document, KindEvent, KindObject
+from captura.schemas import EventSchema, UserSchema
+from legere.requests import UserRequests
 
 from . import util
 
