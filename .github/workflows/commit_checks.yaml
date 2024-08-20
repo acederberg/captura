@@ -116,12 +116,28 @@ jobs:
       - name: Checkout.
         uses: actions/checkout@v4
 
-      # NOTE: ``mkdir`` step is required for propper permissions on ``~/.venv`` 
-      #       (not used here).
-      #       
-      #       Use ``docker compose --file docker/compose.yaml config | less``
+      # NOTE: Use ``docker compose --file docker/compose.yaml config | less``
       #       to see the config with interpolated variables from ``.env``.
       #       More about interpolation: https://docs.docker.com/compose/environment-variables/variable-interpolation/
+      #
+      # NOTE: More on caching can be found in the following: 
+      #       - https://github.com/docker/build-push-action?tab=readme-ov-file#usage
+      #       - https://docs.docker.com/build/cache/backends/gha/
+      - name: Setup Docker Buildx.
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Server Image.
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/dockerfile
+          target: ci
+          tags: acederberg/captura-ci # should match tags in `./docker/compose.ci.yaml`. 
+          pull: false
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Setup.
         run: |
           docker_config_path='/home/captura/app/tests/assets/act.yaml'
@@ -131,21 +147,6 @@ jobs:
           echo "CAPTURA_CONFIG_APP_TEST=$docker_config_path" >> .env
           echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
           echo "CAPTURA_FLAKEY=/home/captura/flakey.yaml" >> .env
-
-      # https://github.com/docker/build-push-action?tab=readme-ov-file#usage
-      - name: Build Server Image.
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./docker/dockerfile
-          target: ci
-          tags: acederberg/captura-ci # should match tags in `./docker/compose.ci.yaml`. 
-
-          pull: false
-          push: false
-
-          cache-from: type=gha,ref=acederberg/captura-ci
-          cache-to: type=gha,mode=max
 
       - name: Start Docker Compose Project.
         run: |
