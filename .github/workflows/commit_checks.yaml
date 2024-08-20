@@ -196,8 +196,16 @@ jobs:
               && poetry run coverage run -m pytest --count 1'
         continue-on-error: true
 
+      # --------------------------------------------------------------------- #
+      # NOTE: ``master`` only.
+      # if: |
+      #   contains('
+      #     refs/heads/master
+      #     refs/heads/development
+      #   ', github.ref)
+      #
       - name: Create Coverage Report.
-        # if: github.ref == 'refs/heads/master'
+        id: coverage-report
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
@@ -207,28 +215,38 @@ jobs:
               && poetry run coverage html --directory ./coverage-report'
         continue-on-error: true
 
-      # --------------------------------------------------------------------- #
-      # NOTE: ``master`` only.
-
       - name: Copy Coverage Report To Host.
-        # if: github.ref == 'refs/heads/master'
+        id: coverage-report-to-host
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
             cp server:/home/captura/app/coverage-report ./coverage-report
 
-      - name: Put Coverage Report On GitHub Pages.
-        # if: github.ref == 'refs/heads/master'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: $GITHUB_BRANCH
-          folder: coverage-report # The folder the action should deploy.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
+      - name: Upload Coverage Report.
+        id: coverage-report-upload
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './coverage-report'
+
+      - name: Deploy to GitHub Pages
+        id: coverage-report-pages
+        uses: actions/deploy-pages@v4
 
       # --------------------------------------------------------------------- #
       # NOTE: Finalize.
+      #
       - name: Stop Compose Project.
         if: always()
         run: docker compose --file docker/compose.ci.yaml down
+
+
+  # coverage:
+  #   name: PyTest
+  #   runs-on: ubuntu-latest
+  #   steps: 
+
 
 
