@@ -222,18 +222,15 @@ jobs:
             --file docker/compose.ci.yaml \
             cp server:/home/captura/app/coverage-report ./coverage-report
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      # NOTE: Why? https://github.com/actions/starter-workflows/blob/main/pages/static.yml
+      # - name: Configure Pages
+      #   uses: actions/configure-pages@v5
 
       - name: Upload Coverage Report.
         id: coverage-report-upload
         uses: actions/upload-pages-artifact@v3
         with:
           path: './coverage-report'
-
-      - name: Deploy to GitHub Pages
-        id: coverage-report-pages
-        uses: actions/deploy-pages@v4
 
       # --------------------------------------------------------------------- #
       # NOTE: Finalize.
@@ -243,10 +240,18 @@ jobs:
         run: docker compose --file docker/compose.ci.yaml down
 
 
-  # coverage:
-  #   name: PyTest
-  #   runs-on: ubuntu-latest
-  #   steps: 
+  coverage:
+    needs: pytest
+    name: PyTest
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps: 
+      - name: Deploy to GitHub Pages
+        id: coverage-report-pages
+        uses: actions/deploy-pages@v4
+
 
 
 
