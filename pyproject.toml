@@ -132,8 +132,8 @@ warn_required_dynamic_aliases = true
 
 [tool.bumpver]
 current_version = "0.1.5"
-version_pattern = "MAJOR.MINOR.PATCH[:TAG]"
-commit_message  = "Bump version {old_version} -> {new_version}"
+version_pattern = "MAJOR.MINOR.PATCH[-TAG]"
+commit_message  = "chore(version): Bump version {old_version} -> {new_version}"
 commit          = true
 tag             = true
 push            = false
@@ -141,10 +141,10 @@ push            = false
 
 [tool.bumpver.file_patterns]
 "pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
-"src/app/__init__.py" = ["{version}"]
+"src/captura/__init__.py" = ["{version}"]
 "docker/compose.yaml" = ["image: acederberg/captura-development:{version}"]
 "docker/compose.ci.yaml" = ["image: acederberg/captura-ci:{version}"]
-".github/workflows/" = ["tags: acederberg/captura-ci:{version}"]
+".github/workflows/pr_checks.yaml" = ["tags: acederberg/captura-ci:{version}"]
 
 
 [tool.setuptools_scm]

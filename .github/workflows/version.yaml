@@ -1,0 +1,108 @@
+---
+# Note: This will run every time that a new release is published because of
+# `on`. Releasing can be controller through the github CLI like
+#
+name: Version.
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        default: patch
+        required: true
+        description: Segment of the version to increment. 
+        options:
+          - patch
+          - minor
+          - major
+
+      kind_tag:
+        default: final
+        required: true
+        description: | 
+          Tag of the new version. Cannot go backwards, ordered like
+          ``final > alpha > beta``. ``final`` indicates no tag.
+        options:
+          - final
+          - alpha
+          - beta
+
+      tag_message:
+        required: true
+        description: |
+          Tag message an release body.
+jobs:
+  bumpver:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout.  
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure Python is Installed.
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies.
+        run: |
+          python3 -m pip install build twine bumpver
+
+      - name: Increment Version.
+        id: bumpver-update
+        run: |
+          echo "## Bumpver Data\n\n" >> $GITHUB_STEP_SUMMARY
+          echo "- kind: ${{ github.event.inputs.kind }}" >> $GITHUB_STEP_SUMMARY
+          echo "- kind_tag: ${{ github.event.inputs.kind_tag }}" >> $GITHUB_STEP_SUMMARY
+
+          python -m bumpver "--${{ github.event.inputs.kind }}" \
+            --tag "${{ github.event.inputs.kind_tag }}" \
+            --tag-message "${{ github.event.inputs.tag_message }}"
+            
+
+          echo "CAPTURA_VERSION=$( python -m bumpver --version )" >> $GITHUB_ENV
+
+      - name: Build and Verify.
+        id: bumpver-verify
+        run: |
+          echo "## Build\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          python3 -m build >> $GITHUB_STEP_SUMMARY
+          echo "~~~\n\n## Twine Check\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          python3 -m twine check dist/* >> $GITHUB_STEP_SUMMARY
+          echo "~~~" >> $GITHUB_STEP_SUMMARY
+
+      # NOTE: https://github.com/actions/upload-artifact
+      - name: Publish Artifact.
+        id: bumpver-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: captura-build-${{ env.CAPTURA_VERSION }}
+          path: ./dist
+          retention-days: 1
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Push.
+        id: bumpver-push
+        run: |
+          git push
+          git push --tags
+
+  # NOTE: This will be done in the ``captura-deploy`` repository. Making a PR 
+  #       here should trigger that pipeline.
+  # dockerhub:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout.
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - name: Log in to Docker Hub.
+  #       uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+  #       with:
+  #         username: ${{ secrets.DOCKER_USERNAME }}
+  #         password: ${{ secrets.DOCKER_PASSWORD }}
+        
