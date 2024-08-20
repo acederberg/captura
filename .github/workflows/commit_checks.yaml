@@ -132,7 +132,10 @@ jobs:
           context: .
           file: ./docker/dockerfile
           target: ci
-          tags: acederberg/captura-ci # should match tags in `./docker/compose.ci.yaml`. 
+          # NOTE: ``bumpver`` will be looking for this. Futher, this should 
+          #       match tags in ``./docker/compose.ci.yaml`` which are updated 
+          #       by bumpver.
+          tags: acederberg/captura-ci:0.1.5 
           pull: false
           push: false
           cache-from: type=gha
@@ -153,7 +156,7 @@ jobs:
           docker compose \
             --file docker/compose.ci.yaml \
             --env-file .env \
-            up --detach --build --quiet-pull
+            up --detach --quiet-pull
 
       # NOTE: ``act.yaml`` defined everything necessary for the client and server.
       - name: Generate Dummy Data In Server.
@@ -194,15 +197,36 @@ jobs:
         continue-on-error: true
 
       - name: Create Coverage Report.
+        # if: github.ref == 'refs/heads/master'
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
-              && poetry run coverage html'
+              && poetry run coverage html --directory ./coverage-report'
         continue-on-error: true
 
+      # --------------------------------------------------------------------- #
+      # NOTE: ``master`` only.
+
+      - name: Copy Coverage Report To Host.
+        # if: github.ref == 'refs/heads/master'
+        run: |
+          docker compose \
+            --file docker/compose.ci.yaml \
+            cp server:/home/captura/app/coverage-report ./coverage-report
+
+      - name: Put Coverage Report On GitHub Pages.
+        # if: github.ref == 'refs/heads/master'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: $GITHUB_BRANCH
+          folder: coverage-report # The folder the action should deploy.
+
+
+      # --------------------------------------------------------------------- #
+      # NOTE: Finalize.
       - name: Stop Compose Project.
         if: always()
         run: docker compose --file docker/compose.ci.yaml down

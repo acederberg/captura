@@ -144,6 +144,7 @@ push            = false
 "src/app/__init__.py" = ["{version}"]
 "docker/compose.yaml" = ["image: acederberg/captura-development:{version}"]
 "docker/compose.ci.yaml" = ["image: acederberg/captura-ci:{version}"]
+".github/workflows/" = ["tags: acederberg/captura-ci:{version}"]
 
 
 [tool.setuptools_scm]
