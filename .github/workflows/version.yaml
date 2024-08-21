@@ -9,23 +9,25 @@ on:
       kind:
         default: patch
         required: true
-        description: Segment of the version to increment. 
+        description: |
+          Segment of the version to increment. A value of `tag` indicates 
+          that only the tag should be updated.
         options:
+          - tag
           - patch
           - minor
           - major
 
       kind_tag:
-        default: final
+        default: alpha
         required: true
         description: | 
           Tag of the new version. Cannot go backwards, ordered like
-          ``final > alpha > beta``. ``final`` indicates no tag.
+          ``final > beta > alpha``. ``final`` indicates no tag.
         options:
           - final
           - alpha
           - beta
-
       tag_message:
         required: true
         description: |
@@ -60,10 +62,18 @@ jobs:
           git config user.name "github-actions"
           git config user.email "<>"
 
-          python -m bumpver update "--${{ github.event.inputs.kind }}" \
-            --tag "${{ github.event.inputs.kind_tag }}" \
-            --tag-message "${{ github.event.inputs.tag_message }}" \
-            --commit
+          if [[ "${{ github.event.inputs.kind}}" == "tag" ]];
+          then
+            python -m bumpver update \
+              --tag "${{ github.event.inputs.kind_tag }}" \
+              --tag-message "${{ github.event.inputs.tag_message }}" \
+              --commit
+          else
+            python -m bumpver update "--${{ github.event.inputs.kind }}" \
+              --tag "${{ github.event.inputs.kind_tag }}" \
+              --tag-message "${{ github.event.inputs.tag_message }}" \
+              --commit
+          fi
             
           echo "CAPTURA_VERSION=$( python -m bumpver --version )" >> $GITHUB_ENV
 

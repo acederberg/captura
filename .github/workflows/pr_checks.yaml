@@ -5,6 +5,11 @@ on:
     branches:
       - master
       - develop
+    paths:
+      - ./src/**
+      - ./tests/**
+      - ./docker/**
+      
   pull_request:
     branches:
       - master
