@@ -57,11 +57,14 @@ jobs:
           echo "- kind: ${{ github.event.inputs.kind }}" >> $GITHUB_STEP_SUMMARY
           echo "- kind_tag: ${{ github.event.inputs.kind_tag }}" >> $GITHUB_STEP_SUMMARY
 
-          python -m bumpver "--${{ github.event.inputs.kind }}" \
-            --tag "${{ github.event.inputs.kind_tag }}" \
-            --tag-message "${{ github.event.inputs.tag_message }}"
-            
+          git config user.name "github-actions"
+          git config user.email "<>"
 
+          python -m bumpver update "--${{ github.event.inputs.kind }}" \
+            --tag "${{ github.event.inputs.kind_tag }}" \
+            --tag-message "${{ github.event.inputs.tag_message }}" \
+            --commit
+            
           echo "CAPTURA_VERSION=$( python -m bumpver --version )" >> $GITHUB_ENV
 
       - name: Build and Verify.
