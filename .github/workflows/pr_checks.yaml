@@ -38,7 +38,12 @@ jobs:
           # NOTE: ``bumpver`` will be looking for this. Futher, this should 
           #       match tags in ``./docker/compose.ci.yaml`` which are updated 
           #       by bumpver.
-          tags: acederberg/captura-ci:0.1.5 
+          #
+          # NOTE: Adding an image tag that is version specific should not be done
+          #       as this must be consistent with the caching config - updating the
+          #       version string in the caching config requires the ``workflow`` 
+          #       permission for the pipeline, which is overkill imo.
+          tags: acederberg/captura-ci:latest
           pull: false
           push: false
           cache-from: type=gha

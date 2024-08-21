@@ -143,8 +143,13 @@ push            = false
 "pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
 "src/captura/__init__.py" = ["{version}"]
 "docker/compose.yaml" = ["image: acederberg/captura-development:{version}"]
-"docker/compose.ci.yaml" = ["image: acederberg/captura-ci:{version}"]
-".github/workflows/pr_checks.yaml" = ["tags: acederberg/captura-ci:{version}"]
+
+# NOTE: Adding an image tag that is version specific should not be done
+#       as this must be consistent with the caching config - updating the
+#       version string in the caching config requires the ``workflow`` 
+#       permission for the pipeline, which is overkill imo.
+# "docker/compose.ci.yaml" = ["image: acederberg/captura-ci:{version}"]
+# ".github/workflows/pr_checks.yaml" = ["tags: acederberg/captura-ci:{version}"]
 
 
 [tool.setuptools_scm]

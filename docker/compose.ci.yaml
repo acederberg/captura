@@ -2,15 +2,18 @@
 name: captura-ci
 services:
   server:
-    # Base should give compose minus volumes and networks (and any references to
-    # outside). 
-    build:
-      context: '..'
-      target: ci
+    # NOTE: Should build before running for caching.
+    # build:
+    #   context: '..'
+    #   target: ci
     extends:
       file: ./compose.base.yaml
       service: server
-    image: acederberg/captura-ci:0.1.5
+    # NOTE: Adding an image tag that is version specific should not be done
+    #       as this must be consistent with the caching config - updating the
+    #       version string in the caching config requires the ``workflow`` 
+    #       permission for the pipeline, which is overkill imo.
+    image: acederberg/captura-ci:latest
     networks:
       captura: {}
   db:
