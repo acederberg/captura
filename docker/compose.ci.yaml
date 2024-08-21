@@ -3,9 +3,9 @@ name: captura-ci
 services:
   server:
     # NOTE: Should build before running for caching.
-    # build:
-    #   context: '..'
-    #   target: ci
+    build:
+      context: '..'
+      target: ci
     extends:
       file: ./compose.base.yaml
       service: server
