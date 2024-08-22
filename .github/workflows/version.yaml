@@ -48,9 +48,33 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache Pip
+        uses: actions/cache@v3
+        id: bumpver-venv
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-release
+
       - name: Install Dependencies.
+        id: bumpver-depends
         run: |
+          python3 -m venv .venv
+
+          source .venv/bin/activate
           python3 -m pip install build twine bumpver
+
+      # NOTE: This will not be published so it is fine that it happens at this
+      #       stage.
+      - name: Build and Verify.
+        id: bumpver-build-and-verify
+        run: |
+          source .venv/bin/activate
+
+          echo "## Build\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          python3 -m build >> $GITHUB_STEP_SUMMARY
+          echo "~~~\n\n## Twine Check\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
+          python3 -m twine check dist/* >> $GITHUB_STEP_SUMMARY
+          echo "~~~" >> $GITHUB_STEP_SUMMARY
 
       - name: Increment Version.
         id: bumpver-update
@@ -75,31 +99,6 @@ jobs:
               --commit
           fi
             
-          echo "CAPTURA_VERSION=$( python -m bumpver --version )" >> $GITHUB_ENV
-
-      - name: Build and Verify.
-        id: bumpver-verify
-        run: |
-          echo "## Build\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
-          python3 -m build >> $GITHUB_STEP_SUMMARY
-          echo "~~~\n\n## Twine Check\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
-          python3 -m twine check dist/* >> $GITHUB_STEP_SUMMARY
-          echo "~~~" >> $GITHUB_STEP_SUMMARY
-
-      # NOTE: https://github.com/actions/upload-artifact
-      - name: Publish Artifact.
-        id: bumpver-artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: captura-build-${{ env.CAPTURA_VERSION }}
-          path: ./dist
-          retention-days: 1
-          if-no-files-found: error
-          overwrite: true
-
-      - name: Push.
-        id: bumpver-push
-        run: |
           git push
           git push --tags
 
