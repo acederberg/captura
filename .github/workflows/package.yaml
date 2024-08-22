@@ -89,7 +89,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: v${{ github.CAPTURA_RELEASE_NAME }}
+          release_name: v${{ env.CAPTURA_RELEASE_NAME }}
           body: ${{ env.CAPTURA_RELEASE_NOTES }} 
           draft: false
           prerelease: false
