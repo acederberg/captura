@@ -1,3 +1,9 @@
+"""Yes, this could be done in bash. But it has been inconsistent.
+
+- First argument should be the override value.
+- Second should be the actual value.
+"""
+
 # =========================================================================== #
 import re
 import sys
@@ -12,9 +18,15 @@ semver = re.compile(
 
 if __name__ == "__main__":
 
-    matched = semver.match(github_ref_name := sys.argv[1])
+    if len(sys.argv) != 3:
+        print("Not enough arguments.")
+
+    _, tag_override, tag = sys.argv
+    matched = semver.match(github_ref_name := tag_override or tag)
+
     if matched is None:
-        print(f"Illegal git ref name `{ github_ref_name }`. Exitting.")
         sys.exit(1)
     else:
-        print(f"Valid git ref name `{ github_ref_name }`.")
+        # NOTE: Should only print this since it is used to determine the release
+        #       name.
+        print(github_ref_name)
