@@ -23,7 +23,7 @@ jobs:
       - name: Get Artifacts.
         uses: actions/download-artifact@v4
         with:
-          name: captura-build-${{ git.ref_name }}
+          name: captura-build-${{ github.ref_name }}
           github-token: ${{ secrets.GH_PAT }}
           path: ./dist
         
