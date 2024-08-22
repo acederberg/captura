@@ -10,7 +10,7 @@ packages = [
   {include="legere", from="src"},
   {include="simulatus", from="src"}
 ]
-version = "0.1.7-beta"
+version = "0.1.7"
 description = "A framework for adding sharing and collections to existing API projects."
 authors = ["Adrian Cederberg <adrn.cederberg123@gmail.com>"]
 license = "MIT"
@@ -131,7 +131,7 @@ warn_required_dynamic_aliases = true
 
 
 [tool.bumpver]
-current_version = "0.1.7-beta"
+current_version = "0.1.7"
 version_pattern = "MAJOR.MINOR.PATCH[-TAG]"
 commit_message  = "chore(version): Bump version {old_version} -> {new_version}"
 commit          = true

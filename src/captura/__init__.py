@@ -1,4 +1,4 @@
-__version__ = "0.1.7-beta"
+__version__ = "0.1.7"
 
 from fastapi import FastAPI
 
