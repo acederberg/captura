@@ -61,7 +61,7 @@ jobs:
           python3 -m venv .venv
 
           source .venv/bin/activate
-          python3 -m pip install build twine bumpver
+          python3 -m pip install poetry twine bumpver
 
       # NOTE: This will not be published so it is fine that it happens at this
       #       stage.
@@ -71,14 +71,18 @@ jobs:
           source .venv/bin/activate
 
           echo "## Build\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
-          python3 -m build >> $GITHUB_STEP_SUMMARY
+          poetry build >> $GITHUB_STEP_SUMMARY
           echo "~~~\n\n## Twine Check\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           python3 -m twine check dist/* >> $GITHUB_STEP_SUMMARY
           echo "~~~" >> $GITHUB_STEP_SUMMARY
 
+      # NOTE: Poetry does have versioning capabilities however they do not 
+      #       appear to have much of an advantage over bumpver.
       - name: Increment Version.
         id: bumpver-update
         run: |
+          source .venv/bin/activate
+
           echo "## Bumpver Data\n\n" >> $GITHUB_STEP_SUMMARY
           echo "- kind: ${{ github.event.inputs.kind }}" >> $GITHUB_STEP_SUMMARY
           echo "- kind_tag: ${{ github.event.inputs.kind_tag }}" >> $GITHUB_STEP_SUMMARY

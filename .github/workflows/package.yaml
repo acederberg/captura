@@ -60,7 +60,7 @@ jobs:
           python3 -m venv .venv
 
           source .venv/bin/activate
-          python3 -m pip install build twine 
+          python3 -m pip install twine poetry 
 
       - name: Build and Verify.
         id: release-build-and-verify
@@ -68,16 +68,19 @@ jobs:
           source .venv/bin/activate
 
           echo "## Build\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
-          python3 -m build >> $GITHUB_STEP_SUMMARY
+          poetry build >> $GITHUB_STEP_SUMMARY
           echo "~~~\n\n## Twine Check\n\n~~~stdout" >> $GITHUB_STEP_SUMMARY
           python3 -m twine check dist/* >> $GITHUB_STEP_SUMMARY
           echo "~~~" >> $GITHUB_STEP_SUMMARY
         
       - name: Publish to PyPI.
         id: release-publish
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          source .venv/bin/activate
+
+          poetry config repositories.pypi pypi.org
+          poetry config pypi-token.pypi '${{ secrets.PYPI_TOKEN }}'
+          poetry publish
 
       - name: Create Release
         id: release-create
