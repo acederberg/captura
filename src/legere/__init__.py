@@ -301,7 +301,12 @@ class ConfigCommands(BaseTyperizable):
             config.use.profile = profile
 
         if config_path_out is None:
-            context.console_handler.handle(data=config.model_dump_minimal())
+            context.console_handler.handle(
+                handler_data=HandlerData(
+                    data=config.model_dump_minimal(),
+                    output_config=context.config.output,
+                )
+            )
             raise typer.Exit(0)
 
         context.console_handler.console.print("[green]Updating client config.")

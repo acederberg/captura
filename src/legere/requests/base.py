@@ -312,7 +312,11 @@ def typerize(
     callback = ContextData.for_typer if callback is None else callback
     callback = callback if not exclude_callback else None
 
-    tt = typer.Typer(help=cls.typer_help or cls.__doc__)
+    tt = typer.Typer(
+        help=cls.typer_help or cls.__doc__,
+        pretty_exceptions_short=True,
+        pretty_exceptions_enable=False,
+    )
     if not exclude_callback:
         assert callback is not None
         tt.callback()(callback)
