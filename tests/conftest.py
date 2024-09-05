@@ -339,7 +339,7 @@ def dummy_handler(
     worker_id: str,
 ):
     name_module = f"(`module={request.node.name}`) "
-    handler = DummyHandler(sessionmaker, config, auth=auth)
+    handler = DummyHandler(sessionmaker, config=config, config_dummy=config, auth=auth)
     if worker_id != "master":
         return handler
 

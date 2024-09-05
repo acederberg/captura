@@ -39,6 +39,7 @@ from typing_extensions import Doc
 # --------------------------------------------------------------------------- #
 from captura import util
 from captura.auth import Auth, Token, TokenPermissionTier
+from captura.config import Config
 from captura.controllers.access import Access
 from captura.controllers.base import (
     BaseResolved,
@@ -111,7 +112,8 @@ class BaseDummyProvider:
     }
 
     client_config_cls: Type
-    config: ConfigSimulatus
+    config: Config
+    config_dummy: ConfigSimulatus
     dummy: DummyConfig
     session: Session
     user: User
@@ -119,7 +121,8 @@ class BaseDummyProvider:
 
     def __init__(
         self,
-        config: ConfigSimulatus,
+        config: Config,
+        config_dummy: ConfigSimulatus,
         session: Session,
         *,
         user: User,
@@ -128,7 +131,8 @@ class BaseDummyProvider:
     ):
         self.client_config_cls = client_config_cls or ClientConfig
         self.config = config
-        self.dummy = config.dummy
+        self.config_dummy = config_dummy
+        self.dummy = config_dummy.dummy
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
         self.user = user
@@ -1173,7 +1177,8 @@ class DummyProvider(BaseDummyProvider):
 
     def __init__(
         self,
-        config: ConfigSimulatus,
+        config: Config,
+        config_dummy: ConfigSimulatus,
         session: Session,
         *,
         auth: Auth | None = None,
@@ -1181,7 +1186,8 @@ class DummyProvider(BaseDummyProvider):
         client_config_cls: Type | None = None,
     ):
         self.config = config
-        self.dummy = config.dummy
+        self.config_dummy = config_dummy
+        self.dummy = config_dummy.dummy
 
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
@@ -1259,7 +1265,8 @@ class DummyProvider(BaseDummyProvider):
 
 class DummyHandler:
     dummy: DummyConfig
-    config: ConfigSimulatus
+    config: Config
+    config_dummy: ConfigSimulatus
     sessionmaker: sqa_sessionmaker[Session]
     auth: Auth
     # user_uuids: List[str]
@@ -1267,13 +1274,16 @@ class DummyHandler:
     def __init__(
         self,
         sessionmaker: sqa_sessionmaker,
-        config: ConfigSimulatus,
+        config: Config,
+        config_dummy: ConfigSimulatus,
         # user_uuids: List[str],
         *,
         auth: Auth | None = None,
     ):
-        self.dummy = config.dummy
+        self.config_dummy = config_dummy
+        self.dummy = self.config_dummy.dummy
         self.config = config
+
         self.sessionmaker = sessionmaker
         self.auth = auth or Auth.forPyTest(config)
         # self.user_uuids = user_uuids
@@ -1373,8 +1383,9 @@ class DummyHandler:
             logger.info("Generating `%s` dummies.", n_generate)
             for count in range(n_generate):
                 dd = DummyProvider(
-                    self.config,
-                    session,
+                    config=self.config,
+                    config_dummy=self.config_dummy,
+                    session=session,
                     auth=self.auth,
                     use_existing=False,
                 )

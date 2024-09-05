@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker as _sessionmaker
 
 # --------------------------------------------------------------------------- #
 from captura import User
+from captura.config import Config
 from captura.fields import KindObject
 from captura.models import Base, Document
 from captura.schemas import TimespanLimitParams, UserExtraSchema, mwargs
@@ -85,21 +86,22 @@ ArgUUIDReport = Annotated[str, typer.Argument(help="Report UUID.")]
 class ContextDataDummy(BaseModel):
     # NOTE: Global options for flags do not exist. Instead, create a manifest.
     quiet: bool = True
-    config: ConfigSimulatus
+    config: Config
+    config_dummy: ConfigSimulatus
     config_output: OutputConfig
 
-    def register_manifest(self, manifest_path: str | None) -> DummyConfig | None:
+    def register_manifest(self, manifest_path: str | None) -> ConfigSimulatus | None:
         if manifest_path is None:
             return None
 
-        manifest = DummyConfig.load(manifest_path)
-        self.config.dummy = manifest
+        manifest = ConfigSimulatus(dummy=DummyConfig.load(manifest_path))
+        self.config_dummy = manifest
 
         return manifest
 
     def preview_manifest(self):
         data = HandlerData(
-            data=self.config.dummy.model_dump(),
+            data=self.config_dummy.model_dump(),
             output_config=self.config_output,
         )
         data.print()
@@ -109,7 +111,7 @@ class ContextDataDummy(BaseModel):
         engine = self.config.engine()
         sm = _sessionmaker(engine)
 
-        return DummyHandler(sm, self.config)
+        return DummyHandler(sm, self.config, self.config_dummy)
 
     @classmethod
     def for_typer(
@@ -117,17 +119,31 @@ class ContextDataDummy(BaseModel):
         context: typer.Context,
         quiet: Annotated[bool, typer.Option("--quiet/--loud")] = True,
         path_config: Annotated[Optional[str], typer.Option("--config")] = None,
+        path_config_dummy: Annotated[Optional[str], typer.Option("--config")] = None,
     ) -> None:
+        if path_config_dummy is None:
+            config_dummy = mwargs(ConfigSimulatus)
+        else:
+            with open(path_config_dummy, "r") as file:
+                config_dummy = ConfigSimulatus.model_validate(
+                    yaml.safe_load(file),
+                )
+
         if path_config is None:
-            config = mwargs(ConfigSimulatus)
+            config = mwargs(Config)
         else:
             with open(path_config, "r") as file:
-                config = ConfigSimulatus.model_validate(
+                config = Config.model_validate(
                     yaml.safe_load(file),
                 )
 
         config_output = mwargs(OutputConfig, output=Output.yaml)
-        context.obj = cls(config=config, quiet=quiet, config_output=config_output)
+        context.obj = cls(
+            config=config,
+            config_dummy=config_dummy,
+            quiet=quiet,
+            config_output=config_output,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -302,8 +318,9 @@ class CmdReport(BaseTyperizable):
                     raise typer.Exit(1)
             else:
                 dummy_provider = DummyProvider(
-                    context.dummy_handler.config,
-                    session,
+                    config=context.config,
+                    config_dummy=context.dummy_handler.config_dummy,
+                    session=session,
                     use_existing=False,
                 )
                 user = dummy_provider.user
@@ -354,7 +371,12 @@ class CmdUser(BaseTyperizable):
         handler = context.dummy_handler
         with handler.sessionmaker() as session:
             for _ in range(count):
-                DummyProvider(handler.config, session, use_existing=False)
+                DummyProvider(
+                    config=handler.config,
+                    config_dummy=handler.config_dummy,
+                    session=session,
+                    use_existing=False,
+                )
 
     @classmethod
     def get(cls, _context: typer.Context, count: FlagCount = 1):
@@ -367,7 +389,12 @@ class CmdUser(BaseTyperizable):
             q_existing = select(User).order_by(func.random()).limit(count)
             existing = session.scalars(q_existing)
             for ee in existing:
-                DummyProvider(handler.config, session, use_existing=ee)
+                DummyProvider(
+                    config=handler.config,
+                    config_dummy=handler.config_dummy,
+                    session=session,
+                    use_existing=ee,
+                )
 
     @classmethod
     def search(
@@ -408,8 +435,9 @@ class CmdUser(BaseTyperizable):
             users = tuple(session.scalars(q))
             for user in users:
                 DummyProvider(
-                    context.config,
-                    session,
+                    config=context.config,
+                    config_dummy=context.config_dummy,
+                    session=session,
                     use_existing=user,
                 ).info_mark_tainted()
 
@@ -460,7 +488,7 @@ class CmdDummy(BaseTyperizable):
                 CONSOLE.print("[red]Maximum uses too small to prune.")
                 raise typer.Exit()
 
-            context.config.dummy.users.maximum_uses = prune
+            context.config_dummy.dummy.users.maximum_uses = prune
         if preview:
             context.preview_manifest()
             return

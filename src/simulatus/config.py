@@ -3,10 +3,15 @@ from typing import Annotated, Self
 
 import yaml
 from pydantic import Field
+from yaml_settings_pydantic import (
+    BaseYamlSettings,
+    YamlFileConfigDict,
+    YamlSettingsConfigDict,
+)
 
 # --------------------------------------------------------------------------- #
+from captura import util
 from captura.config import BaseHashable
-from captura.config import Config as ConfigCaptura
 from captura.schemas import mwargs
 
 
@@ -106,5 +111,20 @@ class DummyConfig(BaseHashable):
         return cls.model_validate(raw)
 
 
-class ConfigSimulatus(ConfigCaptura):
+class ConfigSimulatus(BaseYamlSettings):
+    model_config = YamlSettingsConfigDict(
+        # NOTE: Yes, this field is labeled by the constant value computed at
+        #       the initial runtime. This can be overwritten with environment
+        #       changes (e.g. mocks in tests) where getting this value from the
+        #       environment.
+        yaml_files={
+            util.PATH_CONFIG_DUMMY: YamlFileConfigDict(
+                envvar=util.prefix_env("DUMMY_CONFIG")
+            )
+        },
+        yaml_reload=False,
+        env_prefix=util.ENV_PREFIX,
+        env_nested_delimiter="__",
+        extra="allow",
+    )
     dummy: DummyConfig

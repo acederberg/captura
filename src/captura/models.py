@@ -461,11 +461,10 @@ class Event(Base):
     __tablename__ = "events"
     __kind__ = KindObject.event
 
-    timestamp: Mapped[int] = mapped_column(
+    timestamp: Mapped[str] = mapped_column(
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
 
-    # id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     uuid: Mapped[MappedColumnUUIDUnique] = mapped_column(primary_key=True)
     uuid_parent: Mapped[str] = mapped_column(
         ForeignKey("events.uuid", ondelete="CASCADE"),
@@ -707,7 +706,7 @@ class AssocCollectionDocument(Base):
     # NOTE: Since this object supports soft deletion (for the deletion grace
     #       period that will later be implemented) deleted is included.
     # deleted: Mapped[MappedColumnDeleted]
-    uuid_document: Mapped[int] = mapped_column(
+    uuid_document: Mapped[str] = mapped_column(
         ForeignKey(
             "documents.uuid",
             ondelete="CASCADE",
@@ -715,7 +714,7 @@ class AssocCollectionDocument(Base):
         primary_key=True,
     )
 
-    uuid_collection: Mapped[int] = mapped_column(
+    uuid_collection: Mapped[str] = mapped_column(
         ForeignKey(
             "collections.uuid",
             ondelete="CASCADE",
@@ -796,14 +795,14 @@ class AssocUserDocument(Base):
         cascade="all, delete",
     )
 
-    uuid_user: Mapped[int] = mapped_column(
+    uuid_user: Mapped[str] = mapped_column(
         ForeignKey(
             "users.uuid",
             ondelete="CASCADE",
         ),
         key="a",
     )
-    uuid_document: Mapped[int] = mapped_column(
+    uuid_document: Mapped[str] = mapped_column(
         ForeignKey(
             "documents.uuid",
             ondelete="CASCADE",
@@ -818,16 +817,6 @@ class AssocUserDocument(Base):
 
     __table_args__ = (UniqueConstraint("a", "b", name="_grant_vector"),)
 
-
-    @property
-    def uuid_user_granter(self) -> str:
-        session = self.get_session()
-        res = session.execute(
-            select(User.uuid).where(User.uuid == self.uuid_user_granter)  # type: ignore
-        ).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
 
     @classmethod
     def resolve_from_target(
@@ -1231,7 +1220,7 @@ class Collection(SearchableTableMixins, Base):
     __tablename__ = "collections"
     __kind__ = KindObject.collection
 
-    uuid_user: Mapped[int] = mapped_column(
+    uuid_user: Mapped[str] = mapped_column(
         ForeignKey("users.uuid", ondelete="CASCADE"),
         nullable=False,
     )

@@ -271,11 +271,11 @@ class Report(Base):
         q_assignment = select(func.count(Assignment.uuid))
 
         if user is not None:
-            q_document = select(Grant.uuid_document).where(
+            _q_document = select(Grant.uuid_document).where(
                 Grant.pending_from == fields.PendingFrom.created,
                 Grant.uuid_user == user.uuid,
             )
-            q_document = select(func.count()).select_from(q_document.subquery())
+            q_document = select(func.count()).select_from(_q_document.subquery())
             q_collection = q_collection.join(User).where(User.uuid == user.uuid)
             q_assignment = q_assignment.join(Collection).where(
                 Collection.uuid_user == user.uuid

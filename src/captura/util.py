@@ -106,6 +106,10 @@ PATH_CONFIG_CLIENT = from_env(
     "CONFIG_CLIENT",
     Path.config("client.yaml"),
 )
+PATH_CONFIG_DUMMY = from_env(
+    "CONFIG_DUMMY",
+    Path.config("dummy.yaml"),
+)
 PATH_CONFIG_TEST_APP = from_env(
     "CONFIG_APP_TEST",
     Path.config("app.test.yaml"),

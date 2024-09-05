@@ -10,7 +10,7 @@ from yaml_settings_pydantic import YamlFileConfigDict, YamlSettingsConfigDict
 
 # --------------------------------------------------------------------------- #
 from captura import util
-from captura.config import BaseHashable
+from captura.config import BaseHashable, Config
 from captura.schemas import mwargs
 from legere import Config as ClientConfig
 from legere import flags
@@ -52,7 +52,7 @@ PytestConf = Annotated[
 ]
 
 
-class PytestConfig(ConfigSimulatus):
+class PytestConfig(ConfigSimulatus, Config):
     """Configuration with additional pytest section.
 
     This should not be used in app.
@@ -62,7 +62,10 @@ class PytestConfig(ConfigSimulatus):
 
     pytestconfig: ClassVar[PytestConf]
     model_config = YamlSettingsConfigDict(
-        yaml_files=util.PATH_CONFIG_TEST_APP,
+        yaml_files={
+            util.PATH_CONFIG_TEST_APP: YamlFileConfigDict(required=True),
+            util.PATH_CONFIG_DUMMY: YamlFileConfigDict(required=False),
+        },
         yaml_reload=False,
         env_prefix=util.ENV_PREFIX,
         env_nested_delimiter="__",
