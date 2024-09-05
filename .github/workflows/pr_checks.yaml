@@ -63,6 +63,7 @@ jobs:
           echo "CAPTURA_CONFIG_CLIENT=$docker_config_path" >> .env
           echo "CAPTURA_CONFIG_APP_TEST=$docker_config_path" >> .env
           echo "CAPTURA_CONFIG_APP=$docker_config_path" >> .env
+          echo "CAPTURA_CONFIG_DUMMY=$docker_config_path" >> .env
           echo "CAPTURA_FLAKEY=/home/captura/flakey.yaml" >> .env
 
       - name: Start Docker Compose Project.
@@ -83,9 +84,12 @@ jobs:
           echo "MySQL Version: $version" >> $GITHUB_STEP_SUMMARY
           docker compose \
             --file docker/compose.ci.yaml \
+            --env-file .env \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
+              && echo $CAPTURA_CONFIG_DUMMY \
+              && echo $CAPTURA_CONFIG_APP_TEST \
               && poetry run simulatus initialize \
               && poetry run simulatus apply'
 
@@ -103,6 +107,7 @@ jobs:
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
+            --env-file .env \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
@@ -123,6 +128,7 @@ jobs:
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
+            --env-file .env \
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
@@ -140,6 +146,7 @@ jobs:
         run: |
           docker compose \
             --file docker/compose.ci.yaml \
+            --env-file .env \
             cp server:/home/captura/app/coverage-report ./coverage-report
 
       - name: Upload Coverage Report.

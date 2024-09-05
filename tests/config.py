@@ -64,7 +64,6 @@ class PytestConfig(ConfigSimulatus, Config):
     model_config = YamlSettingsConfigDict(
         yaml_files={
             util.PATH_CONFIG_TEST_APP: YamlFileConfigDict(required=True),
-            util.PATH_CONFIG_DUMMY: YamlFileConfigDict(required=False),
         },
         yaml_reload=False,
         env_prefix=util.ENV_PREFIX,
