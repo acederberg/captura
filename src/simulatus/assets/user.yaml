@@ -1,5 +1,4 @@
-- id: 1
-  uuid: 99d-99d-99d
+- uuid: 99d-99d-99d
   subject: 721f1d63d7015cd2c54bcb441e923464f27768a89a1f46640088a5a839a5d186
   name: you're mom
   description: The joke is that it is mispelled.
@@ -13,7 +12,6 @@
 # Because of tests not an admin
 - uuid: 000-000-000
   subject: 9de6a6fa6734b71af099005fdeb709e73083fb6ce6d453f726da3e8aeb4c4595
-  id: 2
   admin: True
   name: acederberg
   description: maintainer of this project
@@ -26,7 +24,6 @@
 
 - uuid: 777-777-777
   subject: b8494f0c413111c8a0a23372fd2a3cc4970e4a29478c22a6f60a122423edc0f4
-  id: 3
   name: Demo User
   description: Demo user
   email: demo@example.io
@@ -38,7 +35,6 @@
 
 - uuid: -0123456789
   subject: e663ef439f4924a62ef50c7d2d3fee4e02b5e6fb46ad25191938eddd49681a9b
-  id: 4
   name: Sum dood
   description: Whatever
   email: sumdood@whatever.org

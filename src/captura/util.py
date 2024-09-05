@@ -47,6 +47,12 @@ class Path:
         return path.join(PATH_TESTS_ASSETS, v)
 
     @classmethod
+    def simulatus_assets(cls, v: str) -> str:
+        o = path.join(PATH_SIMULATUS_ASSETS, v)
+        print(o)
+        return o
+
+    @classmethod
     def docker(cls, v: str) -> str:
         return path.join(PATH_DOCKER, v)
 
@@ -60,8 +66,10 @@ class Path:
 
 
 PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
-PATH_APP: str = path.join(PATH_BASE, "src/app")
-PATH_CLIENT: str = path.join(PATH_BASE, "src/client")
+PATH_APP: str = path.join(PATH_BASE, "src/captura")
+PATH_SIMULATUS = path.join(PATH_BASE, "src/simulatus")
+PATH_SIMULATUS_ASSETS = path.join(PATH_SIMULATUS, "assets")
+PATH_CLIENT: str = path.join(PATH_BASE, "src/legere")
 PATH_CONFIG: str = path.join(PATH_BASE, "configs")
 PATH_DOCKER: str = path.join(PATH_BASE, "docker")
 PATH_PLUGINS: str = path.join(PATH_BASE, "plugins")

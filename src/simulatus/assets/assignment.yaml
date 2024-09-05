@@ -2,35 +2,35 @@
 # Collection 5
 
 - uuid: foobar--eee
-  id_collection: 4
-  id_document: 7
+  uuid_collection: eee-eee-eee
+  uuid_document: foobar-spam
 
 # --------------------------------------------------------------------------- #
 # Collection 6
 - uuid: ex--foo-ool
-  id_document: 4
-  id_collection: 5
+  uuid_document: ex-parrot
+  uuid_collection: foo-ooo-ool
 
 
 - uuid: petshopfool
-  id_document: 6
-  id_collection: 5
+  uuid_document: petshoppe--
+  uuid_collection: foo-ooo-ool
 
 - uuid: barspamfool
-  id_document: 7
-  id_collection: 5
+  uuid_document: foobar-spam
+  uuid_collection: foo-ooo-ool
 
 - uuid: draculafool
-  id_document: 8
-  id_collection: 5
+  uuid_document: draculaflow
+  uuid_collection: foo-ooo-ool
 
 # --------------------------------------------------------------------------- #
 # Document 5
 - uuid: aaa-aaa-eee
-  id_document: 5
-  id_collection: 4
+  uuid_document: aaa-aaa-aaa
+  uuid_collection: eee-eee-eee
 
 - uuid: aaa-foo-ool
-  id_document: 5
-  id_collection: 5
+  uuid_document: aaa-aaa-aaa
+  uuid_collection: foo-ooo-ool
   

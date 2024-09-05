@@ -109,8 +109,15 @@ _uuid_unique = mapped_column(
     index=True,
     unique=True,
 )
+_uuid_primary = mapped_column(
+    String(36),
+    default=lambda: str(uuid.uuid4()),
+    index=True,
+    primary_key=True,
+)
 MappedColumnUUID = Annotated[str, _uuid]
 MappedColumnUUIDUnique = Annotated[str, _uuid_unique]
+MappedColumnUUIDPrimary = Annotated[str, _uuid_primary]
 
 MappedColumnDeleted = Annotated[bool, mapped_column(default=False)]
 
@@ -125,7 +132,7 @@ class KindSelect(str, enum.Enum):
 
 
 class Base(DeclarativeBase):
-    uuid: Mapped[MappedColumnUUIDUnique]
+    uuid: Mapped[MappedColumnUUIDPrimary]
     deleted: Mapped[MappedColumnDeleted]
     __kind__: ClassVar[KindObject]
 
@@ -700,41 +707,21 @@ class AssocCollectionDocument(Base):
     # NOTE: Since this object supports soft deletion (for the deletion grace
     #       period that will later be implemented) deleted is included.
     # deleted: Mapped[MappedColumnDeleted]
-    id_document: Mapped[int] = mapped_column(
+    uuid_document: Mapped[int] = mapped_column(
         ForeignKey(
-            "documents.id",
+            "documents.uuid",
             ondelete="CASCADE",
         ),
         primary_key=True,
     )
 
-    id_collection: Mapped[int] = mapped_column(
+    uuid_collection: Mapped[int] = mapped_column(
         ForeignKey(
-            "collections.id",
+            "collections.uuid",
             ondelete="CASCADE",
         ),
         primary_key=True,
     )
-
-    @property
-    def uuid_document(self) -> str:
-        session = self.get_session()
-        res = session.execute(
-            select(Document.uuid).where(Document.id == self.id_document)
-        ).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
-
-    @property
-    def uuid_collection(self) -> str:
-        session = self.get_session()
-        res = session.execute(
-            select(Collection.uuid).where(Collection.id == self.id_collection)
-        ).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
 
     @classmethod
     def resolve_target_kind(
@@ -809,16 +796,16 @@ class AssocUserDocument(Base):
         cascade="all, delete",
     )
 
-    id_user: Mapped[int] = mapped_column(
+    uuid_user: Mapped[int] = mapped_column(
         ForeignKey(
-            "users.id",
+            "users.uuid",
             ondelete="CASCADE",
         ),
         key="a",
     )
-    id_document: Mapped[int] = mapped_column(
+    uuid_document: Mapped[int] = mapped_column(
         ForeignKey(
-            "documents.id",
+            "documents.uuid",
             ondelete="CASCADE",
         ),
         key="b",
@@ -831,29 +818,12 @@ class AssocUserDocument(Base):
 
     __table_args__ = (UniqueConstraint("a", "b", name="_grant_vector"),)
 
-    @property
-    def uuid_document(self) -> str:
-        session = self.get_session()
-        res = session.execute(
-            select(Document.uuid).where(Document.id == self.id_document)
-        ).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
-
-    @property
-    def uuid_user(self) -> str:
-        session = self.get_session()
-        res = session.execute(select(User.uuid).where(User.id == self.id_user)).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
 
     @property
     def uuid_user_granter(self) -> str:
         session = self.get_session()
         res = session.execute(
-            select(User.uuid).where(User.id == self.id_user_granter)  # type: ignore
+            select(User.uuid).where(User.uuid == self.uuid_user_granter)  # type: ignore
         ).scalar()
         if res is None:
             raise ValueError("Inconcievable!")
@@ -912,11 +882,6 @@ class User(SearchableTableMixins, Base):
     __tablename__ = "users"
     __kind__ = KindObject.user
 
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        autoincrement=True,
-    )
-
     # NOTE: subject should be a sha256 of a token subject. For test tokens,
     #       the subject should be the sha sum of their uuid.
     subject: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
@@ -936,7 +901,7 @@ class User(SearchableTableMixins, Base):
     collections: Mapped[List["Collection"]] = relationship(
         cascade="all, delete",
         back_populates="user",
-        primaryjoin="User.id==Collection.id_user",
+        primaryjoin="User.uuid==Collection.uuid_user",
         passive_deletes=True,
     )
 
@@ -988,16 +953,16 @@ class User(SearchableTableMixins, Base):
     ):
         cond = list()
         if n_owners is None:
-            cond.append(AssocUserDocument.id_user == self.id)
+            cond.append(AssocUserDocument.uuid_user == self.uuid)
 
         if exclude_deleted:
             cond.append(Grant.deleted == false())
             cond.append(Document.deleted == false())
 
         if document_uuids is not None:
-            q_ids = select(Document.id)
+            q_ids = select(Document.uuid)
             q_ids = q_ids.where(Document.uuid.in_(document_uuids))
-            cond.append(AssocUserDocument.id_document.in_(q_ids))
+            cond.append(AssocUserDocument.uuid_document.in_(q_ids))
 
         if level is not None:
             level = Level.resolve(level)
@@ -1035,18 +1000,6 @@ class User(SearchableTableMixins, Base):
         exclude_pending: bool = True,
         pending_from: PendingFrom | None = None,
     ) -> Select:
-        # NOTE: Attempting to make roughly the following query:
-        #
-        #       .. code::
-        #
-        #          SELECT users.uuid,
-        #                 documents.uuid,
-        #                 _assocs_user_documents.level
-        #          FROM users
-        #          JOIN _assocs_user_documents
-        #               ON _assocs_user_documents.id_user=users.id
-        #          JOIN documents
-        #               ON _assocs_user_documents.id_document = documents.id;
         q = select(Grant).select_from(User).join(AssocUserDocument).join(Document)
         conds = self.q_conds_grants(
             document_uuids,
@@ -1101,16 +1054,16 @@ class User(SearchableTableMixins, Base):
                 raise ValueError(msg.format(kind_select))
 
             aq = aliased(selected, q.subquery())
-            q = select(aq).join(Grant).where(Grant.id_user == self.id)
+            q = select(aq).join(Grant).where(Grant.uuid_user == self.uuid)
 
-            cond_count = func.count(Grant.id_user)
+            cond_count = func.count(Grant.uuid_user)
             cond_having: ColumnElement[bool] = (
                 (cond_count < n_owners)
                 if not n_owners_levelsets
                 else (cond_count == n_owners)
             )
 
-            q = q.group_by(Document.id).having(cond_having)
+            q = q.group_by(Document.uuid).having(cond_having)
 
         return q
 
@@ -1142,7 +1095,7 @@ class User(SearchableTableMixins, Base):
         uuid_collection: Set[str] | None = None,
         exclude_deleted: bool = True,
     ):
-        conds = and_(Collection.id_user == User.id)
+        conds = and_(Collection.uuid_user == User.uuid)
         if uuid_collection is not None:
             conds = and_(conds, Collection.uuid.in_(uuid_collection))
         if exclude_deleted:
@@ -1278,11 +1231,10 @@ class Collection(SearchableTableMixins, Base):
     __tablename__ = "collections"
     __kind__ = KindObject.collection
 
-    id_user: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+    uuid_user: Mapped[int] = mapped_column(
+        ForeignKey("users.uuid", ondelete="CASCADE"),
         nullable=False,
     )
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
     description: Mapped[str] = mapped_column(
         String(fields.LENGTH_DESCRIPTION),
@@ -1293,7 +1245,7 @@ class Collection(SearchableTableMixins, Base):
     )
 
     user: Mapped[User] = relationship(
-        primaryjoin="User.id==Collection.id_user",
+        primaryjoin="User.uuid==Collection.uuid_user",
         back_populates="collections",
     )
 
@@ -1305,15 +1257,6 @@ class Collection(SearchableTableMixins, Base):
         # cascade="all, delete",
     )
 
-    @property
-    def uuid_user(self) -> str:
-        session = self.get_session()
-        q = select(User.uuid).where(User.id == self.id_user)
-        res = session.execute(q).scalar()
-        if res is None:
-            raise ValueError("Inconcievable!")
-        return res
-
     def q_conds_assignment(
         self,
         document_uuids: Set[str] | None = None,
@@ -1321,12 +1264,11 @@ class Collection(SearchableTableMixins, Base):
     ) -> ColumnElement[bool]:
         # NOTE: To add the conditions for document select (like level) use
         #       `q_conds_assoc`.
-        cond = and_(AssocCollectionDocument.id_collection == self.id)
+        cond = and_(AssocCollectionDocument.uuid_collection == self.uuid)
         if exclude_deleted:
             cond = and_(cond, AssocCollectionDocument.deleted == false())
         if document_uuids is not None:
-            document_ids = Document.q_select_ids(document_uuids)
-            cond = and_(cond, AssocCollectionDocument.id_document.in_(document_ids))
+            cond = and_(cond, AssocCollectionDocument.uuid_document.in_(document_uuids))
         # cond = and_(cond, self.q_conds(document_uuids, exclude_deleted))
 
         return cond
@@ -1380,7 +1322,6 @@ class Document(SearchableTableMixins, Base):
     __tablename__ = "documents"
     __kind__ = KindObject.document
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(fields.LENGTH_NAME))
     description: Mapped[str] = mapped_column(
         String(fields.LENGTH_DESCRIPTION),
@@ -1421,7 +1362,7 @@ class Document(SearchableTableMixins, Base):
         :param exclude_pending: Specify if all grants should be returned
             regardless of their pending status.
         """
-        cond = AssocUserDocument.id_document == self.id
+        cond = AssocUserDocument.uuid_document == self.uuid
         if exclude_deleted:
             cond = and_(
                 cond,
@@ -1431,8 +1372,8 @@ class Document(SearchableTableMixins, Base):
         if user_uuids is not None:
             cond = and_(
                 cond,
-                AssocUserDocument.id_user.in_(
-                    select(User.id).where(User.uuid.in_(user_uuids))
+                AssocUserDocument.uuid_user.in_(
+                    select(User.uuid).where(User.uuid.in_(user_uuids))
                 ),
             )
         if level is not None:
@@ -1515,15 +1456,14 @@ class Document(SearchableTableMixins, Base):
     ) -> ColumnElement[bool]:
         # NOTE: To add the conditions for document select (like level) use
         #       `q_conds_assoc`.
-        cond = and_(AssocCollectionDocument.id_document == self.id)
+        cond = and_(AssocCollectionDocument.uuid_document == self.uuid)
         if exclude_deleted:
             cond = and_(
                 cond,
                 AssocCollectionDocument.deleted == false(),
             )
         if collection_uuids is not None:
-            collection_ids = Collection.q_select_ids(collection_uuids)
-            cond = and_(cond, AssocCollectionDocument.id_collection.in_(collection_ids))
+            cond = and_(cond, AssocCollectionDocument.uuid_collection.in_(collection_uuids))
 
         return cond
 
