@@ -178,7 +178,7 @@ class TestRelationships:
             )
 
             # NOTE: Because there are not dummies.
-            # q_edit_uuids = select(Edit.uuid).where(Edit.id_document == document.id)
+            # q_edit_uuids = select(Edit.uuid).where(Edit.uuid_document == document.uuid)
             # uuid_edit = set(session.scalars(q_edit_uuids))
 
             # --------------------------------------------------------------- #
@@ -278,7 +278,7 @@ class TestRelationships:
             user = dummy.user
             uuid_collections = set(
                 session.scalars(
-                    select(Collection.uuid).where(Collection.id_user == user.id)
+                    select(Collection.uuid).where(Collection.uuid_user == user.uuid)
                 )
             )
             if not len(uuid_collections):
@@ -309,7 +309,7 @@ class TestRelationships:
         #         user = dummy.user
         #
         #         uuid_edits = set(
-        #             session.scalars(select(Edit.uuid).where(Edit.id_user == user.id))
+        #             session.scalars(select(Edit.uuid).where(Edit.uuid_user == user.uuid))
         #         )
         #         if not (n_edits := len(uuid_edits)):
         #             n_no_edits += 1
@@ -353,7 +353,7 @@ class TestRelationships:
         #     # NOTE: Get collections and edits. Collections should be deleted,
         #     #       edits should not be deleted unless they belong to one of the
         #     #       above documents.
-        #     q_uuid_edit = select(Edit.uuid).where(Edit.id_user == user.id)
+        #     q_uuid_edit = select(Edit.uuid).where(Edit.uuid_user == user.uuid)
         #     uuid_edit = set(session.scalars(q_uuid_edit))
         #
         #     q_uuid_edit_uniq = q_uuid_edit.join(Document).where(
@@ -361,7 +361,7 @@ class TestRelationships:
         #     )
         #     uuid_edit_uniq = set(session.scalars(q_uuid_edit_uniq))
         #
-        #     q_uuid_collection = select(Collection.uuid).where(Collection.id_user == user.id)
+        #     q_uuid_collection = select(Collection.uuid).where(Collection.uuid_user == user.uuid)
         #     uuid_collection = set(session.scalars(q_uuid_collection))
         #
         #     session.delete(user)
@@ -383,7 +383,7 @@ class TestUser:
         def get_grants(docs: Resolvable[Document]) -> Tuple[Grant, ...]:
             uuid_document = Document.resolve_uuid(session, docs)
             q = select(Grant).join(Document)
-            q = q.where(Document.uuid.in_(uuid_document), Grant.id_user == user.id)
+            q = q.where(Document.uuid.in_(uuid_document), Grant.uuid_user == user.uuid)
             return tuple(session.scalars(q))
 
         def uuids(docs) -> Set[str]:
@@ -542,8 +542,8 @@ class TestUser:
                 pending_from=PendingFrom.created,
                 pending=False,
                 deleted=False,
-                id_user=dummy.user.id,
-                id_document=doc.id,
+                uuid_user=dummy.user.uuid,
+                uuid_document=doc.uuid,
             )
 
             session.add(grant)

@@ -49,7 +49,6 @@ class Path:
     @classmethod
     def simulatus_assets(cls, v: str) -> str:
         o = path.join(PATH_SIMULATUS_ASSETS, v)
-        print(o)
         return o
 
     @classmethod

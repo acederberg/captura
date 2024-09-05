@@ -245,7 +245,7 @@ class Report(Base):
     @classmethod
     def q_flat(cls, *additional_fields):
         return select(
-            User.id.label("id_user"),
+            User.uuid.label("id_user"),
             cls.uuid.label("uuid"),
             cls.uuid_parent.label("uuid_parent"),
             cls.uuid_user.label("uuid_user"),
@@ -271,16 +271,16 @@ class Report(Base):
         q_assignment = select(func.count(Assignment.uuid))
 
         if user is not None:
-            q_document = select(Grant.id_document).where(
+            q_document = select(Grant.uuid_document).where(
                 Grant.pending_from == fields.PendingFrom.created,
-                Grant.id_user == user.id,
+                Grant.uuid_user == user.uuid,
             )
             q_document = select(func.count()).select_from(q_document.subquery())
             q_collection = q_collection.join(User).where(User.uuid == user.uuid)
             q_assignment = q_assignment.join(Collection).where(
-                Collection.id_user == user.id
+                Collection.uuid_user == user.uuid
             )
-            q_grant = q_grant.where(Grant.id_user == user.id)
+            q_grant = q_grant.where(Grant.uuid_user == user.uuid)
             q_event = select(func.count(Event.uuid)).where(Event.uuid_user == user.uuid)
 
         return select(
@@ -335,7 +335,7 @@ class ReportGrant(Base):
             .group_by(User.uuid, *_grant_agg)
         )
         if user is not None:
-            q_reports_grants = q_reports_grants.where(Grant.id_user == user.id)
+            q_reports_grants = q_reports_grants.where(Grant.uuid_user == user.uuid)
 
         count_per_user: Any = literal_column("count_per_user")
         res_columns: Tuple[Any, ...] = (

@@ -37,7 +37,7 @@ class TestDelete:
                 assoc := data.data.assoc.get(uuid_assoc)
             ) is not None, "All assocs should be in data."
             assert assoc.deleted is True
-            assert assoc.id_document == data.data.document.id
+            assert assoc.uuid_document == data.data.document.uuid
             uuid_target_deleted.add(assoc.uuid_collection)
 
         uuid_target_active = set()
@@ -55,7 +55,7 @@ class TestDelete:
                 select(func.count(Assignment.uuid))
                 .join(Collection)
                 .where(
-                    Assignment.id_document == data.data.document.id,
+                    Assignment.uuid_document == data.data.document.uuid,
                     Collection.uuid == uuid_target,
                 )
             )
@@ -214,7 +214,7 @@ class TestCreate:
             .join(Document)
             .where(
                 User.uuid.in_(data.data.uuid_users),
-                Document.id == data.data.document.id,
+                Document.uuid == data.data.document.uuid,
             )
         )
         assert session.scalar(q) == 0

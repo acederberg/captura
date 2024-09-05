@@ -115,7 +115,7 @@ class CommonCollectionsTests(BaseEndpointTest):
         (collection,) = dummy.get_collections(n=1)
         collection.public = True
         collection.deleted = False
-        collection.id_user = user_other.id
+        collection.uuid_user = user_other.uuid
         session.add(collection)
         session.commit()
 
@@ -199,8 +199,8 @@ class TestCollectionsRead(CommonCollectionsTests):
 
         # Test reading a public collection not ownend
         collection.public = True
-        collection.id_user = next(
-            uu.id for uu in dummy.get_users(2) if uu.uuid != dummy.user.uuid
+        collection.uuid_user = next(
+            uu.uuid for uu in dummy.get_users(2) if uu.uuid != dummy.user.uuid
         )
         session.add(collection)
         session.commit()
@@ -360,7 +360,7 @@ class TestCollectionsUpdate(CommonCollectionsTests):
         assert data.data.uuid_user == user.uuid  # For next test.
 
         # NOTE: Transfer ownership.
-        user_other = next((uu for uu in dummy.get_users(2) if uu.id != user.id))
+        user_other = next((uu for uu in dummy.get_users(2) if uu.uuid != user.uuid))
         res = await fn(collection.uuid, uuid_user=user_other.uuid)
         if err := self.check_status(requests, res):
             raise err
@@ -405,7 +405,7 @@ class TestCollectionsDelete(CommonCollectionsTests):
     ):
         (collection,), session = dummy.get_collections(1), dummy.session
         assert not collection.deleted
-        assert collection.id_user == dummy.user.id
+        assert collection.uuid_user == dummy.user.uuid
         fn, fn_read = self.fn(requests), requests.collections.read
         fn_read_assignments = requests.assignments.collections.read
 
@@ -415,7 +415,7 @@ class TestCollectionsDelete(CommonCollectionsTests):
             .join(Collection)
             .join(Document)
             .where(
-                Collection.id == collection.id,
+                Collection.uuid == collection.uuid,
                 Document.deleted == false(),
                 Collection.deleted == false(),
             )

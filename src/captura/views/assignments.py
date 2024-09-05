@@ -163,7 +163,7 @@ class DocumentAssignmentView(BaseView):
             select(Collection)
             .join(Assignment)
             .where(
-                Assignment.id_document == document.id,
+                Assignment.uuid_document == document.uuid,
                 Assignment.deleted == false(),
                 Collection.deleted == false(),
             )
@@ -288,7 +288,7 @@ class CollectionAssignmentView(BaseView):
             .where(
                 Document.deleted == false(),
                 Assignment.deleted == false(),
-                Assignment.id_collection == collection.id,
+                Assignment.uuid_collection == collection.uuid,
             )
         )
         if uuid_document is not None:

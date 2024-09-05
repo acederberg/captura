@@ -201,7 +201,6 @@ class BaseSecondarySchema(BaseSchema): ...
 
 
 class BasePrimaryTableExtraSchema(BaseSchema):
-    id: fields.FieldID
     deleted: fields.FieldDeleted
 
 
@@ -450,9 +449,6 @@ class GrantSchema(GrantBaseSchema):
 
     # Metadata
     uuid_parent: Optional[fields.FieldUUID] = None
-    uuid_user_granter: Optional[fields.FieldUUID] = (
-        None  # should it reeally be optional
-    )
 
 
 class GrantExtraSchema(GrantSchema):

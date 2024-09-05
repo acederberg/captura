@@ -93,7 +93,7 @@ class CommonAssignmentsCollectionsTests(BaseEndpointTest):
         (collection,) = dummy.get_collections(1, GetPrimaryKwargs(deleted=False))
         uuid_document = [secrets.token_urlsafe(9)]
 
-        collection.id_user = user_other.id
+        collection.uuid_user = user_other.uuid
         if self.method == H.GET:
             collection.public = False
             msg = ErrAccessCollection._msg_private
@@ -181,7 +181,7 @@ class TestAssignmentsCollectionsRead(CommonAssignmentsCollectionsTests):
             select(Assignment)
             .join(Document)
             .where(
-                Assignment.id_collection == collection.id,
+                Assignment.uuid_collection == collection.uuid,
                 Assignment.deleted == false(),
                 Document.deleted == false(),
             )
@@ -366,13 +366,13 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
         (collection,) = dummy.get_collections(1)
         documents = dummy.get_documents(9, GetPrimaryKwargs(deleted=False), other=True)
         uuid_document_list = list(dd.uuid for dd in documents)
-        id_document_list = [dd.id for dd in documents]
+        id_document_list = [dd.uuid for dd in documents]
         assert (n_documents := len(uuid_document_list)) > 1
 
         session.execute(
             delete(Assignment).where(
-                Assignment.id_document.in_(id_document_list),
-                Assignment.id_collection == collection.id,
+                Assignment.uuid_document.in_(id_document_list),
+                Assignment.uuid_collection == collection.uuid,
             )
         )
         session.commit()
@@ -434,8 +434,8 @@ class TestAssignmentsCollectionsCreate(CommonAssignmentsCollectionsTests):
             update(Assignment)
             .values(deleted=True)
             .where(
-                Assignment.id_document.in_(id_document_list[: n_documents - 2]),
-                Assignment.id_collection == collection.id,
+                Assignment.uuid_document.in_(id_document_list[: n_documents - 2]),
+                Assignment.uuid_collection == collection.uuid,
             )
         )
         session.commit()

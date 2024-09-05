@@ -633,7 +633,7 @@ class BaseDummyProvider:
         session = self.session
         logger.warning("Calling `get_collections_retry_callback`.")
 
-        collection = Mk.collection(id_user=self.user.uuid)
+        collection = Mk.collection(uuid_user=self.user.uuid)
         session.add(collection)
         session.commit()
         session.refresh(collection)
@@ -666,7 +666,7 @@ class BaseDummyProvider:
 
             if order_by_document_count:
                 q_ids = (
-                    select(Collection.uuid.label("id_collection"))
+                    select(Collection.uuid.label("uuid_collection"))
                     .join(Assignment)
                     .group_by(Collection.uuid)
                     .having(func.count(Assignment.uuid_document) > 0)
@@ -912,7 +912,7 @@ class BaseDummyProvider:
 
         # NOTE: Get assocs. Assocs are always labeled by their
         model_assoc = resolve_model(Resolved.kind_assoc)  # type: ignore
-        uuid_source_name = f"id_{Resolved._attr_name_source}"
+        uuid_source_name = f"uuid_{Resolved._attr_name_source}"
         uuid_target_name = f"uuid_{Resolved.kind_target.name}"
 
         q = (
