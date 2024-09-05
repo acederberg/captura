@@ -43,7 +43,7 @@ class TestDummyProvider:
 
         # NOTE: Verify that collections exist.
         q = select(func.count(Collection.uuid)).where(
-            Collection.id_user == dummy.user.id
+            Collection.uuid_user == dummy.user.uuid
         )
         assert (n := session.scalar(q)) is not None and n > 0
 
@@ -52,20 +52,20 @@ class TestDummyProvider:
         #       items. (3)
 
         q = select(func.count(Grant.uuid)).where(
-            Grant.id_user == dummy.user.id,
+            Grant.uuid_user == dummy.user.uuid,
             Grant.pending_from == PendingFrom.created,
         )
         assert (n := session.scalar(q)) is not None and n > 0
 
         q = select(func.count(Grant.pending_from.distinct()))
         q = q.where(
-            Grant.id_user == dummy.user.id,
+            Grant.uuid_user == dummy.user.uuid,
             Grant.pending_from != PendingFrom.created,
         )
         assert (n := session.scalar(q)) is not None and n > 0
 
         q = select(func.count(Grant.level.distinct()))
-        q = q.where(Grant.id_user == dummy.user.id)
+        q = q.where(Grant.uuid_user == dummy.user.uuid)
         assert session.scalar(q) == 3
 
         q = select(func.count(Grant.pending.distinct()))
@@ -207,7 +207,7 @@ class TestDummyProvider:
                 select(Grant)
                 .join(Document)
                 .where(
-                    Grant.id_user == dummy.user.id,
+                    Grant.uuid_user == dummy.user.uuid,
                     Document.uuid.in_(uuid_documents),
                 )
             )
@@ -239,7 +239,7 @@ class TestDummyProvider:
             .join(Document)
             .where(
                 Document.uuid.in_(uuid_documents),
-                Grant.id_user == dummy.user.id,
+                Grant.uuid_user == dummy.user.uuid,
             )
         )
         n_grants = dummy.session.scalar(q_grants)
@@ -426,17 +426,17 @@ class TestDummyProvider:
         #       have one grant, the grant to this document.
         assert len(token_user_grants := data.data.token_user_grants) == 1
         assert (gg := token_user_grants.get(dummy.user.uuid)) is not None
-        assert data.data.document.id == gg.id_document
+        assert data.data.document.uuid == gg.uuid_document
 
         # NOTE: There is not necessarily a grant for every user. Grants should
         #       be indexed using user uuids.
         grants = data.data.grants
-        id_document = data.data.document.id
+        id_document = data.data.document.uuid
 
         uuid_user = uuids(data.data.users)
         uuid_user_has_grants = set(grants)
         assert uuid_user.issuperset(uuid_user_has_grants)
-        assert all(gg.id_document == id_document for gg in grants.values())
+        assert all(gg.uuid_document == id_document for gg in grants.values())
 
     def test_get_data_grant_user(self, dummy: DummyProvider, count: int):
         data = dummy.get_data_grant_user()
@@ -451,7 +451,7 @@ class TestDummyProvider:
         assert set(gg.uuid_document for gg in token_user_grants).issubset(
             uuids(data.data.documents)
         )
-        assert all(gg.id_user == dummy.user.id for gg in token_user_grants)
+        assert all(gg.uuid_user == dummy.user.uuid for gg in token_user_grants)
 
         # NOTE: For now, grants and token user grants are always the same as
         #       the data provided will always have a document owned by
@@ -469,7 +469,9 @@ class TestDummyProvider:
         assert set(aa.uuid_document for aa in assignments).issubset(
             uuids(data.data.documents)
         )
-        assert all(aa.id_collection == data.data.collection.id for aa in assignments)
+        assert all(
+            aa.uuid_collection == data.data.collection.uuid for aa in assignments
+        )
 
     def test_get_data_assignment_document(self, dummy: DummyProvider, count: int):
         data = dummy.get_data_assignment_document()
@@ -480,7 +482,7 @@ class TestDummyProvider:
         assert set(aa.uuid_collection for aa in assignments).issubset(
             uuids(data.data.collections)
         )
-        assert all(aa.id_document == data.data.document.id for aa in assignments)
+        assert all(aa.uuid_document == data.data.document.uuid for aa in assignments)
 
         # NOTE: Test passing of kwargs.
         data = dummy.get_data_assignment_document(
@@ -513,7 +515,7 @@ class TestDummyProvider:
         """Verify that ``get_primary`` is robust."""
 
         # NOTE: Delete dummy collections.
-        q_rm = delete(Collection).where(Collection.id_user == dummy.user.id)
+        q_rm = delete(Collection).where(Collection.uuid_user == dummy.user.uuid)
 
         session = dummy.session
         session.execute(q_rm)
@@ -532,7 +534,7 @@ class TestDummyProvider:
         # NOTE: Delete dummy documents where the user is designated as the
         #       ``creator`` and grants on remaining documents.
         q_documents_created = select(Document).where(
-            Grant.id_user == dummy.user.id,
+            Grant.uuid_user == dummy.user.uuid,
             Grant.pending_from == PendingFrom.created,
         )
         for doc in session.scalars(q_documents_created):
@@ -540,11 +542,11 @@ class TestDummyProvider:
 
         session.commit()
 
-        session.execute(delete(Grant).where(Grant.id_user == dummy.user.id))
+        session.execute(delete(Grant).where(Grant.uuid_user == dummy.user.uuid))
         session.commit()
 
         # NOTE: Confirm document and grant removal with db and `get_documents`.
-        q = select(func.count(Grant.uuid)).where(Grant.id_user == dummy.user.id)
+        q = select(func.count(Grant.uuid)).where(Grant.uuid_user == dummy.user.uuid)
         assert not session.scalar(q), "No grants should remain for dummy user."
 
         kwargs = GetPrimaryKwargs(

@@ -104,7 +104,7 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
         session, level = dummy.session, Level.view
         (document,) = dummy.get_documents(level=level, n=1)
         (collection,) = dummy.get_collections(1)
-        session.merge(Assignment(id_document=document.id, id_collection=collection.id))
+        session.merge(Assignment(uuid_document=document.uuid, uuid_collection=collection.uuid))
         session.commit()
 
         grant = dummy.get_document_grant(document)
@@ -146,7 +146,7 @@ class CommonAssignmentsDocumentsTests(BaseEndpointTest):
 
         _ = session.add(document)
         assignment = session.scalar(
-            select(Assignment).where(Assignment.id_document == document.id).limit(1)
+            select(Assignment).where(Assignment.uuid_document == document.uuid).limit(1)
         )
         assert assignment is not None
 
@@ -179,7 +179,7 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
         (document,) = dummy.get_documents(level=Level.view, n=1)
 
         assignments = (
-            Assignment(id_document=document.id, id_collection=cc.id)
+            Assignment(uuid_document=document.uuid, uuid_collection=cc.uuid)
             for cc in dummy.get_collections(10)
         )
         tuple(map(session.merge, assignments))
@@ -196,7 +196,7 @@ class TestAssignmentsDocumentsRead(CommonAssignmentsDocumentsTests):
             select(Assignment.uuid)
             .join(Collection)
             .where(
-                Assignment.id_document == document.id,
+                Assignment.uuid_document == document.uuid,
                 Assignment.deleted == false(),
                 Collection.deleted == false(),
             )
@@ -268,7 +268,7 @@ class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
         assert len(collections)
 
         assignments = tuple(
-            Assignment(id_document=document.id, id_collection=cc.id, deleted=False)
+            Assignment(uuid_document=document.uuid, uuid_collection=cc.uuid, deleted=False)
             for cc in collections
         )
         tuple(map(session.merge, assignments))
@@ -277,8 +277,8 @@ class TestAssignmentsDocumentsDelete(CommonAssignmentsDocumentsTests):
 
         n_created = session.scalar(
             q := select(func.count(Assignment.uuid)).where(
-                Assignment.id_collection.in_([cc.id for cc in collections]),
-                Assignment.id_document == document.id,
+                Assignment.uuid_collection.in_([cc.uuid for cc in collections]),
+                Assignment.uuid_document == document.uuid,
             )
         )
         assert n_created == n_collections
@@ -369,7 +369,7 @@ class TestAssignmentsDocumentsCreate(CommonAssignmentsDocumentsTests):
         (document,) = dummy.get_documents(n=1, level=Level.own)
 
         # NOTE: Delete all assignments for this document.
-        q = delete(Assignment).where(Assignment.id_document == document.id)
+        q = delete(Assignment).where(Assignment.uuid_document == document.uuid)
         session.execute(q)
         session.commit()
 

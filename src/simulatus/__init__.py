@@ -39,6 +39,7 @@ from typing_extensions import Doc
 # --------------------------------------------------------------------------- #
 from captura import util
 from captura.auth import Auth, Token, TokenPermissionTier
+from captura.config import Config
 from captura.controllers.access import Access
 from captura.controllers.base import (
     BaseResolved,
@@ -111,7 +112,8 @@ class BaseDummyProvider:
     }
 
     client_config_cls: Type
-    config: ConfigSimulatus
+    config: Config
+    config_dummy: ConfigSimulatus
     dummy: DummyConfig
     session: Session
     user: User
@@ -119,7 +121,8 @@ class BaseDummyProvider:
 
     def __init__(
         self,
-        config: ConfigSimulatus,
+        config: Config,
+        config_dummy: ConfigSimulatus,
         session: Session,
         *,
         user: User,
@@ -128,7 +131,8 @@ class BaseDummyProvider:
     ):
         self.client_config_cls = client_config_cls or ClientConfig
         self.config = config
-        self.dummy = config.dummy
+        self.config_dummy = config_dummy
+        self.dummy = config_dummy.dummy
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
         self.user = user
@@ -162,8 +166,8 @@ class BaseDummyProvider:
         logger.debug("Making assignments...")
         assignments: Tuple[Assignment, ...] = tuple(
             Assignment(
-                id_document=document.id,
-                id_collection=collection.id,
+                uuid_document=document.uuid,
+                uuid_collection=collection.uuid,
                 deleted=False,
             )
             for collection in collections
@@ -188,15 +192,15 @@ class BaseDummyProvider:
         #       statement be emitted in addition to these queries.
         #
         # TLDR: Do not use ``session.merge``, just use ``DELETE`` or use
-        #       options to avoid causing duplicate ``(id_user, id_document)``
+        #       options to avoid causing duplicate ``(uuid_user, uuid_document)``
         #       keys.
         if not exclude_grants_create:
             logger.debug("Making grants for documents created by self.")
             grants_created = tuple(
                 Grant(
                     level=Level.own,
-                    id_user=self.user.id,
-                    id_document=document.id,
+                    uuid_user=self.user.uuid,
+                    uuid_document=document.uuid,
                     deleted=False,
                     pending=False,
                     pending_from=PendingFrom.created,
@@ -212,17 +216,17 @@ class BaseDummyProvider:
             logger.debug("Making grants for `%s` on documents created by others.")
             a, b = dummies.grants.minimum_self, dummies.grants.maximum_self
             q_ids_has_grants = (
-                select(Document.id)
+                select(Document.uuid)
                 .join(Grant)
-                .group_by(Grant.id_document)
-                .having(func.count(Grant.id_user) > 0)
-                .where(Grant.id_user == self.user.id)
+                .group_by(Grant.uuid_document)
+                .having(func.count(Grant.uuid_user) > 0)
+                .where(Grant.uuid_user == self.user.uuid)
             )
             q_grants_share = (
                 select(Grant)
                 .join(Document)
                 .where(
-                    Document.id.not_in(q_ids_has_grants),
+                    Document.uuid.not_in(q_ids_has_grants),
                     Grant.pending_from == PendingFrom.created,
                 )
                 .limit(b)
@@ -240,8 +244,8 @@ class BaseDummyProvider:
             grants_self = tuple(
                 Grant(
                     uuid=secrets.token_urlsafe(8),
-                    id_user=self.user.id,
-                    id_document=grant.id_document,
+                    uuid_user=self.user.uuid,
+                    uuid_document=grant.uuid_document,
                     uuid_parent=grant.uuid,
                     **kwargs,
                 )
@@ -257,8 +261,8 @@ class BaseDummyProvider:
         logger.debug("Making grants for others on documents created `%s`.")
 
         q_ids_users = (
-            select(User.id)
-            .where(User.id != self.user.id)
+            select(User.uuid)
+            .where(User.uuid != self.user.uuid)
             .limit(
                 randint(
                     dummies.grants.minimum_other,
@@ -266,7 +270,7 @@ class BaseDummyProvider:
                 )
             )
         )
-        id_users_other = set(self.session.scalars(q_ids_users))
+        uuid_users_other = set(self.session.scalars(q_ids_users))
 
         if not grants_created:
             grants_source = tuple(map(self.get_document_grant, documents))
@@ -278,15 +282,15 @@ class BaseDummyProvider:
             Grant(
                 uuid=secrets.token_urlsafe(8),
                 level=choice(list(Level)),
-                id_user=id_user,
-                id_document=grant.id_document,
+                uuid_user=uuid_user,
+                uuid_document=grant.uuid_document,
                 uuid_parent=grant.uuid,
                 deleted=bool(randint(0, 1)),
                 pending=bool(randint(0, 1)),
                 pending_from=choice((PendingFrom.grantee, PendingFrom.granter)),
             )
             for grant in grants_source
-            for id_user in id_users_other
+            for uuid_user in uuid_users_other
         )
 
         return grants_created + grants_self + grants_other
@@ -392,7 +396,7 @@ class BaseDummyProvider:
     def randomize_grants(self):
         logger.debug("Randomizing grants for `%s`.", self.user.uuid)
         q_uuids = select(Grant.uuid).where(
-            Grant.id_user == self.user.id, Grant.pending_from != PendingFrom.created
+            Grant.uuid_user == self.user.uuid, Grant.pending_from != PendingFrom.created
         )
         uuids = self.session.scalars(q_uuids)
 
@@ -479,7 +483,7 @@ class BaseDummyProvider:
     ) -> Tuple[User, ...]:
         callback = None
         if other:
-            callback = lambda q: q.where(User.id != self.user.id)  # noqa: E731
+            callback = lambda q: q.where(User.uuid != self.user.uuid)  # noqa: E731
 
         return self.get_primary(
             User,
@@ -526,12 +530,12 @@ class BaseDummyProvider:
                 q = q.join(Grant).where(*conds)
             else:
                 q_has_grants = (
-                    select(Grant.id_document)
-                    .where(Grant.id_user == self.user.id)
-                    .group_by(Grant.id_document)
+                    select(Grant.uuid_document)
+                    .where(Grant.uuid_user == self.user.uuid)
+                    .group_by(Grant.uuid_document)
                     .having(func.count(Grant.uuid) > 0)
                 )
-                q = q.where(Document.id.not_in(q_has_grants))
+                q = q.where(Document.uuid.not_in(q_has_grants))
 
             return q
 
@@ -555,8 +559,8 @@ class BaseDummyProvider:
                 self.session.add(
                     Grant(
                         uuid=secrets.token_urlsafe(8),
-                        id_document=document.id,
-                        id_user=self.user.id,
+                        uuid_document=document.uuid,
+                        uuid_user=self.user.uuid,
                         level=level or Level.own,
                         pending_from=PendingFrom.created,
                         pending=kwargs.get("pending", False),
@@ -570,8 +574,8 @@ class BaseDummyProvider:
             grants = tuple(
                 Grant(
                     uuid=secrets.token_urlsafe(8),
-                    id_document=document.id,
-                    id_user=self.user.id,
+                    uuid_document=document.uuid,
+                    uuid_user=self.user.uuid,
                     level=level or Level.own,
                     pending_from=PendingFrom.created,
                     pending=kwargs.get("pending", False),
@@ -601,7 +605,7 @@ class BaseDummyProvider:
         q_grants = (
             select(Grant)
             .join(Document)
-            .where(Document.uuid.in_(uuid_documents), Grant.id_user == self.user.id)
+            .where(Document.uuid.in_(uuid_documents), Grant.uuid_user == self.user.uuid)
         )
         data_raw["grants"] = {
             gg.uuid_document: gg for gg in self.session.scalars(q_grants)
@@ -633,7 +637,7 @@ class BaseDummyProvider:
         session = self.session
         logger.warning("Calling `get_collections_retry_callback`.")
 
-        collection = Mk.collection(id_user=self.user.id)
+        collection = Mk.collection(uuid_user=self.user.uuid)
         session.add(collection)
         session.commit()
         session.refresh(collection)
@@ -658,22 +662,22 @@ class BaseDummyProvider:
         def callback(q):
             match other:
                 case True:
-                    cond_other = Collection.id_user != self.user.id
+                    cond_other = Collection.uuid_user != self.user.uuid
                 case False:
-                    cond_other = Collection.id_user == self.user.id
+                    cond_other = Collection.uuid_user == self.user.uuid
                 case _:
                     cond_other = true()
 
             if order_by_document_count:
                 q_ids = (
-                    select(Collection.id.label("id_collection"))
+                    select(Collection.uuid.label("uuid_collection"))
                     .join(Assignment)
-                    .group_by(Collection.id)
-                    .having(func.count(Assignment.id_document) > 0)
+                    .group_by(Collection.uuid)
+                    .having(func.count(Assignment.uuid_document) > 0)
                     .where(cond_other)
-                    .order_by(desc(func.count(Assignment.id_document)))
+                    .order_by(desc(func.count(Assignment.uuid_document)))
                 )
-                q = q.where(Collection.id.in_(q_ids))
+                q = q.where(Collection.uuid.in_(q_ids))
 
             return q
 
@@ -699,7 +703,7 @@ class BaseDummyProvider:
     def get_document_grant(self, document: Document) -> Grant:
         grant = self.session.scalar(
             select(Grant).where(
-                Grant.id_document == document.id, Grant.id_user == self.user.id
+                Grant.uuid_document == document.uuid, Grant.uuid_user == self.user.uuid
             )
         )
         if grant is None:
@@ -912,14 +916,14 @@ class BaseDummyProvider:
 
         # NOTE: Get assocs. Assocs are always labeled by their
         model_assoc = resolve_model(Resolved.kind_assoc)  # type: ignore
-        id_source_name = f"id_{Resolved._attr_name_source}"
+        uuid_source_name = f"uuid_{Resolved._attr_name_source}"
         uuid_target_name = f"uuid_{Resolved.kind_target.name}"
 
         q = (
             select(model_assoc)
             .join(model_target)
             .where(
-                getattr(model_assoc, id_source_name) == source.id,
+                getattr(model_assoc, uuid_source_name) == source.uuid,
                 model_target.uuid.in_(uuid_target := uuids(targets)),
             )
         )
@@ -1047,7 +1051,8 @@ class DummyYAMLProviderInfoMeta(type):
 
         if (dummies_file := namespace.get("dummies_file")) is None:
             kind = KindObject._value2member_map_[M.__tablename__]
-            dummies_file = util.Path.test_assets(f"{kind.name}.yaml")
+            dummies_file = util.Path.simulatus_assets(f"{kind.name}.yaml")
+            
             namespace["dummies_file"] = dummies_file
 
         T = super().__new__(cls, name, bases, namespace)
@@ -1172,7 +1177,8 @@ class DummyProvider(BaseDummyProvider):
 
     def __init__(
         self,
-        config: ConfigSimulatus,
+        config: Config,
+        config_dummy: ConfigSimulatus,
         session: Session,
         *,
         auth: Auth | None = None,
@@ -1180,7 +1186,8 @@ class DummyProvider(BaseDummyProvider):
         client_config_cls: Type | None = None,
     ):
         self.config = config
-        self.dummy = config.dummy
+        self.config_dummy = config_dummy
+        self.dummy = config_dummy.dummy
 
         self.auth = auth if auth is not None else Auth.forPyTest(config)
         self.session = session
@@ -1258,7 +1265,8 @@ class DummyProvider(BaseDummyProvider):
 
 class DummyHandler:
     dummy: DummyConfig
-    config: ConfigSimulatus
+    config: Config
+    config_dummy: ConfigSimulatus
     sessionmaker: sqa_sessionmaker[Session]
     auth: Auth
     # user_uuids: List[str]
@@ -1266,13 +1274,16 @@ class DummyHandler:
     def __init__(
         self,
         sessionmaker: sqa_sessionmaker,
-        config: ConfigSimulatus,
+        config: Config,
+        config_dummy: ConfigSimulatus,
         # user_uuids: List[str],
         *,
         auth: Auth | None = None,
     ):
-        self.dummy = config.dummy
+        self.config_dummy = config_dummy
+        self.dummy = self.config_dummy.dummy
         self.config = config
+
         self.sessionmaker = sessionmaker
         self.auth = auth or Auth.forPyTest(config)
         # self.user_uuids = user_uuids
@@ -1304,7 +1315,7 @@ class DummyHandler:
     ):
         return (
             select(
-                User.id,
+                User.uuid,
                 User.uuid,
                 func.JSON_VALUE(User.content, "$.dummy.used_by").label("used_by"),
                 func.JSON_LENGTH(User.content, "$.dummy.used_by").label(
@@ -1359,7 +1370,7 @@ class DummyHandler:
     ) -> Self:
         with self.sessionmaker() as session:
             logger.debug("Getting current user count.")
-            uuids_existing = list(session.scalars(select(User.id, User.uuid)))
+            uuids_existing = list(session.scalars(select(User.uuid, User.uuid)))
             n_users = len(uuids_existing)
             assert n_users is not None
 
@@ -1372,8 +1383,9 @@ class DummyHandler:
             logger.info("Generating `%s` dummies.", n_generate)
             for count in range(n_generate):
                 dd = DummyProvider(
-                    self.config,
-                    session,
+                    config=self.config,
+                    config_dummy=self.config_dummy,
+                    session=session,
                     auth=self.auth,
                     use_existing=False,
                 )

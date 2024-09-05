@@ -332,14 +332,14 @@ class Create(WithDelete, Generic[T_Create]):
         data: Data[ResolvedAssignmentDocument] | Data[ResolvedAssignmentCollection],
         target: Collection | Document,
     ) -> Assignment:
-        id_source_name = f"id_{data.data.kind_source.name}"
-        id_target_name = f"id_{data.data.kind_target.name}"
-        id_source_value = data.data.source.id  # type: ignore
+        uuid_source_name = f"uuid_{data.data.kind_source.name}"
+        uuid_target_name = f"uuid_{data.data.kind_target.name}"
+        uuid_source_value = data.data.source.uuid  # type: ignore
 
         kwargs = {
             "uuid": secrets.token_urlsafe(8),
-            id_source_name: id_source_value,
-            id_target_name: target.id,
+            uuid_source_name: uuid_source_value,
+            uuid_target_name: target.uuid,
         }
         return Assignment(
             **kwargs,
@@ -414,17 +414,17 @@ class Create(WithDelete, Generic[T_Create]):
             case bad:
                 raise ValueError(f"Invalid source `{bad}`.")
 
-        id_source_name = f"id_{data.data.kind_source.name}"
-        id_target_name = f"id_{data.data.kind_target.name}"
-        id_source_value = data.data.source.id  # type: ignore
+        uuid_source_name = f"uuid_{data.data.kind_source.name}"
+        uuid_target_name = f"uuid_{data.data.kind_target.name}"
+        uuid_source_value = data.data.source.uuid  # type: ignore
 
         kwargs = {
             "uuid": secrets.token_urlsafe(8),
             "uuid_parent": grant_parent_uuid,
             "pending_from": pending_from,
             "pending": True,
-            id_source_name: id_source_value,
-            id_target_name: target.id,
+            uuid_source_name: uuid_source_value,
+            uuid_target_name: target.uuid,
         }
         return Grant(**kwargs, **self.create_data.model_dump())
 
@@ -512,8 +512,8 @@ class Create(WithDelete, Generic[T_Create]):
         data.data.token_user_grants = {
             user.uuid: (
                 Grant(
-                    id_user=user.id,
-                    id_document=document.id,
+                    uuid_user=user.uuid,
+                    uuid_document=document.uuid,
                     level=Level.own,
                     pending=False,
                     pending_from=PendingFrom.created,
@@ -748,7 +748,7 @@ class Update(WithDelete, Generic[T_Update]):
             session,
             param.uuid_user,
         )
-        collection.id_user = user.id
+        collection.uuid_user = user.uuid
         data.event.children.append(
             Event(
                 **self.event_common,

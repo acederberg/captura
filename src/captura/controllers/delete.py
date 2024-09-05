@@ -239,8 +239,8 @@ class Delete(WithAccess):
                     model_assoc.uuid.in_(data.data.uuid_assoc),
                     and_(
                         model_target.uuid.in_(data.data.uuid_target),
-                        getattr(model_assoc, "id_" + data.data.kind_source.name)
-                        == data.data.source.id,
+                        getattr(model_assoc, "uuid_" + data.data.kind_source.name)
+                        == data.data.source.uuid,
                     ),
                 )
             )
@@ -474,7 +474,7 @@ class Delete(WithAccess):
             .join(Document)
             .where(
                 Document.uuid.in_(uuids(documents)),  # type: ignore[type-var]
-                Assignment.id_collection == collection.id,
+                Assignment.uuid_collection == collection.uuid,
             )
         )
         assignments = {
@@ -591,7 +591,7 @@ class Delete(WithAccess):
                 select(Assignment)
                 .join(Collection)
                 .where(
-                    Assignment.id_document == document.id,
+                    Assignment.uuid_document == document.uuid,
                     Collection.uuid.in_(uuid_collections),
                 )
             )

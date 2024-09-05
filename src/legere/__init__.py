@@ -442,7 +442,7 @@ class DockerCommand(BaseTyperizable):
         console = context.console_handler.console
 
         client = docker.DockerClient()  # type: ignore
-        if (container := client.containers.get("captura-db")) is None:
+        if (container := client.containers.get("captura-db-1")) is None:
             console.print("[red]Docker compose project is not running.")
             raise typer.Exit(1)
 

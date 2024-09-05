@@ -47,6 +47,11 @@ class Path:
         return path.join(PATH_TESTS_ASSETS, v)
 
     @classmethod
+    def simulatus_assets(cls, v: str) -> str:
+        o = path.join(PATH_SIMULATUS_ASSETS, v)
+        return o
+
+    @classmethod
     def docker(cls, v: str) -> str:
         return path.join(PATH_DOCKER, v)
 
@@ -60,8 +65,10 @@ class Path:
 
 
 PATH_BASE: str = path.realpath(path.join(path.dirname(__file__), "..", ".."))
-PATH_APP: str = path.join(PATH_BASE, "src/app")
-PATH_CLIENT: str = path.join(PATH_BASE, "src/client")
+PATH_APP: str = path.join(PATH_BASE, "src/captura")
+PATH_SIMULATUS = path.join(PATH_BASE, "src/simulatus")
+PATH_SIMULATUS_ASSETS = path.join(PATH_SIMULATUS, "assets")
+PATH_CLIENT: str = path.join(PATH_BASE, "src/legere")
 PATH_CONFIG: str = path.join(PATH_BASE, "configs")
 PATH_DOCKER: str = path.join(PATH_BASE, "docker")
 PATH_PLUGINS: str = path.join(PATH_BASE, "plugins")
@@ -98,6 +105,10 @@ PATH_CONFIG_APP = from_env(
 PATH_CONFIG_CLIENT = from_env(
     "CONFIG_CLIENT",
     Path.config("client.yaml"),
+)
+PATH_CONFIG_DUMMY = from_env(
+    "CONFIG_DUMMY",
+    Path.config("dummy.yaml"),
 )
 PATH_CONFIG_TEST_APP = from_env(
     "CONFIG_APP_TEST",

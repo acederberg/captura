@@ -105,7 +105,7 @@ class DocumentView(BaseView):
         (document,) = data_create.data.documents
 
         grant, *_ = data_create.data.token_user_grants.values()
-        grant.id_document = document.id
+        grant.uuid_document = document.uuid
         create.session.add(grant)
         create.session.commit()
 

@@ -283,8 +283,8 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         documents = dummy.get_documents(other=True, n=5)
         grants = tuple(
             Grant(
-                id_document=document.id,
-                id_user=dummy.user.id,
+                uuid_document=document.uuid,
+                uuid_user=dummy.user.uuid,
                 level=Level.view,
                 deleted=True,
                 pending=False,

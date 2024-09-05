@@ -268,8 +268,8 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
         session.refresh(document)
 
         grant = Grant(
-            id_document=document.id,
-            id_user=dummy.user.id,
+            uuid_document=document.uuid,
+            uuid_user=dummy.user.uuid,
             level=Level.own,
             pending=False,
             deleted=False,
@@ -284,7 +284,7 @@ class CommonDocumentsGrantsTests(BaseEndpointTest):
 
         # users = dummy.get_users(n=3)
         # uuid_user = uuids(users)
-        # grants = tuple(Grant(id_document=document.id, id_user=uu.id) for uu in users)
+        # grants = tuple(Grant(id_document=document.uuid, uuid_user=uu.uuid) for uu in users)
         # tuple(map(session.merge, grants))
 
         errhttp = mwargs(
@@ -395,8 +395,8 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
         session.refresh(document)
 
         grant = Grant(
-            id_document=document.id,
-            id_user=dummy.user.id,
+            uuid_document=document.uuid,
+            uuid_user=dummy.user.uuid,
             level=Level.own,
             pending=False,
             deleted=False,
@@ -405,8 +405,8 @@ class TestDocumentsGrantsRead(CommonDocumentsGrantsTests):
         users = dummy.get_users(10, other=True)
         grants = [
             Grant(
-                id_document=document.id,
-                id_user=user.id,
+                uuid_document=document.uuid,
+                uuid_user=user.uuid,
                 level=Level.view,
                 pending=index % 2,
                 deleted=False,
@@ -716,8 +716,8 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
         users = dummy.get_users(other=True, n=5)
         session.add(
             grant := Grant(
-                id_user=dummy.user.id,
-                id_document=document.id,
+                uuid_user=dummy.user.uuid,
+                uuid_document=document.uuid,
                 level=Level.own,
                 pending=False,
                 deleted=False,
@@ -725,8 +725,8 @@ class TestDocumentsGrantsRevoke(CommonDocumentsGrantsTests):
                 children=(
                     grants := list(
                         Grant(
-                            id_user=user.id,
-                            id_document=document.id,
+                            uuid_user=user.uuid,
+                            uuid_document=document.uuid,
                             level=Level.own,
                             pending=False,
                             deleted=False,
@@ -789,8 +789,8 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
         uuid_user = [user_other.uuid]
         session.add(user_other)
         q_grant_other = select(Grant).where(
-            Grant.id_document == document.id,
-            Grant.id_user == user_other.id,
+            Grant.uuid_document == document.uuid,
+            Grant.uuid_user == user_other.uuid,
         )
         grant_other_init = session.scalar(q_grant_other)
         if grant_other_init is not None:
@@ -799,8 +799,8 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
 
         session.add(
             grant_other := Grant(
-                id_user=user_other.id,
-                id_document=document.id,
+                uuid_user=user_other.uuid,
+                uuid_document=document.uuid,
                 level=Level.view,
                 pending=True,
                 deleted=False,
@@ -866,8 +866,8 @@ class TestDocumentsGrantsApprove(CommonDocumentsGrantsTests):
 
         session.add(
             Grant(
-                id_user=dummy.user.id,
-                id_document=document.id,
+                uuid_user=dummy.user.uuid,
+                uuid_document=document.uuid,
                 level=Level.own,
                 pending=False,
                 pending_from=PendingFrom.created,

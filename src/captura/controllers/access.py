@@ -488,7 +488,7 @@ class Access(BaseController):
 
             match self.method:
                 case H.GET if allow_public:
-                    if not collection.public and collection.id_user != token_user.id:
+                    if not collection.public and collection.uuid_user != token_user.uuid:
                         raise ErrAccessCollection.httpexception(
                             "_msg_private",
                             403,
@@ -497,7 +497,7 @@ class Access(BaseController):
                         )
                     return collection
                 case H.GET | H.POST | H.DELETE | H.PUT | H.PATCH:
-                    if token_user.id != collection.id_user:
+                    if token_user.uuid != collection.uuid_user:
                         raise ErrAccessCollection.httpexception(
                             "_msg_modify",
                             403,

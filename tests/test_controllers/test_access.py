@@ -249,8 +249,8 @@ class BaseTestAccess(metaclass=AccessTestMeta):
 #     quser = (
 #         select(Document.uuid)
 #         .select_from(Document)
-#         .join(Grant, onclause=Grant.id_document == Document.id)
-#         .join(User, onclause=User.id == Grant.id_user)
+#         .join(Grant, onclause=Grant.uuid_document == Document.uuid)
+#         .join(User, onclause=User.uuid == Grant.uuid_user)
 #         .where(
 #             User.uuid == "000-000-000",
 #             Grant.level >= level.value,
@@ -528,7 +528,7 @@ class TestAccessCollection(BaseTestAccess):
     def test_private(self, dummy: DummyProvider, count):
         (collection,) = dummy.get_collections(1)
         (collection_other,) = dummy.get_collections(1, other=True)
-        assert collection_other.id_user != dummy.user.id
+        assert collection_other.uuid_user != dummy.user.uuid
 
         collection.deleted, collection.public = False, False
         collection_other.deleted, collection_other.public = False, False
@@ -560,7 +560,7 @@ class TestAccessCollection(BaseTestAccess):
 
             # NOTE: User can access their own private collection
             res = access.collection(collection.uuid)
-            assert res.id_user == access.token_user.id
+            assert res.uuid_user == access.token_user.uuid
             assert collection.uuid == res.uuid
 
             # TODO: Private users cannot have public collections. How to resolve?
@@ -662,7 +662,7 @@ class TestAccessCollection(BaseTestAccess):
             # Can when owner, impersonate owner.
             collection_res = access.collection(collection.uuid)
             assert collection_res.uuid == collection.uuid
-            assert collection.id_user == dummy.user.id
+            assert collection.uuid_user == dummy.user.uuid
 
 
 class TestAccessDocument(BaseTestAccess):
@@ -675,8 +675,8 @@ class TestAccessDocument(BaseTestAccess):
         for document in dummy.get_documents(25, other=True):
             n_grants = dummy.session.scalar(
                 select(func.count(Grant.uuid)).where(
-                    Grant.id_user == dummy.user.id,
-                    Grant.id_document == document.id,
+                    Grant.uuid_user == dummy.user.uuid,
+                    Grant.uuid_document == document.uuid,
                 )
             )
             assert not n_grants
