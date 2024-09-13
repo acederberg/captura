@@ -16,6 +16,7 @@ services:
       CAPTURA_CONFIG_CLIENT: "${CAPTURA_CONFIG_CLIENT-/home/captura/app/configs/client.yaml}"
       CAPTURA_CONFIG_APP: "${CAPTURA_CONFIG_APP-/home/captura/app/configs/app.yaml}"
       CAPTURA_CONFIG_APP_TEST: "${CAPTURA_CONFIG_APP_TEST-/home/captura/app/configs/app.test.yaml}"
+      CAPTURA_CONFIG_DUMMY: "${CAPTURA_CONFIG_APP-/home/captura/configs/dummy.yaml}"
       CAPTURA_FLAKEY: "${CAPTURA_FLAKEY-/home/captura/app/configs/flakey.yaml}"
       CAPTURA_PLUGINS_USE: "${CAPTURA_PLUGINS_USE-0}"
     ports: 
