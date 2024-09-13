@@ -10,6 +10,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import select
 
 # --------------------------------------------------------------------------- #
+from captura.config import Config
 from captura.err import (
     ErrAccessUser,
     ErrAssocRequestMustForce,
@@ -22,6 +23,7 @@ from captura.models import Document, Grant, User
 from captura.schemas import AsOutput, GrantSchema, KindNesting, OutputWithEvents, mwargs
 from legere.requests import Requests
 from simulatus import DummyProvider, GetPrimaryKwargs
+from simulatus.config import ConfigSimulatus
 from tests.conftest import COUNT
 from tests.test_views.util import BaseEndpointTest
 
@@ -183,7 +185,12 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
     # NOTE: Many tests bc pain in the ass.
     @pytest.mark.asyncio
     async def test_success_200_simple(
-        self, dummy: DummyProvider, requests: Requests, count: int
+        self,
+        dummy: DummyProvider,
+        config: Config,
+        config_simulatus: ConfigSimulatus,
+        requests: Requests,
+        count: int,
     ):
         "Test requesting a (single) grant that does not already exist and is not deleted."
 
@@ -191,7 +198,9 @@ class TestUsersGrantsRequest(CommonUsersGrantsTests):
         (other_user,) = dummy.get_users(1)
         assert user.uuid != other_user.uuid
 
-        other_dummy = DummyProvider(dummy.config, session, use_existing=other_user)
+        other_dummy = DummyProvider(
+            config, config_simulatus, session, use_existing=other_user
+        )
         (other_document,) = other_dummy.get_documents(1, level=Level.own)
         assert other_document.deleted is False
 

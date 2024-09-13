@@ -78,7 +78,6 @@ from simulatus.config import ConfigSimulatus, DummyConfig
 from simulatus.mk import Mk, combos
 from simulatus.reports import ReportController
 
-util.setup_logging(util.Path.base("logging.test.yaml"))
 logger = util.get_logger(__name__)
 
 # =========================================================================== #

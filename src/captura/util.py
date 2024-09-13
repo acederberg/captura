@@ -127,7 +127,7 @@ PATH_HOOKS_USE: bool = from_env("HOOKS_USE", "1") == "1"
 
 PATH_STATIC = from_env("STATIC", Path.app("static"))
 PATH_LOGS = from_env("LOGS", Path.base("logs"))
-PATH_CONFIG_LOG = from_env("LOGS_CONFIG", Path.base("logging.yaml"))
+PATH_CONFIG_LOG = from_env("LOGS_CONFIG", Path.app("logging.yaml"))
 
 PLUGINS_USE = from_env("PLUGINS_USE", "1") == "1"
 VERBOSE = from_env("VERBOSE", "0") != "0"

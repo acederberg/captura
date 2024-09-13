@@ -20,6 +20,7 @@ from captura.models import Base
 from captura.schemas import mwargs
 from captura.views import AppView
 from simulatus import DummyHandler, DummyProvider, DummyProviderYAML
+from simulatus.config import ConfigSimulatus
 from tests.config import PytestClientConfig, PytestConfig
 from tests.flakey import FLAKEY_PATH, Flakey
 
@@ -215,7 +216,7 @@ def resolve_config_captura(pytestconfig: pytest.Config) -> PytestConfig:
     logger.debug("Loading application configuration.")
     app = AppConfig.model_validate(
         {
-            "logging_configuration_path": util.Path.base("logging.test.yaml"),
+            "logging_configuration_path": util.Path.base("tests/logging.yaml"),
         }
     )
 
@@ -260,6 +261,11 @@ def config(pytestconfig: pytest.Config) -> PytestConfig:
 @pytest.fixture(scope="session")
 def client_config(pytestconfig: pytest.Config) -> PytestClientConfig:
     return pytestconfig.stash[STASHKEY_CONFIG_LEGERE].model_copy()
+
+
+@pytest.fixture(scope="session")
+def config_simulatus(config: PytestConfig):
+    return ConfigSimulatus(dummy=config.dummy)
 
 
 # NOTE: Was this necessary? Currently impartial.
@@ -362,11 +368,17 @@ def dummy_handler(
 
 
 @pytest.fixture
-def dummy(request, dummy_handler: DummyHandler):
+def dummy(
+    request,
+    config: PytestConfig,
+    config_simulatus: ConfigSimulatus,
+    dummy_handler: DummyHandler,
+):
     logger.info("Providing random dummy.")
     with dummy_handler.sessionmaker() as session:
         dummy = DummyProvider(
-            dummy_handler.config,
+            config,
+            config_simulatus,
             session,
             auth=dummy_handler.auth,
             client_config_cls=PytestClientConfig,
@@ -380,11 +392,17 @@ def dummy(request, dummy_handler: DummyHandler):
 
 
 @pytest.fixture
-def dummy_new(request, dummy_handler: DummyHandler):
+def dummy_new(
+    request,
+    config: PytestConfig,
+    config_simulatus: ConfigSimulatus,
+    dummy_handler: DummyHandler,
+):
     logger.info("Providing new dummy.")
     with dummy_handler.sessionmaker() as session:
         dummy = DummyProvider(
-            dummy_handler.config,
+            config,
+            config_simulatus,
             session,
             auth=dummy_handler.auth,
             use_existing=False,
@@ -399,11 +417,17 @@ def dummy_new(request, dummy_handler: DummyHandler):
 
 
 @pytest.fixture
-def dummy_disposable(request, dummy_handler: DummyHandler):
+def dummy_disposable(
+    request,
+    config: PytestConfig,
+    config_simulatus: ConfigSimulatus,
+    dummy_handler: DummyHandler,
+):
     logger.info("Providing disposable dummy.")
     with dummy_handler.sessionmaker() as session:
         dummy = DummyProvider(
-            dummy_handler.config,
+            config,
+            config_simulatus,
             session,
             auth=dummy_handler.auth,
             client_config_cls=PytestClientConfig,

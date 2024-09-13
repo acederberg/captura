@@ -461,7 +461,7 @@ class Event(Base):
     __tablename__ = "events"
     __kind__ = KindObject.event
 
-    timestamp: Mapped[str] = mapped_column(
+    timestamp: Mapped[int] = mapped_column(
         default=(_now := lambda: datetime.timestamp(datetime.now())),
     )
 

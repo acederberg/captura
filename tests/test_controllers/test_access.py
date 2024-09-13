@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from captura import util
+from captura.config import Config
 from captura.controllers.access import Access
 from captura.controllers.base import (
     Data,
@@ -46,6 +47,7 @@ from captura.models import (
     UUIDSplit,
 )
 from simulatus import DummyHandler, DummyProvider, DummyProviderYAML, GetPrimaryKwargs
+from simulatus.config import ConfigSimulatus
 from tests.test_controllers.util import expect_exc
 
 from ..conftest import COUNT
@@ -134,10 +136,13 @@ class BaseTestAccess(metaclass=AccessTestMeta):
 
     @pytest.fixture(scope="class")
     def dummy(
-        self, dummy_handler: DummyHandler
+        self, 
+        config: Config,
+        config_simulatus: ConfigSimulatus,
+        dummy_handler: DummyHandler
     ) -> Generator[DummyProvider, None, None]:
         with dummy_handler.sessionmaker() as session:
-            dummy = DummyProvider(dummy_handler.config, session)
+            dummy = DummyProvider(config, config_simulatus, session)
             yield dummy
 
     def test_d_fn(self) -> None:

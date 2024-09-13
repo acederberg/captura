@@ -62,6 +62,7 @@ class Cli:
                     path_config_client=util.PATH_CONFIG_CLIENT,
                     path_config_test_app=util.PATH_CONFIG_TEST_APP,
                     path_config_test_client=util.PATH_CONFIG_TEST_CLIENT,
+                    path_config_dummy=util.PATH_CONFIG_DUMMY,
                     path_config_log=util.PATH_CONFIG_LOG,
                     path_hooks=util.PATH_HOOKS,
                     verbose=util.VERBOSE,

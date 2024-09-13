@@ -88,8 +88,6 @@ jobs:
             exec server \
             bash -c ' \
               source ~/app/.venv/bin/activate \
-              && echo $CAPTURA_CONFIG_DUMMY \
-              && echo $CAPTURA_CONFIG_APP_TEST \
               && poetry run simulatus initialize \
               && poetry run simulatus apply'
 
@@ -163,7 +161,7 @@ jobs:
 
       # --------------------------------------------------------------------- #
       # NOTE: Finalize.
-      #
+
       - name: Stop Compose Project.
         if: always()
         run: docker compose --file docker/compose.ci.yaml down
@@ -185,8 +183,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: coverage-report-pages
         uses: actions/deploy-pages@v4
-
-
-
-
-
