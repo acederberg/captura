@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 # --------------------------------------------------------------------------- #
 from captura import __version__, util
+from captura.config import Config
 from captura.fields import Level, PendingFrom
 from captura.models import (
     Assignment,
@@ -21,6 +22,7 @@ from captura.models import (
     Resolvable,
 )
 from simulatus import DummyHandler, DummyProvider
+from simulatus.config import ConfigSimulatus
 from tests.check import Check
 from tests.conftest import COUNT
 
@@ -225,11 +227,15 @@ class TestRelationships:
             raise AssertionError("All documents have empty assignments.")
 
     def test_user_deletion_documents(
-        self, dummy_handler: DummyHandler, session: Session, count: int
+        self,
+        config: Config,
+        config_simulatus: ConfigSimulatus,
+        session: Session,
+        count: int,
     ):
         n_empty_grants = 0
         for _ in range(5):
-            dummy = DummyProvider(dummy_handler.config, session)
+            dummy = DummyProvider(config, config_simulatus, session)
             user = dummy.user
             q_grants = user.q_select_grants(exclude_deleted=False)
             grants = dummy.session.scalars(q_grants)
@@ -270,11 +276,15 @@ class TestRelationships:
             dummy.dispose()
 
     def test_user_deletion_collections(
-        self, dummy_handler: DummyHandler, session: Session, count: int
+        self,
+        config: Config,
+        config_simulatus: ConfigSimulatus,
+        session: Session,
+        count: int,
     ):
         n_no_collections = 0
         for _ in range(0, 3):
-            dummy = DummyProvider(dummy_handler.config, session)
+            dummy = DummyProvider(config, config_simulatus, session)
             user = dummy.user
             uuid_collections = set(
                 session.scalars(
