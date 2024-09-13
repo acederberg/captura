@@ -10,6 +10,10 @@ packages = [
   {include="legere", from="src"},
   {include="simulatus", from="src"}
 ]
+include = [
+  "src/captura/logging.yaml",
+  "src/simulatus/assets/*.yaml",
+]
 version = "0.1.8-alpha"
 description = "A framework for adding sharing and collections to existing API projects."
 authors = ["Adrian Cederberg <adrn.cederberg123@gmail.com>"]
@@ -22,6 +26,9 @@ captura = "captura.__main__:main"
 plugin = "plugin.__main__:main"
 legere = "legere.__main__:main"
 simulatus = "simulatus.__main__:main"
+
+
+
 
 
 [tool.poetry.dependencies]
