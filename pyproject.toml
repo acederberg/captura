@@ -14,7 +14,7 @@ include = [
   "src/captura/logging.yaml",
   "src/simulatus/assets/*.yaml",
 ]
-version = "0.1.8-alpha"
+version = "0.1.9"
 description = "A framework for adding sharing and collections to existing API projects."
 authors = ["Adrian Cederberg <adrn.cederberg123@gmail.com>"]
 license = "MIT"
@@ -138,7 +138,7 @@ warn_required_dynamic_aliases = true
 
 
 [tool.bumpver]
-current_version = "0.1.8-alpha"
+current_version = "0.1.9"
 version_pattern = "MAJOR.MINOR.PATCH[-TAG]"
 commit_message  = "chore(version): Bump version {old_version} -> {new_version}"
 commit          = true
