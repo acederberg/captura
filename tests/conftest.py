@@ -215,7 +215,7 @@ def resolve_config_captura(pytestconfig: pytest.Config) -> PytestConfig:
     logger.debug("Loading application configuration.")
     app = AppConfig.model_validate(
         {
-            "logging_configuration_path": util.Path.base("logging.test.yaml"),
+            "logging_configuration_path": util.Path.base("tests/logging.yaml"),
         }
     )
 
