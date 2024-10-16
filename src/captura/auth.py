@@ -37,8 +37,7 @@ PATTERN_BEARER: re.Pattern = re.compile(
     flags=re.I,
 )
 PYTEST_KID = "000-000-000"
-PATH_PYTEST_PUBLIC_KEY: str = util.Path.docker("pytest-public.pem")
-PATH_PYTEST_PRIVATE_KEY: str = util.Path.docker("pytest-private.pem")
+
 
 PrivateKey = Annotated[
     None | Any,
@@ -105,8 +104,8 @@ class Auth:
     @classmethod
     def forPyTest(cls, config):
         # https://gist.github.com/gabrielfalcao/de82a468e62e73805c59af620904c124
-        if not path.exists(PATH_PYTEST_PRIVATE_KEY) or not path.exists(
-            PATH_PYTEST_PUBLIC_KEY
+        if not path.exists(config.auth0.pytest.private_key) or not path.exists(
+            config.auth0.pytest.public_key
         ):
             logger.debug("Generating test authorization.")
             private_key = rsa.generate_private_key(
@@ -123,16 +122,16 @@ class Auth:
                 format=serialization.PublicFormat.SubjectPublicKeyInfo,
             )
             with (
-                open(PATH_PYTEST_PUBLIC_KEY, "wb") as public_io,
-                open(PATH_PYTEST_PRIVATE_KEY, "wb") as private_io,
+                open(config.auth0.pytest.public_key, "wb") as public_io,
+                open(config.auth0.pytest.private_key, "wb") as private_io,
             ):
                 public_io.write(public_pem)
                 private_io.write(private_pem)
 
         logger.debug("Loading pytest keypair.")
         with (
-            open(PATH_PYTEST_PUBLIC_KEY, "rb") as public_io,
-            open(PATH_PYTEST_PRIVATE_KEY, "rb") as private_io,
+            open(config.auth0.pytest.public_key, "rb") as public_io,
+            open(config.auth0.pytest.private_key, "rb") as private_io,
         ):
             public_key = serialization.load_pem_public_key(
                 public_io.read(), backend=default_backend()

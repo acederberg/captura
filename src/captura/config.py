@@ -111,7 +111,19 @@ class Auth0AppConfig(BaseHashable):
     client_id: str
     client_secret: SecretStr
     secret_key: Annotated[
-        SecretStr, Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32)))
+        SecretStr,
+        Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32))),
+    ]
+
+
+class Auth0Pytest(BaseHashable):
+    public_key: Annotated[
+        str,
+        Field(default=util.Path.config("pytest-public.pem")),
+    ]
+    private_key: Annotated[
+        str,
+        Field(default=util.Path.config("pytest-private.pem")),
     ]
 
 
@@ -146,8 +158,18 @@ class Auth0Config(BaseHashable):
         ),
     ]
     use: bool = True
-    api: Auth0ApiConfig
-    app: Auth0AppConfig
+    api: Annotated[
+        Auth0ApiConfig,
+        Field(default_factory=dict, validate_default=True),
+    ]
+    app: Annotated[
+        Auth0AppConfig,
+        Field(default_factory=dict, validate_default=True),
+    ]
+    pytest: Annotated[
+        Auth0Pytest,
+        Field(default_factory=dict, validate_default=True),
+    ]
 
     @property
     def issuer_url(self) -> str:
